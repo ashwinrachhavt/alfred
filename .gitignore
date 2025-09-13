@@ -1,3 +1,7 @@
 .aider*
 
 .env
+
+*.env
+.alfred_data/tokens/
+.alfred_data/**/*.json
