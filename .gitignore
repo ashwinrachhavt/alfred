@@ -5,3 +5,10 @@
 *.env
 .alfred_data/tokens/
 .alfred_data/**/*.json
+
+
+qdrant_store
+
+/chroma_store
+
+data

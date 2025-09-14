@@ -43,6 +43,25 @@ class Settings(BaseSettings):
     # Security for Gmail push (Pub/Sub OIDC)
     gmail_push_oidc_audience: Optional[str] = Field(default=None, alias="GMAIL_PUSH_OIDC_AUDIENCE")
 
+    enable_mcp: bool = True
+    mcp_filesystem_path: str = "./data"
+    enable_mcp_browser: bool = True
+    enable_mcp_everything: bool = False  # For testing only
+    
+    # AI Model Configuration for MCP
+    openai_api_key: Optional[str] = None
+    openai_model: str = "gpt-4-turbo-preview"
+    anthropic_api_key: Optional[str] = None
+    anthropic_model: str = "claude-3-sonnet-20240229"
+    
+    # WhatsApp MCP (if you have a custom server)
+    whatsapp_api_key: Optional[str] = None
+    whatsapp_phone: Optional[str] = None
+    
+    # MCP Server Timeouts
+    mcp_timeout: int = 30
+    mcp_max_retries: int = 3
+
     class Config:
         # Prefer repo-local env when running from project root
         env_file = "apps/api/.env"
