@@ -2,6 +2,9 @@
 
 PYTHON ?= python3.11
 
+# Prevent creation of __pycache__/ and .pyc files across Make targets
+export PYTHONDONTWRITEBYTECODE := 1
+
 install:
 	$(PYTHON) -m pip install -r apps/api/requirements.txt -r requirements-dev.txt
 
@@ -29,4 +32,4 @@ docker-down:
 .PHONY: ingest-urls
 ingest-urls:
 	@if [ -z "$(FILE)" ]; then echo "Usage: make ingest-urls FILE=urls.txt [COLLECTION=personal_kb]"; exit 1; fi
-	$(PYTHON) scripts/ingest_crawl4ai.py --urls-file $(FILE) --collection $${COLLECTION:-personal_kb}
+	$(PYTHON) scripts/ingest.py --urls-file $(FILE) --collection $${COLLECTION:-personal_kb}
