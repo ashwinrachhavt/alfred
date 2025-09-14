@@ -62,15 +62,7 @@ class Settings(BaseSettings):
     mcp_timeout: int = 30
     mcp_max_retries: int = 3
 
-    # Database (Supabase / Postgres)
-    database_url: str = Field(
-        default="postgresql+asyncpg://postgres:postgres@localhost:5432/postgres",
-        alias="DATABASE_URL",
-    )
-    db_pool_size: int = Field(default=10, alias="DB_POOL_SIZE")
-    db_max_overflow: int = Field(default=20, alias="DB_MAX_OVERFLOW")
-    db_ssl_ca_path: str | None = Field(default=None, alias="DB_SSL_CA_PATH")
-    db_use_pgbouncer: bool = Field(default=False, alias="DB_USE_PGBOUNCER")
+    # Supabase will be used via API key + client later; no DB config here
 
     class Config:
         # Prefer repo-local env when running from project root

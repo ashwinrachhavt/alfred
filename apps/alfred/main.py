@@ -16,7 +16,6 @@ from alfred.api.v1.health import router as health_router
 from alfred.api.v1.notion import router as notion_router
 from alfred.api.v1.rag import router as rag_router
 from alfred.core.config import settings
-from alfred.db.session import attach_lifespan
 
 
 app = FastAPI(title="Alfred API")
@@ -37,5 +36,4 @@ app.include_router(notion_router)
 app.include_router(gmail_router)
 app.include_router(company_router)
 
-# Attach DB lifespan (engine warm-up / dispose)
-attach_lifespan(app)
+# No DB lifespan; Supabase client will be configured later
