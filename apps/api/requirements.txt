@@ -19,6 +19,7 @@ sse-starlette==2.0.0
 crewai
 langchain-openai
 langchain
+langchain-community
 langchain-chroma
 langchain-qdrant
 beautifulsoup4==4.12.3
@@ -27,6 +28,8 @@ crawl4ai
 lxml_html_clean
 trafilatura
 playwright
+langgraph
+duckduckgo-search
 google-api-python-client>=2.140.0
 google-auth>=2.34.0
 google-auth-oauthlib>=1.2.1

@@ -48,9 +48,7 @@ class Settings(BaseSettings):
     enable_mcp_browser: bool = True
     enable_mcp_everything: bool = False  # For testing only
     
-    # AI Model Configuration for MCP
-    openai_api_key: Optional[str] = None
-    openai_model: str = "gpt-4-turbo-preview"
+    # Optional additional model keys
     anthropic_api_key: Optional[str] = None
     anthropic_model: str = "claude-3-sonnet-20240229"
     
