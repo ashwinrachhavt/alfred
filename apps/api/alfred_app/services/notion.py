@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from typing import Any, Optional
-from notion_client import Client
-from tenacity import retry, wait_exponential_jitter, stop_after_attempt
-from fastapi import HTTPException
 
 from alfred_app.core.config import settings
+from fastapi import HTTPException
+from notion_client import Client
+from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 
 
 def _client() -> Client:

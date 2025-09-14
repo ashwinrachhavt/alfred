@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
-from fastapi import APIRouter
 
+from fastapi import APIRouter
 
 router = APIRouter(prefix="/api/v1/gmail", tags=["gmail"])
 
@@ -16,9 +15,6 @@ def _truthy(val: str | None) -> bool:
 
 def _deps_installed() -> bool:
     try:
-        import googleapiclient  # type: ignore
-        import google_auth_oauthlib  # type: ignore
-        import google.auth  # type: ignore
         return True
     except Exception:
         return False

@@ -4,18 +4,17 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from pathlib import Path
-from typing import List, Iterable
 from hashlib import md5
-
-from langchain_core.documents import Document
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings
-from langchain_qdrant import QdrantVectorStore
-from langchain_community.document_loaders import RecursiveUrlLoader
+from pathlib import Path
+from typing import List
 
 from dotenv import load_dotenv
+from langchain_community.document_loaders import PyPDFLoader, RecursiveUrlLoader
+from langchain_core.documents import Document
+from langchain_openai import OpenAIEmbeddings
+from langchain_qdrant import QdrantVectorStore
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 load_dotenv()
 
 # Ensure a reasonable default User-Agent to avoid warnings and improve acceptance
@@ -110,11 +109,15 @@ def load_web(urls: List[str]) -> List[Document]:
             from bs4 import BeautifulSoup  # type: ignore
         except Exception:
             BeautifulSoup = None  # type: ignore
+
+        def _extract_text(html: str) -> str:
+            if BeautifulSoup is None:
+                return html
+            return BeautifulSoup(html, "html.parser").get_text(" ", strip=True)
+
         for u in urls:
             try:
-                extractor = None
-                if BeautifulSoup is not None:
-                    extractor = lambda html: BeautifulSoup(html, "html.parser").get_text(" ", strip=True)
+                extractor = _extract_text if BeautifulSoup is not None else None
                 rloader = RecursiveUrlLoader(url=u, max_depth=depth, extractor=extractor)
                 docs.extend(rloader.load())
             except Exception as e:
@@ -192,7 +195,7 @@ def main():
         for d in docs
     ]
 
-    store = QdrantVectorStore.from_documents(
+    QdrantVectorStore.from_documents(
         documents=docs,
         embedding=embeddings,
         url=qdrant_url,

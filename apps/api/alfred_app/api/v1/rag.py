@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, Query
 import time
+
 from alfred_app.services.agentic_rag import answer_agentic, get_context_chunks
+from fastapi import APIRouter, HTTPException, Query
 
 router = APIRouter(prefix="/rag", tags=["rag"])
 

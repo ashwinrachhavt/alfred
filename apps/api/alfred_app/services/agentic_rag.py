@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 import os
-from typing import Iterable, List
+from typing import Iterable, List, Literal
 
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_chroma import Chroma
-from langchain_qdrant import QdrantVectorStore
 from langchain.tools.retriever import create_retriever_tool
-
-from langgraph.graph import StateGraph, START, END
-from langgraph.graph import MessagesState
+from langchain_chroma import Chroma
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_qdrant import QdrantVectorStore
+from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
-
+from pydantic import BaseModel, Field
 
 # ------------------------ CONFIG ------------------------
 COLLECTION = os.getenv("QDRANT_COLLECTION", os.getenv("CHROMA_COLLECTION", "personal_kb"))
@@ -164,8 +162,7 @@ def generate_query_or_respond(state: MessagesState, k: int = 4):
     return {"messages": [response]}
 
 
-from pydantic import BaseModel, Field
-from typing import Literal
+ 
 
 GRADE_PROMPT = (
     "You grade whether this context helps answer the user’s question.\n"

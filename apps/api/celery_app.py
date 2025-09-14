@@ -1,6 +1,7 @@
-from celery import Celery
-from alfred_app.core.config import settings
 from datetime import timedelta
+
+from alfred_app.core.config import settings
+from celery import Celery
 
 app = Celery(
     "alfred",
