@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "gmail": {
+      "command": "npx",
+      "args": ["-y", "@mcp-gmail/server"],
+      "env": {
+        "GMAIL_CLIENT_ID": "your_id.apps.googleusercontent.com",
+        "GMAIL_CLIENT_SECRET": "your_secret"
+      }
+    },
+    "gcal": {
+      "command": "npx",
+      "args": ["-y", "@mcp-google-calendar/server"],
+      "env": {
+        "GOOGLE_CLIENT_ID": "your_id.apps.googleusercontent.com",
+        "GOOGLE_CLIENT_SECRET": "your_secret"
+      }
+    },
+    "notion": {
+      "command": "npx",
+      "args": ["-y", "@makenotion/notion-mcp-server"],
+      "env": {
+        "NOTION_CLIENT_ID": "your_notion_oauth_client_id",
+        "NOTION_CLIENT_SECRET": "your_notion_oauth_secret"
+      }
+    }
+  }
+}
+

@@ -26,3 +26,7 @@ docker-up:
 docker-down:
 	docker compose -f infra/docker-compose.yml down -v
 
+.PHONY: ingest-urls
+ingest-urls:
+	@if [ -z "$(FILE)" ]; then echo "Usage: make ingest-urls FILE=urls.txt [COLLECTION=personal_kb]"; exit 1; fi
+	$(PYTHON) scripts/ingest_crawl4ai.py --urls-file $(FILE) --collection $${COLLECTION:-personal_kb}
