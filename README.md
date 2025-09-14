@@ -1,63 +1,162 @@
-# Alfred — API + CrewAI + SSE
+<div align="center">
 
-## Prereqs
-- Docker + Docker Compose
-- Python 3.11+ (optional for local venv runs)
-- Tokens: Notion, (optional) OpenAI
+# Alfred — Agentic RAG API
 
-## Configure
-```bash
-cp apps/api/.env.example apps/api/.env
-# Fill in NOTION_TOKEN, NOTION_PARENT_PAGE_ID, OPENAI_API_KEY if used
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-109989?style=for-the-badge&logo=fastapi&logoColor=white)
+![LangChain](https://img.shields.io/badge/LangChain-0F0F0F?style=for-the-badge&logo=chainlink&logoColor=white)
+![LangGraph](https://img.shields.io/badge/LangGraph-0e7490?style=for-the-badge)
+![Qdrant](https://img.shields.io/badge/Qdrant-FF4B4B?style=for-the-badge&logo=qdrant&logoColor=white)
+![Chroma](https://img.shields.io/badge/Chroma-222?style=for-the-badge)
+![DuckDuckGo](https://img.shields.io/badge/DuckDuckGo-FF6600?style=for-the-badge&logo=duckduckgo&logoColor=white)
+![Celery](https://img.shields.io/badge/Celery-37814A?style=for-the-badge&logo=celery&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)
+
+An elegant FastAPI service that answers questions using Agentic RAG. It chooses between your personal notes (Qdrant/Chroma) and live web research (DuckDuckGo), then writes in your voice with minimal, professional style.
+
+</div>
+
+## System Design
+
+```mermaid
+flowchart TB
+    subgraph Client
+        UI[Swagger / CLI / cURL]
+    end
+
+    UI -->|HTTP| API[FastAPI /rag/answer]
+
+    subgraph App[Agentic RAG Service]
+        GEN[Generate Query or Respond]
+        TOOLS[ToolNode]
+        GRADE[Grade Documents]
+        REWRITE[Rewrite Question]
+        ANSWER[Generate Answer]
+    end
+
+    API --> GEN --> TOOLS
+    TOOLS -->|retrieve_notes| RETRIEVE[Qdrant/Chroma Retriever]
+    TOOLS -->|web_search| DDG[DuckDuckGo]
+    RETRIEVE --> GRADE
+    DDG --> GRADE
+    GRADE -->|relevant| ANSWER
+    GRADE -->|not relevant| REWRITE --> GEN
+    ANSWER --> API
+
+    subgraph Data
+        VS[(Qdrant / Chroma)]
+        EMB[OpenAI Embeddings]
+    end
+
+    RETRIEVE <---> VS
+    VS -.uses .-> EMB
 ```
 
-## Run API locally
+Highlights
+- Agentic retrieval with LangGraph: decide to retrieve, search, or answer directly.
+- Qdrant (cloud) preferred; Chroma fallback for local dev.
+- Flexible answer styles via `mode`: minimal, concise, formal, deep.
+- Clean, grounded voice; inline attributions and tiny Sources section.
+
+## Quick Start
+
+Prereqs
+- Docker + Docker Compose
+- Python 3.11+
+- API keys: OpenAI (for embeddings/LLM); optional Qdrant Cloud
+
+Configure
 ```bash
-make install
+cp apps/api/.env.example apps/api/.env
+# Fill in: OPENAI_API_KEY, (optional) QDRANT_URL/QDRANT_API_KEY, NOTION_TOKEN, etc.
+```
+
+Install & Run API
+```bash
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install -r apps/api/requirements.txt
+python -m playwright install chromium   # if you plan to use dynamic crawling
 make run-api  # or: cd apps/api && uvicorn main:app --reload --port 8080
 ```
 
-## RAG Streaming (SSE)
-- Endpoint: `GET /stream/rag?q=...&k=4`
-- Streams Server-Sent Events with:
-  - `start` → question metadata
-  - `context` → top-k retrieved items
-  - `token` → partial text chunks
-  - `end` → completion signal
-
-Example with curl:
+Docker (full stack)
 ```bash
-curl -N "http://localhost:8080/stream/rag?q=What%20did%20I%20ship%20last%20week%3F&k=4"
+docker compose -f infra/docker-compose.yml up --build
 ```
 
-CLI that prints tokens live:
+## Ingest Knowledge
+
+Use built-in web and PDF ingestion to populate your vector store.
+
 ```bash
-python scripts/rag_cli.py "What did I ship last week?"
+# Optionally set recursion depth for link-following (0 = off)
+export RECURSIVE_DEPTH=1
+
+# Qdrant Cloud
+export QDRANT_URL=...; export QDRANT_API_KEY=...; export QDRANT_COLLECTION=personal_kb
+
+# Run ingest
+python scripts/ingest.py --urls-file urls.txt --collection personal_kb
+# Or direct URLs
+python scripts/ingest.py --url https://example.com --url https://arxiv.org/abs/2012.07587
 ```
 
-Notes:
-- RAG uses a persistent Chroma collection populated by the ingest script below.
-- Select models via `CHAT_MODEL`, `FALLBACK_MODEL`, and embeddings via `EMBED_MODEL`.
+Notes
+- WebBaseLoader + optional RecursiveUrlLoader gather pages; PDFs from `data/` via PyPDFLoader.
+- Chunking defaults: size 12000, overlap 200; deterministic IDs avoid duplicates.
+- Embeddings: `EMBED_MODEL` (default `text-embedding-3-small`).
 
-## Ingest to Chroma (Crawl4AI)
-- Install deps: `pip install -r apps/api/requirements.txt` (adds `crawl4ai`)
-- Prepare env: set `OPENAI_API_KEY`; optionally set `CHROMA_PATH` (default `./chroma_store`) and `CHROMA_COLLECTION`.
+## RAG API
 
-Ingest URLs into persistent Chroma collection:
+Endpoint
+- `GET /rag/answer`
+
+Query params
+- `q` string: question
+- `k` int: top-k retrieval (default 4)
+- `include_context` bool: include retrieved chunks metadata
+- `mode` string: `minimal` | `concise` | `formal` | `deep`
+
+Example
 ```bash
-python scripts/ingest_crawl4ai.py --urls-file urls.txt --collection personal_kb
-# or specify multiple URLs directly
-python scripts/ingest_crawl4ai.py --url https://example.com --url https://openai.com
+curl "http://localhost:8080/rag/answer?q=Research%20Harmonic%20and%20write%20a%20cover%20letter&k=8&mode=deep&include_context=true"
 ```
 
-Behavior:
-- Tries Crawl4AI; falls back to `httpx + readability + bs4` if unavailable.
-- Chunks text (default 1200 chars, 200 overlap), embeds with `EMBED_MODEL` (default `text-embedding-3-small`), and upserts to a Chroma collection with metadata `{source, title, chunk}`.
-- Data is persisted to `CHROMA_PATH`.
+Behavior
+- Agent decides to use `retrieve_notes` (Qdrant/Chroma) and/or `web_search` (DuckDuckGo).
+- Answers in your voice, grounded strictly in context; admits when unknown.
 
-Use with RAG endpoints:
-- Non-streaming: `GET /rag/answer?q=...` reads from the configured Chroma collection.
-- Streaming SSE: `GET /stream/rag?q=...` for token-by-token output.
+## Makefile
 
-Makefile helper:
+Useful targets
+- `make install` — app + dev deps
+- `make run-api` — run FastAPI locally
+- `make run-worker` — Celery worker (if used)
+- `make docker-up` / `make docker-down`
+- `make lint` / `make format`
 - `make ingest-urls FILE=urls.txt [COLLECTION=personal_kb]`
+
+## Configuration
+
+Core env vars
+- `OPENAI_API_KEY` — required
+- `QDRANT_URL`, `QDRANT_API_KEY`, `QDRANT_COLLECTION` — for Qdrant backend
+- `CHROMA_PATH` — local fallback store (default `./chroma_store`)
+- `EMBED_MODEL`, `CHAT_MODEL`, `FALLBACK_MODEL`
+- `RECURSIVE_DEPTH` — optional crawl depth for ingest (default 0)
+
+## Tech Stack Badges
+
+![OpenAI](https://img.shields.io/badge/OpenAI-412991?style=for-the-badge&logo=openai&logoColor=white)
+![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+![GitHub%20Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)
+
+## Notes & Tips
+- Robots-aware crawling; polite rate limiting. LinkedIn and auth-gated sites are skipped.
+- `PYTHONDONTWRITEBYTECODE=1` is set in Makefile and Docker to avoid `__pycache__` noise.
+- Keep secrets out of Git; use `apps/api/.env`.
+
+---
+
+Made with FastAPI + LangChain + LangGraph. PRs welcome.

@@ -1,4 +1,6 @@
-import logging, sys
+import logging
+import sys
+
 
 def setup_logging():
     root = logging.getLogger()

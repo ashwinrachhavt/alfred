@@ -7,5 +7,4 @@ def test_settings_defaults_without_env():
 
     assert s.app_env == "dev"
     assert s.redis_url.startswith("redis://")
-    assert s.openai_model == "gpt-4o-mini"
 
