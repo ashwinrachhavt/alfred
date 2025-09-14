@@ -19,9 +19,17 @@ sse-starlette==2.0.0
 crewai
 langchain-openai
 langchain
+langchain-chroma
+langchain-qdrant
 beautifulsoup4==4.12.3
 readability-lxml==0.8.1
+crawl4ai
+lxml_html_clean
 google-api-python-client>=2.140.0
 google-auth>=2.34.0
 google-auth-oauthlib>=1.2.1
 itsdangerous>=2.2.0
+mcp-use 
+langchain-openai
+langchain-anthropic
+sse-starlette
