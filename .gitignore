@@ -12,3 +12,7 @@ qdrant_store
 /chroma_store
 
 data
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
