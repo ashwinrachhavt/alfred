@@ -4,15 +4,20 @@ from typing import List, Iterable
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_chroma import Chroma
+from langchain_qdrant import QdrantVectorStore
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 
-CHROMA_PATH = "/Users/ashwin/Applications/Master/alfred/scripts/chroma_store"
-COLLECTION = os.getenv("CHROMA_COLLECTION", os.getenv("QDRANT_COLLECTION", "personal_kb"))
+COLLECTION = os.getenv("QDRANT_COLLECTION", os.getenv("CHROMA_COLLECTION", "personal_kb"))
 EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-small")
 CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4.1")
 FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "gpt-4.1-mini")
+CHROMA_PATH = os.getenv("CHROMA_PATH", "./chroma_store")
+QDRANT_URL = os.getenv("QDRANT_URL")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
+QDRANT_HOST = os.getenv("QDRANT_HOST")
+QDRANT_PORT = os.getenv("QDRANT_PORT")
 
 from dotenv import load_dotenv
 
@@ -24,14 +29,29 @@ load_dotenv()
 
 def make_retriever(k: int = 4):
     """
-    Connect to a persistent Chroma collection populated by the ingest script.
+    Construct a retriever. Prefers Qdrant if configured; falls back to local Chroma.
     """
     embed = OpenAIEmbeddings(model=EMBED_MODEL)
-    vs = Chroma(
-        collection_name=COLLECTION,
-        persist_directory=CHROMA_PATH,
-        embedding_function=embed,
-    )
+    if (QDRANT_URL and QDRANT_API_KEY) or (QDRANT_HOST and QDRANT_PORT):
+        try:
+            from qdrant_client import QdrantClient  # type: ignore
+        except Exception as e:
+            raise RuntimeError("qdrant-client is required for Qdrant backend") from e
+        if QDRANT_URL:
+            client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+        else:
+            client = QdrantClient(host=QDRANT_HOST, port=int(QDRANT_PORT or 6333), api_key=QDRANT_API_KEY)
+        vs = QdrantVectorStore(
+            client=client,
+            collection_name=COLLECTION,
+            embedding=embed,
+        )
+    else:
+        vs = Chroma(
+            collection_name=COLLECTION,
+            persist_directory=CHROMA_PATH,
+            embedding_function=embed,
+        )
     return vs.as_retriever(search_kwargs={"k": k})
 
 
@@ -183,7 +203,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Answer error: {e}")
 
-    parser = argparse.ArgumentParser(description="Quick test harness for Chroma-backed RAG")
+    parser = argparse.ArgumentParser(description="Quick test harness for RAG (Qdrant or Chroma)")
     parser.add_argument("--question", "-q", help="Question to ask")
     parser.add_argument("--k", type=int, default=4, help="Top-k to retrieve")
     parser.add_argument("--stream", action="store_true", help="Stream tokens instead of a single answer")
@@ -192,8 +212,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print("Config:")
-    print(f"- CHROMA_PATH     = {CHROMA_PATH}")
+    backend = 'Qdrant' if (QDRANT_URL and QDRANT_API_KEY) or (QDRANT_HOST and QDRANT_PORT) else 'Chroma'
+    print(f"- BACKEND         = {backend}")
     print(f"- COLLECTION      = {COLLECTION}")
+    if not (QDRANT_URL and QDRANT_API_KEY):
+        print(f"- CHROMA_PATH     = {CHROMA_PATH}")
+    else:
+        print(f"- QDRANT_URL      = {QDRANT_URL}")
     print(f"- EMBED_MODEL     = {EMBED_MODEL}")
     print(f"- CHAT_MODEL      = {CHAT_MODEL} (fallback: {FALLBACK_MODEL})")
     print()
@@ -211,4 +236,3 @@ if __name__ == "__main__":
         print()
 
     test_answer(args.question, k=args.k, stream=args.stream)
-
