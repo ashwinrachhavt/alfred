@@ -7,15 +7,15 @@ Philosophical LinkedIn & Cover Letter Assistant (CrewAI >= 0.28)
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
-from crewai import Agent, Task, Crew, Process
-from datetime import datetime
-import json
-import os
 
+import json
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+from crewai import Agent, Crew, Process, Task
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
+
 load_dotenv()
 
 # Optional tools. File runs without them.

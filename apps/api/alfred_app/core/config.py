@@ -1,7 +1,9 @@
 # apps/api/alfred_app/core/config.py
-from pydantic_settings import BaseSettings
-from pydantic import Field, AnyHttpUrl
 from typing import Optional
+
+from pydantic import AnyHttpUrl, Field
+from pydantic_settings import BaseSettings
+
 
 class Settings(BaseSettings):
     app_env: str = Field(default="dev", alias="APP_ENV")

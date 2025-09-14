@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException
 from alfred_app.core.config import settings
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 router = APIRouter(prefix="/api/v1/notion", tags=["notion"])
