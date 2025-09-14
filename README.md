@@ -67,16 +67,16 @@ Prereqs
 
 Configure
 ```bash
-cp apps/api/.env.example apps/api/.env
+cp apps/alfred/.env.example apps/alfred/.env
 # Fill in: OPENAI_API_KEY, (optional) QDRANT_URL/QDRANT_API_KEY, NOTION_TOKEN, etc.
 ```
 
 Install & Run API
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
-pip install -r apps/api/requirements.txt
+pip install -r apps/alfred/requirements.txt
 python -m playwright install chromium   # if you plan to use dynamic crawling
-make run-api  # or: cd apps/api && uvicorn main:app --reload --port 8080
+make run-api  # or: cd apps/alfred && uvicorn main:app --reload --port 8080
 ```
 
 Docker (full stack)
@@ -155,7 +155,7 @@ Core env vars
 ## Notes & Tips
 - Robots-aware crawling; polite rate limiting. LinkedIn and auth-gated sites are skipped.
 - `PYTHONDONTWRITEBYTECODE=1` is set in Makefile and Docker to avoid `__pycache__` noise.
-- Keep secrets out of Git; use `apps/api/.env`.
+- Keep secrets out of Git; use `apps/alfred/.env`.
 
 ---
 
