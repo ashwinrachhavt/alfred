@@ -1,8 +1,7 @@
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
 # Import only the health router to avoid importing incomplete modules.
 from alfred_app.api.v1.health import router as health_router
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 def test_health_endpoint_ok():

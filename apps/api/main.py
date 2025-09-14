@@ -1,6 +1,6 @@
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+
 try:
     # Load .env early so routers can access API keys at import
     from dotenv import load_dotenv  # type: ignore
@@ -8,9 +8,10 @@ try:
 except Exception:
     pass
 
+from alfred_app.api.v1.gmail_status import router as gmail_router
 from alfred_app.api.v1.health import router as health_router
-from alfred_app.api.v1.rag import router as rag_router
 from alfred_app.api.v1.notion import router as notion_router
+from alfred_app.api.v1.rag import router as rag_router
 from alfred_app.core.config import settings
 
 app = FastAPI(title="Alfred API")
@@ -28,4 +29,4 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(rag_router)
 app.include_router(notion_router)
-
+app.include_router(gmail_router)

@@ -1,7 +1,9 @@
 # apps/api/alfred_app/core/config.py
-from pydantic_settings import BaseSettings
-from pydantic import Field, AnyHttpUrl
 from typing import Optional
+
+from pydantic import AnyHttpUrl, Field
+from pydantic_settings import BaseSettings
+
 
 class Settings(BaseSettings):
     app_env: str = Field(default="dev", alias="APP_ENV")
@@ -48,9 +50,7 @@ class Settings(BaseSettings):
     enable_mcp_browser: bool = True
     enable_mcp_everything: bool = False  # For testing only
     
-    # AI Model Configuration for MCP
-    openai_api_key: Optional[str] = None
-    openai_model: str = "gpt-4-turbo-preview"
+    # Optional additional model keys
     anthropic_api_key: Optional[str] = None
     anthropic_model: str = "claude-3-sonnet-20240229"
     
