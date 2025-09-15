@@ -24,10 +24,10 @@ gcloud artifacts repositories create "$REPO" \
 
 Build and Deploy with Cloud Build
 ```bash
-# From repo root
-gcloud builds submit . \
-  --config infra/gcp/cloudbuild.yaml \
-  --substitutions=_REGION=us-central1,_SERVICE=alfred-api,_REPOSITORY=alfred,_IMAGE=alfred-api
+# From anywhere (script locates repo root automatically)
+bash infra/gcp/deploy.sh
+# Or specify project/region/env file:
+bash infra/gcp/deploy.sh -p YOUR_PROJECT -r us-central1 -s alfred-api -R alfred -i alfred-api -e apps/alfred/.env
 ```
 
 On success, Cloud Run prints the service URL.
@@ -61,4 +61,3 @@ Troubleshooting
 - 403 on deploy: ensure you have IAM roles for Cloud Build and Cloud Run Admin.
 - Empty web search: confirm provider packages/keys present and env vars are set on the service.
 - OAuth redirect mismatch: update GOOGLE_REDIRECT_URI and your OAuth client in Google Cloud Console.
-
