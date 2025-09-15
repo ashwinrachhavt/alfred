@@ -95,9 +95,7 @@ class NotionHistoryConnector:
             # Try to find a title property
             for _prop_name, prop_data in page["properties"].items():
                 if prop_data["type"] == "title" and len(prop_data["title"]) > 0:
-                    return " ".join(
-                        [text_obj["plain_text"] for text_obj in prop_data["title"]]
-                    )
+                    return " ".join([text_obj["plain_text"] for text_obj in prop_data["title"]])
 
         # If no title found, return the page ID as fallback
         return f"Untitled page ({page['id']})"
@@ -161,9 +159,7 @@ class NotionHistoryConnector:
 
         if has_children:
             # Fetch and process child blocks
-            children_response = await self.notion.blocks.children.list(
-                block_id=block_id
-            )
+            children_response = await self.notion.blocks.children.list(block_id=block_id)
             for child_block in children_response["results"]:
                 child_blocks.append(await self.process_block(child_block))
 
@@ -188,9 +184,7 @@ class NotionHistoryConnector:
 
         # Different block types have different structures
         if block_type in block and "rich_text" in block[block_type]:
-            return "".join(
-                [text_obj["plain_text"] for text_obj in block[block_type]["rich_text"]]
-            )
+            return "".join([text_obj["plain_text"] for text_obj in block[block_type]["rich_text"]])
         elif block_type == "image":
             # Instead of returning the raw URL which may contain sensitive AWS credentials,
             # return a placeholder or reference to the image
@@ -210,9 +204,7 @@ class NotionHistoryConnector:
                     return "[External Image]"
         elif block_type == "code":
             language = block["code"]["language"]
-            code_text = "".join(
-                [text_obj["plain_text"] for text_obj in block["code"]["rich_text"]]
-            )
+            code_text = "".join([text_obj["plain_text"] for text_obj in block["code"]["rich_text"]])
             return f"```{language}\n{code_text}\n```"
         elif block_type == "equation":
             return block["equation"]["expression"]

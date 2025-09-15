@@ -91,9 +91,7 @@ class SlackHistory:
                         }
                         channels_list.append(channel_data)
                     else:
-                        logger.warning(
-                            f"Channel found with missing name or id. Data: {channel}"
-                        )
+                        logger.warning(f"Channel found with missing name or id. Data: {channel}")
 
                 next_cursor = api_result.get("response_metadata", {}).get("next_cursor")
                 is_first_request = False  # Subsequent requests are not the first
@@ -115,9 +113,7 @@ class SlackHistory:
                     # The loop will continue, retrying with the same cursor
                 else:
                     # Not a 429 error, or no response object, re-raise
-                    raise SlackApiError(
-                        f"Error retrieving channels: {e}", e.response
-                    ) from e
+                    raise SlackApiError(f"Error retrieving channels: {e}", e.response) from e
             except Exception as general_error:
                 # Handle other potential errors like network issues if necessary, or re-raise
                 logger.error(
@@ -180,10 +176,7 @@ class SlackHistory:
                     result = self.client.conversations_history(**kwargs)
                     current_api_call_successful = True
                 except SlackApiError as e_history:
-                    if (
-                        e_history.response is not None
-                        and e_history.response.status_code == 429
-                    ):
+                    if e_history.response is not None and e_history.response.status_code == 429:
                         retry_after_str = e_history.response.headers.get("Retry-After")
                         wait_time = 60  # Default
                         if retry_after_str and retry_after_str.isdigit():
@@ -209,7 +202,9 @@ class SlackHistory:
                 else:
                     break  # Exit pagination loop
 
-            except SlackApiError as e:  # Outer catch for not_in_channel or unhandled SlackApiErrors from inner try
+            except (
+                SlackApiError
+            ) as e:  # Outer catch for not_in_channel or unhandled SlackApiErrors from inner try
                 if (
                     e.response is not None
                     and hasattr(e.response, "data")
@@ -318,10 +313,7 @@ class SlackHistory:
                 return result["user"]  # Success, return and exit loop implicitly
 
             except SlackApiError as e_user_info:
-                if (
-                    e_user_info.response is not None
-                    and e_user_info.response.status_code == 429
-                ):
+                if e_user_info.response is not None and e_user_info.response.status_code == 429:
                     retry_after_str = e_user_info.response.headers.get("Retry-After")
                     wait_time = 30  # Default for Tier 4, can be adjusted
                     if retry_after_str and retry_after_str.isdigit():

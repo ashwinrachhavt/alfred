@@ -1,8 +1,8 @@
 from datetime import timedelta
 
-from alfred.core.config import settings
 from celery import Celery
 
+from alfred.core.config import settings
 
 app = Celery(
     "alfred",
@@ -26,4 +26,3 @@ app.conf.beat_schedule = {
         "options": {"expires": 60 * 60},
     }
 }
-

@@ -1,25 +1,16 @@
 """
 Google Calendar Connector Module | Google OAuth Credentials | Google Calendar API
-A module for retrieving calendar events from Google Calendar using Google OAuth credentials.
-Allows fetching events from specified calendars within date ranges using Google OAuth credentials.
 """
 
-import json
+import inspect
 from datetime import datetime
-from typing import Any
+from typing import Any, Awaitable, Callable, Optional
 
 import pytz
-from app.db import (
-    SearchSourceConnector,
-    SearchSourceConnectorType,
-)
 from dateutil.parser import isoparse
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy.orm.attributes import flag_modified
 
 
 class GoogleCalendarConnector:
@@ -28,17 +19,21 @@ class GoogleCalendarConnector:
     def __init__(
         self,
         credentials: Credentials,
-        session: AsyncSession,
-        user_id: str,
+        user_id: str | None = None,
+        on_credentials_refreshed: Optional[
+            Callable[[Credentials], Optional[Awaitable[None]]]
+        ] = None,
     ):
         """
         Initialize the GoogleCalendarConnector class.
         Args:
             credentials: Google OAuth Credentials object
+            user_id: Optional identifier for the user (for logging/metrics only)
+            on_credentials_refreshed: Optional callback invoked after refresh with updated Credentials
         """
         self._credentials = credentials
-        self._session = session
         self._user_id = user_id
+        self._on_refresh = on_credentials_refreshed
         self.service = None
 
     async def _get_credentials(
@@ -78,42 +73,20 @@ class GoogleCalendarConnector:
         )
 
         # Refresh the token if needed
-        if self._credentials.expired or not self._credentials.valid:
+        if self._credentials.expired or not getattr(self._credentials, "valid", False):
             try:
                 self._credentials.refresh(Request())
-                # Update the connector config in DB
-                if self._session:
-                    result = await self._session.execute(
-                        select(SearchSourceConnector).filter(
-                            SearchSourceConnector.user_id == self._user_id,
-                            SearchSourceConnector.connector_type
-                            == SearchSourceConnectorType.GOOGLE_CALENDAR_CONNECTOR,
-                        )
-                    )
-                    connector = result.scalars().first()
-                    if connector is None:
-                        raise RuntimeError(
-                            "GOOGLE_CALENDAR_CONNECTOR connector not found for current user; cannot persist refreshed token."
-                        )
-                    connector.config = json.loads(self._credentials.to_json())
-                    flag_modified(connector, "config")
-                    await self._session.commit()
+                if self._on_refresh is not None:
+                    result = self._on_refresh(self._credentials)
+                    if inspect.isawaitable(result):
+                        await result  # type: ignore[func-returns-value]
             except Exception as e:
-                raise Exception(
-                    f"Failed to refresh Google OAuth credentials: {e!s}"
-                ) from e
+                raise Exception(f"Failed to refresh Google OAuth credentials: {e!s}") from e
 
         return self._credentials
 
     async def _get_service(self):
-        """
-        Get the Google Calendar service instance using Google OAuth credentials.
-        Returns:
-            Google Calendar service instance
-        Raises:
-            ValueError: If credentials have not been set
-            Exception: If service creation fails
-        """
+        """Get the Google Calendar service instance using credentials."""
         if self.service:
             return self.service
 
@@ -125,17 +98,12 @@ class GoogleCalendarConnector:
             raise Exception(f"Failed to create Google Calendar service: {e!s}") from e
 
     async def get_calendars(self) -> tuple[list[dict[str, Any]], str | None]:
-        """
-        Fetch list of user's calendars using Google OAuth credentials.
-        Returns:
-            Tuple containing (calendars list, error message or None)
-        """
+        """Fetch list of user's calendars using credentials."""
         try:
             service = await self._get_service()
             calendars_result = service.calendarList().list().execute()
             calendars = calendars_result.get("items", [])
 
-            # Format calendar data
             formatted_calendars = []
             for calendar in calendars:
                 formatted_calendars.append(
@@ -160,17 +128,10 @@ class GoogleCalendarConnector:
         end_date: str,
         max_results: int = 2500,
     ) -> tuple[list[dict[str, Any]], str | None]:
-        """
-        Fetch events from the primary calendar using Google OAuth credentials.
-        Args:
-            max_results: Maximum number of events to fetch (default: 2500)
-        Returns:
-            Tuple containing (events list, error message or None)
-        """
+        """Fetch events from the primary calendar using credentials."""
         try:
             service = await self._get_service()
 
-            # Parse both dates
             dt_start = isoparse(start_date)
             dt_end = isoparse(end_date)
 
@@ -190,11 +151,9 @@ class GoogleCalendarConnector:
                     f"end_date ({dt_end.isoformat()})."
                 )
 
-            # RFC3339 with 'Z' for UTC
             time_min = dt_start.isoformat().replace("+00:00", "Z")
             time_max = dt_end.isoformat().replace("+00:00", "Z")
 
-            # Fetch events
             events_result = (
                 service.events()
                 .list(
@@ -219,33 +178,23 @@ class GoogleCalendarConnector:
             return [], f"Error fetching events: {e!s}"
 
     def format_event_to_markdown(self, event: dict[str, Any]) -> str:
-        """
-        Format a Google Calendar event to markdown.
-        Args:
-            event: Event object from Google Calendar API
-        Returns:
-            Formatted markdown string
-        """
-        # Extract basic event information
+        """Format a Google Calendar event to markdown."""
         summary = event.get("summary", "No Title")
         description = event.get("description", "")
         location = event.get("location", "")
         calendar_id = event.get("calendarId", "")
-
-        # Extract start and end times
         start = event.get("start", {})
         end = event.get("end", {})
 
         start_time = start.get("dateTime") or start.get("date", "")
         end_time = end.get("dateTime") or end.get("date", "")
 
-        # Format times for display
         if start_time:
             try:
-                if "T" in start_time:  # DateTime format
+                if "T" in start_time:
                     start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
                     start_formatted = start_dt.strftime("%Y-%m-%d %H:%M")
-                else:  # Date format (all-day event)
+                else:
                     start_formatted = start_time
             except Exception:
                 start_formatted = start_time
@@ -254,17 +203,15 @@ class GoogleCalendarConnector:
 
         if end_time:
             try:
-                if "T" in end_time:  # DateTime format
+                if "T" in end_time:
                     end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
                     end_formatted = end_dt.strftime("%Y-%m-%d %H:%M")
-                else:  # Date format (all-day event)
+                else:
                     end_formatted = end_time
             except Exception:
                 end_formatted = end_time
         else:
             end_formatted = "Unknown"
-
-        # Extract attendees
         attendees = event.get("attendees", [])
         attendee_list = []
         for attendee in attendees:
@@ -272,41 +219,26 @@ class GoogleCalendarConnector:
             display_name = attendee.get("displayName", email)
             response_status = attendee.get("responseStatus", "")
             attendee_list.append(f"- {display_name} ({response_status})")
-
-        # Build markdown content
         markdown_content = f"# {summary}\n\n"
-
-        # Add event details
         markdown_content += f"**Start:** {start_formatted}\n"
         markdown_content += f"**End:** {end_formatted}\n"
-
         if location:
             markdown_content += f"**Location:** {location}\n"
-
         if calendar_id:
             markdown_content += f"**Calendar:** {calendar_id}\n"
-
         markdown_content += "\n"
-
-        # Add description if available
         if description:
             markdown_content += f"## Description\n\n{description}\n\n"
-
-        # Add attendees if available
         if attendee_list:
             markdown_content += "## Attendees\n\n"
             markdown_content += "\n".join(attendee_list)
             markdown_content += "\n\n"
-
-        # Add event metadata
         markdown_content += "## Event Details\n\n"
         markdown_content += f"- **Event ID:** {event.get('id', 'Unknown')}\n"
         markdown_content += f"- **Created:** {event.get('created', 'Unknown')}\n"
         markdown_content += f"- **Updated:** {event.get('updated', 'Unknown')}\n"
 
         if event.get("recurringEventId"):
-            markdown_content += (
-                f"- **Recurring Event ID:** {event.get('recurringEventId')}\n"
-            )
+            markdown_content += f"- **Recurring Event ID:** {event.get('recurringEventId')}\n"
 
         return markdown_content
