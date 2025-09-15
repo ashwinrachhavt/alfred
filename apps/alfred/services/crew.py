@@ -21,6 +21,7 @@ load_dotenv()
 # Optional tools. File runs without them.
 try:
     from crewai_tools import ScrapeWebsiteTool, SerperDevTool
+
     web_scrape_tool = ScrapeWebsiteTool()
     search_tool = SerperDevTool()
     DEFAULT_TOOLS = [search_tool, web_scrape_tool]
@@ -52,13 +53,17 @@ DEFAULT_PROFILE_URLS: List[str] = [
 
 # ------------------ Data Models ------------------
 
+
 class JobApplicationContext(BaseModel):
     company_name: str
     position: str
     job_description: str
     company_values: Optional[List[str]] = None
     company_culture: Optional[str] = None
-    philosophical_approach: str = Field(default="blended")  # stoicism|virtue_ethics|existentialism|blended
+    philosophical_approach: str = Field(
+        default="blended"
+    )  # stoicism|virtue_ethics|existentialism|blended
+
 
 class LinkedInContext(BaseModel):
     connection_name: str
@@ -66,7 +71,10 @@ class LinkedInContext(BaseModel):
     company_name: str
     shared_interests: List[str]
     interaction_purpose: str
-    philosophical_tone: str = Field(default="authentic_engagement")  # neutral|concise|authentic_engagement
+    philosophical_tone: str = Field(
+        default="authentic_engagement"
+    )  # neutral|concise|authentic_engagement
+
 
 class CandidateProfile(BaseModel):
     name: str
@@ -76,8 +84,13 @@ class CandidateProfile(BaseModel):
     publications: Optional[List[str]] = None
     achievements: Optional[List[str]] = None
     voice_preferences: Dict[str, Any] = Field(
-        default={"tone": "professional", "verbosity": "concise", "avoid": ["buzzwords", "self-aggrandizing"]}
+        default={
+            "tone": "professional",
+            "verbosity": "concise",
+            "avoid": ["buzzwords", "self-aggrandizing"],
+        }
     )
+
 
 # ------------------ Prompt Constraints ------------------
 
@@ -102,6 +115,7 @@ Output must be paste-ready. No preambles or analysis notes.
 
 # ------------------ Agents ------------------
 
+
 def build_researcher() -> Agent:
     return Agent(
         role="Industry & Company Researcher",
@@ -110,8 +124,9 @@ def build_researcher() -> Agent:
         tools=DEFAULT_TOOLS,
         allow_delegation=False,
         verbose=False,
-        max_iter=8  # cap loops that trigger “Maximum iterations…”
+        max_iter=8,  # cap loops that trigger “Maximum iterations…”
     )
+
 
 def build_researcher_for_urls(urls: List[str]) -> Agent:
     """Build a researcher configured with site-scoped tools for specific URLs.
@@ -132,8 +147,9 @@ def build_researcher_for_urls(urls: List[str]) -> Agent:
         tools=tools,
         allow_delegation=False,
         verbose=False,
-        max_iter=8
+        max_iter=8,
     )
+
 
 def build_psychologist() -> Agent:
     return Agent(
@@ -143,8 +159,9 @@ def build_psychologist() -> Agent:
         tools=[],
         allow_delegation=False,
         verbose=False,
-        max_iter=6
+        max_iter=6,
     )
+
 
 def build_philosopher() -> Agent:
     return Agent(
@@ -154,8 +171,9 @@ def build_philosopher() -> Agent:
         tools=[],
         allow_delegation=False,
         verbose=False,
-        max_iter=4
+        max_iter=4,
     )
+
 
 def build_composer() -> Agent:
     return Agent(
@@ -165,10 +183,12 @@ def build_composer() -> Agent:
         tools=[],
         allow_delegation=False,
         verbose=False,
-        max_iter=6
+        max_iter=6,
     )
 
+
 # ------------------ Tasks ------------------
+
 
 def research_task(job: JobApplicationContext) -> Task:
     return Task(
@@ -181,8 +201,9 @@ def research_task(job: JobApplicationContext) -> Task:
             "Be concise; ~250 words across fields (excluding source_notes). Use only public info.\n\n"
             f"{PHILOSOPHY_RULES}\n{STYLE_RULES}\n{ETHICS_RULES}"
         ),
-        expected_output="JSON string per spec."
+        expected_output="JSON string per spec.",
     )
+
 
 def research_urls_task(urls: List[str]) -> Task:
     """Task that summarizes information from a fixed set of URLs.
@@ -205,8 +226,9 @@ def research_urls_task(urls: List[str]) -> Task:
             "  evidence: list of {source: url, note: 1–2 lines} showing where claims came from.\n\n"
             f"{STYLE_RULES}\n{ETHICS_RULES}"
         ),
-        expected_output="JSON with profile, roles, achievements, publications, links, evidence."
+        expected_output="JSON with profile, roles, achievements, publications, links, evidence.",
     )
+
 
 def psych_task() -> Task:
     return Task(
@@ -222,8 +244,9 @@ def psych_task() -> Task:
             "Return JSON only.\n\n"
             f"{PHILOSOPHY_RULES}\n{STYLE_RULES}\n{ETHICS_RULES}"
         ),
-        expected_output="JSON messaging brief."
+        expected_output="JSON messaging brief.",
     )
+
 
 def philosophy_task(job: JobApplicationContext) -> Task:
     return Task(
@@ -237,8 +260,9 @@ def philosophy_task(job: JobApplicationContext) -> Task:
             "No quotes or philosopher names. JSON only.\n\n"
             f"{PHILOSOPHY_RULES}\n{STYLE_RULES}\n{ETHICS_RULES}"
         ),
-        expected_output="JSON rules."
+        expected_output="JSON rules.",
     )
+
 
 def compose_cover_letter_task(job: JobApplicationContext) -> Task:
     return Task(
@@ -253,8 +277,9 @@ def compose_cover_letter_task(job: JobApplicationContext) -> Task:
             "- Paragraphs: 3–4. Sentences crisp.\n"
             f"{OUTPUT_RULES}\n{PHILOSOPHY_RULES}\n{STYLE_RULES}\n{ETHICS_RULES}"
         ),
-        expected_output="Final cover letter text (plain text)."
+        expected_output="Final cover letter text (plain text).",
     )
+
 
 def compose_linkedin_task() -> Task:
     return Task(
@@ -266,13 +291,15 @@ def compose_linkedin_task() -> Task:
             "- Reference 1 shared interest or specific work of theirs.\n"
             "- Offer a relevant observation or resource before any ask.\n"
             "- Tone: courteous, specific, zero fluff.\n"
-            "Return JSON exactly: {\"connection_note\": \"...\", \"follow_up\": \"...\"}.\n\n"
+            'Return JSON exactly: {"connection_note": "...", "follow_up": "..."}.\n\n'
             f"{OUTPUT_RULES}\n{PHILOSOPHY_RULES}\n{STYLE_RULES}\n{ETHICS_RULES}"
         ),
-        expected_output='JSON with "connection_note" and "follow_up".'
+        expected_output='JSON with "connection_note" and "follow_up".',
     )
 
+
 # ------------------ Crew Runner ------------------
+
 
 def _normalize_task_output(task: Task, kickoff_result) -> str:
     """
@@ -280,7 +307,7 @@ def _normalize_task_output(task: Task, kickoff_result) -> str:
     Fallback to properties on CrewOutput (e.g., .raw/.final_output) or str().
     """
     # Prefer the task's own output when present (recommended by CrewAI community)
-    # Ref: docs/community patterns. 
+    # Ref: docs/community patterns.
     out = getattr(task, "output", None)
     if out is not None:
         # Common shapes: .raw (str), .json_dict (dict), or str(out)
@@ -295,9 +322,17 @@ def _normalize_task_output(task: Task, kickoff_result) -> str:
 
     # Fallback: try CrewOutput’s attributes
     if hasattr(kickoff_result, "raw") and kickoff_result.raw:
-        return kickoff_result.raw if isinstance(kickoff_result.raw, str) else json.dumps(kickoff_result.raw)
+        return (
+            kickoff_result.raw
+            if isinstance(kickoff_result.raw, str)
+            else json.dumps(kickoff_result.raw)
+        )
     if hasattr(kickoff_result, "final_output") and kickoff_result.final_output:
-        return kickoff_result.final_output if isinstance(kickoff_result.final_output, str) else json.dumps(kickoff_result.final_output)
+        return (
+            kickoff_result.final_output
+            if isinstance(kickoff_result.final_output, str)
+            else json.dumps(kickoff_result.final_output)
+        )
     if hasattr(kickoff_result, "to_dict"):
         try:
             return json.dumps(kickoff_result.to_dict())
@@ -306,6 +341,7 @@ def _normalize_task_output(task: Task, kickoff_result) -> str:
 
     # Last resort
     return str(kickoff_result)
+
 
 @dataclass
 class PhilosophicalApplicationCrew:
@@ -325,27 +361,24 @@ class PhilosophicalApplicationCrew:
             # Inline context directly into the prompt to avoid CrewAI treating
             # raw strings as Task objects during context aggregation.
             joined = "\n\n---\n".join(str(p) for p in context_payloads)
-            task.description = (
-                f"{task.description}\n\n[Context]\n{joined}"
-            )
+            task.description = f"{task.description}\n\n[Context]\n{joined}"
             # Make sure we don't provide an invalid list to `task.context`.
             if hasattr(task, "context"):
                 try:
                     task.context = None  # type: ignore[attr-defined]
                 except Exception:
                     pass
-        crew = Crew(
-            agents=[task.agent],
-            tasks=[task],
-            process=Process.sequential,
-            verbose=False
-        )
-        result = crew.kickoff()  # returns CrewOutput (not JSON/string) :contentReference[oaicite:3]{index=3}
+        crew = Crew(agents=[task.agent], tasks=[task], process=Process.sequential, verbose=False)
+        result = (
+            crew.kickoff()
+        )  # returns CrewOutput (not JSON/string) :contentReference[oaicite:3]{index=3}
         return _normalize_task_output(task, result)
 
     # ---- Public API ----
 
-    def create_cover_letter(self, job_ctx: JobApplicationContext, candidate: CandidateProfile) -> str:
+    def create_cover_letter(
+        self, job_ctx: JobApplicationContext, candidate: CandidateProfile
+    ) -> str:
         # 1) Research
         t_research = research_task(job_ctx)
         research_out = self._kickoff_single(t_research)
@@ -378,25 +411,29 @@ class PhilosophicalApplicationCrew:
         letter = self._kickoff_single(t_compose, compose_ctx)
         return letter.strip()
 
-    def create_linkedin_message(self, li_ctx: LinkedInContext, candidate: CandidateProfile) -> Dict[str, str]:
+    def create_linkedin_message(
+        self, li_ctx: LinkedInContext, candidate: CandidateProfile
+    ) -> Dict[str, str]:
         ctx: List[str] = []
         if li_ctx.company_name:
             dummy_job = JobApplicationContext(
                 company_name=li_ctx.company_name,
                 position=li_ctx.connection_title,
                 job_description=li_ctx.interaction_purpose,
-                philosophical_approach="blended"
+                philosophical_approach="blended",
             )
             t_research = research_task(dummy_job)
             research_out = self._kickoff_single(t_research)
             ctx.append(research_out)
 
-        t_phil = philosophy_task(JobApplicationContext(
-            company_name=li_ctx.company_name,
-            position=li_ctx.connection_title,
-            job_description=li_ctx.interaction_purpose,
-            philosophical_approach="blended"
-        ))
+        t_phil = philosophy_task(
+            JobApplicationContext(
+                company_name=li_ctx.company_name,
+                position=li_ctx.connection_title,
+                job_description=li_ctx.interaction_purpose,
+                philosophical_approach="blended",
+            )
+        )
         phil_out = self._kickoff_single(t_phil)
         ctx.extend([phil_out, li_ctx.json(), candidate.json()])
 
@@ -415,7 +452,7 @@ class PhilosophicalApplicationCrew:
         except Exception:
             start, end = out.find("{"), out.rfind("}")
             if start != -1 and end != -1 and end > start:
-                return json.loads(out[start:end+1])
+                return json.loads(out[start : end + 1])
             raise RuntimeError("Composer did not return valid JSON.")
 
     def research_urls(self, urls: List[str]) -> Dict[str, Any]:
@@ -430,8 +467,9 @@ class PhilosophicalApplicationCrew:
         except Exception:
             start, end = out.find("{"), out.rfind("}")
             if start != -1 and end != -1 and end > start:
-                return json.loads(out[start:end+1])
+                return json.loads(out[start : end + 1])
             raise RuntimeError("Researcher did not return valid JSON.")
+
 
 # ------------------ Example CLI ------------------
 
@@ -441,39 +479,57 @@ if __name__ == "__main__":
         _crew = PhilosophicalApplicationCrew()
         _url_profile = _crew.research_urls(DEFAULT_PROFILE_URLS)
         print("\n=== CANDIDATE URL PROFILE (summary) ===\n")
-        print(json.dumps(_url_profile, indent=2)[:1200] + ("..." if len(json.dumps(_url_profile)) > 1200 else ""))
+        print(
+            json.dumps(_url_profile, indent=2)[:1200]
+            + ("..." if len(json.dumps(_url_profile)) > 1200 else "")
+        )
     except Exception:
         pass
 
     candidate = CandidateProfile(
         name="Ashwin Rachha",
         headline="Tech Lead & AI Product Engineer",
-        skills=["Python","Go","PyTorch","LangChain","LangGraph","Kubernetes","AWS","Django","React","PostgreSQL","Celery","Redis"],
-        experience=[{
-            "company":"Finally",
-            "role":"Tech Lead, AI Product Engineer",
-            "highlights":[
-                "Built and led Classify AI (few-shot + retrieval) with Redis semantic caching",
-                "Architected bank aggregator infra (Plaid, Teller): OAuth, webhooks, syncing",
-                "Implemented cash-based underwriting system for corporate cards"
-            ],
-            "metrics":[
-                "50k+ transactions/day processed",
-                "80% reduction in manual categorization time",
-                "$3M+ credit underwritten in first 3 months"
-            ]
-        }],
+        skills=[
+            "Python",
+            "Go",
+            "PyTorch",
+            "LangChain",
+            "LangGraph",
+            "Kubernetes",
+            "AWS",
+            "Django",
+            "React",
+            "PostgreSQL",
+            "Celery",
+            "Redis",
+        ],
+        experience=[
+            {
+                "company": "Finally",
+                "role": "Tech Lead, AI Product Engineer",
+                "highlights": [
+                    "Built and led Classify AI (few-shot + retrieval) with Redis semantic caching",
+                    "Architected bank aggregator infra (Plaid, Teller): OAuth, webhooks, syncing",
+                    "Implemented cash-based underwriting system for corporate cards",
+                ],
+                "metrics": [
+                    "50k+ transactions/day processed",
+                    "80% reduction in manual categorization time",
+                    "$3M+ credit underwritten in first 3 months",
+                ],
+            }
+        ],
         publications=[
             "IEEE FIE 2024 — LLM-enhanced learning environments (RAG, guardrails)",
-            "IEEE SouthEastCon 2023 — Explainable AI in Education"
+            "IEEE SouthEastCon 2023 — Explainable AI in Education",
         ],
-        achievements=["Kaggle Expert (Top 1% in Notebooks)"]
+        achievements=["Kaggle Expert (Top 1% in Notebooks)"],
     )
 
     job = JobApplicationContext(
         company_name="Innovative Tech Corp",
         position="Senior AI Product Engineer",
-        job_description="Own production LLM systems with retrieval; optimize cost/latency; partner with product."
+        job_description="Own production LLM systems with retrieval; optimize cost/latency; partner with product.",
     )
 
     crew = PhilosophicalApplicationCrew()
@@ -486,8 +542,8 @@ if __name__ == "__main__":
         connection_name="Jane Doe",
         connection_title="Director of AI",
         company_name="Innovative Tech Corp",
-        shared_interests=["AI Reliability","Product-Led ML"],
+        shared_interests=["AI Reliability", "Product-Led ML"],
         interaction_purpose="Connect and compare approaches to reliable production LLM systems.",
-        philosophical_tone="authentic_engagement"
+        philosophical_tone="authentic_engagement",
     )
     print(json.dumps(crew.create_linkedin_message(li_ctx, candidate), indent=2))

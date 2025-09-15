@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from alfred.services.company_researcher import research_company
 from fastapi import APIRouter, HTTPException, Query
+
+from alfred.services.company_researcher import research_company
 
 router = APIRouter(prefix="/company", tags=["company"])
 

@@ -50,7 +50,7 @@ class GmailService:
         payload = message.get("payload", {}) or {}
         # Direct body if matches
         if payload.get("mimeType") == mime:
-            data = ((payload.get("body") or {}).get("data"))
+            data = (payload.get("body") or {}).get("data")
             decoded = _b64url_decode(data)
             if decoded is not None:
                 try:
@@ -60,7 +60,7 @@ class GmailService:
         # Search parts
         for p in GmailService._find_parts(message):
             if p.get("mimeType") == mime:
-                data = ((p.get("body") or {}).get("data"))
+                data = (p.get("body") or {}).get("data")
                 decoded = _b64url_decode(data)
                 if decoded is not None:
                     try:
@@ -119,4 +119,3 @@ class GmailService:
                     }
                 )
         return attachments
-
