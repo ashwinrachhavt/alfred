@@ -21,6 +21,9 @@ Examples:
 EOF
 }
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
 PROJECT="$(gcloud config get-value project 2>/dev/null || echo "")"
 REGION="us-central1"
 SERVICE="alfred-api"
@@ -76,8 +79,8 @@ else
 fi
 
 echo "[i] Building and deploying via Cloud Build"
-gcloud builds submit . \
-  --config infra/gcp/cloudbuild.yaml \
+gcloud builds submit "${ROOT_DIR}" \
+  --config "${ROOT_DIR}/infra/gcp/cloudbuild.yaml" \
   --project "$PROJECT" \
   --substitutions=_REGION="$REGION",_SERVICE="$SERVICE",_REPOSITORY="$REPOSITORY",_IMAGE="$IMAGE"
 
@@ -125,4 +128,3 @@ if [[ -n "$ENV_FILE" ]]; then
 fi
 
 echo "[✓] Done. Open the service URL above or run:\n    gcloud run services describe $SERVICE --region $REGION --project $PROJECT --format='value(status.url)'"
-
