@@ -100,7 +100,9 @@ class BraveClient:
             raise RuntimeError("BRAVE_SEARCH_API_KEY is not set")
         from langchain_community.tools import BraveSearch
 
-        self.tool = BraveSearch.from_api_key(api_key=api_key, search_kwargs={"count": min(count, 20)})
+        self.tool = BraveSearch.from_api_key(
+            api_key=api_key, search_kwargs={"count": min(count, 20)}
+        )
 
     def search(self, query: str, pages: int = 10) -> SearchResponse:
         pages = max(1, min(pages, 10))
@@ -109,11 +111,18 @@ class BraveClient:
             self.tool.search_wrapper.search_kwargs.update({"offset": offset})
             res = self.tool.run(query)
             all_hits.extend(_normalize_list_result(res, "brave"))
-        return SearchResponse(provider="brave", query=query, hits=_dedupe_by_url(all_hits), meta={"pages": pages, "count": self.tool.search_wrapper.search_kwargs.get("count")})
+        return SearchResponse(
+            provider="brave",
+            query=query,
+            hits=_dedupe_by_url(all_hits),
+            meta={"pages": pages, "count": self.tool.search_wrapper.search_kwargs.get("count")},
+        )
 
 
 class DDGClient:
-    def __init__(self, max_results: int = 50, output_format: Literal["list", "json", "markdown"] = "list"):
+    def __init__(
+        self, max_results: int = 50, output_format: Literal["list", "json", "markdown"] = "list"
+    ):
         from langchain_community.tools import DuckDuckGoSearchResults
         from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 
@@ -134,10 +143,22 @@ class ExaClient:
 
         self.tool = ExaSearchResults(max_results=default_num_results, **kwargs)
 
-    def search(self, query: str, num_results: int = 100, text_contents_options: Any = None, highlights: bool = True, **kwargs: Any) -> SearchResponse:
+    def search(
+        self,
+        query: str,
+        num_results: int = 100,
+        text_contents_options: Any = None,
+        highlights: bool = True,
+        **kwargs: Any,
+    ) -> SearchResponse:
         if text_contents_options is None:
             text_contents_options = {"max_characters": 3000}
-        payload = {"query": query, "num_results": max(1, min(num_results, 100)), "highlights": highlights, "text_contents_options": text_contents_options}
+        payload = {
+            "query": query,
+            "num_results": max(1, min(num_results, 100)),
+            "highlights": highlights,
+            "text_contents_options": text_contents_options,
+        }
         payload.update(kwargs)
         res = self.tool.invoke(payload)
         hits = _normalize_list_result(res, "exa")
@@ -145,12 +166,25 @@ class ExaClient:
 
 
 class TavilyClient:
-    def __init__(self, max_results: int = 20, topic: Literal["general", "news", "finance"] = "general", include_answer: bool = True, include_raw_content: bool = True, **kwargs: Any):
+    def __init__(
+        self,
+        max_results: int = 20,
+        topic: Literal["general", "news", "finance"] = "general",
+        include_answer: bool = True,
+        include_raw_content: bool = True,
+        **kwargs: Any,
+    ):
         if not _env("TAVILY_API_KEY"):
             raise RuntimeError("TAVILY_API_KEY is not set")
         from langchain_tavily import TavilySearch
 
-        self.tool = TavilySearch(max_results=max_results, topic=topic, include_answer=include_answer, include_raw_content=include_raw_content, **kwargs)
+        self.tool = TavilySearch(
+            max_results=max_results,
+            topic=topic,
+            include_answer=include_answer,
+            include_raw_content=include_raw_content,
+            **kwargs,
+        )
 
     def search(self, query: str, **kwargs: Any) -> SearchResponse:
         res = self.tool.invoke({"query": query, **kwargs})
@@ -175,17 +209,45 @@ class YouClient:
 
 
 class WebConnector:
-    def __init__(self, mode: Mode = "auto", *, brave_count: int = 20, brave_pages: int = 10, ddg_max_results: int = 50, exa_num_results: int = 100, tavily_max_results: int = 20, tavily_topic: Literal["general", "news", "finance"] = "general", you_num_results: int = 20):
+    def __init__(
+        self,
+        mode: Mode = "auto",
+        *,
+        brave_count: int = 20,
+        brave_pages: int = 10,
+        ddg_max_results: int = 50,
+        exa_num_results: int = 100,
+        tavily_max_results: int = 20,
+        tavily_topic: Literal["general", "news", "finance"] = "general",
+        you_num_results: int = 20,
+    ):
         self.mode = mode
-        self._init_clients(brave_count, ddg_max_results, exa_num_results, tavily_max_results, tavily_topic, you_num_results)
+        self._init_clients(
+            brave_count,
+            ddg_max_results,
+            exa_num_results,
+            tavily_max_results,
+            tavily_topic,
+            you_num_results,
+        )
         self._brave_pages_default = brave_pages
 
-    def _init_clients(self, brave_count: int, ddg_max_results: int, exa_num_results: int, tavily_max_results: int, tavily_topic: str, you_num_results: int) -> None:
+    def _init_clients(
+        self,
+        brave_count: int,
+        ddg_max_results: int,
+        exa_num_results: int,
+        tavily_max_results: int,
+        tavily_topic: str,
+        you_num_results: int,
+    ) -> None:
         self.clients: dict[Provider, Any] = {}
         if _env("EXA_API_KEY"):
             self.clients["exa"] = ExaClient(default_num_results=exa_num_results)
         if _env("TAVILY_API_KEY"):
-            self.clients["tavily"] = TavilyClient(max_results=tavily_max_results, topic=tavily_topic)
+            self.clients["tavily"] = TavilyClient(
+                max_results=tavily_max_results, topic=tavily_topic
+            )
         if _env("BRAVE_SEARCH_API_KEY"):
             self.clients["brave"] = BraveClient(count=brave_count)
         if _env("YDC_API_KEY"):
@@ -217,7 +279,12 @@ class WebConnector:
         tasks = [loop.run_in_executor(None, call, p) for p in providers]
         results: List[SearchResponse] = loop.run_until_complete(asyncio.gather(*tasks))
         merged = _dedupe_by_url([h for r in results for h in r.hits])
-        return SearchResponse(provider="multi", query=query, hits=merged, meta={"providers": providers, "sizes": {r.provider: len(r.hits) for r in results}})
+        return SearchResponse(
+            provider="multi",
+            query=query,
+            hits=merged,
+            meta={"providers": providers, "sizes": {r.provider: len(r.hits) for r in results}},
+        )
 
     def search(self, query: str, *, pages: Optional[int] = None, **kwargs: Any) -> SearchResponse:
         if self.mode == "multi":
@@ -243,7 +310,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="WebConnector quick test")
     parser.add_argument("query", type=str)
-    parser.add_argument("--mode", choices=["auto", "multi", "brave", "ddg", "exa", "tavily", "you"], default="auto")
+    parser.add_argument(
+        "--mode", choices=["auto", "multi", "brave", "ddg", "exa", "tavily", "you"], default="auto"
+    )
     parser.add_argument("--brave_pages", type=int, default=10)
     parser.add_argument("--ddg_max_results", type=int, default=50)
     parser.add_argument("--exa_num_results", type=int, default=100)
@@ -252,7 +321,15 @@ if __name__ == "__main__":
     parser.add_argument("--you_num", dest="you_num_results", type=int, default=20)
     args = parser.parse_args()
 
-    conn = WebConnector(mode=args.mode, brave_pages=args.brave_pages, ddg_max_results=args.ddg_max_results, exa_num_results=args.exa_num_results, tavily_max_results=args.tavily_max, tavily_topic=args.tavily_topic, you_num_results=args.you_num_results)
+    conn = WebConnector(
+        mode=args.mode,
+        brave_pages=args.brave_pages,
+        ddg_max_results=args.ddg_max_results,
+        exa_num_results=args.exa_num_results,
+        tavily_max_results=args.tavily_max,
+        tavily_topic=args.tavily_topic,
+        you_num_results=args.you_num_results,
+    )
     resp = conn.search(args.query)
     print(f"Mode     : {resp.provider}")
     print(f"Query    : {resp.query}")
@@ -264,4 +341,3 @@ if __name__ == "__main__":
         print(f"    {h.url or '(no url)'}")
         if h.snippet:
             print(f"    {h.snippet[:180]}{'…' if len(h.snippet) > 180 else ''}")
-

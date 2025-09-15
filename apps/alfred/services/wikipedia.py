@@ -32,4 +32,3 @@ def retrieve_wikipedia(
             for d in docs
         ],
     }
-

@@ -19,8 +19,7 @@ load_dotenv()
 
 # Ensure a reasonable default User-Agent to avoid warnings and improve acceptance
 os.environ.setdefault(
-    "USER_AGENT",
-    "Mozilla/5.0 (compatible; AlfredBot/1.0; +https://github.com/alfred)"
+    "USER_AGENT", "Mozilla/5.0 (compatible; AlfredBot/1.0; +https://github.com/alfred)"
 )
 
 
@@ -45,6 +44,7 @@ STATIC_URLS: List[str] = [
     "https://ieeexplore.ieee.org/document/10115140",
 ]
 
+
 def parse_args():
     p = argparse.ArgumentParser(description="Load Web/PDF docs and index to Qdrant Cloud")
     p.add_argument("--urls-file", help="Path to a text file with URLs (one per line)")
@@ -57,6 +57,7 @@ def parse_args():
     p.add_argument("--embed-model", default=os.getenv("EMBED_MODEL", "text-embedding-3-small"))
     return p.parse_args()
 
+
 def load_urls_file(path: str) -> List[str]:
     out: List[str] = []
     with open(path, "r", encoding="utf-8") as f:
@@ -67,9 +68,11 @@ def load_urls_file(path: str) -> List[str]:
             out.append(s)
     return out
 
+
 def _hash_id(text: str, src: str, i: int) -> str:
     # Stable IDs per (source, chunk) so re-ingest replaces instead of duplicating
     return md5(f"{src}::{i}".encode("utf-8")).hexdigest()
+
 
 def chunk_docs(docs: List[Document], chunk_size: int, overlap: int) -> List[Document]:
     splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
@@ -86,6 +89,7 @@ def chunk_docs(docs: List[Document], chunk_size: int, overlap: int) -> List[Docu
             out.append(ch)
     return out
 
+
 def load_web(urls: List[str]) -> List[Document]:
     if not urls:
         return []
@@ -97,6 +101,7 @@ def load_web(urls: List[str]) -> List[Document]:
     }
     try:
         from langchain_community.document_loaders import WebBaseLoader
+
         loader = WebBaseLoader(urls, header_template=header_template)
         docs.extend(loader.load())
     except Exception as e:
@@ -136,6 +141,7 @@ def load_web(urls: List[str]) -> List[Document]:
         normed.append(d)
     return normed
 
+
 def load_pdfs(directory: str) -> List[Document]:
     docs: List[Document] = []
     if not os.path.isdir(directory):
@@ -155,6 +161,7 @@ def load_pdfs(directory: str) -> List[Document]:
             d.metadata["title"] = d.metadata.get("title") or Path(fp).name
         docs.extend(page_docs)
     return docs
+
 
 def main():
     args = parse_args()
@@ -205,6 +212,7 @@ def main():
     )
     print(f"Indexed {len(docs)} chunks into Qdrant collection '{collection}'.")
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
