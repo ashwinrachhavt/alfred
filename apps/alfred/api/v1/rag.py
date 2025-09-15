@@ -1,7 +1,8 @@
 import time
 
-from alfred.services.agentic_rag import answer_agentic, get_context_chunks
 from fastapi import APIRouter, HTTPException, Query
+
+from alfred.services.agentic_rag import answer_agentic, get_context_chunks
 
 router = APIRouter(prefix="/rag", tags=["rag"])
 
@@ -20,7 +21,6 @@ async def rag_answer(
     - include_context: return retrieved items metadata (slower)
     """
     try:
-
         t0 = time.perf_counter()
         answer = answer_agentic(q, k=k, mode=mode)
         latency_ms = int((time.perf_counter() - t0) * 1000)

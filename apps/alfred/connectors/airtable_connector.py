@@ -95,9 +95,7 @@ class AirtableConnector:
                     error_detail = response.text
                     try:
                         error_json = response.json()
-                        error_detail = error_json.get("error", {}).get(
-                            "message", error_detail
-                        )
+                        error_detail = error_json.get("error", {}).get("message", error_detail)
                     except Exception:
                         pass
                     return None, f"API error {response.status_code}: {error_detail}"
@@ -107,9 +105,7 @@ class AirtableConnector:
             except httpx.TimeoutException:
                 if attempt == max_retries - 1:
                     return None, "Request timeout. Please try again later."
-                logger.warning(
-                    f"Request timeout. Retrying... Attempt {attempt + 1}/{max_retries}"
-                )
+                logger.warning(f"Request timeout. Retrying... Attempt {attempt + 1}/{max_retries}")
                 time.sleep(retry_delay)
                 retry_delay *= 2
 
@@ -322,9 +318,7 @@ class AirtableConnector:
         except Exception as e:
             return [], f"Error filtering by date range: {e!s}"
 
-    def format_record_to_markdown(
-        self, record: dict[str, Any], table_name: str = ""
-    ) -> str:
+    def format_record_to_markdown(self, record: dict[str, Any], table_name: str = "") -> str:
         """
         Format an Airtable record as markdown.
 
@@ -372,9 +366,7 @@ class AirtableConnector:
                         else:
                             markdown_parts.append(f"- {item}")
                 elif isinstance(field_value, dict):
-                    markdown_parts.append(
-                        f"```json\n{json.dumps(field_value, indent=2)}\n```"
-                    )
+                    markdown_parts.append(f"```json\n{json.dumps(field_value, indent=2)}\n```")
                 else:
                     markdown_parts.append(str(field_value))
 

@@ -56,25 +56,15 @@ def build_system_prompt(mode: str = "minimal") -> str:
     mode = (mode or "minimal").lower()
     prefix = ""
     if mode == "minimal":
-        prefix = (
-            "Be ultra-concise (5–8 lines). Answer first in 1–2 lines, then bullets for evidence/impact. Same grounding and first-person rules.\n"
-        )
+        prefix = "Be ultra-concise (5–8 lines). Answer first in 1–2 lines, then bullets for evidence/impact. Same grounding and first-person rules.\n"
     elif mode == "concise":
-        prefix = (
-            "Cap at ~120 words. Answer → 3 bullets → Sources. Same grounding and first-person rules.\n"
-        )
+        prefix = "Cap at ~120 words. Answer → 3 bullets → Sources. Same grounding and first-person rules.\n"
     elif mode == "formal":
-        prefix = (
-            "Polished executive tone. Clear sections: Summary, Context, My Work/Decision, Outcome, Risks/Next Steps. Same grounding and first-person rules.\n"
-        )
+        prefix = "Polished executive tone. Clear sections: Summary, Context, My Work/Decision, Outcome, Risks/Next Steps. Same grounding and first-person rules.\n"
     elif mode == "deep":
-        prefix = (
-            "Thorough multi-section analysis with trade-offs and opposing views. Include assumptions and open questions. Same grounding and first-person rules.\n"
-        )
+        prefix = "Thorough multi-section analysis with trade-offs and opposing views. Include assumptions and open questions. Same grounding and first-person rules.\n"
     elif mode == "interview":
-        prefix = (
-            "Use STAR. First sentence = result metric. Then Situation, Task, Action, Result in 4 tight bullets. Same grounding and first-person rules.\n"
-        )
+        prefix = "Use STAR. First sentence = result metric. Then Situation, Task, Action, Result in 4 tight bullets. Same grounding and first-person rules.\n"
     # Combine prefix + core
     return (prefix + "\n" + CORE_PROMPT).strip()
 
@@ -83,6 +73,7 @@ def build_system_prompt(mode: str = "minimal") -> str:
 def _load_env() -> None:
     try:
         from dotenv import load_dotenv  # type: ignore
+
         load_dotenv()
     except Exception:
         pass
@@ -104,10 +95,14 @@ def make_retriever(k: int = 4):
         if QDRANT_URL:
             client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
         else:
-            client = QdrantClient(host=QDRANT_HOST, port=int(QDRANT_PORT or 6333), api_key=QDRANT_API_KEY)
+            client = QdrantClient(
+                host=QDRANT_HOST, port=int(QDRANT_PORT or 6333), api_key=QDRANT_API_KEY
+            )
         vs = QdrantVectorStore(client=client, collection_name=COLLECTION, embedding=embed)
     else:
-        vs = Chroma(collection_name=COLLECTION, persist_directory=CHROMA_PATH, embedding_function=embed)
+        vs = Chroma(
+            collection_name=COLLECTION, persist_directory=CHROMA_PATH, embedding_function=embed
+        )
     return vs.as_retriever(search_kwargs={"k": k})
 
 
@@ -116,11 +111,13 @@ def get_context_chunks(question: str, k: int = 4) -> List[dict]:
     docs = retriever.invoke(question)
     items = []
     for d in docs:
-        items.append({
-            "text": d.page_content,
-            "source": (d.metadata or {}).get("source"),
-            "title": (d.metadata or {}).get("title"),
-        })
+        items.append(
+            {
+                "text": d.page_content,
+                "source": (d.metadata or {}).get("source"),
+                "title": (d.metadata or {}).get("title"),
+            }
+        )
     return items
 
 
@@ -162,20 +159,20 @@ def generate_query_or_respond(state: MessagesState, k: int = 4):
     return {"messages": [response]}
 
 
- 
-
 GRADE_PROMPT = (
     "You grade whether this context helps answer the user’s question.\n"
-    "If it meaningfully overlaps in entities, facts, or tasks → \"yes\". Otherwise → \"no\".\n"
-    "Be strict: superficial keyword overlap without factual support is \"no\".\n"
-    "Return binary_score = \"yes\" or \"no\".\n\n"
+    'If it meaningfully overlaps in entities, facts, or tasks → "yes". Otherwise → "no".\n'
+    'Be strict: superficial keyword overlap without factual support is "no".\n'
+    'Return binary_score = "yes" or "no".\n\n'
     "Question: {question}\n"
     "Context: {context}\n"
 )
 
 
 class GradeDocuments(BaseModel):
-    binary_score: str = Field(description="Relevance score: 'yes' if relevant, or 'no' if not relevant")
+    binary_score: str = Field(
+        description="Relevance score: 'yes' if relevant, or 'no' if not relevant"
+    )
 
 
 def grade_documents(state: MessagesState) -> Literal["generate_answer", "rewrite_question"]:
@@ -184,14 +181,16 @@ def grade_documents(state: MessagesState) -> Literal["generate_answer", "rewrite
     context = messages[-1].content
     grader = make_llm(temperature=0.0)
     prompt = GRADE_PROMPT.format(question=question, context=context)
-    result = grader.with_structured_output(GradeDocuments).invoke([{"role": "user", "content": prompt}])
+    result = grader.with_structured_output(GradeDocuments).invoke(
+        [{"role": "user", "content": prompt}]
+    )
     return "generate_answer" if result.binary_score == "yes" else "rewrite_question"
 
 
 REWRITE_PROMPT = (
     "Infer the user’s intent and rewrite a sharper, retrieval-friendly question that:\n"
     "- Names the entity/topic explicitly.\n"
-    "- Includes time bounds if implied (\"latest\", \"as of YYYY-MM\").\n"
+    '- Includes time bounds if implied ("latest", "as of YYYY-MM").\n'
     "- Preserves first-person perspective when the question is about me.\n\n"
     "Return ONLY the rewritten question, nothing else.\n\n"
     "Original question:\n{question}\n"
