@@ -49,15 +49,15 @@ class Settings(BaseSettings):
     mcp_filesystem_path: str = "./data"
     enable_mcp_browser: bool = True
     enable_mcp_everything: bool = False  # For testing only
-    
+
     # Optional additional model keys
     anthropic_api_key: Optional[str] = None
     anthropic_model: str = "claude-3-sonnet-20240229"
-    
+
     # WhatsApp MCP (if you have a custom server)
     whatsapp_api_key: Optional[str] = None
     whatsapp_phone: Optional[str] = None
-    
+
     # MCP Server Timeouts
     mcp_timeout: int = 30
     mcp_max_retries: int = 3
@@ -68,5 +68,6 @@ class Settings(BaseSettings):
         # Prefer repo-local env when running from project root
         env_file = "apps/alfred/.env"
         extra = "ignore"
+
 
 settings = Settings()

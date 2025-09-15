@@ -149,11 +149,7 @@ class LinearConnector:
         result = self.execute_graphql_query(query)
 
         # Extract issues from the response
-        if (
-            "data" in result
-            and "issues" in result["data"]
-            and "nodes" in result["data"]["issues"]
-        ):
+        if "data" in result and "issues" in result["data"] and "nodes" in result["data"]["issues"]:
             return result["data"]["issues"]["nodes"]
 
         return []
@@ -263,10 +259,7 @@ class LinearConnector:
                     # Check for errors
                     if "errors" in result:
                         error_message = "; ".join(
-                            [
-                                error.get("message", "Unknown error")
-                                for error in result["errors"]
-                            ]
+                            [error.get("message", "Unknown error") for error in result["errors"]]
                         )
                         return [], f"GraphQL errors: {error_message}"
 
@@ -282,9 +275,7 @@ class LinearConnector:
                         if "pageInfo" in issues_page:
                             page_info = issues_page["pageInfo"]
                             has_next_page = page_info.get("hasNextPage", False)
-                            cursor = (
-                                page_info.get("endCursor") if has_next_page else None
-                            )
+                            cursor = page_info.get("endCursor") if has_next_page else None
                         else:
                             has_next_page = False
                     else:
@@ -326,15 +317,11 @@ class LinearConnector:
             "created_at": issue.get("createdAt", ""),
             "updated_at": issue.get("updatedAt", ""),
             "creator": {
-                "id": issue.get("creator", {}).get("id", "")
-                if issue.get("creator")
-                else "",
+                "id": issue.get("creator", {}).get("id", "") if issue.get("creator") else "",
                 "name": issue.get("creator", {}).get("name", "Unknown")
                 if issue.get("creator")
                 else "Unknown",
-                "email": issue.get("creator", {}).get("email", "")
-                if issue.get("creator")
-                else "",
+                "email": issue.get("creator", {}).get("email", "") if issue.get("creator") else "",
             }
             if issue.get("creator")
             else {"id": "", "name": "Unknown", "email": ""},
@@ -357,9 +344,7 @@ class LinearConnector:
                     "created_at": comment.get("createdAt", ""),
                     "updated_at": comment.get("updatedAt", ""),
                     "user": {
-                        "id": comment.get("user", {}).get("id", "")
-                        if comment.get("user")
-                        else "",
+                        "id": comment.get("user", {}).get("id", "") if comment.get("user") else "",
                         "name": comment.get("user", {}).get("name", "Unknown")
                         if comment.get("user")
                         else "Unknown",
@@ -423,7 +408,9 @@ class LinearConnector:
                 if comment.get("created_at"):
                     comment_date = self.format_date(comment["created_at"])
 
-                markdown += f"### {user_name} ({comment_date})\n\n{comment.get('body', '')}\n\n---\n\n"
+                markdown += (
+                    f"### {user_name} ({comment_date})\n\n{comment.get('body', '')}\n\n---\n\n"
+                )
 
         return markdown
 

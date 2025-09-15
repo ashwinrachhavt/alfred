@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from alfred.core.config import settings
 from fastapi import HTTPException
 from notion_client import Client
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter
+
+from alfred.core.config import settings
 
 
 def _client() -> Client:
@@ -26,9 +27,7 @@ def create_simple_page(title: str, md: str):
             {
                 "object": "block",
                 "type": "paragraph",
-                "paragraph": {
-                    "rich_text": [{"type": "text", "text": {"content": md}}]
-                },
+                "paragraph": {"rich_text": [{"type": "text", "text": {"content": md}}]},
             }
         ],
     )
@@ -46,7 +45,9 @@ def list_block_children(block_id: str, page_size: int = 50) -> dict:
     return _client().blocks.children.list(block_id, page_size=page_size)
 
 
-def query_database(db_id: str, filter: Optional[dict] = None, sorts: Optional[list] = None, page_size: int = 50) -> dict:
+def query_database(
+    db_id: str, filter: Optional[dict] = None, sorts: Optional[list] = None, page_size: int = 50
+) -> dict:
     payload: dict[str, Any] = {"page_size": page_size}
     if filter:
         payload["filter"] = filter
@@ -70,12 +71,14 @@ def list_notes() -> dict:
     # Notion search cannot directly scope to a parent; return generic search for now
     return search(query="", page_size=25)
 
+
 # Notion API rate limits: ~3 RPS avg; backoff handles 429s.
 
 
 # ------------------------------
 # Markdown conversion utilities
 # ------------------------------
+
 
 def _concat_rich_text(rich_list: list[dict]) -> str:
     def apply_annotations(text: str, ann: dict) -> str:
@@ -131,7 +134,13 @@ def _block_to_md(block: dict, depth: int = 0) -> list[str]:
     def handle_children():
         if block.get("has_children"):
             for ch in _collect_children_all(block["id"]):
-                lines.extend(_block_to_md(ch, depth + (1 if t in ("bulleted_list_item", "numbered_list_item", "to_do") else 0)))
+                lines.extend(
+                    _block_to_md(
+                        ch,
+                        depth
+                        + (1 if t in ("bulleted_list_item", "numbered_list_item", "to_do") else 0),
+                    )
+                )
 
     if t in ("paragraph",):
         text = _concat_rich_text(data.get("rich_text", []))
