@@ -62,9 +62,7 @@ class UnifiedWebSearchTool(BaseTool):
 
 class FetchUrlsTool(BaseTool):
     name: str = "fetch_urls"
-    description: str = (
-        "Fetch and extract readable text from the given URLs. Input: a comma-separated list of URLs."
-    )
+    description: str = "Fetch and extract readable text from the given URLs. Input: a comma-separated list of URLs."
 
     max_chars_per_url: int = 12000
 
@@ -138,9 +136,7 @@ def build_company_graph():
 
     def finalize(state: MessagesState):
         synth = make_llm(temperature=0.1)
-        prompt = (
-            "Produce the long-form company research report now. Ensure complete sections and include a Sources section with domains and URLs."
-        )
+        prompt = "Produce the long-form company research report now. Ensure complete sections and include a Sources section with domains and URLs."
         msg = synth.invoke(
             [
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -179,7 +175,7 @@ def research_company(name: str) -> str:
                 {"role": "user", "content": seed},
             ]
         },
-        config={"recursion_limit": 60}
+        config={"recursion_limit": 60},
     ):
         for _node, update in chunk.items():
             try:
