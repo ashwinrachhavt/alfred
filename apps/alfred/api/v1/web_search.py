@@ -9,9 +9,7 @@ router = APIRouter(prefix="/api/v1/web", tags=["web"])
 def search(
     q: str = Query(...),
     mode: str | None = Query(None, pattern=r"^(auto|multi|brave|ddg|exa|tavily|you)$"),
-    provider: str | None = Query(
-        None, pattern=r"^(auto|brave|ddg|exa|tavily|you)$"
-    ),
+    provider: str | None = Query(None, pattern=r"^(auto|brave|ddg|exa|tavily|you)$"),
     brave_pages: int = Query(10, ge=1, le=10),
     ddg_max_results: int = Query(50, ge=1, le=200),
     exa_num_results: int = Query(100, ge=1, le=100),

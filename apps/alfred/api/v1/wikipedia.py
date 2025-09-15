@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from alfred.services.wikipedia import retrieve_wikipedia
 from fastapi import APIRouter, Query
 
+from alfred.services.wikipedia import retrieve_wikipedia
 
 router = APIRouter(prefix="/api/v1/wikipedia", tags=["wikipedia"])
 
@@ -24,4 +24,3 @@ def search(
         load_all_available_meta=load_all_available_meta,
         load_max_docs=load_max_docs,
     )
-
