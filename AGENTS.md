@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 - apps/alfred: FastAPI app and Celery worker.
-  - alfred/api/v1: HTTP routes (health, crewai, stream/SSE).
+  - alfred/api: HTTP routes grouped by domain (calendar, company, Gmail, etc.).
   - alfred/core: config, logging, settings.
   - alfred/crew: CrewAI agents, tools, runtime.
   - alfred/services: external integrations (Notion, vector store, etc.).
@@ -37,7 +37,7 @@
 - Pydantic v2 for config/models (see `alfred/core/config.py`).
 
 ## Testing Guidelines
-- Framework: pytest. Place tests under `tests/` mirroring package paths (e.g., `tests/alfred/api/v1/test_health.py`).
+- Framework: pytest. Place tests under `tests/` mirroring package paths (e.g., `tests/alfred/api/system/test_health.py`).
 - Name tests `test_*.py`; aim for critical-path coverage (routes, crew runtime, services).
 - Run: `pytest -q` (add pytest to your venv if not present).
   - Or: `make test`.

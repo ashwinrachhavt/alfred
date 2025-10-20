@@ -1,9 +1,30 @@
 from __future__ import annotations
 
+import logging
 import os
-from typing import Iterable, List, Literal
+from typing import Any, Iterable, List, Literal, Sequence
 
-from langchain.tools.retriever import create_retriever_tool
+try:
+    from langchain.tools.retriever import create_retriever_tool
+except ImportError:  # pragma: no cover - compatibility with older langchain
+    from langchain_core.documents import Document
+    from langchain_core.tools import BaseTool
+
+    class _CompatRetrieverTool(BaseTool):
+        name: str
+        description: str
+        retriever: Any
+
+        def _run(self, query: str) -> str:  # type: ignore[override]
+            docs: Sequence[Document] = self.retriever.invoke(query)
+            return "\n\n".join(d.page_content for d in docs)
+
+        async def _arun(self, query: str) -> str:  # pragma: no cover
+            docs: Sequence[Document] = await self.retriever.ainvoke(query)
+            return "\n\n".join(d.page_content for d in docs)
+
+    def create_retriever_tool(retriever: Any, name: str, description: str) -> BaseTool:
+        return _CompatRetrieverTool(name=name, description=description, retriever=retriever)
 from langchain_chroma import Chroma
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
@@ -87,21 +108,48 @@ def make_llm(temperature: float = 0.2):
         return ChatOpenAI(model=FALLBACK_MODEL, temperature=temperature)
 
 
-def make_retriever(k: int = 4):
-    embed = OpenAIEmbeddings(model=EMBED_MODEL)
-    if (QDRANT_URL and QDRANT_API_KEY) or (QDRANT_HOST and QDRANT_PORT):
-        from qdrant_client import QdrantClient  # type: ignore
+logger = logging.getLogger(__name__)
 
+
+def _build_qdrant_vector_store(embed: OpenAIEmbeddings):  # type: ignore[name-defined]
+    if not ((QDRANT_URL and QDRANT_API_KEY) or (QDRANT_HOST and QDRANT_PORT)):
+        return None
+
+    try:
+        from qdrant_client import QdrantClient  # type: ignore
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        logger.warning("Qdrant client not installed; falling back to Chroma (%s)", exc)
+        return None
+
+    try:
         if QDRANT_URL:
             client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
         else:
             client = QdrantClient(
-                host=QDRANT_HOST, port=int(QDRANT_PORT or 6333), api_key=QDRANT_API_KEY
+                host=QDRANT_HOST,
+                port=int(QDRANT_PORT or 6333),
+                api_key=QDRANT_API_KEY,
             )
-        vs = QdrantVectorStore(client=client, collection_name=COLLECTION, embedding=embed)
-    else:
+
+        if hasattr(client, "collection_exists"):
+            exists = client.collection_exists(collection_name=COLLECTION)
+            if not exists:
+                raise RuntimeError(f"Qdrant collection '{COLLECTION}' not found")
+
+        return QdrantVectorStore(client=client, collection_name=COLLECTION, embedding=embed)
+    except Exception as exc:
+        logger.warning("Qdrant unavailable; falling back to Chroma (%s)", exc)
+        return None
+
+
+def make_retriever(k: int = 4):
+    embed = OpenAIEmbeddings(model=EMBED_MODEL)
+    vs = _build_qdrant_vector_store(embed)
+    if vs is None:
         vs = Chroma(
-            collection_name=COLLECTION, persist_directory=CHROMA_PATH, embedding_function=embed
+            collection_name=COLLECTION,
+            persist_directory=CHROMA_PATH,
+            embedding_function=embed,
         )
     return vs.as_retriever(search_kwargs={"k": k})
 

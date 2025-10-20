@@ -2,7 +2,7 @@ from fastapi import APIRouter, Query
 
 from alfred.services.web_search import search_web
 
-router = APIRouter(prefix="/api/v1/web", tags=["web"])
+router = APIRouter(prefix="/api/web", tags=["web"])
 
 
 @router.get("/search")

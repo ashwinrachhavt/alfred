@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, List, Literal, Optional, Sequence
 
 Provider = Literal["brave", "ddg", "exa", "tavily", "you"]
+DEFAULT_PROVIDER_PRIORITY: List[Provider] = ["ddg", "brave", "you", "tavily", "exa"]
 Mode = Literal["auto", "multi", Provider]
 
 
@@ -255,14 +256,13 @@ class WebConnector:
         self.clients["ddg"] = DDGClient(max_results=ddg_max_results)
 
     def _resolve_auto(self) -> Provider:
-        for p in ("exa", "tavily", "brave", "you", "ddg"):
+        for p in DEFAULT_PROVIDER_PRIORITY:
             if p in self.clients:
                 return p  # type: ignore
         return "ddg"
 
     def _collect_enabled(self) -> List[Provider]:
-        order: List[Provider] = ["exa", "tavily", "brave", "you", "ddg"]
-        return [p for p in order if p in self.clients]
+        return [p for p in DEFAULT_PROVIDER_PRIORITY if p in self.clients]
 
     def _search_multi(self, query: str, **kwargs: Any) -> SearchResponse:
         providers = self._collect_enabled()

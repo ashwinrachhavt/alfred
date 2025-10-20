@@ -4,7 +4,7 @@ from fastapi import APIRouter, Query
 
 from alfred.services.wikipedia import retrieve_wikipedia
 
-router = APIRouter(prefix="/api/v1/wikipedia", tags=["wikipedia"])
+router = APIRouter(prefix="/api/wikipedia", tags=["wikipedia"])
 
 
 @router.get("/search")
