@@ -3,7 +3,7 @@ from fastapi.responses import PlainTextResponse
 
 from alfred.core.config import settings
 
-router = APIRouter(prefix="/api/v1/notion", tags=["notion"])
+router = APIRouter(prefix="/api/notion", tags=["notion"])
 
 
 @router.get("/status")

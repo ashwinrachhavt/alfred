@@ -126,6 +126,40 @@ Behavior
 - Agent decides to use `retrieve_notes` (Qdrant/Chroma) and/or `web_search` (DuckDuckGo).
 - Answers in your voice, grounded strictly in context; admits when unknown.
 
+### `GET /company/research`
+
+Query params
+- `name` string: company to investigate.
+
+Returns a long-form report (≈1.5–2.5k words) produced by the LangGraph company research agent.
+
+### `GET /company/outreach`
+
+Query params
+- `name` string: target company name.
+- `role` string (optional, default `AI Engineer`): angle to tailor the outreach.
+
+Response
+- Structured JSON including `summary`, `positioning`, `suggested_topics`, `outreach_email`, `follow_up`, and `sources` combining resume/profile knowledge with live company research.
+
+### `POST /company/outreach`
+
+Body
+```json
+{
+  "name": "Anthropic",
+  "role": "Senior AI Engineer",
+  "context": "Focus on my applied research background and experience building RAG pipelines.",
+  "k": 8
+}
+```
+
+Behavior
+- Same personalized outreach agent with optional extra instructions (`context`) and retrieval depth override `k`.
+- Outputs JSON identical to the GET variant.
+
+> Tip: run `python scripts/ingest.py` so your resume and personal URLs are embedded before calling the outreach endpoints.
+
 ## Makefile
 
 Useful targets

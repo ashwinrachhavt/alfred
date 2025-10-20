@@ -47,7 +47,7 @@ gcloud run services update alfred-api \
 
 Notes
 - The container listens on $PORT (Cloud Run sets it); default is 8080.
-- If you use Google OAuth flows (Gmail/Calendar), add your Cloud Run URL to the OAuth client’s Authorized redirect URIs (e.g., https://SERVICE-URL/api/v1/gmail/oauth/callback).
+- If you use Google OAuth flows (Gmail/Calendar), add your Cloud Run URL to the OAuth client’s Authorized redirect URIs (e.g., https://SERVICE-URL/api/gmail/oauth/callback).
 - For persistent token storage (e.g., TOKEN_STORE_DIR), prefer Secret Manager or a database. Cloud Run’s filesystem is ephemeral.
 
 Local Test

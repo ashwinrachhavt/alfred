@@ -12,7 +12,7 @@ from alfred.services.google_oauth import (
 
 CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 
-router = APIRouter(prefix="/api/v1/calendar", tags=["calendar"])
+router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
 
 @router.get("/auth_url")
@@ -31,7 +31,7 @@ def calendar_oauth_callback(code: str, state: str | None = None):
 async def list_calendars():
     creds = load_credentials()
     if creds is None:
-        raise HTTPException(404, "No credentials found; authorize via /api/v1/calendar/auth_url")
+        raise HTTPException(404, "No credentials found; authorize via /api/calendar/auth_url")
     connector = GoogleCalendarConnector(
         creds, user_id=None, on_credentials_refreshed=lambda c: persist_credentials(None, c)
     )
@@ -45,7 +45,7 @@ async def list_calendars():
 async def list_events(start_date: str, end_date: str, max_results: int = 2500):
     creds = load_credentials()
     if creds is None:
-        raise HTTPException(404, "No credentials found; authorize via /api/v1/calendar/auth_url")
+        raise HTTPException(404, "No credentials found; authorize via /api/calendar/auth_url")
     connector = GoogleCalendarConnector(
         creds, user_id=None, on_credentials_refreshed=lambda c: persist_credentials(None, c)
     )
