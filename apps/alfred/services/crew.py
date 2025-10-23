@@ -8,13 +8,23 @@ Philosophical LinkedIn & Cover Letter Assistant (CrewAI >= 0.28)
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
 from crewai import Agent, Crew, Process, Task
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+
+__all__ = [
+    "CandidateProfile",
+    "JobApplicationContext",
+    "LinkedInContext",
+    "PhilosophicalApplicationCrew",
+    "kickoff_research_writer",
+]
 
 load_dotenv()
 
@@ -469,6 +479,46 @@ class PhilosophicalApplicationCrew:
             if start != -1 and end != -1 and end > start:
                 return json.loads(out[start : end + 1])
             raise RuntimeError("Researcher did not return valid JSON.")
+
+# ------------------ Runtime Helpers ------------------
+
+
+@lru_cache(maxsize=1)
+def _get_runner() -> PhilosophicalApplicationCrew:
+    """Reuse a single crew runner instance to avoid repeated model downloads."""
+
+    return PhilosophicalApplicationCrew()
+
+
+def _build_job_context(topic: str) -> JobApplicationContext:
+    clean_topic = topic.strip()
+    return JobApplicationContext(
+        company_name=clean_topic,
+        position="Research target",
+        job_description=(
+            f"Investigate {clean_topic}. Focus on mission, products, customer segments, "
+            "recent news, and strategy signals."
+        ),
+        philosophical_approach="blended",
+    )
+
+
+async def kickoff_research_writer(topic: str) -> str:
+    """Run the research crew for an arbitrary topic via asyncio-friendly wrapper."""
+
+    if not topic or not topic.strip():
+        raise ValueError("topic must be provided")
+
+    runner = _get_runner()
+    job_ctx = _build_job_context(topic)
+    task = research_task(job_ctx)
+
+    try:
+        result = await asyncio.to_thread(runner._kickoff_single, task)  # type: ignore[attr-defined]
+    except Exception as exc:  # pragma: no cover - surface as runtime error
+        raise RuntimeError(f"Crew research failed: {exc}") from exc
+
+    return result
 
 
 # ------------------ Example CLI ------------------

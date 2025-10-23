@@ -4,11 +4,16 @@
 - apps/alfred: FastAPI app and Celery worker.
   - alfred/api: HTTP routes grouped by domain (calendar, company, Gmail, etc.).
   - alfred/core: config, logging, settings.
-  - alfred/crew: CrewAI agents, tools, runtime.
   - alfred/services: external integrations (Notion, vector store, etc.).
   - main.py: FastAPI entrypoint; celery_app.py: Celery factory.
 - infra/docker-compose.yml: local Docker services (API, worker, beat, Redis).
 - README.md: quick start and tokens.
+
+Maintain separation of concerns:
+- Place application service logic in `apps/alfred/services/`.
+- Keep third-party providers or custom clients under `apps/alfred/connectors/`.
+- Keep API endpoints and routing inside `apps/alfred/api/`.
+- Store standalone scripts in the repository-level `scripts/` directory.
 
 ## Build, Test, and Development Commands
 - Create env + install deps
