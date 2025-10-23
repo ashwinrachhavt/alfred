@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, HTTPException, Query
 
 from alfred.connectors.google_gmail_connector import GoogleGmailConnector
@@ -10,7 +12,34 @@ from alfred.services.google_oauth import (
     persist_credentials,
 )
 
-router = APIRouter(prefix="/api/v1/gmail", tags=["gmail"])
+router = APIRouter(prefix="/api/gmail", tags=["gmail"])
+
+
+def _truthy(val: str | None) -> bool:
+    if val is None:
+        return False
+    return val.strip().lower() in {"1", "true", "yes", "on"}
+
+
+@router.get("/status")
+def gmail_status():
+    enabled = _truthy(os.getenv("ENABLE_GMAIL", "false"))
+    client_id = os.getenv("GOOGLE_CLIENT_ID", "")
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET", "")
+    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", "")
+    project_id = os.getenv("GOOGLE_PROJECT_ID", "")
+    token_dir = os.getenv("TOKEN_STORE_DIR", "")
+    configured = all([client_id, client_secret, redirect_uri, project_id])
+    token_dir_ready = bool(token_dir)
+    deps_ok = True
+    ready = enabled and configured and deps_ok and token_dir_ready
+    return {
+        "enabled": enabled,
+        "configured": configured,
+        "deps_installed": deps_ok,
+        "token_dir_ready": token_dir_ready,
+        "ready": ready,
+    }
 
 
 @router.get("/auth_url")
@@ -29,7 +58,7 @@ def gmail_oauth_callback(code: str, state: str | None = None):
 async def gmail_profile():
     creds = load_credentials()
     if creds is None:
-        raise HTTPException(404, "No credentials found; authorize via /api/v1/gmail/auth_url")
+        raise HTTPException(404, "No credentials found; authorize via /api/gmail/auth_url")
     connector = GoogleGmailConnector(
         creds, user_id=None, on_credentials_refreshed=lambda c: persist_credentials(None, c)
     )

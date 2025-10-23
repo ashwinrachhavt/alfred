@@ -2,13 +2,18 @@
 
 ## Project Structure & Module Organization
 - apps/alfred: FastAPI app and Celery worker.
-  - alfred/api/v1: HTTP routes (health, crewai, stream/SSE).
+  - alfred/api: HTTP routes grouped by domain (calendar, company, Gmail, etc.).
   - alfred/core: config, logging, settings.
-  - alfred/crew: CrewAI agents, tools, runtime.
   - alfred/services: external integrations (Notion, vector store, etc.).
   - main.py: FastAPI entrypoint; celery_app.py: Celery factory.
 - infra/docker-compose.yml: local Docker services (API, worker, beat, Redis).
 - README.md: quick start and tokens.
+
+Maintain separation of concerns:
+- Place application service logic in `apps/alfred/services/`.
+- Keep third-party providers or custom clients under `apps/alfred/connectors/`.
+- Keep API endpoints and routing inside `apps/alfred/api/`.
+- Store standalone scripts in the repository-level `scripts/` directory.
 
 ## Build, Test, and Development Commands
 - Create env + install deps
@@ -37,7 +42,7 @@
 - Pydantic v2 for config/models (see `alfred/core/config.py`).
 
 ## Testing Guidelines
-- Framework: pytest. Place tests under `tests/` mirroring package paths (e.g., `tests/alfred/api/v1/test_health.py`).
+- Framework: pytest. Place tests under `tests/` mirroring package paths (e.g., `tests/alfred/api/system/test_health.py`).
 - Name tests `test_*.py`; aim for critical-path coverage (routes, crew runtime, services).
 - Run: `pytest -q` (add pytest to your venv if not present).
   - Or: `make test`.
