@@ -4,6 +4,10 @@ import logging
 import os
 from typing import Any, Iterable, List, Literal, Sequence
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 try:
     from langchain.tools.retriever import create_retriever_tool
 except ImportError:  # pragma: no cover - compatibility with older langchain
@@ -25,6 +29,8 @@ except ImportError:  # pragma: no cover - compatibility with older langchain
 
     def create_retriever_tool(retriever: Any, name: str, description: str) -> BaseTool:
         return _CompatRetrieverTool(name=name, description=description, retriever=retriever)
+
+
 from langchain_chroma import Chroma
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
