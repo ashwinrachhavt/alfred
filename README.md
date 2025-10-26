@@ -63,6 +63,7 @@ Highlights
 Prereqs
 - Docker + Docker Compose
 - Python 3.11+
+- uv (https://github.com/astral-sh/uv) — optional but recommended
 - API keys: OpenAI (for embeddings/LLM); optional Qdrant Cloud
 
 Configure
@@ -73,10 +74,19 @@ cp apps/alfred/.env.example apps/alfred/.env
 
 Install & Run API
 ```bash
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -r apps/alfred/requirements.txt
-python -m playwright install chromium   # if you plan to use dynamic crawling
-make run-api  # or: cd apps/alfred && uvicorn main:app --reload --port 8080
+uv python install 3.11          # optional: ensure matching runtime
+uv sync --dev                    # install app + tooling into .venv
+uv run playwright install chromium  # optional: enable dynamic crawling
+make run-api  # or: PYTHONPATH=apps uv run uvicorn alfred.main:app --reload --port 8080
+```
+
+Legacy virtualenv (pip)
+```bash
+python3.11 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+python -m playwright install chromium  # optional: enable dynamic crawling
+make run-api UV=0  # or: PYTHONPATH=apps uvicorn alfred.main:app --reload --port 8080
 ```
 
 Docker (full stack)
@@ -96,10 +106,12 @@ export RECURSIVE_DEPTH=1
 export QDRANT_URL=...; export QDRANT_API_KEY=...; export QDRANT_COLLECTION=personal_kb
 
 # Run ingest
-python scripts/ingest.py --urls-file urls.txt --collection personal_kb
+uv run python scripts/ingest.py --urls-file urls.txt --collection personal_kb
 # Or direct URLs
-python scripts/ingest.py --url https://example.com --url https://arxiv.org/abs/2012.07587
+uv run python scripts/ingest.py --url https://example.com --url https://arxiv.org/abs/2012.07587
 ```
+If you're working from an existing virtualenv, swap `uv run python` for `python` and append `UV=0` to Make targets (e.g. `make ingest-urls UV=0`).
+
 
 Notes
 - WebBaseLoader + optional RecursiveUrlLoader gather pages; PDFs from `data/` via PyPDFLoader.
@@ -158,7 +170,7 @@ Behavior
 - Same personalized outreach agent with optional extra instructions (`context`) and retrieval depth override `k`.
 - Outputs JSON identical to the GET variant.
 
-> Tip: run `python scripts/ingest.py` so your resume and personal URLs are embedded before calling the outreach endpoints.
+> Tip: run `uv run python scripts/ingest.py` (or `python scripts/ingest.py` with `UV=0`) so your resume and personal URLs are embedded before calling the outreach endpoints.
 
 ## Makefile
 
