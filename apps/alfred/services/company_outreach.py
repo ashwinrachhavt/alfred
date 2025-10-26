@@ -11,7 +11,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 
 from alfred.services.agentic_rag import create_retriever_tool, make_llm, make_retriever
 from alfred.services.company_researcher import research_company
-from .web_search import search_web
+from alfred.services.web_search import search_web
 
 
 class CompanyResearchTool(BaseTool):
