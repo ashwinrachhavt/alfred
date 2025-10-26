@@ -14,6 +14,8 @@ from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from qdrant_client import QdrantClient
+from qdrant_client.http import models as qmodels
 
 load_dotenv()
 
@@ -143,23 +145,38 @@ def load_web(urls: List[str]) -> List[Document]:
 
 
 def load_pdfs(directory: str) -> List[Document]:
+    """Load PDF pages from ``directory`` plus the default resume, if it exists."""
+
     docs: List[Document] = []
-    if not os.path.isdir(directory):
-        return docs
-    for name in os.listdir(directory):
-        fp = os.path.join(directory, name)
-        if not fp.lower().endswith(".pdf"):
+
+    candidates = []
+    data_dir = Path(directory)
+    if data_dir.is_dir():
+        candidates.extend(
+            str((data_dir / name).resolve())
+            for name in os.listdir(data_dir)
+            if name.lower().endswith(".pdf")
+        )
+
+    # Always attempt to include the canonical resume when present.
+    resume_path = ROOT / "data" / "ashwin_rachha_resume.pdf"
+    if resume_path.is_file():
+        candidates.append(str(resume_path.resolve()))
+
+    seen = set()
+    for fp in candidates:
+        if fp in seen:
             continue
-        # PyPDFLoader yields one Document per page with page metadata. :contentReference[oaicite:5]{index=5}
+        seen.add(fp)
         loader = PyPDFLoader(file_path=fp)
         page_docs = loader.load()
         for d in page_docs:
             d.metadata["type"] = "pdf"
             d.metadata["path"] = fp
             d.metadata["source"] = d.metadata.get("source", fp)
-            # Keep filename as a coarse title
-            d.metadata["title"] = d.metadata.get("title") or Path(fp).name
+            d.metadata.setdefault("title", Path(fp).name)
         docs.extend(page_docs)
+
     return docs
 
 
@@ -186,31 +203,37 @@ def main():
     docs = chunk_docs(base_docs, args.chunk_size, args.overlap)
 
     # 3) Embed + Upsert to Qdrant Cloud
-    qdrant_url = os.environ["QDRANT_URL"]
-    qdrant_key = os.environ["QDRANT_API_KEY"]
+    qdrant_url = os.environ.get("QDRANT_URL")
+    qdrant_key = os.environ.get("QDRANT_API_KEY")
     collection = args.collection
 
-    embeddings = OpenAIEmbeddings(model=args.embed_model)
-    # Ensure collection implicitly via vectorstore; Qdrant will require matching size & distance. :contentReference[oaicite:6]{index=6}
-    # Deterministic IDs for upsert stability
-    ids = [
-        _hash_id(
-            d.page_content,
-            (d.metadata.get("source") if isinstance(d.metadata, dict) else "unknown"),
-            int(d.metadata.get("chunk", 0)) if isinstance(d.metadata, dict) else 0,
-        )
-        for d in docs
-    ]
+    if not qdrant_url:
+        print("❌ Missing QDRANT_URL — please set your hosted Qdrant endpoint in .env")
+        return 1
 
-    QdrantVectorStore.from_documents(
+    embeddings = OpenAIEmbeddings(model=args.embed_model)
+    client = QdrantClient(url=qdrant_url, api_key=qdrant_key)
+
+    try:
+        exists = client.get_collection(collection)
+    except Exception:
+        print(f"[ingest] Collection '{collection}' not found — creating it...")
+        vector_size = len(embeddings.embed_query("dimension probe"))
+        vectors_config = qmodels.VectorParams(size=vector_size, distance=qmodels.Distance.COSINE)
+        client.create_collection(collection_name=collection, vectors_config=vectors_config)
+
+    # Build a QdrantVectorStore and upsert
+    vector_store = QdrantVectorStore.from_documents(
         documents=docs,
         embedding=embeddings,
+        collection_name=collection,
         url=qdrant_url,
         api_key=qdrant_key,
-        collection_name=collection,
-        ids=ids,
     )
-    print(f"Indexed {len(docs)} chunks into Qdrant collection '{collection}'.")
+
+    print(
+        f"✅ Indexed {len(docs)} chunks into hosted Qdrant collection '{collection}' at {qdrant_url}."
+    )
     return 0
 
 

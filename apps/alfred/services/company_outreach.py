@@ -45,7 +45,7 @@ def make_tools(k: int = 6):
 
 OUTREACH_SYSTEM_PROMPT = (
     "You are the Alfred outreach planner. Combine Ashwin's background with deep company insights to craft highly "
-    "personalized outreach. Always speak in first person (\"I\"). Stay specific, cite concrete experience, and "
+    'personalized outreach. Always speak in first person ("I"). Stay specific, cite concrete experience, and '
     "align the pitch with the company's current needs."
 )
 
