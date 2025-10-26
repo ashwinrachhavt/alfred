@@ -1,11 +1,6 @@
-# Adjust sys.path to ensure the correct parent directory (/Users/ashwin/Applications/Master/alfred) is imported as a package
-import sys
-from pathlib import Path
+"""Thin client for the OpenWeb Ninja Real-Time Glassdoor Data API."""
 
-sys.path.append(str(Path(__file__).resolve().parents[2]))
-import sys
-from pathlib import Path
-
+from __future__ import annotations
 
 import json
 import math
@@ -17,10 +12,7 @@ from urllib.parse import urljoin
 import requests
 from pydantic import BaseModel
 
-sys.path.append(str(Path(__file__).resolve().parents[3]))
-"""Thin client for OpenWeb Ninja Real-Time Glassdoor Data API (company interviews)."""
 from alfred.core.config import settings
-
 
 API_DEFAULT_BASE = "https://api.openwebninja.com/realtime-glassdoor-data"
 API_KEY_ENV = settings.openweb_ninja_api_key or "OPENWEBNINJA_GLASSDOOR_API_KEY"
