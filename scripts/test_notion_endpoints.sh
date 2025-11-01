@@ -1,7 +1,42 @@
 #!/bin/bash
 set -euo pipefail
 
-BASE_URL=${BASE_URL:-"http://127.0.0.1:8080/notion"}
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+ROOT_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
+ENV_FILE=${ENV_FILE:-"$ROOT_DIR/apps/alfred/.env"}
+
+if [[ -f "$ENV_FILE" ]]; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "python3 is required to parse $ENV_FILE" >&2
+    exit 1
+  fi
+  eval "$(python3 - "$ENV_FILE" <<'PY'
+import shlex
+import sys
+from pathlib import Path
+
+env_path = Path(sys.argv[1])
+for raw in env_path.read_text().splitlines():
+    line = raw.strip()
+    if not line or line.startswith('#'):
+        continue
+    if '=' not in line:
+        continue
+    key, value = line.split('=', 1)
+    key = key.strip()
+    if key.startswith('export '):
+        key = key[len('export '):].strip()
+    if not key:
+        continue
+    value = value.strip()
+    if value and value[0] == value[-1] and value[0] in {'"', "'"}:
+        value = value[1:-1]
+    print(f"export {key}={shlex.quote(value)}")
+PY
+  )"
+fi
+
+BASE_URL=${BASE_URL:-${ALFRED_API_BASE_URL:-"http://127.0.0.1:8080/notion"}}
 TEST_PAGE_ID=${NOTION_TEST_PAGE_ID:-}
 TEST_DB_ID=${NOTION_TEST_DB_ID:-}
 TEST_PARENT_ID=${NOTION_TEST_PARENT_ID:-${NOTION_PARENT_PAGE_ID:-}}
@@ -13,6 +48,16 @@ fi
 
 divider() {
   printf '\n%s\n' "=============================="
+}
+
+format_response() {
+  local payload
+  payload=$(cat)
+  if [[ -z "$payload" ]]; then
+    echo "(empty response)"
+    return
+  fi
+  echo "$payload" | jq '.' 2>/dev/null || echo "$payload"
 }
 
 echo "Testing Notion API endpoints against $BASE_URL"
@@ -70,11 +115,11 @@ if [[ -n "$TEST_PARENT_ID" ]]; then
   echo "POST /write (create under parent)"
   curl -s -X POST "$BASE_URL/write" \
     -H "Content-Type: application/json" \
-    -d "{\"title\": \"CLI Smoke Test\", \"md\": \"# hello from script\\n- item 1\\n- item 2\", \"parent_page_id\": \"$TEST_PARENT_ID\"}" | jq '{ok, mode, page_id}'
+    -d "{\"title\": \"CLI Smoke Test\", \"md\": \"# hello from script\\n- item 1\\n- item 2\", \"parent_page_id\": \"$TEST_PARENT_ID\"}" | format_response
 
   divider
   echo "POST /pages (legacy convenience)"
-  curl -s "$BASE_URL/pages" --get --data-urlencode "title=CLI Test Page" --data-urlencode "md=Created via /pages"
+  curl -s -X POST "$BASE_URL/pages?title=CLI%20Test%20Page&md=Created%20via%20%2Fpages" | format_response
 else
   divider
   echo "Skipping page creation; set NOTION_TEST_PARENT_ID or NOTION_PARENT_PAGE_ID"
@@ -85,7 +130,7 @@ if [[ -n "$TEST_PAGE_ID" ]]; then
   echo "POST /write (append to existing page)"
   curl -s -X POST "$BASE_URL/write" \
     -H "Content-Type: application/json" \
-    -d "{\"title\": \"ignored\", \"md\": \"### appended via script\", \"page_id\": \"$TEST_PAGE_ID\"}" | jq '{ok, mode}'
+    -d "{\"title\": \"ignored\", \"md\": \"### appended via script\", \"page_id\": \"$TEST_PAGE_ID\"}" | format_response
 fi
 
 divider
