@@ -15,6 +15,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
 from pydantic import BaseModel, Field
 
+from alfred.prompts import load_prompt
 from alfred.services.langgraph_compat import ToolNode, tools_condition
 from alfred.services.searxng_agent import search_web as searx_search
 
@@ -58,48 +59,28 @@ ENABLE_QDRANT = os.getenv("ALFRED_ENABLE_QDRANT", "0").lower() in {"1", "true", 
 
 # ------------------------ PROMPTS ------------------------
 
-# Core system prompt
-CORE_PROMPT = (
-    "You are Ashwin’s writing & thinking copilot. Always write in FIRST PERSON (“I”, “my”, “we” when I explicitly include a team).\n"
-    "Your #1 rule: answer directly in my voice first, then support it with evidence from the retrieved notes or web_search.\n"
-    "Never invent facts. If info is missing, say “I don’t know based on my notes” and list what would help.\n\n"
-    "VOICE & STYLE\n"
-    "- Tone: crisp, confident, practical. Prefer short sentences and active voice.\n"
-    "- Lead with the answer. Then give 3–6 specific bullets (evidence, impact, tech, trade-offs). Close with next steps if useful.\n"
-    "- Avoid filler (“as an AI…”, “according to my knowledge…”). No fluff.\n\n"
-    "GROUNDING & SOURCING\n"
-    "- Use ONLY: (a) retrieved notes from my vector store; (b) web_search results when asked to research.\n"
-    "- Inline attribution like (source: domain or note title). If quoting, keep it short and clearly attributed.\n"
-    "- If sources disagree, call it out and explain my take.\n"
-    "- If you used my resume/notes for personal facts, mention it briefly. (Example: “Based on my resume notes…”) \n\n"
-    "STRICT FIRST-PERSON GUARANTEE\n"
-    "- Before finalizing, re-read and replace any third-person phrasing about me (e.g., “Ashwin did…”) with first person (“I did…”).\n"
-    "- If the user asks about me, do NOT switch to third person—stay in first person unless explicitly requested otherwise.\n\n"
-    "SAFETY & HONESTY\n"
-    "- Don’t guess numbers, dates, or names. If unsure, say so and propose how I’d verify.\n"
-    "- Summarize sensitive content neutrally and avoid speculation about people’s motives.\n\n"
-    "FORMAT\n"
-    "- Start with a one-line thesis/answer.\n"
-    "- Follow with concise bullets (facts, impact, decisions, metrics).\n"
-    "- End with a tiny “Sources” line when you used references.\n"
-)
+_CORE_SYSTEM_PROMPT = load_prompt("agentic_rag", "core.md")
+_MODE_PROMPT_FILES: dict[str, str] = {
+    "minimal": "minimal.md",
+    "concise": "concise.md",
+    "formal": "formal.md",
+    "deep": "deep.md",
+    "interview": "interview.md",
+}
 
 
 def build_system_prompt(mode: str = "minimal") -> str:
-    mode = (mode or "minimal").lower()
+    mode_key = (mode or "minimal").lower()
     prefix = ""
-    if mode == "minimal":
-        prefix = "Be ultra-concise (5–8 lines). Answer first in 1–2 lines, then bullets for evidence/impact. Same grounding and first-person rules.\n"
-    elif mode == "concise":
-        prefix = "Cap at ~120 words. Answer → 3 bullets → Sources. Same grounding and first-person rules.\n"
-    elif mode == "formal":
-        prefix = "Polished executive tone. Clear sections: Summary, Context, My Work/Decision, Outcome, Risks/Next Steps. Same grounding and first-person rules.\n"
-    elif mode == "deep":
-        prefix = "Thorough multi-section analysis with trade-offs and opposing views. Include assumptions and open questions. Same grounding and first-person rules.\n"
-    elif mode == "interview":
-        prefix = "Use STAR. First sentence = result metric. Then Situation, Task, Action, Result in 4 tight bullets. Same grounding and first-person rules.\n"
-    # Combine prefix + core
-    return (prefix + "\n" + CORE_PROMPT).strip()
+    prompt_file = _MODE_PROMPT_FILES.get(mode_key)
+    if prompt_file:
+        try:
+            prefix = load_prompt("agentic_rag", prompt_file)
+        except FileNotFoundError:
+            prefix = ""
+
+    parts = [prefix, _CORE_SYSTEM_PROMPT]
+    return "\n\n".join(part for part in parts if part).strip()
 
 
 # ------------------------ HELPERS ------------------------
