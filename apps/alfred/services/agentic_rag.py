@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Annotated, Any, Iterable, List, Literal, Sequence, TypedDict
@@ -16,6 +17,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
 from alfred.services.langgraph_compat import ToolNode, tools_condition
+from alfred.services.searxng_agent import search_web as searx_search
 from pydantic import BaseModel, Field
 
 try:  # pragma: no cover - optional dependency
@@ -146,6 +148,32 @@ class _RetrieverTool(BaseTool):  # pragma: no cover - simple stringifying tool
         return "\n\n".join(getattr(d, "page_content", str(d)) for d in docs)
 
 
+class _SearxTool(BaseTool):  # pragma: no cover - HTTP-backed search tool
+    name: str = "web_search"
+    description: str = (
+        "Search the public web via SearxNG. Provide a plain-language query. "
+        "The tool returns JSON with fields title, url, snippet for the top results."
+    )
+
+    top_k: int = 5
+
+    def _run(self, query: str) -> str:  # type: ignore[override]
+        results = searx_search(query, num_results=self.top_k)
+        simplified = []
+        for item in results:
+            simplified.append(
+                {
+                    "title": item.get("title", ""),
+                    "url": item.get("url", ""),
+                    "snippet": item.get("content", "")[:240],
+                }
+            )
+        return json.dumps({"results": simplified}, ensure_ascii=False)
+
+    async def _arun(self, query: str) -> str:  # pragma: no cover
+        return self._run(query)
+
+
 def _build_qdrant_vector_store(embed: OpenAIEmbeddings):  # type: ignore[name-defined]
     if not ((QDRANT_URL and QDRANT_API_KEY) or (QDRANT_HOST and QDRANT_PORT)):
         return None
@@ -235,6 +263,10 @@ def make_tools(k: int = 4):
         tools = [retriever_tool, ddg]
     except Exception:
         tools = [retriever_tool]
+
+    # Always include the searx web search tool for richer sourcing
+    tools.append(_SearxTool())
+
     return tools
 
 
@@ -305,7 +337,7 @@ def generate_answer(state: AgentState, mode: str = "minimal"):
         + "1) A direct first-person answer (1–2 lines).\n"
         + "2) 3–6 concise bullets: evidence (with small attributions), impact/metrics, key decisions or trade-offs.\n"
         + "3) If anything is missing, one line: “What I’d need to answer fully: …”\n"
-        + "4) Sources: domain or note title(s), if any were used.\n"
+        + "4) A `Sources:` section with markdown bullet list linking to any URLs returned by tools.\n"
     )
     response = make_llm(temperature=0.2).invoke([{"role": "user", "content": pro}])
     return {"messages": [response]}
