@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Annotated, Any, Dict, Optional, TypedDict
 
 from langchain_core.tools import BaseTool
-from langgraph.graph import END, START, MessagesState, StateGraph
-from langgraph.prebuilt import ToolNode, tools_condition
+from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import AnyMessage, add_messages
+from alfred.services.langgraph_compat import ToolNode, tools_condition
 
 from alfred.services.agentic_rag import create_retriever_tool, make_llm, make_retriever
 from alfred.services.company_researcher import research_company
@@ -140,10 +142,10 @@ def build_company_outreach_graph(company: str, role: str, personal_context: str,
     tools = make_tools(k=k)
     planner = make_llm(temperature=0.0).bind_tools(tools)
 
-    def agent_node(state: MessagesState):
+    def agent_node(state: OutreachState):
         return {"messages": [planner.invoke(state["messages"])]}
 
-    def finalize_node(state: MessagesState):
+    def finalize_node(state: OutreachState):
         synth = make_llm(temperature=0.2)
         final_prompt = FINAL_PROMPT_TEMPLATE.format(
             company=company,
@@ -151,14 +153,14 @@ def build_company_outreach_graph(company: str, role: str, personal_context: str,
             personal_context=personal_context or "(none provided)",
         )
         convo = [
-            {"role": "system", "content": OUTREACH_SYSTEM_PROMPT},
+            SystemMessage(content=OUTREACH_SYSTEM_PROMPT),
             *state["messages"],
-            {"role": "user", "content": final_prompt},
+            HumanMessage(content=final_prompt),
         ]
         msg = synth.invoke(convo)
         return {"messages": [msg]}
 
-    graph = StateGraph(MessagesState)
+    graph = StateGraph(OutreachState)
     graph.add_node("agent", agent_node)
     graph.add_node("tools", ToolNode(tools))
     graph.add_node("finalize", finalize_node)
@@ -198,12 +200,7 @@ def generate_company_outreach(
 
     try:
         for chunk in graph.stream(
-            {
-                "messages": [
-                    {"role": "system", "content": OUTREACH_SYSTEM_PROMPT},
-                    {"role": "user", "content": seed},
-                ]
-            },
+            {"messages": [SystemMessage(content=OUTREACH_SYSTEM_PROMPT), HumanMessage(content=seed)]},
             config={"recursion_limit": 40},
         ):
             for update in chunk.values():
@@ -238,3 +235,7 @@ def generate_company_outreach(
         pass
 
     return {"summary": final_text}
+
+
+class OutreachState(TypedDict):
+    messages: Annotated[list[AnyMessage], add_messages]
