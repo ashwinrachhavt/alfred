@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import os
-from typing import List
+from typing import Annotated, List, TypedDict
 
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
-from langgraph.graph import END, START, MessagesState, StateGraph
-from langgraph.prebuilt import ToolNode, tools_condition
+from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import AnyMessage, add_messages
+from alfred.services.langgraph_compat import ToolNode, tools_condition
 
 from alfred.connectors.web_connector import WebConnector
 
@@ -131,10 +133,10 @@ def build_company_graph():
     tools = make_tools()
     llm = make_llm(temperature=0.0).bind_tools(tools)
 
-    def think_or_act(state: MessagesState):
+    def think_or_act(state: CompanyState):
         return {"messages": [llm.invoke(state["messages"])]}
 
-    def finalize(state: MessagesState):
+    def finalize(state: CompanyState):
         synth = make_llm(temperature=0.1)
         prompt = "Produce the long-form company research report now. Ensure complete sections and include a Sources section with domains and URLs."
         msg = synth.invoke(
@@ -146,7 +148,7 @@ def build_company_graph():
         )
         return {"messages": [msg]}
 
-    g = StateGraph(MessagesState)
+    g = StateGraph(CompanyState)
     g.add_node("agent", think_or_act)
     g.add_node("tools", ToolNode(tools))
     g.add_node("finalize", finalize)
@@ -171,8 +173,8 @@ def research_company(name: str) -> str:
     for chunk in graph.stream(
         {
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": seed},
+                SystemMessage(content=SYSTEM_PROMPT),
+                HumanMessage(content=seed),
             ]
         },
         config={"recursion_limit": 60},
@@ -185,3 +187,6 @@ def research_company(name: str) -> str:
             except Exception:
                 continue
     return final
+
+class CompanyState(TypedDict):
+    messages: Annotated[list[AnyMessage], add_messages]

@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
 from notion_client import Client
+from notion_client.errors import APIResponseError
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 
 from alfred.core.config import settings
@@ -19,12 +20,25 @@ def _client() -> Client:
 def _database_query(db_id: str, **payload: Any) -> dict:
     client = _client()
     query_fn = getattr(client.databases, "query", None)
-    if not callable(query_fn):
-        raise HTTPException(
-            500,
-            "notion_client.DatabasesEndpoint missing 'query' method; upgrade notion-client to >=1.0",
+    try:
+        if callable(query_fn):
+            try:
+                return query_fn(database_id=db_id, **payload)
+            except TypeError:
+                # Older notion-client releases expect positional database_id
+                return query_fn(db_id, **payload)  # type: ignore[misc]
+
+        # Fallback for stripped-down builds: hit the REST endpoint directly.
+        body = payload or None
+        return client.request(
+            path=f"databases/{db_id}/query",
+            method="POST",
+            body=body,
         )
-    return query_fn(database_id=db_id, **payload)
+    except APIResponseError as exc:  # bubble up clearer errors to HTTP clients
+        status = getattr(exc, "status", None) or 502
+        detail = getattr(exc, "message", None) or str(exc)
+        raise HTTPException(status, detail) from exc
 
 
 class NotionWriteInput(BaseModel):
