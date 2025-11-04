@@ -5,7 +5,6 @@ from fastapi import FastAPI
 from alfred.api.calendar import router as calendar_router
 from alfred.api.company import router as company_router
 from alfred.api.copilotkit import register_copilotkit_endpoint
-from alfred.api.daily_brief import router as daily_brief_router
 from alfred.api.crew import router as crew_router
 from alfred.api.gmail import router as gmail_router
 from alfred.api.notion import router as notion_router
@@ -24,7 +23,6 @@ ROUTERS = [
     web_router,
     wikipedia_router,
     crew_router,
-    daily_brief_router,
 ]
 
 

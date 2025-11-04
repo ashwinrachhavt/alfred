@@ -5,10 +5,10 @@ from typing import Any, Dict, List, Optional
 from fastapi import HTTPException
 from notion_client import Client
 from notion_client.errors import APIResponseError
+from pydantic import BaseModel, ConfigDict
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 
 from alfred.core.config import settings
-from pydantic import BaseModel, ConfigDict
 
 
 def _client() -> Client:
@@ -384,12 +384,26 @@ def _block_to_md(block: dict, depth: int = 0) -> list[str]:
     return lines
 
 
-def page_to_markdown(page_id: str) -> str:
-    blocks = _collect_children_all(page_id)
-    lines: list[str] = []
-    for b in blocks:
-        lines.extend(_block_to_md(b, depth=0))
-    # Remove excessive trailing blank lines
-    while lines and lines[-1] == "":
-        lines.pop()
-    return "\n".join(lines)
+def fetch_database_as_markdown(database_id: str) -> str:
+    """Fetch all pages and their block text as markdown from a Notion database."""
+    try:
+        results = _database_query(database_id, page_size=25)
+        pages = results.get("results", [])
+        markdown_sections: list[str] = []
+
+        for p in pages:
+            title_data = p["properties"].get("Name", {}).get("title", [])
+            title = "".join(r["plain_text"] for r in title_data) or "(Untitled)"
+            markdown_sections.append(f"# 🗒️ {title}")
+            markdown_sections.append("")
+
+            children = _collect_children_all(p["id"])
+            for block in children:
+                markdown_sections.extend(_block_to_md(block, depth=0))
+            markdown_sections.append("\n" + "-" * 80 + "\n")
+
+        return "\n".join(markdown_sections)
+    except APIResponseError as e:
+        return f"❌ Notion API error: {getattr(e, 'message', str(e))}"
+    except Exception as e:
+        return f"❌ Unexpected error while fetching Notion markdown: {e}"
