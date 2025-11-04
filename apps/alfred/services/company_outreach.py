@@ -5,14 +5,14 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Dict, Optional, TypedDict
 
-from langchain_core.tools import BaseTool
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
-from alfred.services.langgraph_compat import ToolNode, tools_condition
 
 from alfred.services.agentic_rag import create_retriever_tool, make_llm, make_retriever
 from alfred.services.company_researcher import research_company
+from alfred.services.langgraph_compat import ToolNode, tools_condition
 from alfred.services.web_search import search_web
 
 

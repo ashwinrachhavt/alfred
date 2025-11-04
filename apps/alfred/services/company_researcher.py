@@ -3,14 +3,14 @@ from __future__ import annotations
 import os
 from typing import Annotated, List, TypedDict
 
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
-from alfred.services.langgraph_compat import ToolNode, tools_condition
 
 from alfred.connectors.web_connector import WebConnector
+from alfred.services.langgraph_compat import ToolNode, tools_condition
 
 DEFAULT_UA = "Mozilla/5.0 (compatible; AlfredBot/1.0; +https://github.com/alfred)"
 

@@ -11,7 +11,7 @@ from langgraph.graph import END
 try:  # pragma: no cover - prefer official implementation when available
     from langgraph.prebuilt import ToolNode as _ToolNode  # type: ignore
     from langgraph.prebuilt import tools_condition as _tools_condition  # type: ignore
-except ModuleNotFoundError as exc:  # pragma: no cover - runtime fallback
+except ModuleNotFoundError:  # pragma: no cover - runtime fallback
     warnings.warn(
         "langgraph.prebuilt.ToolNode unavailable (missing optional modules). "
         "Using lightweight compatibility shim; advanced agent features may be reduced.",
