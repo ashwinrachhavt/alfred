@@ -480,6 +480,7 @@ class PhilosophicalApplicationCrew:
                 return json.loads(out[start : end + 1])
             raise RuntimeError("Researcher did not return valid JSON.")
 
+
 # ------------------ Runtime Helpers ------------------
 
 

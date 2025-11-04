@@ -70,7 +70,6 @@ class Settings(BaseSettings):
         alias="LANGSEARCH_DB_PATH",
     )
 
-
     class Config:
         env_file = "apps/alfred/.env"
         extra = "ignore"
