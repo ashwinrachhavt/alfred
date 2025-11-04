@@ -10,6 +10,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
 
 from alfred.connectors.web_connector import WebConnector
+from alfred.prompts import load_prompt
 from alfred.services.langgraph_compat import ToolNode, tools_condition
 
 DEFAULT_UA = "Mozilla/5.0 (compatible; AlfredBot/1.0; +https://github.com/alfred)"
@@ -116,17 +117,9 @@ def make_tools() -> list:
     return tools
 
 
-SYSTEM_PROMPT = (
-    "You are an expert company researcher. Use the search tools to identify the official site "
-    "and authoritative pages (About, Products/Docs, Customers/Case Studies, Pricing, Careers, Press/News, Blog). "
-    "Fetch those pages and any high-quality third-party sources (news, filings, reputable analysis). "
-    "Then write a long-form research report (target 1,500–2,500 words) with these sections: "
-    "1) Overview and Mission; 2) History and Milestones; 3) Products and Value Proposition; 4) Target Customers and Segments; "
-    "5) Business Model and Monetization; 6) Go-to-Market and Distribution; 7) Market Landscape and Competitors; 8) Technology Stack and IP; "
-    "9) Pricing and Packaging (if public); 10) Traction and Financials/Funding; 11) Partnerships and Ecosystem; 12) Risks and Challenges; 13) Strategy Signals and Roadmap; "
-    "14) SWOT; 15) Notable People and Hiring Signals; 16) Sources. Keep claims grounded in fetched content. When unclear, state assumptions explicitly. "
-    "Cite domains and URLs in a Sources section at the end."
-)
+SYSTEM_PROMPT = load_prompt("company_researcher", "system.md")
+_FINALIZE_PROMPT = load_prompt("company_researcher", "finalize.md")
+_SEED_PROMPT = load_prompt("company_researcher", "seed.md")
 
 
 def build_company_graph():
@@ -138,7 +131,7 @@ def build_company_graph():
 
     def finalize(state: CompanyState):
         synth = make_llm(temperature=0.1)
-        prompt = "Produce the long-form company research report now. Ensure complete sections and include a Sources section with domains and URLs."
+        prompt = _FINALIZE_PROMPT
         msg = synth.invoke(
             [
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -163,12 +156,7 @@ def build_company_graph():
 
 def research_company(name: str) -> str:
     graph = build_company_graph()
-    seed = (
-        "Research the company thoroughly. Identify the official site, then fetch About, Products/Docs, Customers, Pricing, "
-        "Careers, Press/News, Blog. Include reputable third-party context. If multiple similarly named entities exist, "
-        "select the most prominent technology company. "
-        f"Company to research: {name}."
-    )
+    seed = f"{_SEED_PROMPT}\nCompany to research: {name}."
     final = ""
     for chunk in graph.stream(
         {
