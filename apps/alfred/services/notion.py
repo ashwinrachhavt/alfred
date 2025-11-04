@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
 from notion_client import Client
+from notion_client.errors import APIResponseError
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 
 from alfred.core.config import settings
+from pydantic import BaseModel, ConfigDict
 
 
 def _client() -> Client:
@@ -15,22 +17,190 @@ def _client() -> Client:
     return Client(auth=settings.notion_token)
 
 
+def _database_query(db_id: str, **payload: Any) -> dict:
+    client = _client()
+    query_fn = getattr(client.databases, "query", None)
+    try:
+        if callable(query_fn):
+            try:
+                return query_fn(database_id=db_id, **payload)
+            except TypeError:
+                # Older notion-client releases expect positional database_id
+                return query_fn(db_id, **payload)  # type: ignore[misc]
+
+        # Fallback for stripped-down builds: hit the REST endpoint directly.
+        body = payload or None
+        return client.request(
+            path=f"databases/{db_id}/query",
+            method="POST",
+            body=body,
+        )
+    except APIResponseError as exc:  # bubble up clearer errors to HTTP clients
+        status = getattr(exc, "status", None) or 502
+        detail = getattr(exc, "message", None) or str(exc)
+        raise HTTPException(status, detail) from exc
+
+
+class NotionWriteInput(BaseModel):
+    """Payload for creating or appending content in Notion."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    profile_id: str | None = None
+    page_id: str | None = None
+    db_id: str | None = None
+    parent_page_id: str | None = None
+    title: str
+    md: str
+
+
+class NotionSyncInput(BaseModel):
+    """Input for syncing database metadata from Notion."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    profile_id: str | None = None
+    db_id: str
+    page_limit: int = 10
+
+
+def _text_rich_text(text: str) -> Dict[str, Any]:
+    return {"type": "text", "text": {"content": text}}
+
+
+def _flush_paragraph(lines: List[str], blocks: List[Dict[str, Any]]) -> None:
+    if not lines:
+        return
+    paragraph = "\n".join(lines).strip("\n")
+    if paragraph:
+        blocks.append(
+            {
+                "type": "paragraph",
+                "paragraph": {"rich_text": [_text_rich_text(paragraph)]},
+            }
+        )
+    lines.clear()
+
+
+def _flush_bullets(items: List[str], blocks: List[Dict[str, Any]]) -> None:
+    if not items:
+        return
+    for item in items:
+        blocks.append(
+            {
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {"rich_text": [_text_rich_text(item)]},
+            }
+        )
+    items.clear()
+
+
+def _md_to_blocks(md: str) -> List[Dict[str, Any]]:
+    """Convert a small markdown subset into Notion block payloads."""
+
+    blocks: List[Dict[str, Any]] = []
+    paragraph_lines: List[str] = []
+    bullet_items: List[str] = []
+
+    for raw in md.replace("\r\n", "\n").split("\n"):
+        line = raw.rstrip()
+        stripped = line.strip()
+
+        if not stripped:
+            _flush_bullets(bullet_items, blocks)
+            _flush_paragraph(paragraph_lines, blocks)
+            continue
+
+        heading = None
+        if stripped.startswith("# "):
+            heading = ("heading_1", stripped[2:].strip())
+        elif stripped.startswith("## "):
+            heading = ("heading_2", stripped[3:].strip())
+        elif stripped.startswith("### "):
+            heading = ("heading_3", stripped[4:].strip())
+
+        if heading:
+            _flush_bullets(bullet_items, blocks)
+            _flush_paragraph(paragraph_lines, blocks)
+            level, content = heading
+            blocks.append(
+                {
+                    "type": level,
+                    level: {"rich_text": [_text_rich_text(content)]},
+                }
+            )
+            continue
+
+        if stripped.startswith("- ") or stripped.startswith("* "):
+            _flush_paragraph(paragraph_lines, blocks)
+            bullet_items.append(stripped[2:].strip())
+            continue
+
+        paragraph_lines.append(line)
+
+    _flush_bullets(bullet_items, blocks)
+    _flush_paragraph(paragraph_lines, blocks)
+    return blocks
+
+
+def _create_page_under_parent(parent_page_id: str, title: str, blocks: List[Dict[str, Any]]):
+    return _client().pages.create(
+        parent={"page_id": parent_page_id},
+        properties={"title": {"title": [_text_rich_text(title)]}},
+        children=blocks,
+    )
+
+
+def _create_page_in_db(db_id: str, title: str, blocks: List[Dict[str, Any]]):
+    return _client().pages.create(
+        parent={"database_id": db_id},
+        properties={"Name": {"title": [_text_rich_text(title)]}},
+        children=blocks,
+    )
+
+
+def _append_blocks(page_id: str, blocks: List[Dict[str, Any]]):
+    if not blocks:
+        return {"page_id": page_id, "status": "skipped", "reason": "no blocks"}
+    return _client().blocks.children.append(block_id=page_id, children=blocks)
+
+
+@retry(wait=wait_exponential_jitter(1, 5), stop=stop_after_attempt(5))
+def write_to_notion(payload: NotionWriteInput) -> Dict[str, Any]:
+    blocks = _md_to_blocks(payload.md)
+
+    if payload.page_id:
+        result = _append_blocks(payload.page_id, blocks)
+        return {"mode": "append", "page_id": payload.page_id, "result": result}
+
+    if payload.db_id:
+        page = _create_page_in_db(payload.db_id, payload.title, blocks)
+        return {"mode": "create_in_db", "page_id": page.get("id"), "result": page}
+
+    parent = payload.parent_page_id or settings.notion_parent_page_id
+    if not parent:
+        raise HTTPException(400, "Provide parent_page_id or configure NOTION_PARENT_PAGE_ID")
+
+    page = _create_page_under_parent(parent, payload.title, blocks)
+    return {"mode": "create_under_parent", "page_id": page.get("id"), "result": page}
+
+
 @retry(wait=wait_exponential_jitter(1, 5), stop=stop_after_attempt(5))
 def create_simple_page(title: str, md: str):
-    if not settings.notion_parent_page_id:
-        raise HTTPException(500, "NOTION_PARENT_PAGE_ID not configured")
-    parent = {"page_id": settings.notion_parent_page_id}
-    return _client().pages.create(
-        parent=parent,
-        properties={"title": {"title": [{"type": "text", "text": {"content": title}}]}},
-        children=[
-            {
-                "object": "block",
-                "type": "paragraph",
-                "paragraph": {"rich_text": [{"type": "text", "text": {"content": md}}]},
-            }
-        ],
-    )
+    payload = NotionWriteInput(title=title, md=md)
+    return write_to_notion(payload)["result"]
+
+
+def sync_database(input: NotionSyncInput) -> Dict[str, Any]:
+    page_size = max(1, min(100, input.page_limit))
+    results = _database_query(input.db_id, page_size=page_size)
+    pages = results.get("results", [])
+    return {
+        "count": len(pages),
+        "pages": [{"id": page.get("id"), "url": page.get("url")} for page in pages],
+        "next_cursor": results.get("next_cursor"),
+        "has_more": results.get("has_more", False),
+    }
 
 
 def search(query: str, page_size: int = 25) -> dict:
@@ -53,7 +223,7 @@ def query_database(
         payload["filter"] = filter
     if sorts:
         payload["sorts"] = sorts
-    return _client().databases.query(db_id, **payload)
+    return _database_query(db_id, **payload)
 
 
 def list_clients() -> dict:

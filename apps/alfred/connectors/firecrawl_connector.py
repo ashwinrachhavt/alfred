@@ -68,7 +68,9 @@ class FirecrawlClient:
         payload = {"query": query, "max_results": max_results}
         return self.post("/search", payload)
 
-    def _request(self, method: str, endpoint: str, payload: Optional[Dict[str, Any]] = None) -> FirecrawlResponse:
+    def _request(
+        self, method: str, endpoint: str, payload: Optional[Dict[str, Any]] = None
+    ) -> FirecrawlResponse:
         url = urljoin(self.base_url + "/", endpoint.lstrip("/"))
         try:
             kwargs: Dict[str, Any] = {"timeout": self.timeout}

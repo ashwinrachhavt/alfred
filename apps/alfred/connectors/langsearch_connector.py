@@ -94,7 +94,9 @@ class LangSearchClient:
     ) -> None:
         self.api_key = api_key or settings.langsearch_api_key
         if not self.api_key:
-            raise ValueError("LangSearch API key is not configured. Set LANGSEARCH_API_KEY or pass api_key explicitly.")
+            raise ValueError(
+                "LangSearch API key is not configured. Set LANGSEARCH_API_KEY or pass api_key explicitly."
+            )
 
         self.base_url = (base_url or settings.langsearch_base_url).rstrip("/")
         self.rerank_url = (rerank_url or settings.langsearch_rerank_url or "").rstrip("/") or None
@@ -283,7 +285,9 @@ class LangSearchClient:
             "Accept": "application/json",
         }
         try:
-            response: Response = self.session.post(url, json=payload, headers=headers, timeout=DEFAULT_TIMEOUT)
+            response: Response = self.session.post(
+                url, json=payload, headers=headers, timeout=DEFAULT_TIMEOUT
+            )
         except requests.RequestException as exc:  # pragma: no cover - network failure
             raise LangSearchError(str(exc)) from exc
 
@@ -310,7 +314,9 @@ class LangSearchClient:
             )
             hits = sum(haystack.count(tok) for tok in tokens)
             bonus = 1.0 if result.variant.startswith("quoted") else 0.0
-            result.score = hits + bonus + max(0.0, (len(tokens) - result.variant.count("pdf")) * 0.05)
+            result.score = (
+                hits + bonus + max(0.0, (len(tokens) - result.variant.count("pdf")) * 0.05)
+            )
 
     def _rerank(self, query: str, results: Sequence[LangSearchResult]) -> Dict[str, float]:
         if not self.rerank_url:

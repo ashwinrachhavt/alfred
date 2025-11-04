@@ -17,6 +17,7 @@ from alfred.core.config import settings
 API_DEFAULT_BASE = "https://api.openwebninja.com/realtime-glassdoor-data"
 API_KEY_ENV = settings.openweb_ninja_api_key or "OPENWEBNINJA_GLASSDOOR_API_KEY"
 
+
 class GlassdoorResponse(BaseModel):
     success: bool
     data: Optional[Dict[str, Any]] = None  # normalized leaf payload
@@ -114,7 +115,9 @@ class GlassdoorClient:
         while True:
             attempt += 1
             try:
-                r = requests.request(method, url, headers=self._headers(), params=params, timeout=self.timeout)
+                r = requests.request(
+                    method, url, headers=self._headers(), params=params, timeout=self.timeout
+                )
                 # success path
                 try:
                     raw: Any = r.json()
@@ -124,8 +127,12 @@ class GlassdoorClient:
                 if 200 <= r.status_code < 300:
                     if isinstance(raw, dict):
                         ok, unwrapped = _unwrap(raw)
-                        return GlassdoorResponse(success=ok, data=unwrapped, status_code=r.status_code)
-                    return GlassdoorResponse(success=True, data={"raw": raw}, status_code=r.status_code)
+                        return GlassdoorResponse(
+                            success=ok, data=unwrapped, status_code=r.status_code
+                        )
+                    return GlassdoorResponse(
+                        success=True, data={"raw": raw}, status_code=r.status_code
+                    )
 
                 # handle retryable errors (429/5xx)
                 if r.status_code in (429, 500, 502, 503, 504) and attempt <= self.max_retries:
@@ -174,11 +181,11 @@ class GlassdoorClient:
         company_id: Union[int, str],
         *,
         page: int = 1,
-        sort: str = "POPULAR",          # POPULAR | MOST_RECENT | OLDEST | EASIEST | MOST_DIFFICULT | RELEVANCE
-        job_function: str = "ANY",      # as per docs
+        sort: str = "POPULAR",  # POPULAR | MOST_RECENT | OLDEST | EASIEST | MOST_DIFFICULT | RELEVANCE
+        job_function: str = "ANY",  # as per docs
         job_title: str = "",
         location: str = "",
-        location_type: str = "ANY",     # ANY | CITY | STATE | COUNTRY
+        location_type: str = "ANY",  # ANY | CITY | STATE | COUNTRY
         received_offer_only: Optional[bool] = None,
         domain: Optional[str] = None,
     ) -> GlassdoorResponse:

@@ -2,35 +2,44 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Iterable, List, Literal, Sequence
+from typing import Annotated, Any, Iterable, List, Literal, Sequence, TypedDict
 
-try:
-    from langchain.tools.retriever import create_retriever_tool
-except ImportError:  # pragma: no cover - compatibility with older langchain
-    from langchain_core.documents import Document
-    from langchain_core.tools import BaseTool
+from dotenv import load_dotenv
 
-    class _CompatRetrieverTool(BaseTool):
-        name: str
-        description: str
-        retriever: Any
+load_dotenv()
 
-        def _run(self, query: str) -> str:  # type: ignore[override]
-            docs: Sequence[Document] = self.retriever.invoke(query)
-            return "\n\n".join(d.page_content for d in docs)
+from langchain_core.documents import Document
+from langchain_core.tools import BaseTool
 
-        async def _arun(self, query: str) -> str:  # pragma: no cover
-            docs: Sequence[Document] = await self.retriever.ainvoke(query)
-            return "\n\n".join(d.page_content for d in docs)
-
-    def create_retriever_tool(retriever: Any, name: str, description: str) -> BaseTool:
-        return _CompatRetrieverTool(name=name, description=description, retriever=retriever)
-from langchain_chroma import Chroma
+from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_qdrant import QdrantVectorStore
-from langgraph.graph import END, START, MessagesState, StateGraph
-from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import AnyMessage, add_messages
+from alfred.services.langgraph_compat import ToolNode, tools_condition
 from pydantic import BaseModel, Field
+
+try:  # pragma: no cover - optional dependency
+    from langgraph.checkpoint.memory import MemorySaver
+except Exception:  # pragma: no cover
+    MemorySaver = None  # type: ignore
+
+_MEMORY_SAVER = MemorySaver() if MemorySaver is not None else None
+
+try:  # pragma: no cover - optional dependency
+    from langchain_core.retrievers import BaseRetriever
+except Exception:  # pragma: no cover
+    class BaseRetriever:  # type: ignore[empty-body]
+        """Fallback minimal retriever interface."""
+
+        def invoke(self, query: str):  # type: ignore[override]
+            return []
+
+        async def ainvoke(self, query: str):  # type: ignore[override]
+            return []
+
+
+class AgentState(TypedDict):
+    messages: Annotated[list[AnyMessage], add_messages]
 
 # ------------------------ CONFIG ------------------------
 COLLECTION = os.getenv("QDRANT_COLLECTION", os.getenv("CHROMA_COLLECTION", "personal_kb"))
@@ -42,6 +51,7 @@ QDRANT_URL = os.getenv("QDRANT_URL")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 QDRANT_HOST = os.getenv("QDRANT_HOST")
 QDRANT_PORT = os.getenv("QDRANT_PORT")
+ENABLE_QDRANT = os.getenv("ALFRED_ENABLE_QDRANT", "0").lower() in {"1", "true", "yes"}
 
 
 # ------------------------ PROMPTS ------------------------
@@ -111,14 +121,40 @@ def make_llm(temperature: float = 0.2):
 logger = logging.getLogger(__name__)
 
 
+class _NullRetriever:
+    """Retriever stub used when vector stores are unavailable."""
+
+    def invoke(self, query: str) -> Sequence[Document]:  # type: ignore[override]
+        return []
+
+    async def ainvoke(self, query: str) -> Sequence[Document]:  # pragma: no cover
+        return []
+
+
+class _RetrieverTool(BaseTool):  # pragma: no cover - simple stringifying tool
+    retriever: Any
+
+    name: str = "retrieve_notes"
+    description: str = "Retrieve relevant context snippets from the personal knowledge base."
+
+    def _run(self, query: str) -> str:  # type: ignore[override]
+        docs: Sequence[Document] = self.retriever.invoke(query)
+        return "\n\n".join(getattr(d, "page_content", str(d)) for d in docs)
+
+    async def _arun(self, query: str) -> str:  # pragma: no cover
+        docs: Sequence[Document] = await self.retriever.ainvoke(query)
+        return "\n\n".join(getattr(d, "page_content", str(d)) for d in docs)
+
+
 def _build_qdrant_vector_store(embed: OpenAIEmbeddings):  # type: ignore[name-defined]
     if not ((QDRANT_URL and QDRANT_API_KEY) or (QDRANT_HOST and QDRANT_PORT)):
         return None
 
     try:
+        from langchain_qdrant import QdrantVectorStore  # type: ignore
         from qdrant_client import QdrantClient  # type: ignore
     except ImportError as exc:  # pragma: no cover - optional dependency
-        logger.warning("Qdrant client not installed; falling back to Chroma (%s)", exc)
+        logger.warning("Qdrant client not installed; using no-op retriever (%s)", exc)
         return None
 
     try:
@@ -138,20 +174,24 @@ def _build_qdrant_vector_store(embed: OpenAIEmbeddings):  # type: ignore[name-de
 
         return QdrantVectorStore(client=client, collection_name=COLLECTION, embedding=embed)
     except Exception as exc:
-        logger.warning("Qdrant unavailable; falling back to Chroma (%s)", exc)
+        logger.warning("Qdrant unavailable; using no-op retriever (%s)", exc)
         return None
 
 
 def make_retriever(k: int = 4):
+    if not ENABLE_QDRANT:
+        return _NullRetriever()
+
     embed = OpenAIEmbeddings(model=EMBED_MODEL)
     vs = _build_qdrant_vector_store(embed)
     if vs is None:
-        vs = Chroma(
-            collection_name=COLLECTION,
-            persist_directory=CHROMA_PATH,
-            embedding_function=embed,
-        )
+        return _NullRetriever()
+
     return vs.as_retriever(search_kwargs={"k": k})
+
+
+def create_retriever_tool(retriever: Any, name: str, description: str) -> BaseTool:
+    return _RetrieverTool(name=name, description=description, retriever=retriever)
 
 
 def get_context_chunks(question: str, k: int = 4) -> List[dict]:
@@ -199,7 +239,7 @@ def make_tools(k: int = 4):
 
 
 # ------------------------ GRAPH NODES ------------------------
-def generate_query_or_respond(state: MessagesState, k: int = 4):
+def generate_query_or_respond(state: AgentState, k: int = 4):
     tools = make_tools(k=k)
     llm = make_llm(temperature=0.0).bind_tools(tools)
     # Decide to call a tool (retrieve or web_search) or respond directly
@@ -223,7 +263,7 @@ class GradeDocuments(BaseModel):
     )
 
 
-def grade_documents(state: MessagesState) -> Literal["generate_answer", "rewrite_question"]:
+def grade_documents(state: AgentState) -> Literal["generate_answer", "rewrite_question"]:
     messages = state["messages"]
     question = messages[0].content
     context = messages[-1].content
@@ -245,14 +285,14 @@ REWRITE_PROMPT = (
 )
 
 
-def rewrite_question(state: MessagesState):
+def rewrite_question(state: AgentState):
     question = state["messages"][0].content
     pro = REWRITE_PROMPT.format(question=question)
     response = make_llm(temperature=0.0).invoke([{"role": "user", "content": pro}])
     return {"messages": [{"role": "user", "content": response.content}]}
 
 
-def generate_answer(state: MessagesState, mode: str = "minimal"):
+def generate_answer(state: AgentState, mode: str = "minimal"):
     question = state["messages"][0].content
     context = state["messages"][-1].content
     system = build_system_prompt(mode)
@@ -273,7 +313,7 @@ def generate_answer(state: MessagesState, mode: str = "minimal"):
 
 # ------------------------ GRAPH BUILD/EXEC ------------------------
 def build_agent_graph(k: int = 4, mode: str = "minimal"):
-    workflow = StateGraph(MessagesState)
+    workflow = StateGraph(AgentState)
 
     workflow.add_node("generate_query_or_respond", lambda s: generate_query_or_respond(s, k=k))
     workflow.add_node("retrieve", ToolNode(make_tools(k=k)))
@@ -296,13 +336,15 @@ def build_agent_graph(k: int = 4, mode: str = "minimal"):
     workflow.add_edge("generate_answer", END)
     workflow.add_edge("rewrite_question", "generate_query_or_respond")
 
+    if _MEMORY_SAVER is not None:
+        return workflow.compile(checkpointer=_MEMORY_SAVER)
     return workflow.compile()
 
 
 def answer_agentic(question: str, k: int = 4, mode: str = "minimal") -> str:
     graph = build_agent_graph(k=k, mode=mode)
     final = ""
-    for chunk in graph.stream({"messages": [{"role": "user", "content": question}]}):
+    for chunk in graph.stream({"messages": [HumanMessage(content=question)]}):
         for _node, update in chunk.items():
             try:
                 msg = update["messages"][-1]
