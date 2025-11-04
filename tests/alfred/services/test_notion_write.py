@@ -1,5 +1,4 @@
 import pytest
-
 from alfred.services import notion
 
 

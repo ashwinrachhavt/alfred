@@ -4,21 +4,21 @@ import json
 import logging
 import os
 from typing import Annotated, Any, Iterable, List, Literal, Sequence, TypedDict
+from uuid import uuid4
 
 from dotenv import load_dotenv
-
-load_dotenv()
-
 from langchain_core.documents import Document
-from langchain_core.tools import BaseTool
-
 from langchain_core.messages import HumanMessage
+from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
+from pydantic import BaseModel, Field
+
 from alfred.services.langgraph_compat import ToolNode, tools_condition
 from alfred.services.searxng_agent import search_web as searx_search
-from pydantic import BaseModel, Field
+
+load_dotenv()
 
 try:  # pragma: no cover - optional dependency
     from langgraph.checkpoint.memory import MemorySaver
@@ -376,7 +376,13 @@ def build_agent_graph(k: int = 4, mode: str = "minimal"):
 def answer_agentic(question: str, k: int = 4, mode: str = "minimal") -> str:
     graph = build_agent_graph(k=k, mode=mode)
     final = ""
-    for chunk in graph.stream({"messages": [HumanMessage(content=question)]}):
+    stream_kwargs = {}
+    if _MEMORY_SAVER is not None:
+        stream_kwargs["config"] = {
+            "configurable": {"thread_id": f"agentic-rag-{uuid4()}"}
+        }
+
+    for chunk in graph.stream({"messages": [HumanMessage(content=question)]}, **stream_kwargs):
         for _node, update in chunk.items():
             try:
                 msg = update["messages"][-1]

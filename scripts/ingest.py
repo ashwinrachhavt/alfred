@@ -215,7 +215,7 @@ def main():
     client = QdrantClient(url=qdrant_url, api_key=qdrant_key)
 
     try:
-        exists = client.get_collection(collection)
+        client.get_collection(collection)
     except Exception:
         print(f"[ingest] Collection '{collection}' not found — creating it...")
         vector_size = len(embeddings.embed_query("dimension probe"))
@@ -223,7 +223,7 @@ def main():
         client.create_collection(collection_name=collection, vectors_config=vectors_config)
 
     # Build a QdrantVectorStore and upsert
-    vector_store = QdrantVectorStore.from_documents(
+    QdrantVectorStore.from_documents(
         documents=docs,
         embedding=embeddings,
         collection_name=collection,

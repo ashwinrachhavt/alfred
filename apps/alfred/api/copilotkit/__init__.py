@@ -1,21 +1,20 @@
 """FastAPI wiring for CopilotKit remote access."""
 
+from copilotkit.integrations.fastapi import add_fastapi_endpoint
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from copilotkit.integrations.fastapi import add_fastapi_endpoint
 
-from alfred.api.notion_proxy import register_notion_proxy
 from alfred.services.copilotkit import get_copilotkit_remote_endpoint
-
 
 COPILOTKIT_ROUTE = "/copilotkit_remote"
 
+
 def register_copilotkit_endpoint(app: FastAPI, max_workers: int = 10) -> None:
-    """Attach the CopilotKit and Notion proxy endpoints to the FastAPI app."""
+    """Attach the CopilotKit remote endpoint to the FastAPI app."""
     endpoint = get_copilotkit_remote_endpoint()
 
     @app.get(f"{COPILOTKIT_ROUTE}/info", include_in_schema=False)
-    async def copilotkit_info() -> JSONResponse:
+    async def copilotkit_info() -> JSONResponse:  # pragma: no cover - lightweight health helper
         """Provide agent/action metadata for simple health checks."""
         context = {
             "properties": {},
@@ -26,4 +25,6 @@ def register_copilotkit_endpoint(app: FastAPI, max_workers: int = 10) -> None:
         return JSONResponse(payload)
 
     add_fastapi_endpoint(app, endpoint, COPILOTKIT_ROUTE, max_workers=max_workers)
-    register_notion_proxy(app)
+
+
+__all__ = ["register_copilotkit_endpoint", "COPILOTKIT_ROUTE"]
