@@ -1,0 +1,1 @@
+Research the company thoroughly. Identify the official site, then fetch About, Products/Docs, Customers, Pricing, Careers, Press/News, Blog. Include reputable third-party context. If multiple similarly named entities exist, select the most prominent technology company.

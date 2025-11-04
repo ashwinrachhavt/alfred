@@ -5,14 +5,15 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Dict, Optional, TypedDict
 
-from langchain_core.tools import BaseTool
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
-from alfred.services.langgraph_compat import ToolNode, tools_condition
 
+from alfred.prompts import load_prompt
 from alfred.services.agentic_rag import create_retriever_tool, make_llm, make_retriever
 from alfred.services.company_researcher import research_company
+from alfred.services.langgraph_compat import ToolNode, tools_condition
 from alfred.services.web_search import search_web
 
 
@@ -45,11 +46,9 @@ def make_tools(k: int = 6):
     return [retriever, CompanyResearchTool()]
 
 
-OUTREACH_SYSTEM_PROMPT = (
-    "You are the Alfred outreach planner. Combine Ashwin's background with deep company insights to craft highly "
-    'personalized outreach. Always speak in first person ("I"). Stay specific, cite concrete experience, and '
-    "align the pitch with the company's current needs."
-)
+OUTREACH_SYSTEM_PROMPT = load_prompt("company_outreach", "system.md")
+_FINAL_PROMPT_TEMPLATE = load_prompt("company_outreach", "final_template.md")
+_SEED_PROMPT = load_prompt("company_outreach", "seed.md")
 
 
 @lru_cache(maxsize=1)
@@ -123,21 +122,6 @@ def _load_job_description_context(company: str, role: str) -> str:
     return _format_job_search_results(result.get("hits", []))
 
 
-FINAL_PROMPT_TEMPLATE = (
-    "Using the gathered context, draft an outreach kit for the target company.\n"
-    "Company: {company}\nRole: {role}\n"
-    "Additional personal context or instructions: {personal_context}\n"
-    "Output JSON with keys summary, positioning, suggested_topics (list of strings), outreach_email, follow_up (list of strings), sources (list of strings).\n"
-    "Return ONLY the JSON object with double-quoted keys.\n"
-    "The outreach_email must be polished, humble, and direct—no filler. Reference concrete achievements using first person.\n"
-    "Positioning should be 3-5 bullet points summarizing why I'm a fit.\n"
-    "Suggested_topics are conversation starters or project ideas to discuss with the team.\n"
-    "Follow_up should outline next steps if the company does not respond.\n"
-    "Sources should list the domains or note titles used.\n"
-    "Anchor every section in the resume details and job description insights provided earlier."
-)
-
-
 def build_company_outreach_graph(company: str, role: str, personal_context: str, k: int = 6):
     tools = make_tools(k=k)
     planner = make_llm(temperature=0.0).bind_tools(tools)
@@ -147,7 +131,7 @@ def build_company_outreach_graph(company: str, role: str, personal_context: str,
 
     def finalize_node(state: OutreachState):
         synth = make_llm(temperature=0.2)
-        final_prompt = FINAL_PROMPT_TEMPLATE.format(
+        final_prompt = _FINAL_PROMPT_TEMPLATE.format(
             company=company,
             role=role,
             personal_context=personal_context or "(none provided)",
@@ -186,11 +170,7 @@ def generate_company_outreach(
     graph = build_company_outreach_graph(
         company=company, role=role, personal_context=personal_context, k=k
     )
-    seed = (
-        "Plan a targeted outreach for the given company. Gather the strongest alignment between my profile and their "
-        "needs. Use tools to fetch my resume/context and the latest company report. Incorporate the resume extract and "
-        "job description research provided below."
-    )
+    seed = _SEED_PROMPT
     if resume_context:
         seed += f"\n\n=== Resume (Docling parsed) ===\n{resume_context}"
     if job_description_context:

@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 from alfred.core.config import settings
-
 from alfred.services import notion as svc
 
 router = APIRouter(prefix="/notion", tags=["notion"])

@@ -1,0 +1,1 @@
+Plan a targeted outreach for the given company. Gather the strongest alignment between my profile and their needs. Use tools to fetch my resume/context and the latest company report. Incorporate the resume extract and job description research provided below.
