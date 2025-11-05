@@ -36,6 +36,8 @@ dependencies = [
     "python-dateutil>=2.9,<3",
     "pytz>=2024.1",
     "tinydb>=4.8,<5",
+    "langchain-tavily>=0.2.13",
+    "ddgs>=9.5.5",
 ]
 
 [tool.uv]

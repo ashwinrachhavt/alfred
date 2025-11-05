@@ -3,14 +3,10 @@
 import logging
 from typing import Any
 
-try:  # pragma: no cover - optional dependency
-    from copilotkit.integrations.fastapi import add_fastapi_endpoint
-except ModuleNotFoundError:  # pragma: no cover
-    add_fastapi_endpoint = None  # type: ignore[assignment]
-
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from alfred.connectors.copilotkit import load_fastapi_endpoint
 from alfred.services.copilotkit import get_copilotkit_remote_endpoint
 
 COPILOTKIT_ROUTE = "/copilotkit_remote"
@@ -18,13 +14,21 @@ COPILOTKIT_ROUTE = "/copilotkit_remote"
 
 def register_copilotkit_endpoint(app: FastAPI, max_workers: int = 10) -> None:
     """Attach the CopilotKit remote endpoint to the FastAPI app."""
+    add_fastapi_endpoint = load_fastapi_endpoint()
+
     if add_fastapi_endpoint is None:
         logging.getLogger(__name__).info(
             "CopilotKit integration skipped: optional dependency not installed."
         )
         return
 
-    endpoint = get_copilotkit_remote_endpoint()
+    try:
+        endpoint = get_copilotkit_remote_endpoint()
+    except RuntimeError as exc:
+        logging.getLogger(__name__).warning(
+            "CopilotKit endpoint unavailable: %s", exc
+        )
+        return
 
     @app.get(f"{COPILOTKIT_ROUTE}/info", include_in_schema=False)
     async def copilotkit_info() -> JSONResponse:  # pragma: no cover - lightweight health helper

@@ -12,11 +12,23 @@ import asyncio
 import json
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from crewai import Agent, Crew, Process, Task
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+
+from alfred.connectors.crewai import (
+    CrewAIUnavailable,
+    CrewTools,
+    load_crewai_classes,
+    load_crewai_tools,
+)
+from alfred.prompts import load_prompt
+
+if TYPE_CHECKING:  # pragma: no cover - import-time typing only
+    from crewai import Agent as CrewAIAgent, Crew as CrewAICrew, Process as CrewAIProcess, Task as CrewAITask
+else:
+    CrewAIAgent = CrewAICrew = CrewAIProcess = CrewAITask = Any
 
 __all__ = [
     "CandidateProfile",
@@ -28,22 +40,36 @@ __all__ = [
 
 load_dotenv()
 
-# Optional tools. File runs without them.
-try:
-    from crewai_tools import ScrapeWebsiteTool, SerperDevTool
+Agent = Crew = Process = Task = None  # type: ignore[assignment]
+_crew_import_error: Optional[Exception] = None
+_tooling_cache: Optional[CrewTools] = None
 
-    web_scrape_tool = ScrapeWebsiteTool()
-    search_tool = SerperDevTool()
-    DEFAULT_TOOLS = [search_tool, web_scrape_tool]
-except Exception:
-    DEFAULT_TOOLS = []
-    web_scrape_tool = None  # type: ignore[assignment]
 
-# Optional site-scoped search tool (if installed)
-try:
-    from crewai_tools import WebsiteSearchTool  # type: ignore
-except Exception:  # pragma: no cover - optional dependency
-    WebsiteSearchTool = None  # type: ignore[assignment]
+def _ensure_crewai_loaded() -> None:
+    """Load CrewAI classes on demand and surface helpful guidance when absent."""
+
+    global Agent, Crew, Process, Task, _crew_import_error
+
+    if Agent is not None:
+        return
+
+    if _crew_import_error is not None:
+        raise RuntimeError(str(_crew_import_error)) from _crew_import_error
+
+    try:
+        Agent, Crew, Process, Task = load_crewai_classes()
+    except CrewAIUnavailable as exc:
+        _crew_import_error = exc
+        raise RuntimeError(str(exc)) from exc
+
+
+def _get_tooling() -> CrewTools:
+    """Fetch optional crewai_tools integrations once."""
+
+    global _tooling_cache
+    if _tooling_cache is None:
+        _tooling_cache = load_crewai_tools()
+    return _tooling_cache
 
 # ------------------ Static URL Sources ------------------
 
@@ -104,52 +130,52 @@ class CandidateProfile(BaseModel):
 
 # ------------------ Prompt Constraints ------------------
 
-PHILOSOPHY_RULES = """
-Quiet constraints only:
-- Stoic: focus on controllables (skills, deliverables, metrics). No dramatization.
-- Virtue ethics: balance confidence/humility; show judgment through tradeoffs.
-- Existential: avoid posturing; state purpose briefly and concretely.
-No quotes or philosopher name-drops.
-"""
-STYLE_RULES = """
-Voice: professional, precise, plain English. Avoid filler/clichés.
-Prefer: outcomes, numbers, constraints considered, tradeoffs, ownership.
-Sentences: short–medium. Paragraphs: 2–4 sentences. Bullets sparingly.
-"""
-ETHICS_RULES = """
-No exaggeration; state uncertainty plainly; respect company context; no manipulative tactics.
-"""
-OUTPUT_RULES = """
-Output must be paste-ready. No preambles or analysis notes.
-"""
+PHILOSOPHY_RULES = load_prompt("crew", "philosophy_rules.md")
+STYLE_RULES = load_prompt("crew", "style_rules.md")
+ETHICS_RULES = load_prompt("crew", "ethics_rules.md")
+OUTPUT_RULES = load_prompt("crew", "output_rules.md")
+
+
+# ------------------ Prompt Templates ------------------
+
+RESEARCH_PROMPT = load_prompt("crew", "research_task.md")
+RESEARCH_URLS_PROMPT = load_prompt("crew", "research_urls_task.md")
+PSYCH_PROMPT = load_prompt("crew", "psych_task.md")
+PHILOSOPHY_PROMPT = load_prompt("crew", "philosophy_task.md")
+COMPOSE_COVER_LETTER_PROMPT = load_prompt("crew", "compose_cover_letter.md")
+COMPOSE_LINKEDIN_PROMPT = load_prompt("crew", "compose_linkedin.md")
 
 # ------------------ Agents ------------------
 
 
-def build_researcher() -> Agent:
+def build_researcher() -> CrewAIAgent:
+    _ensure_crewai_loaded()
+    tools = list(_get_tooling().default_tools)
     return Agent(
         role="Industry & Company Researcher",
         goal="Produce concise, sourced company/role briefs a candidate can rely on.",
         backstory="Senior researcher skilled at extracting signal from public sources and employer materials.",
-        tools=DEFAULT_TOOLS,
+        tools=tools,
         allow_delegation=False,
         verbose=False,
         max_iter=8,  # cap loops that trigger “Maximum iterations…”
     )
 
 
-def build_researcher_for_urls(urls: List[str]) -> Agent:
+def build_researcher_for_urls(urls: List[str]) -> CrewAIAgent:
     """Build a researcher configured with site-scoped tools for specific URLs.
 
     If WebsiteSearchTool is available, attach one instance per URL to enable
     targeted retrieval. Also include the generic ScrapeWebsiteTool when present
     so the agent can directly scrape arbitrary pages provided in the prompt.
     """
-    tools = []
-    if WebsiteSearchTool is not None:
-        tools.extend([WebsiteSearchTool(website=u) for u in urls])
-    if web_scrape_tool is not None:
-        tools.append(web_scrape_tool)
+    _ensure_crewai_loaded()
+    tooling = _get_tooling()
+    tools: List[Any] = []
+    if tooling.website_search_tool_cls is not None:
+        tools.extend([tooling.website_search_tool_cls(website=u) for u in urls])
+    if tooling.web_scrape_tool is not None:
+        tools.append(tooling.web_scrape_tool)
     return Agent(
         role="You are a helpful assistant that extracts facts from provided URLs.",
         goal="Answer user questions and summarize using only the provided sources.",
@@ -161,7 +187,8 @@ def build_researcher_for_urls(urls: List[str]) -> Agent:
     )
 
 
-def build_psychologist() -> Agent:
+def build_psychologist() -> CrewAIAgent:
+    _ensure_crewai_loaded()
     return Agent(
         role="Organizational Psychology Strategist",
         goal="Map research to likely evaluator lenses, credibility signals, and messaging risks.",
@@ -173,7 +200,8 @@ def build_psychologist() -> Agent:
     )
 
 
-def build_philosopher() -> Agent:
+def build_philosopher() -> CrewAIAgent:
+    _ensure_crewai_loaded()
     return Agent(
         role="Principled Communication Architect",
         goal="Translate philosophical constraints into concrete writing rules (Do/Don't).",
@@ -185,7 +213,8 @@ def build_philosopher() -> Agent:
     )
 
 
-def build_composer() -> Agent:
+def build_composer() -> CrewAIAgent:
+    _ensure_crewai_loaded()
     return Agent(
         role="Content Strategist & Writer",
         goal="Produce polished, targeted artifacts (cover letters, outreach notes) that read human and senior.",
@@ -200,110 +229,97 @@ def build_composer() -> Agent:
 # ------------------ Tasks ------------------
 
 
-def research_task(job: JobApplicationContext) -> Task:
+def research_task(job: JobApplicationContext) -> CrewAITask:
+    _ensure_crewai_loaded()
+    description = RESEARCH_PROMPT.format(
+        company_name=job.company_name,
+        position=job.position,
+        philosophy_rules=PHILOSOPHY_RULES,
+        style_rules=STYLE_RULES,
+        ethics_rules=ETHICS_RULES,
+    )
     return Task(
         agent=build_researcher(),
-        description=(
-            f"Research {job.company_name} for the {job.position} role.\n"
-            "Return JSON with keys exactly:\n"
-            "  mission, products, customers, recent_news, strategy_signals, risks, competitors,\n"
-            "  team_signals (if any), hiring_themes (from JD), source_notes (list of {url, note}).\n"
-            "Be concise; ~250 words across fields (excluding source_notes). Use only public info.\n\n"
-            f"{PHILOSOPHY_RULES}\n{STYLE_RULES}\n{ETHICS_RULES}"
-        ),
+        description=description,
         expected_output="JSON string per spec.",
     )
 
 
-def research_urls_task(urls: List[str]) -> Task:
+def research_urls_task(urls: List[str]) -> CrewAITask:
     """Task that summarizes information from a fixed set of URLs.
 
     Returns a compact JSON so callers can consume it deterministically.
     """
+    _ensure_crewai_loaded()
     agent = build_researcher_for_urls(urls)
     url_block = "\n".join(f"- {u}" for u in urls)
+    description = RESEARCH_URLS_PROMPT.format(
+        sources=url_block,
+        style_rules=STYLE_RULES,
+        ethics_rules=ETHICS_RULES,
+    )
     return Task(
         agent=agent,
-        description=(
-            "Using the available tools, read only the following URLs and compile a concise profile.\n"
-            f"Sources:\n{url_block}\n\n"
-            "Return strict JSON with keys exactly: \n"
-            "  profile: short bio/summary (60–120 words),\n"
-            "  roles: list of current/past notable roles (title, org),\n"
-            "  achievements: list of top 5 bullets,\n"
-            "  publications: list of titles/links if present,\n"
-            "  links: list of canonical links found,\n"
-            "  evidence: list of {source: url, note: 1–2 lines} showing where claims came from.\n\n"
-            f"{STYLE_RULES}\n{ETHICS_RULES}"
-        ),
+        description=description,
         expected_output="JSON with profile, roles, achievements, publications, links, evidence.",
     )
 
 
-def psych_task() -> Task:
+def psych_task() -> CrewAITask:
+    _ensure_crewai_loaded()
+    description = PSYCH_PROMPT.format(
+        philosophy_rules=PHILOSOPHY_RULES,
+        style_rules=STYLE_RULES,
+        ethics_rules=ETHICS_RULES,
+    )
     return Task(
         agent=build_psychologist(),
-        description=(
-            "You are given (via context) research JSON and a candidate profile JSON.\n"
-            "Produce a messaging brief with JSON keys exactly:\n"
-            "  evaluator_lenses: 3–5 likely concerns for this role/company,\n"
-            "  proof_points: 4–6 concrete candidate claims w/ evidence or metrics,\n"
-            "  red_flags_to_avoid: bullets,\n"
-            "  structure: recommended outline for the artifact,\n"
-            "  call_to_action: 1 line.\n"
-            "Return JSON only.\n\n"
-            f"{PHILOSOPHY_RULES}\n{STYLE_RULES}\n{ETHICS_RULES}"
-        ),
+        description=description,
         expected_output="JSON messaging brief.",
     )
 
 
-def philosophy_task(job: JobApplicationContext) -> Task:
+def philosophy_task(job: JobApplicationContext) -> CrewAITask:
+    _ensure_crewai_loaded()
+    description = PHILOSOPHY_PROMPT.format(
+        philosophical_approach=job.philosophical_approach,
+        philosophy_rules=PHILOSOPHY_RULES,
+        style_rules=STYLE_RULES,
+        ethics_rules=ETHICS_RULES,
+    )
     return Task(
         agent=build_philosopher(),
-        description=(
-            f"Philosophical approach='{job.philosophical_approach}'. Output a compact rules JSON with keys:\n"
-            "  word_choices_do: 6–10 verbs/nouns to prefer,\n"
-            "  word_choices_dont: 6–10 to avoid,\n"
-            "  tone_rules: 3 bullets,\n"
-            "  examples: 2 objects each with before and after strings.\n"
-            "No quotes or philosopher names. JSON only.\n\n"
-            f"{PHILOSOPHY_RULES}\n{STYLE_RULES}\n{ETHICS_RULES}"
-        ),
+        description=description,
         expected_output="JSON rules.",
     )
 
 
-def compose_cover_letter_task(job: JobApplicationContext) -> Task:
+def compose_cover_letter_task(job: JobApplicationContext) -> CrewAITask:
+    _ensure_crewai_loaded()
+    description = COMPOSE_COVER_LETTER_PROMPT.format(
+        output_rules=OUTPUT_RULES,
+        philosophy_rules=PHILOSOPHY_RULES,
+        style_rules=STYLE_RULES,
+        ethics_rules=ETHICS_RULES,
+    )
     return Task(
         agent=build_composer(),
-        description=(
-            "Compose a one-page cover letter (170–240 words).\n"
-            "Inputs (via context): research JSON, messaging brief JSON, philosophy rules JSON, candidate profile JSON.\n"
-            "Constraints:\n"
-            "- No clichés like 'passionate', no filler.\n"
-            "- Lead with role/company fit; include 2–3 proof points with metrics; 1 brief product/tech insight tied to JD; 1 simple CTA.\n"
-            "- Mirror 1–2 terms from company JD/values if present; otherwise keep neutral.\n"
-            "- Paragraphs: 3–4. Sentences crisp.\n"
-            f"{OUTPUT_RULES}\n{PHILOSOPHY_RULES}\n{STYLE_RULES}\n{ETHICS_RULES}"
-        ),
+        description=description,
         expected_output="Final cover letter text (plain text).",
     )
 
 
-def compose_linkedin_task() -> Task:
+def compose_linkedin_task() -> CrewAITask:
+    _ensure_crewai_loaded()
+    description = COMPOSE_LINKEDIN_PROMPT.format(
+        output_rules=OUTPUT_RULES,
+        philosophy_rules=PHILOSOPHY_RULES,
+        style_rules=STYLE_RULES,
+        ethics_rules=ETHICS_RULES,
+    )
     return Task(
         agent=build_composer(),
-        description=(
-            "Compose a LinkedIn connection note (<=300 chars) AND a follow-up DM (80–120 words).\n"
-            "Inputs (via context): research JSON (optional), philosophy rules JSON, LinkedIn context JSON, candidate profile JSON.\n"
-            "Constraints:\n"
-            "- Reference 1 shared interest or specific work of theirs.\n"
-            "- Offer a relevant observation or resource before any ask.\n"
-            "- Tone: courteous, specific, zero fluff.\n"
-            'Return JSON exactly: {"connection_note": "...", "follow_up": "..."}.\n\n'
-            f"{OUTPUT_RULES}\n{PHILOSOPHY_RULES}\n{STYLE_RULES}\n{ETHICS_RULES}"
-        ),
+        description=description,
         expected_output='JSON with "connection_note" and "follow_up".',
     )
 
@@ -311,7 +327,7 @@ def compose_linkedin_task() -> Task:
 # ------------------ Crew Runner ------------------
 
 
-def _normalize_task_output(task: Task, kickoff_result) -> str:
+def _normalize_task_output(task: CrewAITask, kickoff_result) -> str:
     """
     After crew.kickoff(), prefer task.output (CrewAI exposes it).
     Fallback to properties on CrewOutput (e.g., .raw/.final_output) or str().
@@ -357,7 +373,7 @@ def _normalize_task_output(task: Task, kickoff_result) -> str:
 class PhilosophicalApplicationCrew:
     """Deterministic pipeline runner using kickoff()."""
 
-    def _kickoff_single(self, task: Task, context_payloads: Optional[List[str]] = None) -> str:
+    def _kickoff_single(self, task: CrewAITask, context_payloads: Optional[List[str]] = None) -> str:
         """Run a single task safely.
 
         CrewAI Task.context expects a list of Task instances whose outputs will
@@ -367,6 +383,7 @@ class PhilosophicalApplicationCrew:
         To provide raw string/JSON context, we inline it into the task
         description and ensure task.context is not a list of strings.
         """
+        _ensure_crewai_loaded()
         if context_payloads:
             # Inline context directly into the prompt to avoid CrewAI treating
             # raw strings as Task objects during context aggregation.
