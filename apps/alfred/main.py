@@ -9,7 +9,9 @@ except Exception:
     pass
 
 from alfred.api import register_routes
+from alfred.core import db_models  # noqa: F401 - ensure models are imported
 from alfred.core.config import settings
+from alfred.core.database import init_db
 
 app = FastAPI(title="Alfred API")
 app.add_middleware(
@@ -21,3 +23,8 @@ app.add_middleware(
 )
 
 register_routes(app)
+
+
+@app.on_event("startup")
+async def _startup() -> None:
+    await init_db()

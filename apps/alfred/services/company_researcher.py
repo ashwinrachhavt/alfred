@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import logging
 import os
 from typing import Annotated, List, TypedDict
+from uuid import uuid4
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
@@ -12,6 +14,7 @@ from langgraph.graph.message import AnyMessage, add_messages
 from alfred.connectors.web_connector import WebConnector
 from alfred.prompts import load_prompt
 from alfred.services.langgraph_compat import ToolNode, tools_condition
+from alfred.services.langgraph_runtime import get_checkpointer, get_store
 
 DEFAULT_UA = "Mozilla/5.0 (compatible; AlfredBot/1.0; +https://github.com/alfred)"
 
@@ -121,6 +124,18 @@ SYSTEM_PROMPT = load_prompt("company_researcher", "system.md")
 _FINALIZE_PROMPT = load_prompt("company_researcher", "finalize.md")
 _SEED_PROMPT = load_prompt("company_researcher", "seed.md")
 
+try:  # pragma: no cover - optional checkpointer
+    _CHECKPOINTER = get_checkpointer()
+except Exception as exc:  # pragma: no cover
+    logging.getLogger(__name__).warning("Company researcher checkpointer disabled: %s", exc)
+    _CHECKPOINTER = None
+
+try:  # pragma: no cover - optional store
+    _STORE = get_store()
+except Exception as exc:  # pragma: no cover
+    logging.getLogger(__name__).warning("Company researcher store unavailable: %s", exc)
+    _STORE = None
+
 
 def build_company_graph():
     tools = make_tools()
@@ -151,13 +166,25 @@ def build_company_graph():
     g.add_edge("tools", "agent")
     g.add_edge("finalize", END)
 
-    return g.compile()
+    compile_kwargs: dict = {}
+    if _CHECKPOINTER is not None:
+        compile_kwargs["checkpointer"] = _CHECKPOINTER
+    if _STORE is not None:
+        compile_kwargs["store"] = _STORE
+
+    return g.compile(**compile_kwargs)
 
 
 def research_company(name: str) -> str:
     graph = build_company_graph()
     seed = f"{_SEED_PROMPT}\nCompany to research: {name}."
     final = ""
+    stream_config: dict = {"recursion_limit": 60}
+    if _CHECKPOINTER is not None:
+        stream_config.setdefault("configurable", {})["thread_id"] = (
+            f"company-research-{uuid4()}"
+        )
+
     for chunk in graph.stream(
         {
             "messages": [
@@ -165,7 +192,7 @@ def research_company(name: str) -> str:
                 HumanMessage(content=seed),
             ]
         },
-        config={"recursion_limit": 60},
+        config=stream_config,
     ):
         for _node, update in chunk.items():
             try:

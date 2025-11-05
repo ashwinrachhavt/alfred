@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Dict, Optional, TypedDict
+from uuid import uuid4
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
@@ -14,6 +16,7 @@ from alfred.prompts import load_prompt
 from alfred.services.agentic_rag import create_retriever_tool, make_llm, make_retriever
 from alfred.services.company_researcher import research_company
 from alfred.services.langgraph_compat import ToolNode, tools_condition
+from alfred.services.langgraph_runtime import get_checkpointer, get_store
 from alfred.services.web_search import search_web
 
 
@@ -49,6 +52,19 @@ def make_tools(k: int = 6):
 OUTREACH_SYSTEM_PROMPT = load_prompt("company_outreach", "system.md")
 _FINAL_PROMPT_TEMPLATE = load_prompt("company_outreach", "final_template.md")
 _SEED_PROMPT = load_prompt("company_outreach", "seed.md")
+
+
+try:  # pragma: no cover - optional checkpointer
+    _CHECKPOINTER = get_checkpointer()
+except Exception as exc:  # pragma: no cover
+    logging.getLogger(__name__).warning("Company outreach checkpointer disabled: %s", exc)
+    _CHECKPOINTER = None
+
+try:  # pragma: no cover - optional store
+    _STORE = get_store()
+except Exception as exc:  # pragma: no cover
+    logging.getLogger(__name__).warning("Company outreach store unavailable: %s", exc)
+    _STORE = None
 
 
 @lru_cache(maxsize=1)
@@ -154,7 +170,13 @@ def build_company_outreach_graph(company: str, role: str, personal_context: str,
     graph.add_edge("tools", "agent")
     graph.add_edge("finalize", END)
 
-    return graph.compile()
+    compile_kwargs: Dict[str, Any] = {}
+    if _CHECKPOINTER is not None:
+        compile_kwargs["checkpointer"] = _CHECKPOINTER
+    if _STORE is not None:
+        compile_kwargs["store"] = _STORE
+
+    return graph.compile(**compile_kwargs)
 
 
 def generate_company_outreach(
@@ -179,9 +201,15 @@ def generate_company_outreach(
     final_text: Optional[str] = None
 
     try:
+        stream_config: Dict[str, Any] = {"recursion_limit": 40}
+        if _CHECKPOINTER is not None:
+            stream_config.setdefault("configurable", {})["thread_id"] = (
+                f"company-outreach-{uuid4()}"
+            )
+
         for chunk in graph.stream(
             {"messages": [SystemMessage(content=OUTREACH_SYSTEM_PROMPT), HumanMessage(content=seed)]},
-            config={"recursion_limit": 40},
+            config=stream_config,
         ):
             for update in chunk.values():
                 messages = update.get("messages")

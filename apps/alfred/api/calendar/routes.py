@@ -6,8 +6,8 @@ from alfred.connectors.google_calendar_connector import GoogleCalendarConnector
 from alfred.services.google_oauth import (
     exchange_code_for_tokens,
     generate_authorization_url,
-    load_credentials,
-    persist_credentials,
+    load_credentials_async,
+    persist_credentials_async,
 )
 
 CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
@@ -22,18 +22,25 @@ def calendar_auth_url(state: str | None = Query(default=None)):
 
 
 @router.get("/oauth/callback")
-def calendar_oauth_callback(code: str, state: str | None = None):
-    exchange_code_for_tokens(user_id=None, code=code, state=state, scopes=CALENDAR_SCOPES)
+async def calendar_oauth_callback(code: str, state: str | None = None):
+    creds = exchange_code_for_tokens(
+        user_id=None, code=code, state=state, scopes=CALENDAR_SCOPES
+    )
+    await persist_credentials_async(None, creds, scopes=CALENDAR_SCOPES, is_calendar=True)
     return {"ok": True}
 
 
 @router.get("/calendars")
 async def list_calendars():
-    creds = load_credentials()
+    creds = await load_credentials_async(is_calendar=True)
     if creds is None:
         raise HTTPException(404, "No credentials found; authorize via /api/calendar/auth_url")
     connector = GoogleCalendarConnector(
-        creds, user_id=None, on_credentials_refreshed=lambda c: persist_credentials(None, c)
+        creds,
+        user_id=None,
+        on_credentials_refreshed=lambda c: persist_credentials_async(
+            None, c, scopes=CALENDAR_SCOPES, is_calendar=True
+        ),
     )
     calendars, err = await connector.get_calendars()
     if err:
@@ -43,11 +50,15 @@ async def list_calendars():
 
 @router.get("/events")
 async def list_events(start_date: str, end_date: str, max_results: int = 2500):
-    creds = load_credentials()
+    creds = await load_credentials_async(is_calendar=True)
     if creds is None:
         raise HTTPException(404, "No credentials found; authorize via /api/calendar/auth_url")
     connector = GoogleCalendarConnector(
-        creds, user_id=None, on_credentials_refreshed=lambda c: persist_credentials(None, c)
+        creds,
+        user_id=None,
+        on_credentials_refreshed=lambda c: persist_credentials_async(
+            None, c, scopes=CALENDAR_SCOPES, is_calendar=True
+        ),
     )
     events, err = await connector.get_all_primary_calendar_events(
         start_date=start_date, end_date=end_date, max_results=max_results

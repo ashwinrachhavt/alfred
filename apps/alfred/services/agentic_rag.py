@@ -17,16 +17,22 @@ from pydantic import BaseModel, Field
 
 from alfred.prompts import load_prompt
 from alfred.services.langgraph_compat import ToolNode, tools_condition
+from alfred.services.langgraph_runtime import get_checkpointer, get_store
 from alfred.services.searxng_agent import search_web as searx_search
 
 load_dotenv()
 
-try:  # pragma: no cover - optional dependency
-    from langgraph.checkpoint.memory import MemorySaver
-except Exception:  # pragma: no cover
-    MemorySaver = None  # type: ignore
+try:  # pragma: no cover - may fail when optional deps missing
+    _CHECKPOINTER = get_checkpointer()
+except Exception as exc:  # pragma: no cover
+    logging.getLogger(__name__).warning("LangGraph checkpointer disabled: %s", exc)
+    _CHECKPOINTER = None
 
-_MEMORY_SAVER = MemorySaver() if MemorySaver is not None else None
+try:  # pragma: no cover - optional store
+    _STORE = get_store()
+except Exception as exc:  # pragma: no cover
+    logging.getLogger(__name__).warning("LangGraph store unavailable: %s", exc)
+    _STORE = None
 
 try:  # pragma: no cover - optional dependency
     from langchain_core.retrievers import BaseRetriever
@@ -349,16 +355,19 @@ def build_agent_graph(k: int = 4, mode: str = "minimal"):
     workflow.add_edge("generate_answer", END)
     workflow.add_edge("rewrite_question", "generate_query_or_respond")
 
-    if _MEMORY_SAVER is not None:
-        return workflow.compile(checkpointer=_MEMORY_SAVER)
-    return workflow.compile()
+    compile_kwargs: dict[str, Any] = {}
+    if _CHECKPOINTER is not None:
+        compile_kwargs["checkpointer"] = _CHECKPOINTER
+    if _STORE is not None:
+        compile_kwargs["store"] = _STORE
+    return workflow.compile(**compile_kwargs)
 
 
 def answer_agentic(question: str, k: int = 4, mode: str = "minimal") -> str:
     graph = build_agent_graph(k=k, mode=mode)
     final = ""
-    stream_kwargs = {}
-    if _MEMORY_SAVER is not None:
+    stream_kwargs: dict[str, Any] = {}
+    if _CHECKPOINTER is not None:
         stream_kwargs["config"] = {
             "configurable": {"thread_id": f"agentic-rag-{uuid4()}"}
         }

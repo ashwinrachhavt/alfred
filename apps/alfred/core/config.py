@@ -28,7 +28,8 @@ class Settings(BaseSettings):
     google_scopes: list[str] = Field(
         default=[
             "https://www.googleapis.com/auth/gmail.readonly",
-            "https://www.googleapis.com/auth/gmail.metadata",
+            "https://www.googleapis.com/auth/gmail.modify",
+            "https://www.googleapis.com/auth/calendar.readonly",
         ],
         alias="GOOGLE_SCOPES",
     )
@@ -69,6 +70,28 @@ class Settings(BaseSettings):
         default=".alfred_data/langsearch.json",
         alias="LANGSEARCH_DB_PATH",
     )
+
+    database_url: str | None = Field(default=None, alias="DATABASE_URL")
+
+    @property
+    def database_url_async(self) -> str | None:
+        """Return an asyncpg-compatible SQLAlchemy URL if configured."""
+
+        if not self.database_url:
+            return None
+        if "+asyncpg" in self.database_url:
+            return self.database_url
+        if self.database_url.startswith("postgresql://"):
+            return self.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return self.database_url
+
+    @property
+    def database_url_sync(self) -> str | None:
+        """Return a synchronous connection string for drivers like psycopg."""
+
+        if not self.database_url:
+            return None
+        return self.database_url.replace("+asyncpg", "")
 
     class Config:
         env_file = "apps/alfred/.env"
