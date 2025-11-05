@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 
 from alfred.core.config import settings
+from alfred.connectors.notion_history import NotionHistoryConnector
 
 
 def _client() -> Client:
@@ -240,6 +241,29 @@ def list_notes() -> dict:
         raise HTTPException(400, "Set NOTION_NOTES_DB_ID or NOTION_PARENT_PAGE_ID")
     # Notion search cannot directly scope to a parent; return generic search for now
     return search(query="", page_size=25)
+
+
+async def fetch_page_history(
+    *,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    token: Optional[str] = None,
+    limit: Optional[int] = None,
+    include_content: bool = False,
+) -> List[Dict[str, Any]]:
+    """Fetch page histories using the async connector for deep exports."""
+
+    notion_token = token or settings.notion_token
+    if not notion_token:
+        raise HTTPException(500, "NOTION_TOKEN not configured")
+
+    async with NotionHistoryConnector(notion_token) as connector:
+        return await connector.get_all_pages(
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+            include_content=include_content,
+        )
 
 
 # Notion API rate limits: ~3 RPS avg; backoff handles 429s.

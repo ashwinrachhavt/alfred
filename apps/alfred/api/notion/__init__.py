@@ -1,1 +1,5 @@
-from .routes import router as router
+"""Notion API."""
+
+from .routes import router
+
+__all__ = ["router"]

@@ -1,214 +1,320 @@
+"""Async Notion history connector for Alfred.
+
+- Uses AsyncClient and proper pagination for search + block children.
+- Respects repo config via `settings.notion_token`.
+- Supports optional date filtering on `last_edited_time`.
+- Produces a clean, recursive structure suitable for indexing / RAG.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timezone
+from typing import Any, AsyncIterator, Dict, Iterable, List, Optional, Tuple
+
 from notion_client import AsyncClient
+from notion_client.errors import APIResponseError
+
+from alfred.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+def _parse_iso(dt: str | datetime | None) -> Optional[datetime]:
+    """Parse an ISO 8601 string or datetime into an aware datetime (UTC)."""
+    if dt is None:
+        return None
+    if isinstance(dt, datetime):
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    # Notion returns e.g. "2025-01-01T12:34:56.789Z"
+    dt = dt.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(dt)
+    except Exception:
+        logger.warning("Failed to parse datetime from %r", dt)
+        return None
+
+
+async def _enumerate_async(
+    iterable: AsyncIterator[Dict[str, Any]]
+) -> AsyncIterator[Tuple[int, Dict[str, Any]]]:
+    index = 0
+    async for item in iterable:
+        yield index, item
+        index += 1
 
 
 class NotionHistoryConnector:
-    def __init__(self, token):
-        """
-        Initialize the NotionPageFetcher with a token.
+    """Fetch full-page content (including nested blocks) from Notion."""
 
+    def __init__(
+        self,
+        token: Optional[str] = None,
+        page_size: int = 50,
+    ) -> None:
+        """
         Args:
-            token (str): Notion integration token
+            token: Optional explicit Notion token. If omitted, uses settings.notion_token.
+            page_size: Page size for search queries (clamped to 1–100).
         """
-        self.notion = AsyncClient(auth=token)
+        self._token = token or settings.notion_token
+        if not self._token:
+            raise RuntimeError("NOTION_TOKEN is not configured")
 
-    async def close(self):
-        """Close the async client connection."""
-        await self.notion.aclose()
+        self.client = AsyncClient(auth=self._token)
+        self.page_size = max(1, min(100, page_size))
 
-    async def __aenter__(self):
-        """Async context manager entry."""
+    async def close(self) -> None:
+        await self.client.aclose()
+
+    async def __aenter__(self) -> "NotionHistoryConnector":
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         await self.close()
 
-    async def get_all_pages(self, start_date=None, end_date=None):
+    # ------------------------
+    # High-level public API
+    # ------------------------
+
+    async def get_all_pages(
+        self,
+        start_date: Optional[str | datetime] = None,
+        end_date: Optional[str | datetime] = None,
+        limit: Optional[int] = None,
+        include_content: bool = False,
+    ) -> List[Dict[str, Any]]:
         """
-        Fetches all pages shared with your integration and their content.
+        Fetch all pages shared with the integration, including nested blocks.
 
         Args:
-            start_date (str, optional): ISO 8601 date string (e.g., "2023-01-01T00:00:00Z")
-            end_date (str, optional): ISO 8601 date string (e.g., "2023-12-31T23:59:59Z")
+            start_date: Filter pages with last_edited_time >= this (ISO string or datetime).
+            end_date:   Filter pages with last_edited_time <= this (ISO string or datetime).
 
         Returns:
-            list: List of dictionaries containing page data
+            List of page dicts:
+            {
+              "page_id": str,
+              "title": str,
+              "content": [ <block-tree> ],
+              "last_edited_time": str | None,
+            }
         """
-        # Build the filter for the search
-        # Note: Notion API requires specific filter structure
-        search_params = {}
+        start_dt = _parse_iso(start_date) if start_date else None
+        end_dt = _parse_iso(end_date) if end_date else None
 
-        # Filter for pages only (not databases)
-        search_params["filter"] = {"value": "page", "property": "object"}
+        results: List[Dict[str, Any]] = []
 
-        # Add date filters if provided
-        if start_date or end_date:
-            date_filter = {}
-
-            if start_date:
-                date_filter["on_or_after"] = start_date
-
-            if end_date:
-                date_filter["on_or_before"] = end_date
-
-            # Add the date filter to the search params
-            if date_filter:
-                search_params["sort"] = {
-                    "direction": "descending",
-                    "timestamp": "last_edited_time",
-                }
-
-        # First, get a list of all pages the integration has access to
-        search_results = await self.notion.search(**search_params)
-
-        pages = search_results["results"]
-        all_page_data = []
-
-        for page in pages:
+        async for index, page in _enumerate_async(
+            self._iter_pages(start_dt=start_dt, end_dt=end_dt)
+        ):
             page_id = page["id"]
+            last_edited_raw = page.get("last_edited_time")
 
-            # Get detailed page information
-            page_content = await self.get_page_content(page_id)
+            content = None
+            if include_content:
+                content = await self.get_page_content(page_id)
 
-            all_page_data.append(
+            results.append(
                 {
                     "page_id": page_id,
                     "title": self.get_page_title(page),
-                    "content": page_content,
+                    "content": content,
+                    "last_edited_time": last_edited_raw,
                 }
             )
 
-        return all_page_data
+            if limit is not None and limit >= 0 and (index + 1) >= limit:
+                break
 
-    def get_page_title(self, page):
+        return results
+
+    async def get_page_content(self, page_id: str) -> List[Dict[str, Any]]:
         """
-        Extracts the title from a page object.
-
-        Args:
-            page (dict): Notion page object
+        Fetch all blocks (and nested children) for a page.
 
         Returns:
-            str: Page title or a fallback string
+            List of block dicts:
+            {
+              "id": str,
+              "type": str,
+              "content": str,
+              "children": [ ...same shape... ],
+            }
         """
-        # Title can be in different properties depending on the page type
-        if "properties" in page:
-            # Try to find a title property
-            for _prop_name, prop_data in page["properties"].items():
-                if prop_data["type"] == "title" and len(prop_data["title"]) > 0:
-                    return " ".join([text_obj["plain_text"] for text_obj in prop_data["title"]])
+        # Top-level blocks (fully paginated)
+        root_blocks = await self._fetch_all_children(page_id)
 
-        # If no title found, return the page ID as fallback
-        return f"Untitled page ({page['id']})"
+        processed: List[Dict[str, Any]] = []
+        for block in root_blocks:
+            processed.append(await self._process_block(block))
 
-    async def get_page_content(self, page_id):
+        return processed
+
+    # ------------------------
+    # Internal helpers
+    # ------------------------
+
+    async def _iter_pages(
+        self,
+        start_dt: Optional[datetime] = None,
+        end_dt: Optional[datetime] = None,
+    ) -> AsyncIterator[Dict[str, Any]]:
         """
-        Fetches the content (blocks) of a specific page.
-
-        Args:
-            page_id (str): The ID of the page to fetch
-
-        Returns:
-            list: List of processed blocks from the page
+        Async generator over all pages the integration can see, paginated.
+        Applies last_edited_time filtering client-side.
         """
-        blocks = []
-        has_more = True
-        cursor = None
+        search_params: Dict[str, Any] = {
+            "filter": {"value": "page", "property": "object"},
+            "sort": {"direction": "descending", "timestamp": "last_edited_time"},
+            "page_size": self.page_size,
+        }
 
-        # Paginate through all blocks
-        while has_more:
+        cursor: Optional[str] = None
+
+        while True:
             if cursor:
-                response = await self.notion.blocks.children.list(
-                    block_id=page_id, start_cursor=cursor
-                )
+                search_params["start_cursor"] = cursor
             else:
-                response = await self.notion.blocks.children.list(block_id=page_id)
+                search_params.pop("start_cursor", None)
 
-            blocks.extend(response["results"])
-            has_more = response["has_more"]
+            try:
+                resp = await self.client.search(**search_params)
+            except APIResponseError as e:
+                logger.exception("Notion search failed: %s", e)
+                raise
+            except Exception as e:  # network / serialization, etc.
+                logger.exception("Unexpected error during Notion search: %s", e)
+                raise
 
-            if has_more:
-                cursor = response["next_cursor"]
+            if not isinstance(resp, dict):
+                raise RuntimeError(f"Unexpected Notion search response type: {type(resp)}")
 
-        # Process nested blocks recursively
-        processed_blocks = []
-        for block in blocks:
-            processed_block = await self.process_block(block)
-            processed_blocks.append(processed_block)
+            pages = resp.get("results", []) or []
+            for page in pages:
+                last_edited = _parse_iso(page.get("last_edited_time"))
+                if start_dt and last_edited and last_edited < start_dt:
+                    continue
+                if end_dt and last_edited and last_edited > end_dt:
+                    continue
+                yield page
 
-        return processed_blocks
+            if not resp.get("has_more"):
+                break
 
-    async def process_block(self, block):
-        """
-        Processes a block and recursively fetches any child blocks.
+            cursor = resp.get("next_cursor")
+            if not cursor:
+                break
 
-        Args:
-            block (dict): The block to process
+    async def _fetch_all_children(self, block_id: str) -> List[Dict[str, Any]]:
+        """Fetch all children for a block/page, handling pagination."""
+        items: List[Dict[str, Any]] = []
+        cursor: Optional[str] = None
 
-        Returns:
-            dict: Processed block with content and children
-        """
+        while True:
+            kwargs: Dict[str, Any] = {"block_id": block_id, "page_size": 100}
+            if cursor:
+                kwargs["start_cursor"] = cursor
+
+            try:
+                resp = await self.client.blocks.children.list(**kwargs)
+            except APIResponseError as e:
+                logger.exception("Notion blocks.children.list failed: %s", e)
+                raise
+            except Exception as e:
+                logger.exception("Unexpected error in blocks.children.list: %s", e)
+                raise
+
+            if not isinstance(resp, dict):
+                raise RuntimeError(
+                    f"Unexpected blocks.children.list response type: {type(resp)}"
+                )
+
+            items.extend(resp.get("results", []) or [])
+
+            if not resp.get("has_more"):
+                break
+
+            cursor = resp.get("next_cursor")
+            if not cursor:
+                break
+
+        return items
+
+    async def _process_block(self, block: Dict[str, Any]) -> Dict[str, Any]:
+        """Process a block and recursively process all children."""
         block_id = block["id"]
         block_type = block["type"]
 
-        # Extract block content based on its type
-        content = self.extract_block_content(block)
+        content = self._extract_block_content(block)
 
-        # Check if block has children
-        has_children = block.get("has_children", False)
-        child_blocks = []
-
-        if has_children:
-            # Fetch and process child blocks
-            children_response = await self.notion.blocks.children.list(block_id=block_id)
-            for child_block in children_response["results"]:
-                child_blocks.append(await self.process_block(child_block))
+        children: List[Dict[str, Any]] = []
+        if block.get("has_children"):
+            for child in await self._fetch_all_children(block_id):
+                children.append(await self._process_block(child))
 
         return {
             "id": block_id,
             "type": block_type,
             "content": content,
-            "children": child_blocks,
+            "children": children,
         }
 
-    def extract_block_content(self, block):
+    # ------------------------
+    # Content extraction
+    # ------------------------
+
+    def get_page_title(self, page: Dict[str, Any]) -> str:
+        """Extract a human-readable title from a page object."""
+        properties = page.get("properties", {}) or {}
+        for _name, prop in properties.items():
+            if prop.get("type") == "title":
+                fragments = prop.get("title", []) or []
+                if fragments:
+                    return " ".join(f.get("plain_text", "") for f in fragments).strip()
+        return f"Untitled page ({page['id']})"
+
+    def _extract_block_content(self, block: Dict[str, Any]) -> str:
         """
-        Extracts the content from a block based on its type.
+        Extract readable content from a Notion block.
 
-        Args:
-            block (dict): The block to extract content from
-
-        Returns:
-            str: Extracted content as a string
+        Returns plain text / simple markdown suitable for indexing.
         """
-        block_type = block["type"]
+        block_type = block.get("type")
+        data = block.get(block_type, {}) or {}
 
-        # Different block types have different structures
-        if block_type in block and "rich_text" in block[block_type]:
-            return "".join([text_obj["plain_text"] for text_obj in block[block_type]["rich_text"]])
-        elif block_type == "image":
-            # Instead of returning the raw URL which may contain sensitive AWS credentials,
-            # return a placeholder or reference to the image
-            if "file" in block["image"]:
-                # For Notion-hosted images (which use AWS S3 pre-signed URLs)
+        # Generic rich_text blocks
+        rich = data.get("rich_text")
+        if isinstance(rich, list):
+            return "".join(fragment.get("plain_text", "") for fragment in rich)
+
+        # Images (sanitized)
+        if block_type == "image":
+            image_data = block.get("image", {}) or {}
+            if "file" in image_data:
+                # Notion-hosted images (presigned S3 URLs) – do not leak the URL.
                 return "[Notion Image]"
-            elif "external" in block["image"]:
-                # For external images, we can return a sanitized reference
-                url = block["image"]["external"]["url"]
-                # Only return the domain part of external URLs to avoid potential sensitive parameters
-                try:
-                    from urllib.parse import urlparse
+            if "external" in image_data:
+                from urllib.parse import urlparse
 
-                    parsed_url = urlparse(url)
-                    return f"[External Image from {parsed_url.netloc}]"
+                url = image_data["external"].get("url", "")
+                try:
+                    parsed = urlparse(url)
+                    host = parsed.netloc or "external"
+                    return f"[External Image from {host}]"
                 except Exception:
                     return "[External Image]"
-        elif block_type == "code":
-            language = block["code"]["language"]
-            code_text = "".join([text_obj["plain_text"] for text_obj in block["code"]["rich_text"]])
-            return f"```{language}\n{code_text}\n```"
-        elif block_type == "equation":
-            return block["equation"]["expression"]
-        # Add more block types as needed
 
-        # Return empty string for unsupported block types
+        # Code blocks
+        if block_type == "code":
+            lang = data.get("language", "plain")
+            code_rich = data.get("rich_text", []) or []
+            code_text = "".join(frag.get("plain_text", "") for frag in code_rich)
+            return f"```{lang}\n{code_text}\n```"
+
+        # Equations
+        if block_type == "equation":
+            return data.get("expression", "")
+
+        # Fallback: nothing useful
         return ""
