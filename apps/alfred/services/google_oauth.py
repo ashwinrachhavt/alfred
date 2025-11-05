@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
+from fastapi import HTTPException
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from oauthlib.oauth2.rfc6749.errors import OAuth2Error
@@ -98,20 +99,55 @@ def exchange_code_for_tokens(
     if settings.google_redirect_uri:
         flow.redirect_uri = str(settings.google_redirect_uri)
 
+    # Final hardened token exchange logic with enforced canonical & metadata scopes
+    canonical_scopes = sorted(set(GOOGLE_SCOPES + ["https://www.googleapis.com/auth/gmail.metadata"]))
+    flow = Flow.from_client_config(cfg, scopes=canonical_scopes, state=state)
+    if settings.google_redirect_uri:
+        flow.redirect_uri = str(settings.google_redirect_uri)
+
     try:
         flow.fetch_token(code=code)
-    except OAuth2Error as exc:
-        logger.error("OAuth token exchange failed: %s", exc)
-        # Common causes:
-        # - redirect_uri mismatch (check Google Cloud Console)
-        # - code already used or expired (get a fresh code)
-        # - wrong client_id/client_secret
-        # - clock skew
-        raise
+    except Exception as exc:
+        detail = str(exc)
+        logger.error("Google OAuth exchange failed with detail: %s", detail)
+
+        if "invalid_grant" in detail or "Bad Request" in detail:
+            raise HTTPException(
+                status_code=440,
+                detail=(
+                    "Google authorization code is invalid or expired. "
+                    "Please click Connect again to refresh your session."
+                ),
+            ) from exc
+
+        if "scope" in detail.lower() or "Scope has changed" in detail:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Google scopes changed unexpectedly. "
+                    "Please revoke access in your Google Account permissions and reconnect."
+                ),
+            ) from exc
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unexpected error during OAuth token exchange. Please retry the connection.",
+        ) from exc
+
+    if not flow.credentials or not flow.credentials.token:
+        logger.error("OAuth token exchange completed but credentials field is empty")
+        raise HTTPException(
+            status_code=500,
+            detail="OAuth completed but credentials are invalid. Please retry connection.",
+        )
+
+    return flow.credentials
 
     if not flow.credentials:
         logger.error("OAuth token exchange produced no credentials")
-        raise RuntimeError("No credentials returned from Google OAuth")
+        raise HTTPException(
+            status_code=400, detail="OAuth token exchange returned no credentials. Please try again."
+        )
 
     return flow.credentials
 
