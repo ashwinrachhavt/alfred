@@ -9,6 +9,7 @@ from alfred.api.crew import router as crew_router
 from alfred.api.gmail import router as gmail_router
 from alfred.api.notion import router as notion_router
 from alfred.api.rag import router as rag_router
+from alfred.api.research import router as research_router
 from alfred.api.system import router as system_router
 from alfred.api.web import router as web_router
 from alfred.api.wikipedia import router as wikipedia_router
@@ -16,6 +17,7 @@ from alfred.api.wikipedia import router as wikipedia_router
 ROUTERS = [
     system_router,
     rag_router,
+    research_router,
     notion_router,
     gmail_router,
     calendar_router,

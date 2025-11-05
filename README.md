@@ -180,6 +180,21 @@ Behavior
 
 > Tip: run `uv run python scripts/ingest.py` (or `python scripts/ingest.py` with `UV=0`) so your resume and personal URLs are embedded before calling the outreach endpoints.
 
+### `POST /research/deep`
+
+Body
+```json
+{
+  "query": "How are frontier model labs addressing alignment?",
+  "target_length_words": 1000,
+  "tone": "technical"
+}
+```
+
+Returns
+- `article`: polished ~1k-word markdown article synthesized from multi-provider web search and internal notes.
+- `state`: LangGraph state snapshot (expanded queries, evidence notes, outline, draft, etc.) for debugging or audits.
+
 ## Makefile
 
 Useful targets
