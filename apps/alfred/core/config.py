@@ -1,7 +1,11 @@
+from pathlib import Path
 from typing import Optional
 
 from pydantic import AnyHttpUrl, Field
 from pydantic_settings import BaseSettings
+
+
+DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "alfred.db"
 
 
 class Settings(BaseSettings):
@@ -68,6 +72,11 @@ class Settings(BaseSettings):
     langsearch_db_path: str = Field(
         default=".alfred_data/langsearch.json",
         alias="LANGSEARCH_DB_PATH",
+    )
+
+    database_url: str = Field(
+        default=f"sqlite:///{DEFAULT_DB_PATH}",
+        alias="DATABASE_URL",
     )
 
     class Config:

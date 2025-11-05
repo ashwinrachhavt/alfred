@@ -5,7 +5,7 @@ import json
 import os
 from dataclasses import dataclass
 from typing import Any, List, Literal, Optional, Sequence
-
+import logging
 Provider = Literal["brave", "ddg", "exa", "tavily", "you"]
 DEFAULT_PROVIDER_PRIORITY: List[Provider] = ["ddg", "brave", "you", "tavily", "exa"]
 Mode = Literal["auto", "multi", Provider]
@@ -177,7 +177,11 @@ class TavilyClient:
     ):
         if not _env("TAVILY_API_KEY"):
             raise RuntimeError("TAVILY_API_KEY is not set")
-        from langchain_tavily import TavilySearch
+        try:
+            from langchain_tavily import TavilySearch
+        except ImportError:
+            TavilySearch = None
+            logging.warning("Optional dependency 'langchain_tavily' not found; Tavily client disabled.")
 
         self.tool = TavilySearch(
             max_results=max_results,
@@ -253,7 +257,10 @@ class WebConnector:
             self.clients["brave"] = BraveClient(count=brave_count)
         if _env("YDC_API_KEY"):
             self.clients["you"] = YouClient(num_web_results=you_num_results)
-        self.clients["ddg"] = DDGClient(max_results=ddg_max_results)
+        try:
+            self.clients["ddg"] = DDGClient(max_results=ddg_max_results)
+        except ImportError:
+            logging.warning("Optional dependency 'ddgs' not found; DDG client disabled.")
 
     def _resolve_auto(self) -> Provider:
         for p in DEFAULT_PROVIDER_PRIORITY:
@@ -266,7 +273,11 @@ class WebConnector:
 
     def _search_multi(self, query: str, **kwargs: Any) -> SearchResponse:
         providers = self._collect_enabled()
-        loop = asyncio.get_event_loop()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
 
         def call(p: Provider):
             c = self.clients[p]
@@ -292,6 +303,9 @@ class WebConnector:
         provider: Provider = self._resolve_auto() if self.mode == "auto" else self.mode
         client = self.clients.get(provider)
         if not client:
+            if provider not in self.clients:
+                logging.warning(f"Provider '{provider}' not configured. Returning empty fallback response.")
+                return SearchResponse(provider=provider, query=query, hits=[], meta={"status": "unconfigured"})
             raise RuntimeError(f"Provider '{provider}' is not configured")
         if provider == "brave":
             return client.search(query, pages=pages or self._brave_pages_default)

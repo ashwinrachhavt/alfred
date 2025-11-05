@@ -94,6 +94,14 @@ Docker (full stack)
 docker compose -f infra/docker-compose.yml up --build
 ```
 
+## Database & Migrations
+
+- Configure `DATABASE_URL` in `apps/alfred/.env` (defaults to a local SQLite file).
+- Run migrations locally: `uv run alembic -c alembic.ini upgrade head`.
+- Create a new migration: `uv run alembic -c alembic.ini revision --autogenerate -m "<description>"`.
+- If you point `DATABASE_URL` at Postgres, install a driver such as `psycopg[binary]` in your environment.
+- Base models live in `apps/alfred/models/`; extend `Model` for timestamped tables with an auto primary key, and declare columns with helper fields (e.g. `fields.string(...)`, `fields.text(...)`).
+
 ## Ingest Knowledge
 
 Use built-in web and PDF ingestion to populate your vector store.
