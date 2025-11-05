@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, EmailStr, Field
 
 from alfred.connectors.google_calendar_connector import GoogleCalendarConnector
 from alfred.services.google_oauth import (
@@ -10,7 +14,22 @@ from alfred.services.google_oauth import (
     persist_credentials,
 )
 
-CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
+CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
+
+
+class ReminderInput(BaseModel):
+    method: str
+    minutes: int
+
+
+class CalendarEventCreate(BaseModel):
+    summary: str = Field(..., min_length=1)
+    start: datetime
+    timezone: str | None = None
+    attendees: list[EmailStr] | None = None
+    description: str | None = None
+    location: str | None = None
+    reminders: list[ReminderInput] | None = None
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
@@ -55,3 +74,31 @@ async def list_events(start_date: str, end_date: str, max_results: int = 2500):
     if err:
         raise HTTPException(400, err)
     return {"items": events}
+
+
+@router.post("/events")
+async def create_event(payload: CalendarEventCreate) -> dict[str, Any]:
+    creds = load_credentials()
+    if creds is None:
+        raise HTTPException(404, "No credentials found; authorize via /api/calendar/auth_url")
+
+    connector = GoogleCalendarConnector(
+        creds, user_id=None, on_credentials_refreshed=lambda c: persist_credentials(None, c)
+    )
+
+    try:
+        result = await connector.create_event(
+            summary=payload.summary,
+            start=payload.start,
+            timezone=payload.timezone,
+            attendees=[str(email) for email in payload.attendees] if payload.attendees else None,
+            description=payload.description,
+            location=payload.location,
+            reminders=[rem.model_dump() for rem in payload.reminders] if payload.reminders else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return result

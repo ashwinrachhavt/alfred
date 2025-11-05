@@ -79,6 +79,28 @@ class Settings(BaseSettings):
         alias="DATABASE_URL",
     )
 
+    calendar_slot_duration_minutes: int = Field(
+        default=30,
+        alias="CALENDAR_SLOT_DURATION_MINUTES",
+        ge=1,
+    )
+    calendar_working_hours_start: int = Field(
+        default=9,
+        alias="CALENDAR_WORKING_HOURS_START",
+        ge=0,
+        le=23,
+    )
+    calendar_working_hours_end: int = Field(
+        default=18,
+        alias="CALENDAR_WORKING_HOURS_END",
+        ge=0,
+        le=23,
+    )
+    calendar_organizer_email: str | None = Field(
+        default=None,
+        alias="CALENDAR_ORGANIZER_EMAIL",
+    )
+
     class Config:
         env_file = "apps/alfred/.env"
         extra = "ignore"

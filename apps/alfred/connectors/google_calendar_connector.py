@@ -1,16 +1,19 @@
-"""
-Google Calendar Connector Module | Google OAuth Credentials | Google Calendar API
-"""
+"""Google Calendar Connector."""
 
 import inspect
-from datetime import datetime
-from typing import Any, Awaitable, Callable, Optional
+import uuid
+from datetime import datetime, timedelta
+from typing import Any, Awaitable, Callable, Sequence
+from zoneinfo import ZoneInfo
 
 import pytz
 from dateutil.parser import isoparse
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+
+from alfred.core.config import settings
 
 
 class GoogleCalendarConnector:
@@ -96,6 +99,122 @@ class GoogleCalendarConnector:
             return self.service
         except Exception as e:
             raise Exception(f"Failed to create Google Calendar service: {e!s}") from e
+
+    async def create_event(
+        self,
+        *,
+        summary: str,
+        start: datetime,
+        timezone: str | None = None,
+        attendees: Sequence[str] | None = None,
+        description: str | None = None,
+        location: str | None = None,
+        reminders: Sequence[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Create a Google Calendar event with a generated Google Meet link."""
+
+        service = await self._get_service()
+        start_dt = self._resolve_start(start, timezone)
+        end_dt = start_dt + timedelta(minutes=settings.calendar_slot_duration_minutes)
+
+        self._validate_event_slot(service, start_dt, end_dt)
+
+        start_timezone = getattr(start_dt.tzinfo, "key", start_dt.tzname() or "UTC")
+        end_timezone = getattr(end_dt.tzinfo, "key", end_dt.tzname() or start_timezone)
+
+        event: dict[str, Any] = {
+            "summary": summary,
+            "location": location or "",
+            "description": description or "",
+            "start": {"dateTime": start_dt.isoformat(), "timeZone": start_timezone},
+            "end": {"dateTime": end_dt.isoformat(), "timeZone": end_timezone},
+            "conferenceData": {
+                "createRequest": {
+                    "requestId": uuid.uuid4().hex,
+                    "conferenceSolutionKey": {"type": "hangoutsMeet"},
+                }
+            },
+        }
+
+        if attendees:
+            event["attendees"] = [{"email": email} for email in attendees]
+
+        if reminders:
+            event["reminders"] = {"useDefault": False, "overrides": list(reminders)}
+
+        try:
+            created_event = (
+                service.events()
+                .insert(
+                    calendarId="primary",
+                    body=event,
+                    sendUpdates="all",
+                    conferenceDataVersion=1,
+                )
+                .execute()
+            )
+        except HttpError as exc:  # pragma: no cover - direct API error
+            raise RuntimeError(f"Google Calendar API error: {exc}") from exc
+
+        return {
+            "event_link": created_event.get("htmlLink"),
+            "meet_link": created_event.get("conferenceData", {})
+            .get("entryPoints", [{}])[0]
+            .get("uri"),
+            "event_id": created_event.get("id"),
+        }
+
+    @staticmethod
+    def _resolve_start(start: datetime, timezone: str | None) -> datetime:
+        if start.tzinfo is not None and start.tzinfo.utcoffset(start) is not None:
+            return start
+        if timezone is None:
+            raise ValueError("Start time must include timezone information or specify `timezone`.")
+        return start.replace(tzinfo=ZoneInfo(timezone))
+
+    def _validate_event_slot(self, service: Any, start: datetime, end: datetime) -> None:
+        work_start_hour = settings.calendar_working_hours_start
+        work_end_hour = settings.calendar_working_hours_end
+
+        if work_start_hour >= work_end_hour:
+            raise ValueError("CALENDAR_WORKING_HOURS_START must be earlier than CALENDAR_WORKING_HOURS_END.")
+
+        work_start = start.replace(hour=work_start_hour, minute=0, second=0, microsecond=0)
+        work_end = start.replace(hour=work_end_hour, minute=0, second=0, microsecond=0)
+
+        if not (work_start <= start < work_end) or not (work_start < end <= work_end):
+            raise ValueError(
+                "Event must be scheduled within working hours "
+                f"{work_start_hour}:00-{work_end_hour}:00"
+            )
+
+        organizer_email = settings.calendar_organizer_email
+        if organizer_email:
+            if not self._is_time_slot_free(service, start, end, organizer_email):
+                raise ValueError("Requested slot overlaps with an existing event.")
+
+    @staticmethod
+    def _is_time_slot_free(
+        service: Any, start: datetime, end: datetime, organizer_email: str
+    ) -> bool:
+        try:
+            events_result = (
+                service.events()
+                .list(
+                    calendarId="primary",
+                    timeMin=start.isoformat(),
+                    timeMax=end.isoformat(),
+                    singleEvents=True,
+                    orderBy="startTime",
+                )
+                .execute()
+            )
+        except HttpError as exc:  # pragma: no cover - direct API error
+            raise RuntimeError(f"Google Calendar API error: {exc}") from exc
+
+        events = events_result.get("items", [])
+        my_events = [event for event in events if event.get("creator", {}).get("email") == organizer_email]
+        return len(my_events) == 0
 
     async def get_calendars(self) -> tuple[list[dict[str, Any]], str | None]:
         """Fetch list of user's calendars using credentials."""
