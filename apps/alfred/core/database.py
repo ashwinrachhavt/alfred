@@ -1,6 +1,7 @@
 """Database engine and session helpers."""
 
 from collections.abc import Generator
+import logging
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -8,11 +9,21 @@ from sqlalchemy.orm import Session, sessionmaker
 from alfred.core.config import settings
 from alfred.models import Base
 
-engine = create_engine(
-    settings.database_url,
-    future=True,
-    pool_pre_ping=True,
-)
+logger = logging.getLogger(__name__)
+
+
+try:
+    engine = create_engine(
+        settings.database_url,
+        future=True,
+        pool_pre_ping=True,
+    )
+except ModuleNotFoundError as exc:  # pragma: no cover - runtime dependency hint
+    if settings.database_url.startswith("postgres"):
+        raise RuntimeError(
+            "PostgreSQL driver is not installed. Install it with `pip install \"psycopg[binary]\"`"
+        ) from exc
+    raise
 SessionLocal = sessionmaker(
     bind=engine,
     autoflush=False,

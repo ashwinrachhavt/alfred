@@ -14,6 +14,7 @@ from alfred.services.research.nodes import (
     web_search_collector,
 )
 from alfred.services.research.state import ResearchState
+from alfred.services.research.persistence import persist_research_run
 
 
 def build_research_graph() -> StateGraph:
@@ -54,4 +55,13 @@ async def run_research(
         "tone": tone,  # type: ignore[assignment]
     }
     result = await _research_graph.ainvoke(initial_state)
-    return result.get("final_article", ""), result
+    article = result.get("final_article", "")
+    if article:
+        persist_research_run(
+            query=query,
+            target_length_words=target_length_words,
+            tone=tone,
+            article=article,
+            state=result,
+        )
+    return article, result

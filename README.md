@@ -194,6 +194,7 @@ Body
 Returns
 - `article`: polished ~1k-word markdown article synthesized from multi-provider web search and internal notes.
 - `state`: LangGraph state snapshot (expanded queries, evidence notes, outline, draft, etc.) for debugging or audits.
+- Successful runs are archived in Postgres (`research_runs`) so you can review historical articles or build dashboards.
 
 ## Makefile
 

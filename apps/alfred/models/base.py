@@ -14,6 +14,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    JSON,
     MetaData,
     Numeric,
     String,
@@ -43,14 +44,12 @@ class TimestampMixin:
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=func.now,
         server_default=func.now(),
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=func.now,
-        onupdate=func.now,
+        onupdate=func.now(),
         server_default=func.now(),
         nullable=False,
     )
@@ -119,6 +118,9 @@ class _FieldFactory:
     ):
         fk = ForeignKey(target, ondelete=ondelete)
         return mapped_column(type_, fk, **kwargs)
+
+    def json(self, **kwargs):
+        return mapped_column(JSON, **kwargs)
 
 
 fields = _FieldFactory()

@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 from alfred.connectors.google_calendar_connector import GoogleCalendarConnector
 from alfred.services.google_oauth import (
@@ -26,7 +26,7 @@ class CalendarEventCreate(BaseModel):
     summary: str = Field(..., min_length=1)
     start: datetime
     timezone: str | None = None
-    attendees: list[EmailStr] | None = None
+    attendees: list[str] | None = None
     description: str | None = None
     location: str | None = None
     reminders: list[ReminderInput] | None = None
