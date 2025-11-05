@@ -4,32 +4,36 @@ from __future__ import annotations
 
 import asyncio
 import json
-from textwrap import dedent
+import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from alfred.prompts import load_prompt
 from alfred.services.research.llm import get_llm
 from alfred.services.research.state import ResearchSource, ResearchState
 from alfred.services.web_search import search_web
+
+logger = logging.getLogger(__name__)
+
+QUERY_PLANNER_PROMPT = load_prompt("research", "query_planner.md")
+EVIDENCE_SYNTH_PROMPT = load_prompt("research", "evidence_synthesizer.md")
+OUTLINE_PLANNER_PROMPT = load_prompt("research", "outline_planner.md")
+DRAFT_WRITER_PROMPT = load_prompt("research", "draft_writer.md")
+DRAFT_REFINER_PROMPT = load_prompt("research", "draft_refiner.md")
 
 
 def _safe_json_loads(payload: str) -> dict[str, object]:
     try:
         return json.loads(payload)
     except json.JSONDecodeError as exc:
+        logger.error("LLM returned invalid JSON payload: %s", payload)
         raise ValueError("Model returned invalid JSON payload") from exc
 
 
 async def query_expander(state: ResearchState) -> ResearchState:
     llm = get_llm(temperature=0.2)
     system = SystemMessage(
-        content=dedent(
-            """
-            You are a research planning assistant. Expand the user query into focused
-            search queries and thematic subtopics for a long-form article.
-            Respond strictly as JSON with keys `expanded_queries` and `subtopics`.
-            """
-        ).strip()
+        content=QUERY_PLANNER_PROMPT
     )
     human = HumanMessage(
         content=json.dumps({"query": state["query"], "desired_sections": 5})
@@ -87,15 +91,7 @@ async def evidence_synthesizer(state: ResearchState) -> ResearchState:
         }
         for src in sources
     ]
-    system = SystemMessage(
-        content=dedent(
-            """
-            You synthesize research findings into structured evidence notes.
-            Group insights by subtopic, call out disagreements, and capture key citations.
-            Respond as markdown with section headings matching the provided subtopics.
-            """
-        ).strip()
-    )
+    system = SystemMessage(content=EVIDENCE_SYNTH_PROMPT)
     human = HumanMessage(
         content=json.dumps(
             {
@@ -111,15 +107,7 @@ async def evidence_synthesizer(state: ResearchState) -> ResearchState:
 
 async def outline_planner(state: ResearchState) -> ResearchState:
     llm = get_llm(temperature=0.2)
-    system = SystemMessage(
-        content=dedent(
-            """
-            You design detailed outlines for long-form articles. Provide a JSON response with
-            `outline` (rich markdown outline) and `instructions` (revision guidance).
-            Allocate word counts per section aiming to meet the target length.
-            """
-        ).strip()
-    )
+    system = SystemMessage(content=OUTLINE_PLANNER_PROMPT)
     human = HumanMessage(
         content=json.dumps(
             {
@@ -140,14 +128,7 @@ async def outline_planner(state: ResearchState) -> ResearchState:
 
 async def draft_writer(state: ResearchState) -> ResearchState:
     llm = get_llm(temperature=0.4)
-    system = SystemMessage(
-        content=dedent(
-            """
-            Write a comprehensive article from the outline and evidence notes below.
-            Target the requested word count and match the desired tone. Use markdown headings.
-            """
-        ).strip()
-    )
+    system = SystemMessage(content=DRAFT_WRITER_PROMPT)
     human = HumanMessage(
         content=json.dumps(
             {
@@ -165,14 +146,7 @@ async def draft_writer(state: ResearchState) -> ResearchState:
 
 async def draft_refiner(state: ResearchState) -> ResearchState:
     llm = get_llm(temperature=0.1)
-    system = SystemMessage(
-        content=dedent(
-            """
-            Revise the supplied article draft for clarity, coherence, and factual hedging.
-            Return polished markdown targeting the requested length (±10%).
-            """
-        ).strip()
-    )
+    system = SystemMessage(content=DRAFT_REFINER_PROMPT)
     human = HumanMessage(
         content=json.dumps(
             {
