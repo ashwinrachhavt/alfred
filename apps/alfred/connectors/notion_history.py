@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Dict, Iterable, List, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from notion_client import AsyncClient
 from notion_client.errors import APIResponseError

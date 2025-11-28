@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
+import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import Any, List, Literal, Optional, Sequence
-import logging
+
 Provider = Literal["brave", "ddg", "exa", "tavily", "you"]
 DEFAULT_PROVIDER_PRIORITY: List[Provider] = ["ddg", "brave", "you", "tavily", "exa"]
 Mode = Literal["auto", "multi", Provider]
@@ -120,20 +123,131 @@ class BraveClient:
         )
 
 
+DEFAULT_DDG_USER_AGENT = "Mozilla/5.0 (compatible; AlfredBot/1.0; +https://github.com/alfred)"
+
+
 class DDGClient:
     def __init__(
-        self, max_results: int = 50, output_format: Literal["list", "json", "markdown"] = "list"
-    ):
-        from langchain_community.tools import DuckDuckGoSearchResults
-        from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
+        self,
+        max_results: int = 50,
+        region: str = "wt-wt",
+        safesearch: Literal["off", "moderate", "strict"] = "moderate",
+        timelimit: Optional[str] = None,
+        backend: Literal["api", "html", "lite"] = "api",
+        timeout: float = 10.0,
+        retries: int = 2,
+        backoff_factor: float = 0.4,
+    ) -> None:
+        try:
+            from duckduckgo_search import DDGS  # type: ignore
+            from duckduckgo_search.exceptions import RatelimitException  # type: ignore
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise ImportError("Optional dependency 'duckduckgo_search' not found; DDG client disabled.") from exc
 
-        api = DuckDuckGoSearchAPIWrapper(max_results=max_results)
-        self.tool = DuckDuckGoSearchResults(api_wrapper=api, output_format=output_format)
+        self._DDGS = DDGS
+        self._ratelimit_exc: type[Exception] = RatelimitException
+        self._max_results = max_results
+        self._region = region
+        self._safesearch = safesearch
+        self._timelimit = timelimit
+        self._backend_cycle = []
+        for candidate in (backend, "api", "html", "lite"):
+            if candidate not in self._backend_cycle:
+                self._backend_cycle.append(candidate)
+        self._backend_index = 0
+        self._timeout = timeout
+        self._retries = max(retries, 0)
+        self._backoff_factor = max(backoff_factor, 0.0)
+        self._user_agent = os.getenv("USER_AGENT", DEFAULT_DDG_USER_AGENT)
+        self._client = self._make_client()
 
-    def search(self, query: str) -> SearchResponse:
-        res = self.tool.invoke(query)
-        hits = _normalize_list_result(res, "ddg")
-        return SearchResponse(provider="ddg", query=query, hits=_dedupe_by_url(hits))
+    def _make_client(self):
+        return self._DDGS(timeout=self._timeout, headers={"User-Agent": self._user_agent})
+
+    @property
+    def _backend(self) -> str:
+        return self._backend_cycle[self._backend_index]
+
+    def _reset_client(self) -> None:
+        try:
+            if hasattr(self._client, "close"):
+                self._client.close()  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        finally:
+            self._client = self._make_client()
+
+    def _advance_backend(self) -> bool:
+        if self._backend_index + 1 < len(self._backend_cycle):
+            self._backend_index += 1
+            return True
+        return False
+
+    def _run_search(self, query: str, timelimit: Optional[str]) -> List[dict[str, Any]]:
+        results_iter = self._client.text(
+            query,
+            region=self._region,
+            safesearch=self._safesearch,
+            timelimit=timelimit,
+            backend=self._backend,
+            max_results=self._max_results,
+        )
+        # DDGS returns a generator; slice defensively in case backend ignores max_results
+        return list(itertools.islice(results_iter, self._max_results))
+
+    def search(self, query: str, *, timelimit: Optional[str] = None) -> SearchResponse:
+        attempts = self._retries + 1 + (len(self._backend_cycle) - 1)
+        last_error: Exception | None = None
+        effective_timelimit = timelimit or self._timelimit
+
+        for attempt in range(attempts):
+            try:
+                raw_results = self._run_search(query, effective_timelimit)
+                normalized_payload = []
+                for item in raw_results:
+                    if not isinstance(item, dict):
+                        continue
+                    normalized_payload.append(
+                        {
+                            "title": item.get("title"),
+                            "url": item.get("href") or item.get("url"),
+                            "link": item.get("href") or item.get("url"),
+                            "snippet": item.get("body") or item.get("content") or item.get("description"),
+                            "metadata": item,
+                        }
+                    )
+                hits = _normalize_list_result(normalized_payload, "ddg")
+                meta = {
+                    "backend": self._backend,
+                    "region": self._region,
+                    "safesearch": self._safesearch,
+                    "timelimit": effective_timelimit,
+                    "results": len(hits),
+                    "retries": attempt,
+                    "backend_index": self._backend_index,
+                    "backend_history": self._backend_cycle[: self._backend_index + 1],
+                }
+                return SearchResponse(provider="ddg", query=query, hits=_dedupe_by_url(hits), meta=meta)
+            except Exception as exc:
+                last_error = exc
+                fallback = False
+                if self._ratelimit_exc and isinstance(exc, self._ratelimit_exc):
+                    fallback = self._advance_backend()
+                if attempt == attempts - 1 and not fallback:
+                    raise
+                if fallback:
+                    sleep_for = self._backoff_factor * (attempt + 1)
+                    if sleep_for:
+                        time.sleep(sleep_for)
+                    self._reset_client()
+                    continue
+                sleep_for = self._backoff_factor * (attempt + 1)
+                if sleep_for:
+                    time.sleep(sleep_for)
+                self._reset_client()
+
+        # Should be unreachable due to raise above, but keeps type-checkers happy
+        raise RuntimeError(f"DuckDuckGo search failed after {attempts} attempts: {last_error}")
 
 
 class ExaClient:
@@ -260,7 +374,7 @@ class WebConnector:
         try:
             self.clients["ddg"] = DDGClient(max_results=ddg_max_results)
         except ImportError:
-            logging.warning("Optional dependency 'ddgs' not found; DDG client disabled.")
+            logging.warning("Optional dependency 'duckduckgo_search' not found; DDG client disabled.")
 
     def _resolve_auto(self) -> Provider:
         for p in DEFAULT_PROVIDER_PRIORITY:

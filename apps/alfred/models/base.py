@@ -8,13 +8,13 @@ from pathlib import Path
 from typing import Iterator
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Enum,
     Float,
     ForeignKey,
     Integer,
-    JSON,
     MetaData,
     Numeric,
     String,

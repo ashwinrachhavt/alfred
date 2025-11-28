@@ -4,7 +4,6 @@ from typing import Optional
 from pydantic import AnyHttpUrl, Field
 from pydantic_settings import BaseSettings
 
-
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "alfred.db"
 
 

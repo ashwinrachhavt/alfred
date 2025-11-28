@@ -8,8 +8,8 @@ from notion_client.errors import APIResponseError
 from pydantic import BaseModel, ConfigDict
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 
-from alfred.core.config import settings
 from alfred.connectors.notion_history import NotionHistoryConnector
+from alfred.core.config import settings
 
 
 def _client() -> Client:

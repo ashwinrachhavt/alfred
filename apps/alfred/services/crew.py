@@ -12,7 +12,7 @@ import asyncio
 import json
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -26,7 +26,10 @@ from alfred.connectors.crewai import (
 from alfred.prompts import load_prompt
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
-    from crewai import Agent as CrewAIAgent, Crew as CrewAICrew, Process as CrewAIProcess, Task as CrewAITask
+    from crewai import Agent as CrewAIAgent
+    from crewai import Crew as CrewAICrew
+    from crewai import Process as CrewAIProcess
+    from crewai import Task as CrewAITask
 else:
     CrewAIAgent = CrewAICrew = CrewAIProcess = CrewAITask = Any
 
