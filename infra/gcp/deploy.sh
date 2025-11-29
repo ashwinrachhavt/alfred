@@ -17,7 +17,7 @@ Options:
 
 Examples:
   bash infra/gcp/deploy.sh
-  bash infra/gcp/deploy.sh -p my-proj -r us-central1 -s alfred-api -R alfred -i alfred-api -e apps/alfred/.env
+  bash infra/gcp/deploy.sh -p my-proj -r us-central1 -s alfred-api -R alfred -i alfred-api -e alfred/.env
 EOF
 }
 

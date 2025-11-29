@@ -433,37 +433,3 @@ class LinearConnector:
             return dt.strftime("%Y-%m-%d %H:%M:%S")
         except ValueError:
             return iso_date
-
-
-# Example usage (uncomment to use):
-"""
-if __name__ == "__main__":
-    # Set your token here
-    token = "YOUR_LINEAR_API_KEY"
-    
-    linear = LinearConnector(token)
-    
-    try:
-        # Get all issues with comments
-        issues = linear.get_all_issues()
-        print(f"Retrieved {len(issues)} issues")
-        
-        # Format and print the first issue as markdown
-        if issues:
-            issue_md = linear.format_issue_to_markdown(issues[0])
-            print("\nSample Issue in Markdown:\n")
-            print(issue_md)
-            
-        # Get issues by date range
-        start_date = "2023-01-01"
-        end_date = "2023-01-31"
-        date_issues, error = linear.get_issues_by_date_range(start_date, end_date)
-        
-        if error:
-            print(f"Error: {error}")
-        else:
-            print(f"\nRetrieved {len(date_issues)} issues from {start_date} to {end_date}")
-    
-    except Exception as e:
-        print(f"Error: {e}")
-"""

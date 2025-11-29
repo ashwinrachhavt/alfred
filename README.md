@@ -68,7 +68,7 @@ Prereqs
 
 Configure
 ```bash
-cp apps/alfred/.env.example apps/alfred/.env
+cp alfred/.env.example alfred/.env
 # Fill in: OPENAI_API_KEY, (optional) QDRANT_URL/QDRANT_API_KEY, NOTION_TOKEN, etc.
 ```
 
@@ -77,7 +77,7 @@ Install & Run API
 uv python install 3.11          # optional: ensure matching runtime
 uv sync --dev                    # install app + tooling into .venv
 uv run playwright install chromium  # optional: enable dynamic crawling
-make run-api  # or: PYTHONPATH=apps uv run uvicorn alfred.main:app --reload --port 8000
+make run-api
 ```
 
 Legacy virtualenv (pip)
@@ -86,7 +86,7 @@ python3.11 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 python -m playwright install chromium  # optional: enable dynamic crawling
-make run-api UV=0  # or: PYTHONPATH=apps uvicorn alfred.main:app --reload --port 8000
+make run-api UV=0
 ```
 
 Docker (full stack)
@@ -96,11 +96,13 @@ docker compose -f infra/docker-compose.yml up --build
 
 ## Database & Migrations
 
-- Configure `DATABASE_URL` in `apps/alfred/.env` (defaults to a local SQLite file).
+- Configure `DATABASE_URL` in `alfred/.env` (defaults to a local SQLite file).
 - Run migrations locally: `uv run alembic -c alembic.ini upgrade head`.
 - Create a new migration: `uv run alembic -c alembic.ini revision --autogenerate -m "<description>"`.
 - If you point `DATABASE_URL` at Postgres, install a driver such as `psycopg[binary]` in your environment.
-- Base models live in `apps/alfred/models/`; extend `Model` for timestamped tables with an auto primary key, and declare columns with helper fields (e.g. `fields.string(...)`, `fields.text(...)`).
+- Base models live in `alfred/models/`; extend `Model` for timestamped tables with an auto primary key, and declare columns directly with SQLAlchemy's `mapped_column` helpers.
+- Mongo access lives in `alfred/services/mongo.py`; configure `MONGO_URI`, `MONGO_DATABASE`, and `MONGO_APP_NAME` (defaults connect to `mongodb://localhost:27017/alfred`).
+- Company research runs persist their structured reports into Mongo (collection defaults to `company_research_reports`). Use `/company/research?refresh=true` to force a fresh crawl + regeneration.
 
 ## Ingest Knowledge
 
@@ -150,8 +152,15 @@ Behavior
 
 Query params
 - `name` string: company to investigate.
+- `refresh` bool (optional, default `false`): force a new SearxNG search + Firecrawl crawl instead of returning the cached Mongo record.
 
-Returns a long-form report (≈1.5–2.5k words) produced by the LangGraph company research agent.
+Response shape
+- `company`, `model`, `generated_at`
+- `report`: structured object with `executive_summary`, dynamic `sections[]`, `risks`, `opportunities`, `recommended_actions`, `references`
+- `sources`: enriched search hits with snippets + scraped markdown
+- `search`: metadata describing the provider + hit count
+
+The service crawls top SearxNG results with Firecrawl, feeds the markdown to GPT-5.1, then persists the structured JSON to Mongo (`COMPANY_RESEARCH_COLLECTION`).
 
 ### `GET /company/outreach`
 
@@ -215,6 +224,26 @@ Core env vars
 - `EMBED_MODEL`, `CHAT_MODEL`, `FALLBACK_MODEL`
 - `RECURSIVE_DEPTH` — optional crawl depth for ingest (default 0)
 
+Web search providers (optional)
+- `SEARXNG_HOST` (or `SEARX_HOST`) — SearxNG base URL (e.g. `http://127.0.0.1:8080`). When set, provider `searx` is available in `/api/web/search`.
+- `LANGSEARCH_API_KEY` — enables the `langsearch` provider in `/api/web/search`. Optionally override endpoint via `LANGSEARCH_API_URL` (defaults to `https://api.langsearch.com/v1`).
+
+Company research pipeline
+- `FIRECRAWL_BASE_URL` / `FIRECRAWL_TIMEOUT` — Firecrawl instance used to pull markdown from each URL.
+- `COMPANY_RESEARCH_MODEL` — OpenAI chat model for synthesis (default `gpt-5.1`).
+- `COMPANY_RESEARCH_COLLECTION` — Mongo collection for persisted reports (default `company_research_reports`).
+
+Observability (Langfuse)
+- `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` — project keys from your Langfuse instance.
+- `LANGFUSE_HOST` — base URL for your self-hosted Langfuse (e.g. `http://localhost:3000`).
+- `LANGFUSE_DEBUG` — `true/false` to enable SDK debug logs (default `false`).
+- `LANGFUSE_TRACING_ENABLED` — `true/false` master switch (default `true`).
+
+Notes
+- Tracing is optional. If keys are not set or the SDK is not installed, the decorators become no-ops and the app runs normally.
+- To install SDK: `pip install langfuse` (or add to your environment).
+- Example traced endpoints/functions: `/api/web/search` route and the `alfred.services.web_search.search_web` tool.
+
 ## Tech Stack Badges
 
 ![OpenAI](https://img.shields.io/badge/OpenAI-412991?style=for-the-badge&logo=openai&logoColor=white)
@@ -225,7 +254,7 @@ Core env vars
 ## Notes & Tips
 - Robots-aware crawling; polite rate limiting. LinkedIn and auth-gated sites are skipped.
 - `PYTHONDONTWRITEBYTECODE=1` is set in Makefile and Docker to avoid `__pycache__` noise.
-- Keep secrets out of Git; use `apps/alfred/.env`.
+- Keep secrets out of Git; use `alfred/.env`.
 
 ---
 

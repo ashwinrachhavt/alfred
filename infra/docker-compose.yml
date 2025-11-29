@@ -1,10 +1,10 @@
 version: "3.9"
 services:
   api:
-    build: ../apps/alfred
+    build: ../alfred
     container_name: commander_api
     env_file:
-      - ../apps/alfred/.env
+      - ../alfred/.env
     environment:
       - PYTHONDONTWRITEBYTECODE=1
     command: uvicorn alfred.main:app --host 0.0.0.0 --port 8000 --reload
@@ -12,20 +12,20 @@ services:
     depends_on: [redis]
 
   worker:
-    build: ../apps/alfred
+    build: ../alfred
     container_name: commander_worker
     env_file:
-      - ../apps/alfred/.env
+      - ../alfred/.env
     environment:
       - PYTHONDONTWRITEBYTECODE=1
     command: celery -A alfred.celery_app.app worker -l INFO --concurrency=2
     depends_on: [redis]
 
   beat:
-    build: ../apps/alfred
+    build: ../alfred
     container_name: commander_beat
     env_file:
-      - ../apps/alfred/.env
+      - ../alfred/.env
     environment:
       - PYTHONDONTWRITEBYTECODE=1
     command: celery -A alfred.celery_app.app beat -l INFO

@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 from datetime import timedelta
@@ -5,9 +6,12 @@ from datetime import timedelta
 from celery import Celery
 
 from alfred.core.config import settings
+from alfred.core.logging import setup_logging
 
 os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
 sys.dont_write_bytecode = True
+
+setup_logging()
 
 app = Celery(
     "alfred",
@@ -31,3 +35,5 @@ app.conf.beat_schedule = {
         "options": {"expires": 60 * 60},
     }
 }
+
+logging.getLogger(__name__).info("Celery app initialized")

@@ -1,7 +1,7 @@
 """
 Quick connectivity test for the Slack connector.
 
-Requires SLACK_API_KEY in apps/alfred/.env or environment.
+Requires SLACK_API_KEY in alfred/.env or environment.
 
 Checks:
 - List channels the bot can access (names + IDs)
@@ -19,13 +19,11 @@ from pathlib import Path
 def main() -> int:
     # Ensure `alfred` package is importable when run from repo root
     repo_root = Path(__file__).resolve().parents[1]
-    sys.path.append(str(repo_root / "apps"))
-
-    # Load .env explicitly for subdir runs
-    try:
-        from dotenv import load_dotenv  # type: ignore
-
-        load_dotenv(repo_root / "apps" / "alfred" / ".env")
+    apps_dir = repo_root / "apps"
+    if str(apps_dir) not in sys.path:
+        sys.path.append(str(apps_dir))
+    try:  # Load env/disable pyc via sitecustomize
+        import sitecustomize  # noqa: F401
     except Exception:
         pass
 
@@ -58,7 +56,6 @@ def main() -> int:
     # Verify token type and workspace via auth.test for a clearer error message
     try:
         from slack_sdk import WebClient  # type: ignore
-        from slack_sdk.errors import SlackApiError  # type: ignore
 
         wc = WebClient(token=token)
         info = wc.auth_test()

@@ -4,9 +4,7 @@ import json
 import logging
 import os
 from typing import Any, Iterable, List, Literal, Sequence, TypedDict
-from uuid import uuid4
 
-from dotenv import load_dotenv
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool
@@ -17,27 +15,8 @@ from pydantic import BaseModel, Field
 from alfred.prompts import load_prompt
 from alfred.services.web_search import search_web
 
-load_dotenv()
-
-try:  # pragma: no cover - optional dependency
-    from langgraph.checkpoint.memory import MemorySaver
-except Exception:  # pragma: no cover
-    MemorySaver = None  # type: ignore
-
-_MEMORY_SAVER = MemorySaver() if MemorySaver is not None else None
-
-try:  # pragma: no cover - optional dependency
-    from langchain_core.retrievers import BaseRetriever
-except Exception:  # pragma: no cover
-
-    class BaseRetriever:  # type: ignore[empty-body]
-        """Fallback minimal retriever interface."""
-
-        def invoke(self, query: str):  # type: ignore[override]
-            return []
-
-        async def ainvoke(self, query: str):  # type: ignore[override]
-            return []
+# Keep it simple: no checkpointing by default
+_MEMORY_SAVER = None
 
 
 class AgentState(TypedDict):
@@ -85,12 +64,10 @@ def build_system_prompt(mode: str = "minimal") -> str:
 
 # ------------------------ HELPERS ------------------------
 def _load_env() -> None:
-    try:
-        from dotenv import load_dotenv  # type: ignore
-
-        load_dotenv()
-    except Exception:
-        pass
+    """Environment is loaded via sitecustomize when apps/ is on sys.path.
+    This function remains for backward compatibility and is now a no-op.
+    """
+    return None
 
 
 def make_llm(temperature: float = 0.2):
@@ -387,23 +364,18 @@ def build_agent_graph(k: int = 4, mode: str = "minimal"):
         {"tools": "tools", END: END},
     )
 
-    workflow.add_conditional_edges("retrieve", grade_documents)
+    workflow.add_conditional_edges("tools", grade_documents)
     workflow.add_edge("generate_answer", END)
     workflow.add_edge("rewrite_question", "generate_query_or_respond")
 
-    if _MEMORY_SAVER is not None:
-        return workflow.compile(checkpointer=_MEMORY_SAVER)
+    # No checkpointer configured; compile straightforwardly
     return workflow.compile()
 
 
 def answer_agentic(question: str, k: int = 4, mode: str = "minimal") -> str:
     graph = build_agent_graph(k=k, mode=mode)
     final = ""
-    stream_kwargs = {}
-    if _MEMORY_SAVER is not None:
-        stream_kwargs["config"] = {"configurable": {"thread_id": f"agentic-rag-{uuid4()}"}}
-
-    for chunk in graph.stream({"messages": [HumanMessage(content=question)]}, **stream_kwargs):
+    for chunk in graph.stream({"messages": [HumanMessage(content=question)]}):
         for _node, update in chunk.items():
             try:
                 msg = update["messages"][-1]

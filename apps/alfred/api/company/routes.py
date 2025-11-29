@@ -4,16 +4,19 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from alfred.services.company_outreach import generate_company_outreach
-from alfred.services.company_researcher import research_company
+from alfred.services.company_researcher import CompanyResearchService
 
 router = APIRouter(prefix="/company", tags=["company"])
+_research_service = CompanyResearchService()
 
 
 @router.get("/research")
-async def company_research(name: str = Query(..., description="Company name")):
+async def company_research(
+    name: str = Query(..., description="Company name"),
+    refresh: bool = Query(False, description="Force a new crawl + regeneration"),
+):
     try:
-        report = research_company(name)
-        return {"company": name, "report": report}
+        return _research_service.generate_report(name, refresh=refresh)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

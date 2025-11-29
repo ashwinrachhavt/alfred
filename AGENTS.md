@@ -13,7 +13,7 @@ Top-level layout:
   - `alfred/api/` — HTTP routes, grouped by domain (`calendar`, `company`, `gmail`, etc.).
   - `alfred/core/` — Configuration, logging, settings, and other core infrastructure.
   - `alfred/services/` — Application service logic and integrations (Notion, vector store, Gmail, etc.).
-  - `alfred/models/` — ORM models (SQLAlchemy) using `Model` + `fields.*` helpers.
+  - `alfred/models/` — ORM models (SQLAlchemy) built on the shared `Model` base class.
   - `main.py` — FastAPI entrypoint.
   - `celery_app.py` — Celery app factory.
 - `infra/docker-compose.yml` — Local Docker services (API, worker, beat, Redis).
@@ -39,7 +39,7 @@ Please keep these boundaries clear:
 
 - **Data models & persistence**  
   - Lives in `apps/alfred/models/`.  
-  - All ORM models inherit from `Model` and use `fields.*` for declarative columns.
+  - All ORM models inherit from `Model` and declare columns directly with SQLAlchemy types.
 
 - **Core config & plumbing**  
   - Lives in `apps/alfred/core/`.  
@@ -163,7 +163,7 @@ The current backend stack includes:
   * Create events, including Meet links and scheduling guardrails.
 * **SQLAlchemy ORM** with Django-like helpers:
 
-  * `Model` base class and `fields.*` helpers for concise model definitions.
+  * `Model` base class for concise, timestamped model definitions.
   * Alembic migrations for schema evolution.
 * **Celery + Redis**:
 

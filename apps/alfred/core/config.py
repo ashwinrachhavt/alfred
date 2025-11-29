@@ -6,14 +6,23 @@ from typing import Optional
 from pydantic import AnyHttpUrl, Field
 from pydantic_settings import BaseSettings
 
-# Load environment from project .env early so Settings can pick it up
-try:  # optional dependency
-    from dotenv import load_dotenv  # type: ignore
+# Load environment from project .env early so Settings can pick it up.
+# Skip if already handled by `apps/sitecustomize.py`.
+if os.environ.get("ALFRED_ENV_LOADED") != "1":
+    try:  # optional dependency
+        from dotenv import load_dotenv  # type: ignore
 
-    _ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
-    load_dotenv(_ENV_PATH)
-except Exception:
-    pass
+        # Load env from package-local .env first (alfred/.env)
+        _PKG_ENV = Path(__file__).resolve().parents[1] / ".env"
+        if _PKG_ENV.exists():
+            load_dotenv(_PKG_ENV)
+        else:
+            # Fallback to repo root .env if present
+            _ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
+            if _ROOT_ENV.exists():
+                load_dotenv(_ROOT_ENV)
+    except Exception:
+        pass
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "alfred.db"
 
@@ -97,6 +106,13 @@ class Settings(BaseSettings):
         alias="LANGSEARCH_DB_PATH",
     )
 
+    # Langfuse (observability)
+    langfuse_public_key: Optional[str] = Field(default=None, alias="LANGFUSE_PUBLIC_KEY")
+    langfuse_secret_key: Optional[str] = Field(default=None, alias="LANGFUSE_SECRET_KEY")
+    langfuse_host: Optional[str] = Field(default=None, alias="LANGFUSE_HOST")
+    langfuse_debug: bool = Field(default=False, alias="LANGFUSE_DEBUG")
+    langfuse_tracing_enabled: bool = Field(default=True, alias="LANGFUSE_TRACING_ENABLED")
+
     # Connectors (misc)
     linear_api_key: str | None = Field(default=None, alias="LINEAR_API_KEY")
     slack_api_key: str | None = Field(default=None, alias="SLACK_API_KEY")
@@ -104,6 +120,18 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default=f"sqlite:///{DEFAULT_DB_PATH}",
         alias="DATABASE_URL",
+    )
+
+    mongo_uri: str = Field(default="mongodb://localhost:27017", alias="MONGO_URI")
+    mongo_database: str = Field(default="notes_db", alias="MONGO_DATABASE")
+    mongo_app_name: str = Field(default="notes_db", alias="MONGO_APP_NAME")
+
+    firecrawl_base_url: str = Field(default="http://localhost:8010", alias="FIRECRAWL_BASE_URL")
+    firecrawl_timeout: int = Field(default=30, alias="FIRECRAWL_TIMEOUT")
+    company_research_model: str = Field(default="gpt-5.1", alias="COMPANY_RESEARCH_MODEL")
+    company_research_collection: str = Field(
+        default="company_research_reports",
+        alias="COMPANY_RESEARCH_COLLECTION",
     )
 
     calendar_slot_duration_minutes: int = Field(
@@ -130,7 +158,7 @@ class Settings(BaseSettings):
 
 
 class Config:
-    env_file = "apps/alfred/.env"
+    env_file = "alfred/.env"
     extra = "ignore"
 
 

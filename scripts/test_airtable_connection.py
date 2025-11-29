@@ -13,9 +13,11 @@ from pathlib import Path
 
 def main() -> int:
     import argparse
+
     # Ensure `alfred` package is importable when run from repo root
     REPO_ROOT = Path(__file__).resolve().parents[1]
-    sys.path.append(str(REPO_ROOT / "apps"))
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.append(str(REPO_ROOT))
 
     from alfred.connectors.airtable_connector import AirtableConnector
     from alfred.core.config import settings

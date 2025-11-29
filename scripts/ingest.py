@@ -8,7 +8,6 @@ from hashlib import md5
 from pathlib import Path
 from typing import List
 
-from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader, RecursiveUrlLoader
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
@@ -17,8 +16,6 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
-load_dotenv()
-
 # Ensure a reasonable default User-Agent to avoid warnings and improve acceptance
 os.environ.setdefault(
     "USER_AGENT", "Mozilla/5.0 (compatible; AlfredBot/1.0; +https://github.com/alfred)"
@@ -26,9 +23,15 @@ os.environ.setdefault(
 
 
 ROOT = Path(__file__).resolve().parents[1]
-API_DIR = ROOT / "apps" / "api"
-if str(API_DIR) not in sys.path:
-    sys.path.insert(0, str(API_DIR))
+APPS_DIR = ROOT / "apps"
+if str(APPS_DIR) not in sys.path:
+    sys.path.insert(0, str(APPS_DIR))
+
+# Ensure consistent env loading and bytecode settings
+try:  # pragma: no cover - simple import side effect
+    import sitecustomize  # noqa: F401
+except Exception:
+    pass
 
 # Note: per request, use WebBaseLoader/RecursiveUrlLoader instead of custom crawler
 

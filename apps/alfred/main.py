@@ -1,21 +1,20 @@
+import logging
 import os
 import sys
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-try:
-    from dotenv import load_dotenv  # type: ignore
-
-    load_dotenv()
-except Exception:
-    pass
-
+# Dotenv is loaded by `apps/sitecustomize.py` when `apps/` is on sys.path.
 from alfred.api import register_routes
 from alfred.core.config import settings
+from alfred.core.logging import setup_logging
 
 os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
 sys.dont_write_bytecode = True
+
+# Initialize logging early so all modules inherit the handlers/level
+setup_logging()
 
 app = FastAPI(title="Alfred API")
 app.add_middleware(
@@ -27,3 +26,6 @@ app.add_middleware(
 )
 
 register_routes(app)
+
+logger = logging.getLogger(__name__)
+logger.info("Alfred API initialized")

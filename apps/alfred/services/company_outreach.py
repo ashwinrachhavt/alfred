@@ -11,21 +11,57 @@ from langgraph.graph import END, START, StateGraph
 
 from alfred.prompts import load_prompt
 from alfred.services.agentic_rag import create_retriever_tool, make_llm, make_retriever
-from alfred.services.company_researcher import research_company
+from alfred.services.company_researcher import CompanyResearchService
 from alfred.services.web_search import search_web
+
+_company_research_service = CompanyResearchService()
+
+
+def _summarize_company_report(doc: dict[str, Any]) -> str:
+    report = doc.get("report") or {}
+    lines: list[str] = []
+    exec_summary = report.get("executive_summary")
+    if exec_summary:
+        lines.append(f"Executive summary:\n{exec_summary}")
+    sections = report.get("sections") or []
+    for section in sections:
+        name = section.get("name", "Untitled section")
+        summary = section.get("summary", "")
+        insights = section.get("insights") or []
+        lines.append(f"\n## {name}\n{summary}")
+        for insight in insights:
+            lines.append(f"- {insight}")
+    if report.get("risks"):
+        lines.append("\nRisks:")
+        for item in report["risks"]:
+            lines.append(f"- {item}")
+    if report.get("opportunities"):
+        lines.append("\nOpportunities:")
+        for item in report["opportunities"]:
+            lines.append(f"- {item}")
+    if report.get("recommended_actions"):
+        lines.append("\nRecommended actions:")
+        for item in report["recommended_actions"]:
+            lines.append(f"- {item}")
+    if report.get("references"):
+        lines.append("\nReferences:")
+        for ref in report["references"]:
+            lines.append(f"- {ref}")
+    return "\n".join(lines).strip() or "(empty report)"
 
 
 class CompanyResearchTool(BaseTool):
     name: str = "company_research"
     description: str = (
         "Call the in-house company research agent. Input should be the exact company name. "
-        "It returns a long-form research report covering mission, products, GTM, funding, and risks."
+        "It returns a structured research report covering mission, products, GTM, funding, and risks."
     )
 
     def _run(self, company: str) -> str:  # type: ignore[override]
         try:
-            return research_company(company)
-        except Exception as exc:  # surface friendly error for the planner
+            doc = _company_research_service.generate_report(company)
+            return _summarize_company_report(doc)
+        except Exception as exc:  # pragma: no cover - propagate friendly error
             return f"(error) company research failed: {exc}"
 
     async def _arun(self, *args: Any, **kwargs: Any) -> str:  # pragma: no cover

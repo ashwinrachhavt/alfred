@@ -300,20 +300,12 @@ class AirtableConnector:
                     f"start_date ({start_date}) must be before end_date ({end_date})",
                 )
 
-            # Create Airtable formula for date filtering
-            # filter_formula = (
-            #    f"AND("
-            #    f"IS_AFTER({{date_field}}, '{start_date}'), "
-            #    f"IS_BEFORE({{date_field}}, '{end_date}')"
-            #    f")"
-            # ).replace("{date_field}", date_field)
-            # TODO: Investigate how to properly use filter formula
+            # TODO: Investigate how to properly use Airtable filter formulas for date ranges
 
             return self.get_all_records(
                 base_id=base_id,
                 table_id=table_id,
                 max_records=max_records,
-                # filter_by_formula=filter_formula,
             )
 
         except Exception as e:

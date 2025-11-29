@@ -4,6 +4,7 @@ PYTHON ?= python3.11
 UV ?= 1
 RUN =
 INSTALL =
+DEBUG ?= 0
 
 ifeq ($(UV),1)
 RUN = uv run
@@ -29,10 +30,10 @@ format:
 	$(RUN) ruff format apps/alfred tests
 
 run-api:
-	PYTHONPATH=apps $(RUN) uvicorn alfred.main:app --reload --port 8000
+	$(if $(filter 1,$(DEBUG)),ALFRED_LOG_LEVEL=DEBUG,) $(RUN) uvicorn alfred.main:app --reload --port 8000 $(if $(filter 1,$(DEBUG)),--log-level debug,)
 
 run-worker:
-	PYTHONPATH=apps $(RUN) celery -A alfred.celery_app.app worker -l INFO
+	$(RUN) celery -A alfred.celery_app.app worker -l INFO
 
 docker-up:
 	docker compose -f infra/docker-compose.yml up --build
