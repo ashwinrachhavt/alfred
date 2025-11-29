@@ -28,13 +28,13 @@ jobs:
           restore-keys: ${{ runner.os }}-uv-
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: make install
 
       - name: Lint
-        run: uv run ruff check apps/alfred tests
+        run: make lint
 
       - name: Tests
-        run: uv run pytest -q
+        run: make test
 
       - name: Ensure no bytecode artifacts
-        run: uv run python scripts/check_no_bytecode.py
+        run: make check-no-bytecode

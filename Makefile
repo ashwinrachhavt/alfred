@@ -30,6 +30,13 @@ lint:
 format:
 	$(RUN) ruff format apps/alfred tests
 
+.PHONY: check-no-bytecode cleanup-bytecode
+check-no-bytecode:
+	$(RUN) python scripts/check_no_bytecode.py
+
+cleanup-bytecode:
+	$(RUN) python scripts/cleanup_bytecode.py
+
 run-api:
 	$(if $(filter 1,$(DEBUG)),ALFRED_LOG_LEVEL=DEBUG,) $(RUN) uvicorn alfred.main:app --reload --port 8000 $(if $(filter 1,$(DEBUG)),--log-level debug,)
 
