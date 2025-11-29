@@ -9,7 +9,6 @@ from typing import Any
 from sqlalchemy.exc import SQLAlchemyError
 
 from alfred.core.database import SessionLocal
-from alfred.models.research import ResearchRun
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +26,11 @@ def persist_research_run(
     session = SessionLocal()
     try:
         clean_state = json.loads(json.dumps(state, default=str))
+        try:
+            from alfred.models.research import ResearchRun  # type: ignore
+        except Exception:
+            logger.debug("ResearchRun model not available; skipping persistence")
+            return
         record = ResearchRun(
             query=query,
             target_length_words=target_length_words,

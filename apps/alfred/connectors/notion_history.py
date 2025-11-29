@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Dict, Iterable, List, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from notion_client import AsyncClient
 from notion_client.errors import APIResponseError
@@ -36,7 +36,7 @@ def _parse_iso(dt: str | datetime | None) -> Optional[datetime]:
 
 
 async def _enumerate_async(
-    iterable: AsyncIterator[Dict[str, Any]]
+    iterable: AsyncIterator[Dict[str, Any]],
 ) -> AsyncIterator[Tuple[int, Dict[str, Any]]]:
     index = 0
     async for item in iterable:
@@ -226,9 +226,7 @@ class NotionHistoryConnector:
                 raise
 
             if not isinstance(resp, dict):
-                raise RuntimeError(
-                    f"Unexpected blocks.children.list response type: {type(resp)}"
-                )
+                raise RuntimeError(f"Unexpected blocks.children.list response type: {type(resp)}")
 
             items.extend(resp.get("results", []) or [])
 

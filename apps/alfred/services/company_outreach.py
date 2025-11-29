@@ -3,17 +3,15 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Any, Dict, Optional, TypedDict
+from typing import Any, Dict, Optional, TypedDict
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
-from langgraph.graph.message import AnyMessage, add_messages
 
 from alfred.prompts import load_prompt
 from alfred.services.agentic_rag import create_retriever_tool, make_llm, make_retriever
 from alfred.services.company_researcher import research_company
-from alfred.services.langgraph_compat import ToolNode, tools_condition
 from alfred.services.web_search import search_web
 
 
@@ -127,7 +125,7 @@ def build_company_outreach_graph(company: str, role: str, personal_context: str,
     planner = make_llm(temperature=0.0).bind_tools(tools)
 
     def agent_node(state: OutreachState):
-        return {"messages": [planner.invoke(state["messages"])]}
+        return {"messages": [*state["messages"], planner.invoke(state["messages"])]}
 
     def finalize_node(state: OutreachState):
         synth = make_llm(temperature=0.2)
@@ -142,15 +140,61 @@ def build_company_outreach_graph(company: str, role: str, personal_context: str,
             HumanMessage(content=final_prompt),
         ]
         msg = synth.invoke(convo)
-        return {"messages": [msg]}
+        return {"messages": [*state["messages"], msg]}
+
+    def tools_condition_local(state: OutreachState):
+        msgs = state.get("messages", [])
+        if not msgs:
+            return END
+        last = msgs[-1]
+        if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
+            return "tools"
+        return END
+
+    def tools_node(state: OutreachState):
+        msgs = state.get("messages", [])
+        if not msgs:
+            return {"messages": msgs}
+        last = msgs[-1]
+        if not isinstance(last, AIMessage):
+            return {"messages": msgs}
+        name_to_tool = {t.name: t for t in tools}
+        out: list[ToolMessage] = []
+        for call in getattr(last, "tool_calls", []) or []:
+            name = getattr(call, "name", None) or (
+                call.get("name") if isinstance(call, dict) else None
+            )
+            args = (
+                getattr(call, "args", None)
+                or (call.get("args") if isinstance(call, dict) else None)
+                or ""
+            )
+            call_id = getattr(call, "id", None) or (
+                call.get("id") if isinstance(call, dict) else name
+            )
+            tool = name_to_tool.get(name or "")
+            if tool is None:
+                out.append(
+                    ToolMessage(content=f"(tool not found: {name})", tool_call_id=str(call_id))
+                )
+                continue
+            try:
+                result = tool.invoke(args)
+            except Exception:
+                try:
+                    result = tool.run(args)
+                except Exception as exc:
+                    result = f"(error) {exc}"
+            out.append(ToolMessage(content=str(result), tool_call_id=str(call_id)))
+        return {"messages": [*msgs, *out]}
 
     graph = StateGraph(OutreachState)
     graph.add_node("agent", agent_node)
-    graph.add_node("tools", ToolNode(tools))
+    graph.add_node("tools", tools_node)
     graph.add_node("finalize", finalize_node)
 
     graph.add_edge(START, "agent")
-    graph.add_conditional_edges("agent", tools_condition, {"tools": "tools", END: "finalize"})
+    graph.add_conditional_edges("agent", tools_condition_local, {"tools": "tools", END: "finalize"})
     graph.add_edge("tools", "agent")
     graph.add_edge("finalize", END)
 
@@ -180,7 +224,12 @@ def generate_company_outreach(
 
     try:
         for chunk in graph.stream(
-            {"messages": [SystemMessage(content=OUTREACH_SYSTEM_PROMPT), HumanMessage(content=seed)]},
+            {
+                "messages": [
+                    SystemMessage(content=OUTREACH_SYSTEM_PROMPT),
+                    HumanMessage(content=seed),
+                ]
+            },
             config={"recursion_limit": 40},
         ):
             for update in chunk.values():
@@ -218,4 +267,4 @@ def generate_company_outreach(
 
 
 class OutreachState(TypedDict):
-    messages: Annotated[list[AnyMessage], add_messages]
+    messages: list[BaseMessage]

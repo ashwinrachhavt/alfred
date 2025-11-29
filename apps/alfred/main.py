@@ -1,3 +1,6 @@
+import os
+import sys
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -10,6 +13,9 @@ except Exception:
 
 from alfred.api import register_routes
 from alfred.core.config import settings
+
+os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
+sys.dont_write_bytecode = True
 
 app = FastAPI(title="Alfred API")
 app.add_middleware(

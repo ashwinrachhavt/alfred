@@ -3,21 +3,19 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Annotated, Any, Iterable, List, Literal, Sequence, TypedDict
+from typing import Any, Iterable, List, Literal, Sequence, TypedDict
 from uuid import uuid4
 
 from dotenv import load_dotenv
 from langchain_core.documents import Document
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langgraph.graph import END, START, StateGraph
-from langgraph.graph.message import AnyMessage, add_messages
 from pydantic import BaseModel, Field
 
 from alfred.prompts import load_prompt
-from alfred.services.langgraph_compat import ToolNode, tools_condition
-from alfred.services.searxng_agent import search_web as searx_search
+from alfred.services.web_search import search_web
 
 load_dotenv()
 
@@ -31,6 +29,7 @@ _MEMORY_SAVER = MemorySaver() if MemorySaver is not None else None
 try:  # pragma: no cover - optional dependency
     from langchain_core.retrievers import BaseRetriever
 except Exception:  # pragma: no cover
+
     class BaseRetriever:  # type: ignore[empty-body]
         """Fallback minimal retriever interface."""
 
@@ -42,7 +41,8 @@ except Exception:  # pragma: no cover
 
 
 class AgentState(TypedDict):
-    messages: Annotated[list[AnyMessage], add_messages]
+    messages: list[BaseMessage]
+
 
 # ------------------------ CONFIG ------------------------
 COLLECTION = os.getenv("QDRANT_COLLECTION", os.getenv("CHROMA_COLLECTION", "personal_kb"))
@@ -129,7 +129,7 @@ class _RetrieverTool(BaseTool):  # pragma: no cover - simple stringifying tool
         return "\n\n".join(getattr(d, "page_content", str(d)) for d in docs)
 
 
-class _SearxTool(BaseTool):  # pragma: no cover - HTTP-backed search tool
+class _WebSearchTool(BaseTool):  # pragma: no cover - HTTP-backed search tool
     name: str = "web_search"
     description: str = (
         "Search the public web via SearxNG. Provide a plain-language query. "
@@ -139,14 +139,15 @@ class _SearxTool(BaseTool):  # pragma: no cover - HTTP-backed search tool
     top_k: int = 5
 
     def _run(self, query: str) -> str:  # type: ignore[override]
-        results = searx_search(query, num_results=self.top_k)
+        resp = search_web(query, mode="auto")
+        hits = resp.get("hits", [])
         simplified = []
-        for item in results:
+        for item in hits:
             simplified.append(
                 {
                     "title": item.get("title", ""),
                     "url": item.get("url", ""),
-                    "snippet": item.get("content", "")[:240],
+                    "snippet": (item.get("snippet", "") or "")[:240],
                 }
             )
         return json.dumps({"results": simplified}, ensure_ascii=False)
@@ -245,8 +246,8 @@ def make_tools(k: int = 4):
     except Exception:
         tools = [retriever_tool]
 
-    # Always include the searx web search tool for richer sourcing
-    tools.append(_SearxTool())
+    # Always include a web search tool for richer sourcing
+    tools.append(_WebSearchTool())
 
     return tools
 
@@ -255,9 +256,8 @@ def make_tools(k: int = 4):
 def generate_query_or_respond(state: AgentState, k: int = 4):
     tools = make_tools(k=k)
     llm = make_llm(temperature=0.0).bind_tools(tools)
-    # Decide to call a tool (retrieve or web_search) or respond directly
-    response = llm.invoke(state["messages"])
-    return {"messages": [response]}
+    response = llm.invoke(state["messages"])  # decide to call a tool or respond
+    return {"messages": [*state["messages"], response]}
 
 
 GRADE_PROMPT = (
@@ -302,7 +302,7 @@ def rewrite_question(state: AgentState):
     question = state["messages"][0].content
     pro = REWRITE_PROMPT.format(question=question)
     response = make_llm(temperature=0.0).invoke([{"role": "user", "content": pro}])
-    return {"messages": [{"role": "user", "content": response.content}]}
+    return {"messages": [*state["messages"], {"role": "user", "content": response.content}]}
 
 
 def generate_answer(state: AgentState, mode: str = "minimal"):
@@ -321,7 +321,52 @@ def generate_answer(state: AgentState, mode: str = "minimal"):
         + "4) A `Sources:` section with markdown bullet list linking to any URLs returned by tools.\n"
     )
     response = make_llm(temperature=0.2).invoke([{"role": "user", "content": pro}])
-    return {"messages": [response]}
+    return {"messages": [*state["messages"], response]}
+
+
+def tools_condition_local(state: AgentState):
+    msgs = state.get("messages", [])
+    if not msgs:
+        return END
+    last = msgs[-1]
+    if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
+        return "tools"
+    return END
+
+
+def tools_node(state: AgentState, tools: list[BaseTool]):
+    msgs = state.get("messages", [])
+    if not msgs:
+        return {"messages": msgs}
+
+    last = msgs[-1]
+    if not isinstance(last, AIMessage):
+        return {"messages": msgs}
+
+    name_to_tool = {t.name: t for t in tools}
+    out: list[ToolMessage] = []
+    for call in getattr(last, "tool_calls", []) or []:
+        name = getattr(call, "name", None) or (call.get("name") if isinstance(call, dict) else None)
+        args = (
+            getattr(call, "args", None)
+            or (call.get("args") if isinstance(call, dict) else None)
+            or ""
+        )
+        call_id = getattr(call, "id", None) or (call.get("id") if isinstance(call, dict) else name)
+        tool = name_to_tool.get(name or "")
+        if tool is None:
+            out.append(ToolMessage(content=f"(tool not found: {name})", tool_call_id=str(call_id)))
+            continue
+        try:
+            result = tool.invoke(args)
+        except Exception:
+            try:
+                result = tool.run(args)
+            except Exception as exc:
+                result = f"(error) {exc}"
+        out.append(ToolMessage(content=str(result), tool_call_id=str(call_id)))
+
+    return {"messages": [*msgs, *out]}
 
 
 # ------------------------ GRAPH BUILD/EXEC ------------------------
@@ -329,7 +374,7 @@ def build_agent_graph(k: int = 4, mode: str = "minimal"):
     workflow = StateGraph(AgentState)
 
     workflow.add_node("generate_query_or_respond", lambda s: generate_query_or_respond(s, k=k))
-    workflow.add_node("retrieve", ToolNode(make_tools(k=k)))
+    workflow.add_node("tools", lambda s: tools_node(s, make_tools(k=k)))
     workflow.add_node("rewrite_question", rewrite_question)
     workflow.add_node("generate_answer", lambda s: generate_answer(s, mode=mode))
 
@@ -338,11 +383,8 @@ def build_agent_graph(k: int = 4, mode: str = "minimal"):
     # Decide whether to retrieve or finish
     workflow.add_conditional_edges(
         "generate_query_or_respond",
-        tools_condition,
-        {
-            "tools": "retrieve",
-            END: END,
-        },
+        tools_condition_local,
+        {"tools": "tools", END: END},
     )
 
     workflow.add_conditional_edges("retrieve", grade_documents)
@@ -359,9 +401,7 @@ def answer_agentic(question: str, k: int = 4, mode: str = "minimal") -> str:
     final = ""
     stream_kwargs = {}
     if _MEMORY_SAVER is not None:
-        stream_kwargs["config"] = {
-            "configurable": {"thread_id": f"agentic-rag-{uuid4()}"}
-        }
+        stream_kwargs["config"] = {"configurable": {"thread_id": f"agentic-rag-{uuid4()}"}}
 
     for chunk in graph.stream({"messages": [HumanMessage(content=question)]}, **stream_kwargs):
         for _node, update in chunk.items():

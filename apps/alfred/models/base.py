@@ -3,18 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from importlib import import_module
-from pathlib import Path
-from typing import Iterator
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Enum,
     Float,
     ForeignKey,
     Integer,
-    JSON,
     MetaData,
     Numeric,
     String,
@@ -126,22 +123,5 @@ class _FieldFactory:
 fields = _FieldFactory()
 
 
-def iter_model_modules() -> Iterator[str]:
-    """Yield import paths for all model modules.
-
-    Modules starting with an underscore or named ``base`` are skipped.
-    """
-
-    package_dir = Path(__file__).resolve().parent
-    for path in package_dir.glob("*.py"):
-        stem = path.stem
-        if stem.startswith("_") or stem == "base":
-            continue
-        yield f"{__package__}.{stem}"
-
-
-def load_all_models() -> None:
-    """Import all model modules so they register with the metadata."""
-
-    for dotted_path in iter_model_modules():
-        import_module(dotted_path)
+# Note: We no longer auto-import model modules. Import models explicitly
+# where needed (e.g., in Alembic env or app startup) to register metadata.

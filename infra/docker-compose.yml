@@ -7,8 +7,8 @@ services:
       - ../apps/alfred/.env
     environment:
       - PYTHONDONTWRITEBYTECODE=1
-    command: uvicorn alfred.main:app --host 0.0.0.0 --port 8080 --reload
-    ports: ["8080:8080"]
+    command: uvicorn alfred.main:app --host 0.0.0.0 --port 8000 --reload
+    ports: ["8000:8000"]
     depends_on: [redis]
 
   worker:

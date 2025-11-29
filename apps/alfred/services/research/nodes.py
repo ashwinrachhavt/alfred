@@ -32,12 +32,8 @@ def _safe_json_loads(payload: str) -> dict[str, object]:
 
 async def query_expander(state: ResearchState) -> ResearchState:
     llm = get_llm(temperature=0.2)
-    system = SystemMessage(
-        content=QUERY_PLANNER_PROMPT
-    )
-    human = HumanMessage(
-        content=json.dumps({"query": state["query"], "desired_sections": 5})
-    )
+    system = SystemMessage(content=QUERY_PLANNER_PROMPT)
+    human = HumanMessage(content=json.dumps({"query": state["query"], "desired_sections": 5}))
     response = await llm.ainvoke([system, human])
     data = _safe_json_loads(response.content)
     state["expanded_queries"] = [str(item) for item in data.get("expanded_queries", [])][:7]

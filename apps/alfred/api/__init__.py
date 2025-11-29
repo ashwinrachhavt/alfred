@@ -4,8 +4,6 @@ from fastapi import FastAPI
 
 from alfred.api.calendar import router as calendar_router
 from alfred.api.company import router as company_router
-from alfred.api.copilotkit import register_copilotkit_endpoint
-from alfred.api.crew import router as crew_router
 from alfred.api.gmail import router as gmail_router
 from alfred.api.notion import router as notion_router
 from alfred.api.rag import router as rag_router
@@ -24,7 +22,6 @@ ROUTERS = [
     company_router,
     web_router,
     wikipedia_router,
-    crew_router,
 ]
 
 
@@ -34,4 +31,4 @@ def register_routes(app: FastAPI) -> None:
         app.include_router(router)
     # Temporary compatibility for legacy clients still using /api/v1/notion/*
     app.include_router(notion_router, prefix="/api/v1")
-    register_copilotkit_endpoint(app)
+    # CopilotKit endpoint removed

@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 import os
-from typing import Annotated, List, TypedDict
+from typing import List, TypedDict
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
-from langgraph.graph.message import AnyMessage, add_messages
 
 from alfred.connectors.web_connector import WebConnector
 from alfred.prompts import load_prompt
-from alfred.services.langgraph_compat import ToolNode, tools_condition
 
 DEFAULT_UA = "Mozilla/5.0 (compatible; AlfredBot/1.0; +https://github.com/alfred)"
 
@@ -127,7 +125,7 @@ def build_company_graph():
     llm = make_llm(temperature=0.0).bind_tools(tools)
 
     def think_or_act(state: CompanyState):
-        return {"messages": [llm.invoke(state["messages"])]}
+        return {"messages": [*state["messages"], llm.invoke(state["messages"])]}
 
     def finalize(state: CompanyState):
         synth = make_llm(temperature=0.1)
@@ -139,15 +137,61 @@ def build_company_graph():
                 {"role": "user", "content": prompt},
             ]
         )
-        return {"messages": [msg]}
+        return {"messages": [*state["messages"], msg]}
+
+    def tools_condition_local(state: CompanyState):
+        msgs = state.get("messages", [])
+        if not msgs:
+            return END
+        last = msgs[-1]
+        if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
+            return "tools"
+        return END
+
+    def tools_node(state: CompanyState):
+        msgs = state.get("messages", [])
+        if not msgs:
+            return {"messages": msgs}
+        last = msgs[-1]
+        if not isinstance(last, AIMessage):
+            return {"messages": msgs}
+        name_to_tool = {t.name: t for t in tools}
+        out: list[ToolMessage] = []
+        for call in getattr(last, "tool_calls", []) or []:
+            name = getattr(call, "name", None) or (
+                call.get("name") if isinstance(call, dict) else None
+            )
+            args = (
+                getattr(call, "args", None)
+                or (call.get("args") if isinstance(call, dict) else None)
+                or ""
+            )
+            call_id = getattr(call, "id", None) or (
+                call.get("id") if isinstance(call, dict) else name
+            )
+            tool = name_to_tool.get(name or "")
+            if tool is None:
+                out.append(
+                    ToolMessage(content=f"(tool not found: {name})", tool_call_id=str(call_id))
+                )
+                continue
+            try:
+                result = tool.invoke(args)
+            except Exception:
+                try:
+                    result = tool.run(args)
+                except Exception as exc:
+                    result = f"(error) {exc}"
+            out.append(ToolMessage(content=str(result), tool_call_id=str(call_id)))
+        return {"messages": [*msgs, *out]}
 
     g = StateGraph(CompanyState)
     g.add_node("agent", think_or_act)
-    g.add_node("tools", ToolNode(tools))
+    g.add_node("tools", tools_node)
     g.add_node("finalize", finalize)
 
     g.add_edge(START, "agent")
-    g.add_conditional_edges("agent", tools_condition, {"tools": "tools", END: "finalize"})
+    g.add_conditional_edges("agent", tools_condition_local, {"tools": "tools", END: "finalize"})
     g.add_edge("tools", "agent")
     g.add_edge("finalize", END)
 
@@ -176,5 +220,6 @@ def research_company(name: str) -> str:
                 continue
     return final
 
+
 class CompanyState(TypedDict):
-    messages: Annotated[list[AnyMessage], add_messages]
+    messages: list[BaseMessage]

@@ -13,13 +13,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from alfred.models.base import Base, Model, TimestampMixin, fields, load_all_models, metadata
+from alfred.models.base import Base, Model, TimestampMixin, fields, metadata
 
 __all__ = [
     "Base",
     "Model",
     "TimestampMixin",
-    "load_all_models",
     "metadata",
     "fields",
     "Mapped",

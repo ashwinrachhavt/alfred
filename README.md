@@ -77,7 +77,7 @@ Install & Run API
 uv python install 3.11          # optional: ensure matching runtime
 uv sync --dev                    # install app + tooling into .venv
 uv run playwright install chromium  # optional: enable dynamic crawling
-make run-api  # or: PYTHONPATH=apps uv run uvicorn alfred.main:app --reload --port 8080
+make run-api  # or: PYTHONPATH=apps uv run uvicorn alfred.main:app --reload --port 8000
 ```
 
 Legacy virtualenv (pip)
@@ -86,7 +86,7 @@ python3.11 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 python -m playwright install chromium  # optional: enable dynamic crawling
-make run-api UV=0  # or: PYTHONPATH=apps uvicorn alfred.main:app --reload --port 8080
+make run-api UV=0  # or: PYTHONPATH=apps uvicorn alfred.main:app --reload --port 8000
 ```
 
 Docker (full stack)
@@ -139,7 +139,7 @@ Query params
 
 Example
 ```bash
-curl "http://localhost:8080/rag/answer?q=Research%20Harmonic%20and%20write%20a%20cover%20letter&k=8&mode=deep&include_context=true"
+curl "http://localhost:8000/rag/answer?q=Research%20Harmonic%20and%20write%20a%20cover%20letter&k=8&mode=deep&include_context=true"
 ```
 
 Behavior

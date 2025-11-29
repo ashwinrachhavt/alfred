@@ -1,1 +1,1 @@
-from .routes import router as router
+from alfred.api.gmail.routes import router as router

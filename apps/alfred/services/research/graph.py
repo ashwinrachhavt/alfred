@@ -13,8 +13,8 @@ from alfred.services.research.nodes import (
     query_expander,
     web_search_collector,
 )
-from alfred.services.research.state import ResearchState
 from alfred.services.research.persistence import persist_research_run
+from alfred.services.research.state import ResearchState
 
 
 def build_research_graph() -> StateGraph:

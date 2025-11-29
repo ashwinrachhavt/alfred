@@ -46,15 +46,15 @@ gcloud run services update alfred-api \
 ```
 
 Notes
-- The container listens on $PORT (Cloud Run sets it); default is 8080.
+- The container listens on $PORT (Cloud Run sets it); default is 8000.
 - If you use Google OAuth flows (Gmail/Calendar), add your Cloud Run URL to the OAuth client’s Authorized redirect URIs (e.g., https://SERVICE-URL/api/gmail/oauth/callback).
 - For persistent token storage (e.g., TOKEN_STORE_DIR), prefer Secret Manager or a database. Cloud Run’s filesystem is ephemeral.
 
 Local Test
 ```bash
 docker build -f apps/alfred/Dockerfile -t alfred-api:local .
-docker run -p 8080:8080 --env-file apps/alfred/.env alfred-api:local
-# Open http://localhost:8080/docs
+docker run -p 8000:8000 --env-file apps/alfred/.env alfred-api:local
+# Open http://localhost:8000/docs
 ```
 
 Troubleshooting

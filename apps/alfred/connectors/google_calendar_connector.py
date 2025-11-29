@@ -3,7 +3,7 @@
 import inspect
 import uuid
 from datetime import datetime, timedelta
-from typing import Any, Awaitable, Callable, Sequence, Optional
+from typing import Any, Awaitable, Callable, Optional, Sequence
 from zoneinfo import ZoneInfo
 
 import pytz
@@ -177,7 +177,9 @@ class GoogleCalendarConnector:
         work_end_hour = settings.calendar_working_hours_end
 
         if work_start_hour >= work_end_hour:
-            raise ValueError("CALENDAR_WORKING_HOURS_START must be earlier than CALENDAR_WORKING_HOURS_END.")
+            raise ValueError(
+                "CALENDAR_WORKING_HOURS_START must be earlier than CALENDAR_WORKING_HOURS_END."
+            )
 
         work_start = start.replace(hour=work_start_hour, minute=0, second=0, microsecond=0)
         work_end = start.replace(hour=work_end_hour, minute=0, second=0, microsecond=0)
@@ -213,7 +215,9 @@ class GoogleCalendarConnector:
             raise RuntimeError(f"Google Calendar API error: {exc}") from exc
 
         events = events_result.get("items", [])
-        my_events = [event for event in events if event.get("creator", {}).get("email") == organizer_email]
+        my_events = [
+            event for event in events if event.get("creator", {}).get("email") == organizer_email
+        ]
         return len(my_events) == 0
 
     async def get_calendars(self) -> tuple[list[dict[str, Any]], str | None]:
