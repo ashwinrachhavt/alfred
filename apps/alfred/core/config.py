@@ -1,8 +1,18 @@
+import os
+import sys
 from pathlib import Path
 from typing import Optional
 
 from pydantic import AnyHttpUrl, Field
 from pydantic_settings import BaseSettings
+
+# Load environment from project .env early so Settings can pick it up
+try:  # optional dependency
+    from dotenv import load_dotenv  # type: ignore
+
+    load_dotenv("apps/alfred/.env")
+except Exception:
+    pass
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "alfred.db"
 
@@ -11,6 +21,10 @@ class Settings(BaseSettings):
     app_env: str = Field(default="dev", alias="APP_ENV")
     secret_key: str = Field(default="dev", alias="SECRET_KEY")
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
+
+    python_dont_write_bytecode: bool = Field(default=True, alias="PYTHONDONTWRITEBYTECODE")
+
+    airtable_api_key: Optional[str] = Field(default=None, alias="AIRTABLE_API_KEY")
 
     notion_token: str | None = Field(default=None, alias="NOTION_TOKEN")
     notion_parent_page_id: str | None = Field(default=None, alias="NOTION_PARENT_PAGE_ID")
@@ -58,6 +72,15 @@ class Settings(BaseSettings):
     mcp_max_retries: int = 3
 
     openweb_ninja_api_key: Optional[str] = Field(default=None, alias="OPENWEB_NINJA_API_KEY")
+    openweb_ninja_base_url: str = Field(
+        default="https://api.openwebninja.com/realtime-glassdoor-data",
+        alias="OPENWEB_NINJA_BASE_URL",
+    )
+    # Backward-compat: some environments use this alternate key name
+    openweb_ninja_glassdoor_api_key: Optional[str] = Field(
+        default=None,
+        alias="OPENWEBNINJA_GLASSDOOR_API_KEY",
+    )
 
     langsearch_api_key: Optional[str] = Field(default=None, alias="LANGSEARCH_API_KEY")
     langsearch_base_url: str = Field(
@@ -100,9 +123,14 @@ class Settings(BaseSettings):
         alias="CALENDAR_ORGANIZER_EMAIL",
     )
 
-    class Config:
-        env_file = "apps/alfred/.env"
-        extra = "ignore"
+
+class Config:
+    env_file = "apps/alfred/.env"
+    extra = "ignore"
 
 
 settings = Settings()
+
+if settings.python_dont_write_bytecode:
+    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+    sys.dont_write_bytecode = True

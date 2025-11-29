@@ -8,8 +8,9 @@ import time
 from typing import Any
 
 import httpx
-from app.schemas.airtable_auth_credentials import AirtableAuthCredentialsBase
 from dateutil.parser import isoparse
+
+from alfred.schemas.airtable_auth_credentials import AirtableAuthCredentialsBase
 
 logger = logging.getLogger(__name__)
 

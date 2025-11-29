@@ -14,9 +14,6 @@ from pydantic import BaseModel
 
 from alfred.core.config import settings
 
-API_DEFAULT_BASE = "https://api.openwebninja.com/realtime-glassdoor-data"
-API_KEY_ENV = settings.openweb_ninja_api_key or "OPENWEBNINJA_GLASSDOOR_API_KEY"
-
 
 class GlassdoorResponse(BaseModel):
     success: bool
@@ -78,7 +75,7 @@ def _best_company_match(query: str, candidates: List[Dict[str, Any]]) -> Optiona
 class GlassdoorClient:
     def __init__(
         self,
-        base_url: str = API_DEFAULT_BASE,
+        base_url: str = settings.openweb_ninja_base_url,
         api_key: Optional[str] = None,
         timeout: int = 30,
         max_retries: int = 3,
@@ -87,7 +84,13 @@ class GlassdoorClient:
         default_domain: str = "www.glassdoor.com",
     ):
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key or os.getenv(API_KEY_ENV) or ""
+        # Prefer explicitly passed key, then settings, then alt env var for backward-compat
+        self.api_key = (
+            api_key
+            or settings.openweb_ninja_api_key
+            or settings.openweb_ninja_glassdoor_api_key
+            or os.getenv("OPENWEBNINJA_GLASSDOOR_API_KEY", "")
+        )
         self.timeout = timeout
         self.max_retries = max_retries
         self.backoff_base = backoff_base
@@ -354,7 +357,12 @@ class GlassdoorClient:
 
 
 if __name__ == "__main__":
-    client = GlassdoorClient(api_key=settings.openweb_ninja_api_key)
+    client = GlassdoorClient(
+        base_url=settings.openweb_ninja_base_url,
+        api_key=settings.openweb_ninja_api_key
+        or settings.openweb_ninja_glassdoor_api_key
+        or os.getenv("OPENWEBNINJA_GLASSDOOR_API_KEY"),
+    )
 
     res = client.get_company_interviews(
         "Hubspot",  # or 9079

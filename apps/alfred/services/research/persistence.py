@@ -9,7 +9,6 @@ from typing import Any
 from sqlalchemy.exc import SQLAlchemyError
 
 from alfred.core.database import SessionLocal
-from alfred.models.research import ResearchRun
 
 logger = logging.getLogger(__name__)
 
