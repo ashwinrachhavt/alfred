@@ -3,13 +3,13 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Dotenv is loaded by `apps/sitecustomize.py` when `apps/` is on sys.path.
+# Environment is loaded by Pydantic Settings (see alfred.core.config).
 from alfred.api import register_routes
 from alfred.core.config import settings
 from alfred.core.logging import setup_logging
 from alfred.services.mind_palace.doc_storage import DocStorageService
 
-# Bytecode disabling is handled by sitecustomize/config.
+# Bytecode disabling is controlled via environment (Makefile/Docker) or settings.
 
 # Initialize logging early so all modules inherit the handlers/level
 setup_logging()

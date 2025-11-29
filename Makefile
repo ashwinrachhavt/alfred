@@ -19,6 +19,7 @@ export PYTHONDONTWRITEBYTECODE := 1
 
 install:
 	$(INSTALL)
+	$(RUN) pip install -e .
 
 test:
 	$(RUN) pytest

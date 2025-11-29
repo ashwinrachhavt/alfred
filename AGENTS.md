@@ -79,9 +79,9 @@ Always run `make format` before committing, and make sure `make lint` passes.
 
 ### Environment & Imports
 
-- `.env` is loaded automatically via `apps/sitecustomize.py` when `apps/` is on `sys.path`.
-- Tests add `apps/` and import `sitecustomize` via `tests/conftest.py`.
-- Scripts should call `scripts/_bootstrap.bootstrap()` to add `apps/` and load `.env`.
+- The project is an installable package (editable mode). Run `make install` to install it into your virtualenv.
+- `.env` is loaded by Pydantic Settings from `apps/alfred/.env`, with fallback to repo root `.env`.
+- Do not add `sys.path` hacks or use `sitecustomize`.
 - Avoid wrapping imports in try/except. For optional dependencies, either check availability with `importlib.util.find_spec('pkg')` and fall back, or catch `ImportError` at instantiation time and log a warning.
 
 ### Logging

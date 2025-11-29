@@ -76,6 +76,7 @@ Install & Run API
 ```bash
 uv python install 3.11          # optional: ensure matching runtime
 uv sync --dev                    # install app + tooling into .venv
+uv run pip install -e .          # install project in editable mode
 uv run playwright install chromium  # optional: enable dynamic crawling
 make run-api        # alias: make runapi
 ```
@@ -86,6 +87,7 @@ python3.11 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 python -m playwright install chromium  # optional: enable dynamic crawling
+pip install -e .                 # install project in editable mode
 make run-api UV=0
 ```
 
@@ -96,13 +98,8 @@ docker compose -f infra/docker-compose.yml up --build
 
 ## Environment & Imports
 
-- `.env` loading and bytecode settings happen automatically via `apps/sitecustomize.py` when `apps/` is on `sys.path` (FastAPI, tests, and scripts use this).
-- Tests add `apps/` and import `sitecustomize` via `tests/conftest.py`.
-- Scripts should use `scripts/_bootstrap.py`:
-  ```python
-  from scripts._bootstrap import bootstrap
-  bootstrap()  # adds apps/ to sys.path and loads .env
-  ```
+- The project is an installable package (editable mode). Run `make install` and then use `uv run …` targets.
+- `.env` is loaded by Pydantic Settings from `apps/alfred/.env` with fallback to repo root `.env`.
 - Avoid try/except around imports. For optional dependencies (e.g., providers), either:
   - Check availability with `importlib.util.find_spec('pkg')` and fall back, or
   - Catch `ImportError` only at instantiation time and log a clear message.
@@ -293,9 +290,9 @@ Notes
 
 ## Notes & Tips
 - Robots-aware crawling; polite rate limiting. LinkedIn and auth-gated sites are skipped.
-- `PYTHONDONTWRITEBYTECODE=1` is set in Makefile and Docker to avoid `__pycache__` noise; don't set it in modules—`sitecustomize` handles it.
+- `PYTHONDONTWRITEBYTECODE=1` is set in Makefile and Docker to avoid `__pycache__` noise.
 - Keep secrets out of Git; use `alfred/.env`.
-- Scripts should use the `scripts/_bootstrap.bootstrap()` helper and log via the `logging` module (no prints).
+- Use the `logging` module in scripts; avoid print.
 
 ---
 

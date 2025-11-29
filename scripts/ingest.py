@@ -23,10 +23,8 @@ os.environ.setdefault(
 )
 
 
-from scripts._bootstrap import bootstrap
-
 ROOT = Path(__file__).resolve().parents[1]
-bootstrap()
+# Project must be installed (make install). No path bootstrap required.
 
 # Note: per request, use WebBaseLoader/RecursiveUrlLoader instead of custom crawler
 

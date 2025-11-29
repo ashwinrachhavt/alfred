@@ -44,12 +44,21 @@ dependencies = [
 ]
 
 [tool.uv]
-package = false
+package = true
 dev-dependencies = [
     "pytest>=8.3,<9",
     "pytest-asyncio>=0.23,<0.24",
     "ruff>=0.6,<0.7",
 ]
+
+[tool.setuptools]
+
+[tool.setuptools.packages.find]
+where = ["apps"]
+include = ["alfred*"]
+
+[tool.setuptools.package-dir]
+"" = "apps"
 
 [build-system]
 requires = ["setuptools>=68"]
