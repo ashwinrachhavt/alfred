@@ -10,17 +10,16 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Ensure `alfred` package is importable when run from repo root
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.append(str(REPO_ROOT / "apps"))
-
-from alfred.core.config import settings
-from alfred.connectors.airtable_connector import AirtableConnector
-from alfred.schemas.airtable_auth_credentials import AirtableAuthCredentialsBase
-
 
 def main() -> int:
     import argparse
+    # Ensure `alfred` package is importable when run from repo root
+    REPO_ROOT = Path(__file__).resolve().parents[1]
+    sys.path.append(str(REPO_ROOT / "apps"))
+
+    from alfred.connectors.airtable_connector import AirtableConnector
+    from alfred.core.config import settings
+    from alfred.schemas.airtable_auth_credentials import AirtableAuthCredentialsBase
 
     parser = argparse.ArgumentParser(description="Test Airtable Connector")
     parser.add_argument("--base-id", dest="base_id", help="Airtable Base ID", default=None)

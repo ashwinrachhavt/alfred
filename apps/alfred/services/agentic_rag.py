@@ -15,6 +15,7 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
 from alfred.prompts import load_prompt
+from alfred.services.web_search import search_web
 
 load_dotenv()
 
@@ -128,7 +129,7 @@ class _RetrieverTool(BaseTool):  # pragma: no cover - simple stringifying tool
         return "\n\n".join(getattr(d, "page_content", str(d)) for d in docs)
 
 
-class _SearxTool(BaseTool):  # pragma: no cover - HTTP-backed search tool
+class _WebSearchTool(BaseTool):  # pragma: no cover - HTTP-backed search tool
     name: str = "web_search"
     description: str = (
         "Search the public web via SearxNG. Provide a plain-language query. "
@@ -138,14 +139,15 @@ class _SearxTool(BaseTool):  # pragma: no cover - HTTP-backed search tool
     top_k: int = 5
 
     def _run(self, query: str) -> str:  # type: ignore[override]
-        results = searx_search(query, num_results=self.top_k)
+        resp = search_web(query, mode="auto")
+        hits = resp.get("hits", [])
         simplified = []
-        for item in results:
+        for item in hits:
             simplified.append(
                 {
                     "title": item.get("title", ""),
                     "url": item.get("url", ""),
-                    "snippet": item.get("content", "")[:240],
+                    "snippet": (item.get("snippet", "") or "")[:240],
                 }
             )
         return json.dumps({"results": simplified}, ensure_ascii=False)
@@ -244,8 +246,8 @@ def make_tools(k: int = 4):
     except Exception:
         tools = [retriever_tool]
 
-    # Always include the searx web search tool for richer sourcing
-    tools.append(_SearxTool())
+    # Always include a web search tool for richer sourcing
+    tools.append(_WebSearchTool())
 
     return tools
 
@@ -345,7 +347,11 @@ def tools_node(state: AgentState, tools: list[BaseTool]):
     out: list[ToolMessage] = []
     for call in getattr(last, "tool_calls", []) or []:
         name = getattr(call, "name", None) or (call.get("name") if isinstance(call, dict) else None)
-        args = getattr(call, "args", None) or (call.get("args") if isinstance(call, dict) else None) or ""
+        args = (
+            getattr(call, "args", None)
+            or (call.get("args") if isinstance(call, dict) else None)
+            or ""
+        )
         call_id = getattr(call, "id", None) or (call.get("id") if isinstance(call, dict) else name)
         tool = name_to_tool.get(name or "")
         if tool is None:

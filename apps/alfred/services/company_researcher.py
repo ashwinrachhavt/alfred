@@ -125,7 +125,7 @@ def build_company_graph():
     llm = make_llm(temperature=0.0).bind_tools(tools)
 
     def think_or_act(state: CompanyState):
-        return {"messages": [*state["messages"], llm.invoke(state["messages"]) ]}
+        return {"messages": [*state["messages"], llm.invoke(state["messages"])]}
 
     def finalize(state: CompanyState):
         synth = make_llm(temperature=0.1)
@@ -158,12 +158,22 @@ def build_company_graph():
         name_to_tool = {t.name: t for t in tools}
         out: list[ToolMessage] = []
         for call in getattr(last, "tool_calls", []) or []:
-            name = getattr(call, "name", None) or (call.get("name") if isinstance(call, dict) else None)
-            args = getattr(call, "args", None) or (call.get("args") if isinstance(call, dict) else None) or ""
-            call_id = getattr(call, "id", None) or (call.get("id") if isinstance(call, dict) else name)
+            name = getattr(call, "name", None) or (
+                call.get("name") if isinstance(call, dict) else None
+            )
+            args = (
+                getattr(call, "args", None)
+                or (call.get("args") if isinstance(call, dict) else None)
+                or ""
+            )
+            call_id = getattr(call, "id", None) or (
+                call.get("id") if isinstance(call, dict) else name
+            )
             tool = name_to_tool.get(name or "")
             if tool is None:
-                out.append(ToolMessage(content=f"(tool not found: {name})", tool_call_id=str(call_id)))
+                out.append(
+                    ToolMessage(content=f"(tool not found: {name})", tool_call_id=str(call_id))
+                )
                 continue
             try:
                 result = tool.invoke(args)

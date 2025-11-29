@@ -125,7 +125,7 @@ def build_company_outreach_graph(company: str, role: str, personal_context: str,
     planner = make_llm(temperature=0.0).bind_tools(tools)
 
     def agent_node(state: OutreachState):
-        return {"messages": [*state["messages"], planner.invoke(state["messages"]) ]}
+        return {"messages": [*state["messages"], planner.invoke(state["messages"])]}
 
     def finalize_node(state: OutreachState):
         synth = make_llm(temperature=0.2)
@@ -161,12 +161,22 @@ def build_company_outreach_graph(company: str, role: str, personal_context: str,
         name_to_tool = {t.name: t for t in tools}
         out: list[ToolMessage] = []
         for call in getattr(last, "tool_calls", []) or []:
-            name = getattr(call, "name", None) or (call.get("name") if isinstance(call, dict) else None)
-            args = getattr(call, "args", None) or (call.get("args") if isinstance(call, dict) else None) or ""
-            call_id = getattr(call, "id", None) or (call.get("id") if isinstance(call, dict) else name)
+            name = getattr(call, "name", None) or (
+                call.get("name") if isinstance(call, dict) else None
+            )
+            args = (
+                getattr(call, "args", None)
+                or (call.get("args") if isinstance(call, dict) else None)
+                or ""
+            )
+            call_id = getattr(call, "id", None) or (
+                call.get("id") if isinstance(call, dict) else name
+            )
             tool = name_to_tool.get(name or "")
             if tool is None:
-                out.append(ToolMessage(content=f"(tool not found: {name})", tool_call_id=str(call_id)))
+                out.append(
+                    ToolMessage(content=f"(tool not found: {name})", tool_call_id=str(call_id))
+                )
                 continue
             try:
                 result = tool.invoke(args)

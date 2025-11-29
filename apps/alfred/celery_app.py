@@ -2,12 +2,12 @@ import os
 import sys
 from datetime import timedelta
 
-os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
-sys.dont_write_bytecode = True
-
 from celery import Celery
 
 from alfred.core.config import settings
+
+os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
+sys.dont_write_bytecode = True
 
 app = Celery(
     "alfred",

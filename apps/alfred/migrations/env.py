@@ -19,6 +19,7 @@ if str(APPS_DIR) not in sys.path:
 _config_mod = importlib.import_module("alfred.core.config")
 settings = getattr(_config_mod, "settings")
 
+
 def _with_psycopg(url: str) -> str:
     """Force explicit psycopg driver for Postgres URLs (simple and reliable)."""
     if url.startswith("postgres://"):
@@ -26,6 +27,8 @@ def _with_psycopg(url: str) -> str:
     if url.startswith("postgresql://") and "+" not in url.split(":", 1)[0]:
         return "postgresql+psycopg://" + url[len("postgresql://") :]
     return url
+
+
 _models_mod = importlib.import_module("alfred.models")
 Base = getattr(_models_mod, "Base")
 
