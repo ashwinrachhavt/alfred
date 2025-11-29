@@ -77,7 +77,7 @@ Install & Run API
 uv python install 3.11          # optional: ensure matching runtime
 uv sync --dev                    # install app + tooling into .venv
 uv run playwright install chromium  # optional: enable dynamic crawling
-make run-api
+make run-api        # alias: make runapi
 ```
 
 Legacy virtualenv (pip)
@@ -94,6 +94,19 @@ Docker (full stack)
 docker compose -f infra/docker-compose.yml up --build
 ```
 
+## Environment & Imports
+
+- `.env` loading and bytecode settings happen automatically via `apps/sitecustomize.py` when `apps/` is on `sys.path` (FastAPI, tests, and scripts use this).
+- Tests add `apps/` and import `sitecustomize` via `tests/conftest.py`.
+- Scripts should use `scripts/_bootstrap.py`:
+  ```python
+  from scripts._bootstrap import bootstrap
+  bootstrap()  # adds apps/ to sys.path and loads .env
+  ```
+- Avoid try/except around imports. For optional dependencies (e.g., providers), either:
+  - Check availability with `importlib.util.find_spec('pkg')` and fall back, or
+  - Catch `ImportError` only at instantiation time and log a clear message.
+
 ## Database & Migrations
 
 - Configure `DATABASE_URL` in `alfred/.env` (defaults to a local SQLite file).
@@ -103,6 +116,24 @@ docker compose -f infra/docker-compose.yml up --build
 - Base models live in `alfred/models/`; extend `Model` for timestamped tables with an auto primary key, and declare columns directly with SQLAlchemy's `mapped_column` helpers.
 - Mongo access lives in `alfred/services/mongo.py`; configure `MONGO_URI`, `MONGO_DATABASE`, and `MONGO_APP_NAME` (defaults connect to `mongodb://localhost:27017/alfred`).
 - Company research runs persist their structured reports into Mongo (collection defaults to `company_research_reports`). Use `/company/research?refresh=true` to force a fresh crawl + regeneration.
+
+## Mind Palace: Document Storage
+
+A simple Mongo-backed storage service for notes and documents lives in `alfred/services/mind_palace/doc_storage.py`.
+
+- Notes API surface (service methods): `create_note`, `list_notes`, `get_note`, `delete_note`.
+- Documents ingestion: `ingest_document(payload)` supports chunked text, metadata, and dedup by content hash.
+- Listing: `list_documents(...)` and `list_chunks(...)` implement filters (q/topic/date, pagination).
+- Indexes: ensured on FastAPI startup via a hook in `apps/alfred/main.py`.
+
+Example usage in a route or task:
+```python
+from alfred.services.mind_palace import DocStorageService, NoteCreate
+
+svc = DocStorageService()
+svc.ensure_indexes()
+note_id = svc.create_note(NoteCreate(text="hello", source_url="https://example.com"))
+```
 
 ## Ingest Knowledge
 
@@ -228,6 +259,15 @@ Web search providers (optional)
 - `SEARXNG_HOST` (or `SEARX_HOST`) — SearxNG base URL (e.g. `http://127.0.0.1:8080`). When set, provider `searx` is available in `/api/web/search`.
 - `LANGSEARCH_API_KEY` — enables the `langsearch` provider in `/api/web/search`. Optionally override endpoint via `LANGSEARCH_API_URL` (defaults to `https://api.langsearch.com/v1`).
 
+Optional provider packages (install as needed)
+- DuckDuckGo: `pip install duckduckgo-search`
+- Searx: `pip install langchain-community`
+- You.com: `pip install langchain-community`
+- Tavily: `pip install langchain-tavily`
+- Exa: `pip install langchain-exa`
+- TinyDB (LangSearch caching): `pip install tinydb`
+- OpenAI (enrichment): `pip install openai`
+
 Company research pipeline
 - `FIRECRAWL_BASE_URL` / `FIRECRAWL_TIMEOUT` — Firecrawl instance used to pull markdown from each URL.
 - `COMPANY_RESEARCH_MODEL` — OpenAI chat model for synthesis (default `gpt-5.1`).
@@ -253,8 +293,9 @@ Notes
 
 ## Notes & Tips
 - Robots-aware crawling; polite rate limiting. LinkedIn and auth-gated sites are skipped.
-- `PYTHONDONTWRITEBYTECODE=1` is set in Makefile and Docker to avoid `__pycache__` noise.
+- `PYTHONDONTWRITEBYTECODE=1` is set in Makefile and Docker to avoid `__pycache__` noise; don't set it in modules—`sitecustomize` handles it.
 - Keep secrets out of Git; use `alfred/.env`.
+- Scripts should use the `scripts/_bootstrap.bootstrap()` helper and log via the `logging` module (no prints).
 
 ---
 

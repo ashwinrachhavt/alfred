@@ -54,8 +54,8 @@ Please keep these boundaries clear:
 Use the provided `make` target:
 
 ```bash
-make runapi
-````
+make run-api   # alias: make runapi
+```
 
 This spins up the FastAPI app for local development.
 
@@ -76,6 +76,18 @@ We use Ruff for both linting and formatting.
   ```
 
 Always run `make format` before committing, and make sure `make lint` passes.
+
+### Environment & Imports
+
+- `.env` is loaded automatically via `apps/sitecustomize.py` when `apps/` is on `sys.path`.
+- Tests add `apps/` and import `sitecustomize` via `tests/conftest.py`.
+- Scripts should call `scripts/_bootstrap.bootstrap()` to add `apps/` and load `.env`.
+- Avoid wrapping imports in try/except. For optional dependencies, either check availability with `importlib.util.find_spec('pkg')` and fall back, or catch `ImportError` at instantiation time and log a warning.
+
+### Logging
+
+- Use the central logging configuration (`apps/alfred/core/logging`) and the standard `logging` module.
+- Avoid `print()` in scripts; use `logging.info/warning/error`.
 
 ---
 
@@ -117,6 +129,7 @@ General principles:
 * Handle expected error cases with clear exceptions or `HTTPException` in API layers.
 * Use the central logging configuration (`apps/alfred/core/logging` or similar) instead of printing.
 * Avoid logging sensitive information (tokens, secrets, personal data).
+* Avoid import-in-try/except; prefer explicit availability checks or instantiation-time handling for optional features.
 
 ---
 
@@ -173,7 +186,12 @@ The current backend stack includes:
   * Notion.
   * Qdrant (vector store).
   * Gmail.
-  * Additional integrations as needed.
+  * Web search providers (DuckDuckGo, Searx, Brave, Tavily, You.com, Exa) — optional.
+
+* **Mind Palace**:
+
+  * Simplified service with optional LLM enrichment (falls back to heuristics when keys/packages are missing).
+  * Mongo-backed Doc Storage service (`DocStorageService`) for notes/documents/chunks; indexes ensured at API startup.
 
 ---
 
@@ -186,6 +204,16 @@ GitHub Actions runs on `push` and `pull_request` to `main` / `master`:
 * Runs `pytest`.
 
 PRs should be green in CI before merging.
+
+### Optional Dependencies
+
+Install as needed when enabling providers/features:
+- DuckDuckGo: `duckduckgo-search`
+- Searx & You.com: `langchain-community`
+- Tavily: `langchain-tavily`
+- Exa: `langchain-exa`
+- TinyDB (LangSearch caching): `tinydb`
+- OpenAI (enrichment): `openai`
 
 ---
 
