@@ -9,8 +9,17 @@ import time
 from dataclasses import dataclass
 from typing import Any, List, Literal, Optional, Sequence
 
-Provider = Literal["brave", "ddg", "exa", "tavily", "you"]
-DEFAULT_PROVIDER_PRIORITY: List[Provider] = ["ddg", "brave", "you", "tavily", "exa"]
+Provider = Literal["brave", "ddg", "exa", "tavily", "you", "searx", "langsearch"]
+DEFAULT_PROVIDER_PRIORITY: List[Provider] = [
+    "ddg",
+    "searx",
+    "brave",
+    "you",
+    "tavily",
+    "exa",
+    "langsearch",
+    
+]
 Mode = Literal["auto", "multi", Provider]
 
 
@@ -335,6 +344,111 @@ class YouClient:
         return SearchResponse(provider="you", query=query, hits=_dedupe_by_url(hits))
 
 
+class SearxClient:
+    def __init__(self, host: Optional[str] = None, k: int = 10):
+        try:
+            from langchain_community.utilities import SearxSearchWrapper  # type: ignore
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise ImportError(
+                "Optional dependency 'langchain-community' missing Searx wrapper; Searx client disabled."
+            ) from exc
+
+        self._host = host or _env("SEARXNG_HOST") or _env("SEARX_HOST")
+        if not self._host:
+            raise RuntimeError("SEARXNG_HOST (or SEARX_HOST) is not set")
+        self._k_default = max(1, k)
+        self._wrapper = SearxSearchWrapper(searx_host=self._host, k=self._k_default)
+
+    def search(
+        self,
+        query: str,
+        *,
+        num_results: Optional[int] = None,
+        categories: Optional[str] = None,
+        time_range: Optional[str] = None,
+    ) -> SearchResponse:
+        # SearxSearchWrapper returns a list of result dicts
+        res = self._wrapper.results(
+            query,
+            num_results=(num_results or self._k_default),
+            categories=categories,
+            time_range=time_range,
+        )
+        hits = _normalize_list_result(res, "searx")
+        meta = {"host": self._host, "k": num_results or self._k_default}
+        return SearchResponse(provider="searx", query=query, hits=_dedupe_by_url(hits), meta=meta)
+
+
+class LangsearchClient:
+    def __init__(self, *, api_key: Optional[str] = None, base_url: Optional[str] = None):
+        # Minimal HTTP client; enable only when properly configured
+        self._api_key = api_key or _env("LANGSEARCH_API_KEY")
+        if not self._api_key:
+            raise RuntimeError("LANGSEARCH_API_KEY is not set")
+        self._base_url = (base_url or _env("LANGSEARCH_API_URL") or "https://api.langsearch.com/v1").rstrip("/")
+        try:
+            import httpx  # type: ignore
+        except ImportError as exc:  # pragma: no cover - httpx is a common dep
+            raise ImportError("Optional dependency 'httpx' not found; Langsearch client disabled.") from exc
+        self._httpx = httpx
+
+    def _parse_hits(self, payload: Any) -> List[dict[str, Any]]:
+        # Langsearch appears to return a Bing-like envelope under data.webPages.value
+        if isinstance(payload, dict):
+            container = payload.get("data") or payload
+            wp = container.get("webPages") if isinstance(container, dict) else None
+            if isinstance(wp, dict) and isinstance(wp.get("value"), list):
+                return [
+                    {
+                        "title": it.get("name") or it.get("title"),
+                        "url": it.get("url"),
+                        "link": it.get("url"),
+                        "snippet": it.get("snippet") or it.get("summary") or it.get("description"),
+                        "metadata": it,
+                    }
+                    for it in wp["value"]
+                    if isinstance(it, dict)
+                ]
+            # Fallbacks
+            for key in ("value", "results", "items", "hits"):
+                v = container.get(key) if isinstance(container, dict) else None
+                if isinstance(v, list):
+                    return [
+                        {
+                            "title": getattr(it, "name", None) if not isinstance(it, dict) else it.get("name") or it.get("title"),
+                            "url": getattr(it, "url", None) if not isinstance(it, dict) else it.get("url") or it.get("link"),
+                            "link": getattr(it, "url", None) if not isinstance(it, dict) else it.get("url") or it.get("link"),
+                            "snippet": getattr(it, "snippet", None)
+                            if not isinstance(it, dict)
+                            else it.get("snippet") or it.get("summary") or it.get("description"),
+                            "metadata": it,
+                        }
+                        for it in v
+                    ]
+        return []
+
+    def search(self, query: str, *, count: int = 20) -> SearchResponse:
+        # Best-effort API call shape; users can override base_url via env if needed
+        url = f"{self._base_url}/search"
+        headers = {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
+        payload = {"q": query, "count": max(1, min(count, 50))}
+        try:
+            with self._httpx.Client(timeout=10.0) as client:
+                resp = client.post(url, json=payload, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+        except Exception as exc:
+            raise RuntimeError(f"Langsearch HTTP request failed: {exc}") from exc
+        normalized = self._parse_hits(data)
+        hits = _normalize_list_result(normalized or data, "langsearch")
+        return SearchResponse(
+            provider="langsearch",
+            query=query,
+            hits=_dedupe_by_url(hits),
+            meta={"endpoint": url, "count": payload["count"]},
+        )
+
+
 class WebConnector:
     def __init__(
         self,
@@ -347,6 +461,7 @@ class WebConnector:
         tavily_max_results: int = 20,
         tavily_topic: Literal["general", "news", "finance"] = "general",
         you_num_results: int = 20,
+        searx_k: int = 10,
     ):
         self.mode = mode
         self._init_clients(
@@ -356,6 +471,7 @@ class WebConnector:
             tavily_max_results,
             tavily_topic,
             you_num_results,
+            searx_k,
         )
         self._brave_pages_default = brave_pages
 
@@ -367,6 +483,7 @@ class WebConnector:
         tavily_max_results: int,
         tavily_topic: str,
         you_num_results: int,
+        searx_k: int,
     ) -> None:
         self.clients: dict[Provider, Any] = {}
         if _env("EXA_API_KEY"):
@@ -385,6 +502,18 @@ class WebConnector:
             logging.warning(
                 "Optional dependency 'duckduckgo_search' not found; DDG client disabled."
             )
+        # SearxNG client (enabled when SEARXNG_HOST/SEARX_HOST is set and langchain-community is present)
+        try:
+            if _env("SEARXNG_HOST") or _env("SEARX_HOST"):
+                self.clients["searx"] = SearxClient(k=searx_k)
+        except Exception as exc:
+            logging.warning(f"Searx client not available: {exc}")
+        # Langsearch client (enabled when LANGSEARCH_API_KEY present)
+        try:
+            if _env("LANGSEARCH_API_KEY"):
+                self.clients["langsearch"] = LangsearchClient()
+        except Exception as exc:
+            logging.warning(f"Langsearch client not available: {exc}")
 
     def _resolve_auto(self) -> Provider:
         for p in DEFAULT_PROVIDER_PRIORITY:
@@ -440,6 +569,13 @@ class WebConnector:
         if provider == "exa":
             num = kwargs.pop("num_results", 100)
             return client.search(query, num_results=num, **kwargs)
+        if provider == "searx":
+            # Map common kwargs where applicable
+            num = kwargs.pop("num_results", None)
+            return client.search(query, num_results=num, **kwargs)
+        if provider == "langsearch":
+            count = kwargs.pop("count", 20)
+            return client.search(query, count=count)
         return client.search(query, **kwargs)
 
     async def asearch(self, query: str, **kwargs: Any) -> SearchResponse:
@@ -453,7 +589,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="WebConnector quick test")
     parser.add_argument("query", type=str)
     parser.add_argument(
-        "--mode", choices=["auto", "multi", "brave", "ddg", "exa", "tavily", "you"], default="auto"
+        "--mode",
+        choices=["auto", "multi", "brave", "ddg", "exa", "tavily", "you", "searx", "langsearch"],
+        default="auto",
     )
     parser.add_argument("--brave_pages", type=int, default=10)
     parser.add_argument("--ddg_max_results", type=int, default=50)
@@ -461,6 +599,7 @@ if __name__ == "__main__":
     parser.add_argument("--tavily_max", type=int, default=20)
     parser.add_argument("--tavily_topic", choices=["general", "news", "finance"], default="general")
     parser.add_argument("--you_num", dest="you_num_results", type=int, default=20)
+    parser.add_argument("--searx_k", type=int, default=10)
     args = parser.parse_args()
 
     conn = WebConnector(
@@ -471,6 +610,7 @@ if __name__ == "__main__":
         tavily_max_results=args.tavily_max,
         tavily_topic=args.tavily_topic,
         you_num_results=args.you_num_results,
+        searx_k=args.searx_k,
     )
     resp = conn.search(args.query)
     print(f"Mode     : {resp.provider}")

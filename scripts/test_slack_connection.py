@@ -58,7 +58,6 @@ def main() -> int:
     # Verify token type and workspace via auth.test for a clearer error message
     try:
         from slack_sdk import WebClient  # type: ignore
-        from slack_sdk.errors import SlackApiError  # type: ignore
 
         wc = WebClient(token=token)
         info = wc.auth_test()

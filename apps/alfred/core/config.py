@@ -97,6 +97,13 @@ class Settings(BaseSettings):
         alias="LANGSEARCH_DB_PATH",
     )
 
+    # Langfuse (observability)
+    langfuse_public_key: Optional[str] = Field(default=None, alias="LANGFUSE_PUBLIC_KEY")
+    langfuse_secret_key: Optional[str] = Field(default=None, alias="LANGFUSE_SECRET_KEY")
+    langfuse_host: Optional[str] = Field(default=None, alias="LANGFUSE_HOST")
+    langfuse_debug: bool = Field(default=False, alias="LANGFUSE_DEBUG")
+    langfuse_tracing_enabled: bool = Field(default=True, alias="LANGFUSE_TRACING_ENABLED")
+
     # Connectors (misc)
     linear_api_key: str | None = Field(default=None, alias="LINEAR_API_KEY")
     slack_api_key: str | None = Field(default=None, alias="SLACK_API_KEY")
@@ -105,6 +112,10 @@ class Settings(BaseSettings):
         default=f"sqlite:///{DEFAULT_DB_PATH}",
         alias="DATABASE_URL",
     )
+
+    mongo_uri: str = Field(default="mongodb://localhost:27017", alias="MONGO_URI")
+    mongo_database: str = Field(default="notes_db", alias="MONGO_DATABASE")
+    mongo_app_name: str = Field(default="notes_db", alias="MONGO_APP_NAME")
 
     calendar_slot_duration_minutes: int = Field(
         default=30,

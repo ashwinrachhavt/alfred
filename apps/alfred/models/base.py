@@ -1,24 +1,11 @@
-"""Declarative base classes, mixins, and helpers for ORM models."""
+"""Declarative base classes and mixins for ORM models."""
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import (
-    JSON,
-    Boolean,
-    DateTime,
-    Enum,
-    Float,
-    ForeignKey,
-    Integer,
-    MetaData,
-    Numeric,
-    String,
-    Text,
-    func,
-)
-from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
+from sqlalchemy import DateTime, Integer, MetaData, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 _naming_convention = {
     "ix": "ix_%(column_0_label)s",
@@ -52,76 +39,9 @@ class TimestampMixin:
     )
 
 
-def _camel_to_snake(name: str) -> str:
-    result: list[str] = []
-    for index, char in enumerate(name):
-        if char.isupper() and index != 0 and not name[index - 1].isupper():
-            result.append("_")
-        result.append(char.lower())
-    return "".join(result)
-
-
 class Model(TimestampMixin, Base):
-    """Opinionated base with `id`/timestamps and auto table naming."""
+    """Opinionated base with `id`/timestamps."""
 
     __abstract__ = True
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-
-    @declared_attr.directive
-    def __tablename__(cls) -> str:  # type: ignore[override]
-        name = _camel_to_snake(cls.__name__)
-        return name if name.endswith("s") else f"{name}s"
-
-
-class _FieldFactory:
-    """Helper to make model field declarations concise."""
-
-    def __call__(self, *args, **kwargs):
-        return mapped_column(*args, **kwargs)
-
-    def string(self, length: int = 255, **kwargs):
-        return mapped_column(String(length), **kwargs)
-
-    def text(self, **kwargs):
-        return mapped_column(Text, **kwargs)
-
-    def integer(self, **kwargs):
-        return mapped_column(Integer, **kwargs)
-
-    def boolean(self, **kwargs):
-        return mapped_column(Boolean, **kwargs)
-
-    def float(self, **kwargs):
-        return mapped_column(Float, **kwargs)
-
-    def numeric(self, precision: int = 10, scale: int = 2, **kwargs):
-        return mapped_column(Numeric(precision=precision, scale=scale), **kwargs)
-
-    def datetime(self, timezone: bool = True, **kwargs):
-        return mapped_column(DateTime(timezone=timezone), **kwargs)
-
-    def enum(self, enum_cls, *, name: str | None = None, **kwargs):
-        enum_name = name or f"{enum_cls.__name__.lower()}_enum"
-        return mapped_column(Enum(enum_cls, name=enum_name), **kwargs)
-
-    def foreign_key(
-        self,
-        target: str,
-        *,
-        type_=Integer,
-        ondelete: str | None = None,
-        **kwargs,
-    ):
-        fk = ForeignKey(target, ondelete=ondelete)
-        return mapped_column(type_, fk, **kwargs)
-
-    def json(self, **kwargs):
-        return mapped_column(JSON, **kwargs)
-
-
-fields = _FieldFactory()
-
-
-# Note: We no longer auto-import model modules. Import models explicitly
-# where needed (e.g., in Alembic env or app startup) to register metadata.
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

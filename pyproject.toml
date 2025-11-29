@@ -39,6 +39,7 @@ dependencies = [
     "tinydb>=4.8,<5",
     "langchain-tavily>=0.2.13",
     "ddgs>=9.5.5",
+    "pymongo>=4.8,<5",
 ]
 
 [tool.uv]

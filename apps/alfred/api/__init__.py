@@ -29,6 +29,4 @@ def register_routes(app: FastAPI) -> None:
     """Attach all API routers."""
     for router in ROUTERS:
         app.include_router(router)
-    # Temporary compatibility for legacy clients still using /api/v1/notion/*
-    app.include_router(notion_router, prefix="/api/v1")
     # CopilotKit endpoint removed

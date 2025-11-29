@@ -1,6 +1,8 @@
 from alfred.connectors.web_connector import WebConnector
+from alfred.core.tracing import lf_observe, lf_update_span
 
 
+@lf_observe(name="web_search", as_type="tool")
 def search_web(
     q: str,
     mode: str = "auto",
@@ -11,6 +13,7 @@ def search_web(
     tavily_max_results: int = 20,
     tavily_topic: str = "general",
     you_num_results: int = 20,
+    searx_k: int = 10,
 ) -> dict:
     conn = WebConnector(
         mode=mode,
@@ -20,9 +23,10 @@ def search_web(
         tavily_max_results=tavily_max_results,
         tavily_topic=tavily_topic,
         you_num_results=you_num_results,
+        searx_k=searx_k,
     )
     resp = conn.search(q)
-    return {
+    payload = {
         "provider": resp.provider,
         "query": resp.query,
         "meta": resp.meta,
@@ -31,3 +35,23 @@ def search_web(
             for h in resp.hits
         ],
     }
+    # Best-effort span update with input/output metadata
+    try:
+        lf_update_span(
+            input={
+                "q": q,
+                "mode": mode,
+                "brave_pages": brave_pages,
+                "ddg_max_results": ddg_max_results,
+                "exa_num_results": exa_num_results,
+                "tavily_max_results": tavily_max_results,
+                "tavily_topic": tavily_topic,
+                "you_num_results": you_num_results,
+                "searx_k": searx_k,
+            },
+            output={"hits_count": len(resp.hits), "provider": resp.provider},
+            metadata={"web_search": True},
+        )
+    except Exception:
+        pass
+    return payload

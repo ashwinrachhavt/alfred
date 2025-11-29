@@ -13,14 +13,19 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from alfred.models.base import Base, Model, TimestampMixin, fields, metadata
+from alfred.models.base import Base, Model, TimestampMixin, metadata
+from alfred.models.mongo import MongoSyncLog
+from alfred.models.research import ResearchRun
+from alfred.models.system import SystemSetting
 
 __all__ = [
     "Base",
     "Model",
     "TimestampMixin",
     "metadata",
-    "fields",
+    "MongoSyncLog",
+    "ResearchRun",
+    "SystemSetting",
     "Mapped",
     "mapped_column",
     "relationship",

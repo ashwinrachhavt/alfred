@@ -100,7 +100,8 @@ docker compose -f infra/docker-compose.yml up --build
 - Run migrations locally: `uv run alembic -c alembic.ini upgrade head`.
 - Create a new migration: `uv run alembic -c alembic.ini revision --autogenerate -m "<description>"`.
 - If you point `DATABASE_URL` at Postgres, install a driver such as `psycopg[binary]` in your environment.
-- Base models live in `apps/alfred/models/`; extend `Model` for timestamped tables with an auto primary key, and declare columns with helper fields (e.g. `fields.string(...)`, `fields.text(...)`).
+- Base models live in `apps/alfred/models/`; extend `Model` for timestamped tables with an auto primary key, and declare columns directly with SQLAlchemy's `mapped_column` helpers.
+- Mongo access lives in `apps/alfred/services/mongo.py`; configure `MONGO_URI`, `MONGO_DATABASE`, and `MONGO_APP_NAME` (defaults connect to `mongodb://localhost:27017/alfred`).
 
 ## Ingest Knowledge
 
@@ -214,6 +215,21 @@ Core env vars
 - `CHROMA_PATH` — local fallback store (default `./chroma_store`)
 - `EMBED_MODEL`, `CHAT_MODEL`, `FALLBACK_MODEL`
 - `RECURSIVE_DEPTH` — optional crawl depth for ingest (default 0)
+
+Web search providers (optional)
+- `SEARXNG_HOST` (or `SEARX_HOST`) — SearxNG base URL (e.g. `http://127.0.0.1:8080`). When set, provider `searx` is available in `/api/web/search`.
+- `LANGSEARCH_API_KEY` — enables the `langsearch` provider in `/api/web/search`. Optionally override endpoint via `LANGSEARCH_API_URL` (defaults to `https://api.langsearch.com/v1`).
+
+Observability (Langfuse)
+- `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` — project keys from your Langfuse instance.
+- `LANGFUSE_HOST` — base URL for your self-hosted Langfuse (e.g. `http://localhost:3000`).
+- `LANGFUSE_DEBUG` — `true/false` to enable SDK debug logs (default `false`).
+- `LANGFUSE_TRACING_ENABLED` — `true/false` master switch (default `true`).
+
+Notes
+- Tracing is optional. If keys are not set or the SDK is not installed, the decorators become no-ops and the app runs normally.
+- To install SDK: `pip install langfuse` (or add to your environment).
+- Example traced endpoints/functions: `/api/web/search` route and the `alfred.services.web_search.search_web` tool.
 
 ## Tech Stack Badges
 
