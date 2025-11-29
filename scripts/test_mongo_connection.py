@@ -8,13 +8,20 @@ from pathlib import Path
 from typing import Any
 
 
-def _add_repo_path() -> None:
+def _bootstrap_paths_and_env() -> None:
+    """Add `apps/` to sys.path and load env via sitecustomize."""
     repo_root = Path(__file__).resolve().parents[1]
-    sys.path.append(str(repo_root / "apps"))
+    apps_dir = repo_root / "apps"
+    if str(apps_dir) not in sys.path:
+        sys.path.append(str(apps_dir))
+    try:  # Ensure `.env` is loaded consistently
+        import sitecustomize  # noqa: F401
+    except Exception:
+        pass
 
 
 def main() -> int:
-    _add_repo_path()
+    _bootstrap_paths_and_env()
 
     from alfred.core.config import settings
     from alfred.services.mongo import MongoService

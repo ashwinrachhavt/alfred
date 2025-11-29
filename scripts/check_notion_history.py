@@ -11,7 +11,7 @@ from alfred.services import notion
 
 async def main() -> None:
     if not settings.notion_token:
-        raise SystemExit("NOTION_TOKEN is not set in apps/alfred/.env")
+        raise SystemExit("NOTION_TOKEN is not set in alfred/.env")
 
     pages = await notion.fetch_page_history(limit=5, include_content=False)
     print(f"Fetched {len(pages)} pages")

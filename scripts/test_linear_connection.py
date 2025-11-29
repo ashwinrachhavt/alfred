@@ -16,22 +16,23 @@ from pathlib import Path
 def main() -> int:
     # Ensure `alfred` package is importable when run from repo root
     repo_root = Path(__file__).resolve().parents[1]
-    sys.path.append(str(repo_root / "apps"))
+    apps_dir = repo_root / "apps"
+    if str(apps_dir) not in sys.path:
+        sys.path.append(str(apps_dir))
+    try:  # Load env/disable pyc via sitecustomize
+        import sitecustomize  # noqa: F401
+    except Exception:
+        pass
 
     # Local imports after sys.path adjustment (avoid E402)
     from alfred.connectors.linear_connector import LinearConnector
+
     try:
         from alfred.core.config import settings  # type: ignore
     except Exception:  # pragma: no cover
         settings = None  # type: ignore
 
-    # Also load .env explicitly to catch local runs in subdirs
-    try:
-        from dotenv import load_dotenv  # type: ignore
-
-        load_dotenv(repo_root / "apps" / "alfred" / ".env")
-    except Exception:
-        pass
+    # .env is loaded by sitecustomize; no extra handling needed
 
     parser = argparse.ArgumentParser(description="Test Linear Connector")
     parser.add_argument("--start", dest="start_date", help="Start date YYYY-MM-DD", default=None)

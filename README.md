@@ -68,7 +68,7 @@ Prereqs
 
 Configure
 ```bash
-cp apps/alfred/.env.example apps/alfred/.env
+cp alfred/.env.example alfred/.env
 # Fill in: OPENAI_API_KEY, (optional) QDRANT_URL/QDRANT_API_KEY, NOTION_TOKEN, etc.
 ```
 
@@ -77,7 +77,7 @@ Install & Run API
 uv python install 3.11          # optional: ensure matching runtime
 uv sync --dev                    # install app + tooling into .venv
 uv run playwright install chromium  # optional: enable dynamic crawling
-make run-api  # or: PYTHONPATH=apps uv run uvicorn alfred.main:app --reload --port 8000
+make run-api
 ```
 
 Legacy virtualenv (pip)
@@ -86,7 +86,7 @@ python3.11 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 python -m playwright install chromium  # optional: enable dynamic crawling
-make run-api UV=0  # or: PYTHONPATH=apps uvicorn alfred.main:app --reload --port 8000
+make run-api UV=0
 ```
 
 Docker (full stack)
@@ -96,12 +96,12 @@ docker compose -f infra/docker-compose.yml up --build
 
 ## Database & Migrations
 
-- Configure `DATABASE_URL` in `apps/alfred/.env` (defaults to a local SQLite file).
+- Configure `DATABASE_URL` in `alfred/.env` (defaults to a local SQLite file).
 - Run migrations locally: `uv run alembic -c alembic.ini upgrade head`.
 - Create a new migration: `uv run alembic -c alembic.ini revision --autogenerate -m "<description>"`.
 - If you point `DATABASE_URL` at Postgres, install a driver such as `psycopg[binary]` in your environment.
-- Base models live in `apps/alfred/models/`; extend `Model` for timestamped tables with an auto primary key, and declare columns directly with SQLAlchemy's `mapped_column` helpers.
-- Mongo access lives in `apps/alfred/services/mongo.py`; configure `MONGO_URI`, `MONGO_DATABASE`, and `MONGO_APP_NAME` (defaults connect to `mongodb://localhost:27017/alfred`).
+- Base models live in `alfred/models/`; extend `Model` for timestamped tables with an auto primary key, and declare columns directly with SQLAlchemy's `mapped_column` helpers.
+- Mongo access lives in `alfred/services/mongo.py`; configure `MONGO_URI`, `MONGO_DATABASE`, and `MONGO_APP_NAME` (defaults connect to `mongodb://localhost:27017/alfred`).
 - Company research runs persist their structured reports into Mongo (collection defaults to `company_research_reports`). Use `/company/research?refresh=true` to force a fresh crawl + regeneration.
 
 ## Ingest Knowledge
@@ -254,7 +254,7 @@ Notes
 ## Notes & Tips
 - Robots-aware crawling; polite rate limiting. LinkedIn and auth-gated sites are skipped.
 - `PYTHONDONTWRITEBYTECODE=1` is set in Makefile and Docker to avoid `__pycache__` noise.
-- Keep secrets out of Git; use `apps/alfred/.env`.
+- Keep secrets out of Git; use `alfred/.env`.
 
 ---
 

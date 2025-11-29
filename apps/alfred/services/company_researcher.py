@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import logging
 from typing import Any, List, cast
 
 from langchain_openai import ChatOpenAI

@@ -10,8 +10,12 @@ router = APIRouter(prefix="/api/web", tags=["web"])
 @lf_observe(name="api_web_search", as_type="chain")
 def search(
     q: str = Query(...),
-    mode: str | None = Query(None, pattern=r"^(auto|multi|brave|ddg|exa|tavily|you|searx|langsearch)$"),
-    provider: str | None = Query(None, pattern=r"^(auto|brave|ddg|exa|tavily|you|searx|langsearch)$"),
+    mode: str | None = Query(
+        None, pattern=r"^(auto|multi|brave|ddg|exa|tavily|you|searx|langsearch)$"
+    ),
+    provider: str | None = Query(
+        None, pattern=r"^(auto|brave|ddg|exa|tavily|you|searx|langsearch)$"
+    ),
     brave_pages: int = Query(10, ge=1, le=10),
     ddg_max_results: int = Query(50, ge=1, le=200),
     exa_num_results: int = Query(100, ge=1, le=100),

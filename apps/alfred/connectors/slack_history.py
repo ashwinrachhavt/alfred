@@ -5,15 +5,15 @@ A module for retrieving conversation history from Slack channels.
 Allows fetching channel lists and message history with date range filtering.
 """
 
-import logging  # Added import
-import time  # Added import
+import logging
+import time
 from datetime import datetime
 from typing import Any
 
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
-logger = logging.getLogger(__name__)  # Added logger
+logger = logging.getLogger(__name__)
 
 
 class SlackHistory:
@@ -55,7 +55,7 @@ class SlackHistory:
         if not self.client:
             raise ValueError("Slack client not initialized. Call set_token() first.")
 
-        channels_list = []  # Changed from dict to list
+        channels_list = []
         types = "public_channel"
         if include_private:
             types += ",private_channel"
@@ -371,43 +371,3 @@ class SlackHistory:
                 formatted["user_name"] = "Unknown"
 
         return formatted
-
-
-# Example usage (uncomment to use):
-"""
-if __name__ == "__main__":
-    # Set your token here or via environment variable
-    token = os.environ.get("SLACK_API_TOKEN", "xoxb-your-token-here")
-    
-    slack = SlackHistory(token)
-    
-    # Get all channels
-    try:
-        channels = slack.get_all_channels()
-        print("Available channels:")
-        for name, channel_id in sorted(channels.items()):
-            print(f"- {name}: {channel_id}")
-        
-        # Example: Get history for a specific channel and date range
-        channel_id = channels.get("general")
-        if channel_id:
-            messages, error = slack.get_history_by_date_range(
-                channel_id=channel_id,
-                start_date="2023-01-01",
-                end_date="2023-01-31",
-                limit=500
-            )
-            
-            if error:
-                print(f"Error: {error}")
-            else:
-                print(f"\nRetrieved {len(messages)} messages from #general")
-                
-                # Print formatted messages
-                for msg in messages[:10]:  # Show first 10 messages
-                    formatted = slack.format_message(msg, include_user_info=True)
-                    print(f"[{formatted['datetime']}] {formatted['user_name']}: {formatted['text']}")
-    
-    except Exception as e:
-        print(f"Error: {e}")
-"""

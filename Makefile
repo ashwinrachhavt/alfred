@@ -30,14 +30,10 @@ format:
 	$(RUN) ruff format apps/alfred tests
 
 run-api:
-	PYTHONPATH=apps $(if $(filter 1,$(DEBUG)),ALFRED_LOG_LEVEL=DEBUG,) $(RUN) uvicorn alfred.main:app --reload --port 8000 $(if $(filter 1,$(DEBUG)),--log-level debug,)
-
-.PHONY: run-api-debug
-run-api-debug:
-	PYTHONPATH=apps ALFRED_LOG_LEVEL=DEBUG $(RUN) uvicorn alfred.main:app --reload --port 8000 --log-level debug
+	$(if $(filter 1,$(DEBUG)),ALFRED_LOG_LEVEL=DEBUG,) $(RUN) uvicorn alfred.main:app --reload --port 8000 $(if $(filter 1,$(DEBUG)),--log-level debug,)
 
 run-worker:
-	PYTHONPATH=apps $(RUN) celery -A alfred.celery_app.app worker -l INFO
+	$(RUN) celery -A alfred.celery_app.app worker -l INFO
 
 docker-up:
 	docker compose -f infra/docker-compose.yml up --build

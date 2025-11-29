@@ -18,7 +18,6 @@ DEFAULT_PROVIDER_PRIORITY: List[Provider] = [
     "tavily",
     "exa",
     "langsearch",
-    
 ]
 Mode = Literal["auto", "multi", Provider]
 
@@ -77,7 +76,9 @@ def _normalize_list_result(items: Any, provider: Provider) -> List[SearchHit]:
         return hits
     if isinstance(items, str):
         try:
-            items = json.loads(items)
+            parsed = json.loads(items)
+            # Re-run normalization on parsed object (list/dict)
+            return _normalize_list_result(parsed, provider)
         except Exception:
             return [norm_one(items)]
     if isinstance(items, dict):
@@ -385,11 +386,15 @@ class LangsearchClient:
         self._api_key = api_key or _env("LANGSEARCH_API_KEY")
         if not self._api_key:
             raise RuntimeError("LANGSEARCH_API_KEY is not set")
-        self._base_url = (base_url or _env("LANGSEARCH_API_URL") or "https://api.langsearch.com/v1").rstrip("/")
+        self._base_url = (
+            base_url or _env("LANGSEARCH_API_URL") or "https://api.langsearch.com/v1"
+        ).rstrip("/")
         try:
             import httpx  # type: ignore
         except ImportError as exc:  # pragma: no cover - httpx is a common dep
-            raise ImportError("Optional dependency 'httpx' not found; Langsearch client disabled.") from exc
+            raise ImportError(
+                "Optional dependency 'httpx' not found; Langsearch client disabled."
+            ) from exc
         self._httpx = httpx
 
     def _parse_hits(self, payload: Any) -> List[dict[str, Any]]:
@@ -415,9 +420,15 @@ class LangsearchClient:
                 if isinstance(v, list):
                     return [
                         {
-                            "title": getattr(it, "name", None) if not isinstance(it, dict) else it.get("name") or it.get("title"),
-                            "url": getattr(it, "url", None) if not isinstance(it, dict) else it.get("url") or it.get("link"),
-                            "link": getattr(it, "url", None) if not isinstance(it, dict) else it.get("url") or it.get("link"),
+                            "title": getattr(it, "name", None)
+                            if not isinstance(it, dict)
+                            else it.get("name") or it.get("title"),
+                            "url": getattr(it, "url", None)
+                            if not isinstance(it, dict)
+                            else it.get("url") or it.get("link"),
+                            "link": getattr(it, "url", None)
+                            if not isinstance(it, dict)
+                            else it.get("url") or it.get("link"),
                             "snippet": getattr(it, "snippet", None)
                             if not isinstance(it, dict)
                             else it.get("snippet") or it.get("summary") or it.get("description"),

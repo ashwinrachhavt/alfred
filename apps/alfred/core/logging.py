@@ -3,7 +3,7 @@ import os
 import sys
 
 
-def setup_logging(level: str | int | None = 'DEBUG') -> None:
+def setup_logging(level: str | int | None = "DEBUG") -> None:
     """Initialize root logger once with stream handler and level.
 
     Level is resolved by precedence:
@@ -40,4 +40,3 @@ def setup_logging(level: str | int | None = 'DEBUG') -> None:
         root.addHandler(handler)
         logging.captureWarnings(True)
     root.setLevel(desired_level)
- 

@@ -10,7 +10,7 @@ steps:
     args:
       - build
       - '-f'
-      - apps/alfred/Dockerfile
+      - alfred/Dockerfile
       - '-t'
       - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$SHORT_SHA'
       - '.'

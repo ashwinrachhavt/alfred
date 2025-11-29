@@ -5,16 +5,10 @@ import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-try:
-    from dotenv import load_dotenv  # type: ignore
-
-    load_dotenv()
-except Exception:
-    pass
-
+# Dotenv is loaded by `apps/sitecustomize.py` when `apps/` is on sys.path.
 from alfred.api import register_routes
-from alfred.core.logging import setup_logging
 from alfred.core.config import settings
+from alfred.core.logging import setup_logging
 
 os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
 sys.dont_write_bytecode = True

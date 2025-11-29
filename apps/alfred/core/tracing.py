@@ -53,7 +53,9 @@ def lf_get_client() -> Any | None:
     return _init_client()
 
 
-def lf_observe(*, name: Optional[str] = None, as_type: Optional[str] = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def lf_observe(
+    *, name: Optional[str] = None, as_type: Optional[str] = None
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator factory. If Langfuse is configured, returns @observe(...).
 
     Otherwise, returns a pass-through decorator.
@@ -72,7 +74,14 @@ def lf_observe(*, name: Optional[str] = None, as_type: Optional[str] = None) -> 
     return _observe_impl(name=name, as_type=as_type)
 
 
-def lf_update_span(*, input: Any | None = None, output: Any | None = None, metadata: dict | None = None, level: str | None = None, version: str | None = None) -> None:
+def lf_update_span(
+    *,
+    input: Any | None = None,
+    output: Any | None = None,
+    metadata: dict | None = None,
+    level: str | None = None,
+    version: str | None = None,
+) -> None:
     """Best-effort update of the current span. No-ops if client unavailable."""
     try:
         client = lf_get_client()
@@ -90,7 +99,15 @@ def lf_update_span(*, input: Any | None = None, output: Any | None = None, metad
         return
 
 
-def lf_update_trace(*, name: Optional[str] = None, user_id: Optional[str] = None, session_id: Optional[str] = None, tags: list[str] | None = None, public: Optional[bool] = None, metadata: dict | None = None) -> None:
+def lf_update_trace(
+    *,
+    name: Optional[str] = None,
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    tags: list[str] | None = None,
+    public: Optional[bool] = None,
+    metadata: dict | None = None,
+) -> None:
     """Best-effort update of the current trace. No-ops if client unavailable."""
     try:
         client = lf_get_client()

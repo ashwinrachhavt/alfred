@@ -5,7 +5,6 @@ import logging
 import os
 from typing import Any, Iterable, List, Literal, Sequence, TypedDict
 
-from dotenv import load_dotenv
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool
@@ -15,8 +14,6 @@ from pydantic import BaseModel, Field
 
 from alfred.prompts import load_prompt
 from alfred.services.web_search import search_web
-
-load_dotenv()
 
 # Keep it simple: no checkpointing by default
 _MEMORY_SAVER = None
@@ -67,12 +64,10 @@ def build_system_prompt(mode: str = "minimal") -> str:
 
 # ------------------------ HELPERS ------------------------
 def _load_env() -> None:
-    try:
-        from dotenv import load_dotenv  # type: ignore
-
-        load_dotenv()
-    except Exception:
-        pass
+    """Environment is loaded via sitecustomize when apps/ is on sys.path.
+    This function remains for backward compatibility and is now a no-op.
+    """
+    return None
 
 
 def make_llm(temperature: float = 0.2):
