@@ -10,7 +10,8 @@ from pydantic_settings import BaseSettings
 try:  # optional dependency
     from dotenv import load_dotenv  # type: ignore
 
-    load_dotenv("apps/alfred/.env")
+    _ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+    load_dotenv(_ENV_PATH)
 except Exception:
     pass
 
@@ -95,6 +96,10 @@ class Settings(BaseSettings):
         default=".alfred_data/langsearch.json",
         alias="LANGSEARCH_DB_PATH",
     )
+
+    # Connectors (misc)
+    linear_api_key: str | None = Field(default=None, alias="LINEAR_API_KEY")
+    slack_api_key: str | None = Field(default=None, alias="SLACK_API_KEY")
 
     database_url: str = Field(
         default=f"sqlite:///{DEFAULT_DB_PATH}",

@@ -1,5 +1,5 @@
 """Research API routes."""
 
-from .routes import router
+from alfred.api.research.routes import router
 
 __all__ = ["router"]
