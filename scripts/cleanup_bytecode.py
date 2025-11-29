@@ -10,6 +10,7 @@ It skips typical virtualenv and VCS directories.
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -51,6 +52,8 @@ def cleanup(root: Path) -> int:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    logger = logging.getLogger("scripts.cleanup_bytecode")
     repo_root = Path(__file__).resolve().parents[1]
     count = cleanup(repo_root)
-    print(count)
+    logger.info("Removed %d bytecode artifacts", count)

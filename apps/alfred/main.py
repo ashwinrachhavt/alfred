@@ -1,6 +1,4 @@
 import logging
-import os
-import sys
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,9 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from alfred.api import register_routes
 from alfred.core.config import settings
 from alfred.core.logging import setup_logging
+from alfred.services.mind_palace.doc_storage import DocStorageService
 
-os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
-sys.dont_write_bytecode = True
+# Bytecode disabling is handled by sitecustomize/config.
 
 # Initialize logging early so all modules inherit the handlers/level
 setup_logging()
@@ -29,3 +27,16 @@ register_routes(app)
 
 logger = logging.getLogger(__name__)
 logger.info("Alfred API initialized")
+
+
+@app.on_event("startup")
+def _ensure_indexes_on_startup() -> None:
+    """Ensure Mongo indexes for document storage are created once at boot.
+
+    Best-effort: logs a warning on failure but does not block app startup.
+    """
+    try:
+        DocStorageService().ensure_indexes()
+        logging.getLogger(__name__).info("DocStorage indexes ensured")
+    except Exception as exc:  # pragma: no cover - external dependency
+        logging.getLogger(__name__).warning("Failed to ensure DocStorage indexes: %s", exc)

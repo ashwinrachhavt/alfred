@@ -8,21 +8,19 @@ and list a few issues. Exits non-zero on failure.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from pathlib import Path
 
+from scripts._bootstrap import bootstrap
+
+logger = logging.getLogger("scripts.test_linear_connection")
+
 
 def main() -> int:
     # Ensure `alfred` package is importable when run from repo root
-    repo_root = Path(__file__).resolve().parents[1]
-    apps_dir = repo_root / "apps"
-    if str(apps_dir) not in sys.path:
-        sys.path.append(str(apps_dir))
-    try:  # Load env/disable pyc via sitecustomize
-        import sitecustomize  # noqa: F401
-    except Exception:
-        pass
+    bootstrap()
 
     # Local imports after sys.path adjustment (avoid E402)
     from alfred.connectors.linear_connector import LinearConnector
@@ -49,7 +47,7 @@ def main() -> int:
     token = token or os.getenv("LINEAR_API_KEY")
 
     if not token:
-        print("LINEAR_API_KEY is not set in environment or settings")
+        logger.error("LINEAR_API_KEY is not set in environment or settings")
         return 2
 
     client = LinearConnector(token)
@@ -60,7 +58,7 @@ def main() -> int:
                 args.start_date, args.end_date, include_comments=args.include_comments
             )
             if err:
-                print(f"Linear connectivity test failed: {err}")
+                logger.error("Linear connectivity test failed: %s", err)
                 return 1
         else:
             issues = client.get_all_issues(include_comments=args.include_comments)
@@ -73,12 +71,13 @@ def main() -> int:
             if ident:
                 sample_ids.append(f"{ident}: {title[:40]}")
         sample = ", ".join(sample_ids)
-        print(f"OK: Retrieved {count} issues. Sample: {sample}")
+        logger.info("OK: Retrieved %d issues. Sample: %s", count, sample)
         return 0
     except Exception as exc:
-        print(f"Linear connectivity test failed: {exc}")
+        logger.error("Linear connectivity test failed: %s", exc)
         return 1
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     raise SystemExit(main())

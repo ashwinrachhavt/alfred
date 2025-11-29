@@ -14,6 +14,7 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.calendar import router as calendar_router
     from alfred.api.company import router as company_router
     from alfred.api.gmail import router as gmail_router
+    from alfred.api.mind_palace import router as mind_palace_router
     from alfred.api.notion import router as notion_router
     from alfred.api.rag import router as rag_router
     from alfred.api.research import router as research_router
@@ -30,6 +31,7 @@ def register_routes(app: FastAPI) -> None:
         calendar_router,
         company_router,
         web_router,
+        mind_palace_router,
         wikipedia_router,
     ]
     for router in routers:

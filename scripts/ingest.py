@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from hashlib import md5
@@ -22,16 +23,10 @@ os.environ.setdefault(
 )
 
 
-ROOT = Path(__file__).resolve().parents[1]
-APPS_DIR = ROOT / "apps"
-if str(APPS_DIR) not in sys.path:
-    sys.path.insert(0, str(APPS_DIR))
+from scripts._bootstrap import bootstrap
 
-# Ensure consistent env loading and bytecode settings
-try:  # pragma: no cover - simple import side effect
-    import sitecustomize  # noqa: F401
-except Exception:
-    pass
+ROOT = Path(__file__).resolve().parents[1]
+bootstrap()
 
 # Note: per request, use WebBaseLoader/RecursiveUrlLoader instead of custom crawler
 
@@ -110,14 +105,15 @@ def load_web(urls: List[str]) -> List[Document]:
         loader = WebBaseLoader(urls, header_template=header_template)
         docs.extend(loader.load())
     except Exception as e:
-        print(f"[ingest] WebBaseLoader error: {e}")
+        logging.getLogger("scripts.ingest").warning("WebBaseLoader error: %s", e)
 
     # 2) Optional recursive crawl for more coverage (controlled via env)
     depth = int(os.getenv("RECURSIVE_DEPTH", "0"))
     if depth > 0:
-        try:
+        import importlib.util
+        if importlib.util.find_spec("bs4") is not None:
             from bs4 import BeautifulSoup  # type: ignore
-        except Exception:
+        else:
             BeautifulSoup = None  # type: ignore
 
         def _extract_text(html: str) -> str:
@@ -131,7 +127,9 @@ def load_web(urls: List[str]) -> List[Document]:
                 rloader = RecursiveUrlLoader(url=u, max_depth=depth, extractor=extractor)
                 docs.extend(rloader.load())
             except Exception as e:
-                print(f"[ingest] RecursiveUrlLoader error for {u}: {e}")
+                logging.getLogger("scripts.ingest").warning(
+                    "RecursiveUrlLoader error for %s: %s", u, e
+                )
 
     # Normalize metadata
     normed: List[Document] = []
@@ -199,7 +197,7 @@ def main():
     pdf_docs = load_pdfs(args.datadir)
     base_docs = web_docs + pdf_docs
     if not base_docs:
-        print("No documents found from web or PDFs.")
+        logging.getLogger("scripts.ingest").info("No documents found from web or PDFs.")
         return 0
 
     # 2) Chunk
@@ -211,7 +209,9 @@ def main():
     collection = args.collection
 
     if not qdrant_url:
-        print("❌ Missing QDRANT_URL — please set your hosted Qdrant endpoint in .env")
+        logging.getLogger("scripts.ingest").error(
+            "Missing QDRANT_URL — please set your hosted Qdrant endpoint in .env"
+        )
         return 1
 
     embeddings = OpenAIEmbeddings(model=args.embed_model)
@@ -220,7 +220,9 @@ def main():
     try:
         client.get_collection(collection)
     except Exception:
-        print(f"[ingest] Collection '{collection}' not found — creating it...")
+        logging.getLogger("scripts.ingest").info(
+            "Collection '%s' not found — creating it...", collection
+        )
         vector_size = len(embeddings.embed_query("dimension probe"))
         vectors_config = qmodels.VectorParams(size=vector_size, distance=qmodels.Distance.COSINE)
         client.create_collection(collection_name=collection, vectors_config=vectors_config)
@@ -234,11 +236,15 @@ def main():
         api_key=qdrant_key,
     )
 
-    print(
-        f"✅ Indexed {len(docs)} chunks into hosted Qdrant collection '{collection}' at {qdrant_url}."
+    logging.getLogger("scripts.ingest").info(
+        "Indexed %d chunks into hosted Qdrant collection '%s' at %s.",
+        len(docs),
+        collection,
+        qdrant_url,
     )
     return 0
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     raise SystemExit(main())

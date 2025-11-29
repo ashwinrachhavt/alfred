@@ -32,6 +32,9 @@ format:
 run-api:
 	$(if $(filter 1,$(DEBUG)),ALFRED_LOG_LEVEL=DEBUG,) $(RUN) uvicorn alfred.main:app --reload --port 8000 $(if $(filter 1,$(DEBUG)),--log-level debug,)
 
+.PHONY: runapi
+runapi: run-api
+
 run-worker:
 	$(RUN) celery -A alfred.celery_app.app worker -l INFO
 

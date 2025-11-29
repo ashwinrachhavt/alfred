@@ -15,6 +15,10 @@ APPS_DIR = BASE_DIR / "apps"
 
 if str(APPS_DIR) not in sys.path:
     sys.path.append(str(APPS_DIR))
+try:  # Ensure env is loaded consistently for migrations
+    import sitecustomize  # noqa: F401
+except Exception:
+    pass
 
 _config_mod = importlib.import_module("alfred.core.config")
 settings = getattr(_config_mod, "settings")

@@ -6,23 +6,25 @@ from typing import Optional
 from pydantic import AnyHttpUrl, Field
 from pydantic_settings import BaseSettings
 
-# Load environment from project .env early so Settings can pick it up.
-# Skip if already handled by `apps/sitecustomize.py`.
-if os.environ.get("ALFRED_ENV_LOADED") != "1":
-    try:  # optional dependency
-        from dotenv import load_dotenv  # type: ignore
+"""Settings and early env loading (fallback).
 
-        # Load env from package-local .env first (alfred/.env)
-        _PKG_ENV = Path(__file__).resolve().parents[1] / ".env"
-        if _PKG_ENV.exists():
-            load_dotenv(_PKG_ENV)
-        else:
-            # Fallback to repo root .env if present
-            _ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
-            if _ROOT_ENV.exists():
-                load_dotenv(_ROOT_ENV)
-    except Exception:
-        pass
+Primary env loading happens in apps/sitecustomize.py when apps/ is on sys.path.
+As a fallback (e.g., when importing settings in isolation), load .env here
+without wrapping imports in try/except.
+"""
+
+if os.environ.get("ALFRED_ENV_LOADED") != "1":
+    from dotenv import load_dotenv  # type: ignore
+
+    # Load env from package-local .env first (alfred/.env)
+    _PKG_ENV = Path(__file__).resolve().parents[1] / ".env"
+    if _PKG_ENV.exists():
+        load_dotenv(_PKG_ENV)
+    else:
+        # Fallback to repo root .env if present
+        _ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
+        if _ROOT_ENV.exists():
+            load_dotenv(_ROOT_ENV)
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "alfred.db"
 

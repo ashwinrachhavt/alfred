@@ -3,21 +3,19 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 from typing import Any
 
+from scripts._bootstrap import bootstrap
+
 
 def _bootstrap_paths_and_env() -> None:
-    """Add `apps/` to sys.path and load env via sitecustomize."""
-    repo_root = Path(__file__).resolve().parents[1]
-    apps_dir = repo_root / "apps"
-    if str(apps_dir) not in sys.path:
-        sys.path.append(str(apps_dir))
-    try:  # Ensure `.env` is loaded consistently
-        import sitecustomize  # noqa: F401
-    except Exception:
-        pass
+    bootstrap()
+
+
+logger = logging.getLogger("scripts.test_mongo_connection")
 
 
 def main() -> int:
@@ -42,7 +40,7 @@ def main() -> int:
     uri = settings.mongo_uri
     database = settings.mongo_database
     if not uri or not database:
-        print("MONGO_URI and/or MONGO_DATABASE are not configured.")
+        logger.error("MONGO_URI and/or MONGO_DATABASE are not configured.")
         return 2
 
     service = MongoService(default_collection=args.collection)
@@ -50,25 +48,26 @@ def main() -> int:
     try:
         service.ping()
     except Exception as exc:  # pragma: no cover - network interaction
-        print(f"Mongo ping failed: {exc}")
+        logger.error("Mongo ping failed: %s", exc)
         return 1
 
-    print(f"OK: Connected to MongoDB at {uri} (database='{database}')")
+    logger.info("OK: Connected to MongoDB at %s (database='%s')", uri, database)
 
     if args.find_one:
         doc: dict[str, Any] | None
         try:
             doc = service.find_one()
         except Exception as exc:  # pragma: no cover - network interaction
-            print(f"find_one() failed: {exc}")
+            logger.error("find_one() failed: %s", exc)
             return 1
         if doc is None:
-            print(f"Collection '{args.collection}' is empty or not found.")
+            logger.info("Collection '%s' is empty or not found.", args.collection)
         else:
-            print(f"Sample document from '{args.collection}': {doc}")
+            logger.info("Sample document from '%s': %s", args.collection, doc)
 
     return 0
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     raise SystemExit(main())

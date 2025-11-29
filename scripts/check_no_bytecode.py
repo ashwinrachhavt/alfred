@@ -10,6 +10,7 @@ Skips common virtualenv and VCS directories.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from pathlib import Path
@@ -35,11 +36,13 @@ def find_bytecode(root: Path) -> list[Path]:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    logger = logging.getLogger("scripts.check_no_bytecode")
     repo_root = Path(__file__).resolve().parents[1]
     offenders = find_bytecode(repo_root)
     if offenders:
-        print("Bytecode artifacts found (fail):")
+        logger.error("Bytecode artifacts found (fail):")
         for p in offenders:
-            print(f" - {p}")
+            logger.error(" - %s", p)
         sys.exit(1)
-    print("No bytecode artifacts found.")
+    logger.info("No bytecode artifacts found.")

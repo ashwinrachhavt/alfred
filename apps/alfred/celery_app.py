@@ -1,6 +1,4 @@
 import logging
-import os
-import sys
 from datetime import timedelta
 
 from celery import Celery
@@ -8,8 +6,7 @@ from celery import Celery
 from alfred.core.config import settings
 from alfred.core.logging import setup_logging
 
-os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
-sys.dont_write_bytecode = True
+# Bytecode disabling is handled by sitecustomize/config.
 
 setup_logging()
 
