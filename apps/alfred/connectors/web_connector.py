@@ -142,7 +142,9 @@ class DDGClient:
             from duckduckgo_search import DDGS  # type: ignore
             from duckduckgo_search.exceptions import RatelimitException  # type: ignore
         except ImportError as exc:  # pragma: no cover - optional dependency
-            raise ImportError("Optional dependency 'duckduckgo_search' not found; DDG client disabled.") from exc
+            raise ImportError(
+                "Optional dependency 'duckduckgo_search' not found; DDG client disabled."
+            ) from exc
 
         self._DDGS = DDGS
         self._ratelimit_exc: type[Exception] = RatelimitException
@@ -212,7 +214,9 @@ class DDGClient:
                             "title": item.get("title"),
                             "url": item.get("href") or item.get("url"),
                             "link": item.get("href") or item.get("url"),
-                            "snippet": item.get("body") or item.get("content") or item.get("description"),
+                            "snippet": item.get("body")
+                            or item.get("content")
+                            or item.get("description"),
                             "metadata": item,
                         }
                     )
@@ -227,7 +231,9 @@ class DDGClient:
                     "backend_index": self._backend_index,
                     "backend_history": self._backend_cycle[: self._backend_index + 1],
                 }
-                return SearchResponse(provider="ddg", query=query, hits=_dedupe_by_url(hits), meta=meta)
+                return SearchResponse(
+                    provider="ddg", query=query, hits=_dedupe_by_url(hits), meta=meta
+                )
             except Exception as exc:
                 last_error = exc
                 fallback = False
@@ -295,7 +301,9 @@ class TavilyClient:
             from langchain_tavily import TavilySearch
         except ImportError:
             TavilySearch = None
-            logging.warning("Optional dependency 'langchain_tavily' not found; Tavily client disabled.")
+            logging.warning(
+                "Optional dependency 'langchain_tavily' not found; Tavily client disabled."
+            )
 
         self.tool = TavilySearch(
             max_results=max_results,
@@ -374,7 +382,9 @@ class WebConnector:
         try:
             self.clients["ddg"] = DDGClient(max_results=ddg_max_results)
         except ImportError:
-            logging.warning("Optional dependency 'duckduckgo_search' not found; DDG client disabled.")
+            logging.warning(
+                "Optional dependency 'duckduckgo_search' not found; DDG client disabled."
+            )
 
     def _resolve_auto(self) -> Provider:
         for p in DEFAULT_PROVIDER_PRIORITY:
@@ -418,8 +428,12 @@ class WebConnector:
         client = self.clients.get(provider)
         if not client:
             if provider not in self.clients:
-                logging.warning(f"Provider '{provider}' not configured. Returning empty fallback response.")
-                return SearchResponse(provider=provider, query=query, hits=[], meta={"status": "unconfigured"})
+                logging.warning(
+                    f"Provider '{provider}' not configured. Returning empty fallback response."
+                )
+                return SearchResponse(
+                    provider=provider, query=query, hits=[], meta={"status": "unconfigured"}
+                )
             raise RuntimeError(f"Provider '{provider}' is not configured")
         if provider == "brave":
             return client.search(query, pages=pages or self._brave_pages_default)

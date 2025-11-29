@@ -74,6 +74,7 @@ def _get_tooling() -> CrewTools:
         _tooling_cache = load_crewai_tools()
     return _tooling_cache
 
+
 # ------------------ Static URL Sources ------------------
 
 # Public profile and publications for candidate context. Used by researcher.
@@ -376,7 +377,9 @@ def _normalize_task_output(task: CrewAITask, kickoff_result) -> str:
 class PhilosophicalApplicationCrew:
     """Deterministic pipeline runner using kickoff()."""
 
-    def _kickoff_single(self, task: CrewAITask, context_payloads: Optional[List[str]] = None) -> str:
+    def _kickoff_single(
+        self, task: CrewAITask, context_payloads: Optional[List[str]] = None
+    ) -> str:
         """Run a single task safely.
 
         CrewAI Task.context expects a list of Task instances whose outputs will

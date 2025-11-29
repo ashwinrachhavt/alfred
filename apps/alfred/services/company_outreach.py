@@ -180,7 +180,12 @@ def generate_company_outreach(
 
     try:
         for chunk in graph.stream(
-            {"messages": [SystemMessage(content=OUTREACH_SYSTEM_PROMPT), HumanMessage(content=seed)]},
+            {
+                "messages": [
+                    SystemMessage(content=OUTREACH_SYSTEM_PROMPT),
+                    HumanMessage(content=seed),
+                ]
+            },
             config={"recursion_limit": 40},
         ):
             for update in chunk.values():

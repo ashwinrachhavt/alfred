@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -15,8 +16,11 @@ APPS_DIR = BASE_DIR / "apps"
 if str(APPS_DIR) not in sys.path:
     sys.path.append(str(APPS_DIR))
 
-from alfred.core.config import settings
-from alfred.models import Base, load_all_models
+_config_mod = importlib.import_module("alfred.core.config")
+settings = getattr(_config_mod, "settings")
+_models_mod = importlib.import_module("alfred.models")
+Base = getattr(_models_mod, "Base")
+load_all_models = getattr(_models_mod, "load_all_models")
 
 config = context.config
 

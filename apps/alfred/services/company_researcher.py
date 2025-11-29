@@ -176,5 +176,6 @@ def research_company(name: str) -> str:
                 continue
     return final
 
+
 class CompanyState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]

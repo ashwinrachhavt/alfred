@@ -31,6 +31,7 @@ _MEMORY_SAVER = MemorySaver() if MemorySaver is not None else None
 try:  # pragma: no cover - optional dependency
     from langchain_core.retrievers import BaseRetriever
 except Exception:  # pragma: no cover
+
     class BaseRetriever:  # type: ignore[empty-body]
         """Fallback minimal retriever interface."""
 
@@ -43,6 +44,7 @@ except Exception:  # pragma: no cover
 
 class AgentState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
+
 
 # ------------------------ CONFIG ------------------------
 COLLECTION = os.getenv("QDRANT_COLLECTION", os.getenv("CHROMA_COLLECTION", "personal_kb"))
@@ -359,9 +361,7 @@ def answer_agentic(question: str, k: int = 4, mode: str = "minimal") -> str:
     final = ""
     stream_kwargs = {}
     if _MEMORY_SAVER is not None:
-        stream_kwargs["config"] = {
-            "configurable": {"thread_id": f"agentic-rag-{uuid4()}"}
-        }
+        stream_kwargs["config"] = {"configurable": {"thread_id": f"agentic-rag-{uuid4()}"}}
 
     for chunk in graph.stream({"messages": [HumanMessage(content=question)]}, **stream_kwargs):
         for _node, update in chunk.items():

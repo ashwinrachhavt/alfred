@@ -18,10 +18,9 @@ RUN pip install --upgrade pip && pip install -r /app/requirements.txt
 # Copy application code
 COPY apps/alfred /app/alfred
 
-# Cloud Run provides $PORT; default to 8080 for local runs
-ENV PORT=8080
+# Cloud Run provides $PORT; default to 8000 for local runs
+ENV PORT=8000
 
-EXPOSE 8080
+EXPOSE 8000
 
 CMD ["sh", "-c", "uvicorn alfred.main:app --host 0.0.0.0 --port ${PORT}"]
-

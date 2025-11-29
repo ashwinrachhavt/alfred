@@ -35,11 +35,10 @@ steps:
       - '--cpu=1'
       - '--memory=1Gi'
       - '--max-instances=3'
-      - '--port=8080'
+      - '--port=8000'
 
 images:
   - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$SHORT_SHA'
 
 options:
   logging: CLOUD_LOGGING_ONLY
-

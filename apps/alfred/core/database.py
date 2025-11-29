@@ -21,7 +21,7 @@ try:
 except ModuleNotFoundError as exc:  # pragma: no cover - runtime dependency hint
     if settings.database_url.startswith("postgres"):
         raise RuntimeError(
-            "PostgreSQL driver is not installed. Install it with `pip install \"psycopg[binary]\"`"
+            'PostgreSQL driver is not installed. Install it with `pip install "psycopg[binary]"`'
         ) from exc
     raise
 SessionLocal = sessionmaker(

@@ -43,7 +43,12 @@ def load_crewai_tools() -> CrewTools:
     try:
         tools_module = import_module("crewai_tools")
     except ModuleNotFoundError:  # pragma: no cover - optional dependency
-        return CrewTools(default_tools=tuple(), web_scrape_tool=None, search_tool=None, website_search_tool_cls=None)
+        return CrewTools(
+            default_tools=tuple(),
+            web_scrape_tool=None,
+            search_tool=None,
+            website_search_tool_cls=None,
+        )
 
     default_tools = []
     search_tool = None

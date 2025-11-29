@@ -31,6 +31,7 @@ class CalendarEventCreate(BaseModel):
     location: str | None = None
     reminders: list[ReminderInput] | None = None
 
+
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
 
@@ -94,7 +95,9 @@ async def create_event(payload: CalendarEventCreate) -> dict[str, Any]:
             attendees=[str(email) for email in payload.attendees] if payload.attendees else None,
             description=payload.description,
             location=payload.location,
-            reminders=[rem.model_dump() for rem in payload.reminders] if payload.reminders else None,
+            reminders=[rem.model_dump() for rem in payload.reminders]
+            if payload.reminders
+            else None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

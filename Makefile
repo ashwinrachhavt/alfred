@@ -29,7 +29,7 @@ format:
 	$(RUN) ruff format apps/alfred tests
 
 run-api:
-	PYTHONPATH=apps $(RUN) uvicorn alfred.main:app --reload --port 8080
+	PYTHONPATH=apps $(RUN) uvicorn alfred.main:app --reload --port 8000
 
 run-worker:
 	PYTHONPATH=apps $(RUN) celery -A alfred.celery_app.app worker -l INFO

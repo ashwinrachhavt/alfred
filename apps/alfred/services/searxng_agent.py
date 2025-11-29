@@ -21,6 +21,7 @@ MAX_RESULTS = int(os.getenv("SEARXNG_MAX_RESULTS", "5"))
 
 class SearchResult(TypedDict):
     """A single search result from Searxng."""
+
     title: str
     url: str
     content: str
@@ -58,12 +59,14 @@ def search_web(query: str, num_results: int = MAX_RESULTS) -> List[SearchResult]
 
         results: List[SearchResult] = []
         for item in data.get("results", [])[:num_results]:
-            results.append({
-                "title": item.get("title", ""),
-                "url": item.get("url", ""),
-                "content": item.get("content", ""),
-                "score": item.get("score"),
-            })
+            results.append(
+                {
+                    "title": item.get("title", ""),
+                    "url": item.get("url", ""),
+                    "content": item.get("content", ""),
+                    "score": item.get("score"),
+                }
+            )
 
         return results
 
@@ -76,6 +79,8 @@ def search_web(query: str, num_results: int = MAX_RESULTS) -> List[SearchResult]
     except Exception as e:
         logger.error(f"Unexpected error in search_web: {e}")
         return []
+
+
 load_dotenv()
 
 
