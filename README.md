@@ -102,6 +102,7 @@ docker compose -f infra/docker-compose.yml up --build
 - If you point `DATABASE_URL` at Postgres, install a driver such as `psycopg[binary]` in your environment.
 - Base models live in `apps/alfred/models/`; extend `Model` for timestamped tables with an auto primary key, and declare columns directly with SQLAlchemy's `mapped_column` helpers.
 - Mongo access lives in `apps/alfred/services/mongo.py`; configure `MONGO_URI`, `MONGO_DATABASE`, and `MONGO_APP_NAME` (defaults connect to `mongodb://localhost:27017/alfred`).
+- Company research runs persist their structured reports into Mongo (collection defaults to `company_research_reports`). Use `/company/research?refresh=true` to force a fresh crawl + regeneration.
 
 ## Ingest Knowledge
 
@@ -151,8 +152,15 @@ Behavior
 
 Query params
 - `name` string: company to investigate.
+- `refresh` bool (optional, default `false`): force a new SearxNG search + Firecrawl crawl instead of returning the cached Mongo record.
 
-Returns a long-form report (≈1.5–2.5k words) produced by the LangGraph company research agent.
+Response shape
+- `company`, `model`, `generated_at`
+- `report`: structured object with `executive_summary`, dynamic `sections[]`, `risks`, `opportunities`, `recommended_actions`, `references`
+- `sources`: enriched search hits with snippets + scraped markdown
+- `search`: metadata describing the provider + hit count
+
+The service crawls top SearxNG results with Firecrawl, feeds the markdown to GPT-5.1, then persists the structured JSON to Mongo (`COMPANY_RESEARCH_COLLECTION`).
 
 ### `GET /company/outreach`
 
@@ -219,6 +227,11 @@ Core env vars
 Web search providers (optional)
 - `SEARXNG_HOST` (or `SEARX_HOST`) — SearxNG base URL (e.g. `http://127.0.0.1:8080`). When set, provider `searx` is available in `/api/web/search`.
 - `LANGSEARCH_API_KEY` — enables the `langsearch` provider in `/api/web/search`. Optionally override endpoint via `LANGSEARCH_API_URL` (defaults to `https://api.langsearch.com/v1`).
+
+Company research pipeline
+- `FIRECRAWL_BASE_URL` / `FIRECRAWL_TIMEOUT` — Firecrawl instance used to pull markdown from each URL.
+- `COMPANY_RESEARCH_MODEL` — OpenAI chat model for synthesis (default `gpt-5.1`).
+- `COMPANY_RESEARCH_COLLECTION` — Mongo collection for persisted reports (default `company_research_reports`).
 
 Observability (Langfuse)
 - `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` — project keys from your Langfuse instance.

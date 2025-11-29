@@ -117,6 +117,14 @@ class Settings(BaseSettings):
     mongo_database: str = Field(default="notes_db", alias="MONGO_DATABASE")
     mongo_app_name: str = Field(default="notes_db", alias="MONGO_APP_NAME")
 
+    firecrawl_base_url: str = Field(default="http://localhost:8010", alias="FIRECRAWL_BASE_URL")
+    firecrawl_timeout: int = Field(default=30, alias="FIRECRAWL_TIMEOUT")
+    company_research_model: str = Field(default="gpt-5.1", alias="COMPANY_RESEARCH_MODEL")
+    company_research_collection: str = Field(
+        default="company_research_reports",
+        alias="COMPANY_RESEARCH_COLLECTION",
+    )
+
     calendar_slot_duration_minutes: int = Field(
         default=30,
         alias="CALENDAR_SLOT_DURATION_MINUTES",

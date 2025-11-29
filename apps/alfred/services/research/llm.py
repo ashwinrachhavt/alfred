@@ -6,7 +6,7 @@ from functools import cache
 
 from langchain_openai import ChatOpenAI
 
-from alfred.services.company_researcher import make_llm as _base_make_llm
+from alfred.services.agentic_rag import make_llm as _base_make_llm
 
 
 @cache
