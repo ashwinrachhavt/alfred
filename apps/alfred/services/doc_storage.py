@@ -33,10 +33,10 @@ from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
 
 from alfred.connectors.mongo_connector import MongoConnector
-from alfred.schemas.documents import (
-    DocumentIngest,
-    NoteCreate,
-)
+from alfred.schemas.documents import DocumentIngest, NoteCreate
+from alfred.schemas.mongo_records import DocChunkRecord, DocumentRecord, NoteRecord
+from alfred.services.chunking import ChunkingService
+from alfred.services.enrichment_normalization import normalize_enrichment
 
 
 def _maybe_object_id(val: Optional[str]) -> Optional[ObjectId]:
@@ -73,6 +73,9 @@ def _domain_from_url(url: Optional[str]) -> Optional[str]:
         return urlparse(url).netloc or None
     except Exception:
         return None
+
+
+_CHUNKING_SERVICE = ChunkingService()
 
 
 # -----------------
@@ -140,13 +143,13 @@ class DocStorageService:
 
     # --------------- Notes ---------------
     def create_note(self, note: NoteCreate) -> str:
-        doc = {
-            "text": note.text,
-            "source_url": note.source_url,
-            "metadata": note.metadata or {},
-            "created_at": datetime.utcnow(),
-        }
-        res = self._notes.insert_one(doc)
+        record = NoteRecord(
+            text=note.text,
+            source_url=note.source_url,
+            metadata=note.metadata or {},
+            created_at=datetime.utcnow(),
+        )
+        res = self._notes.insert_one(record.model_dump())
         return str(res.inserted_id)
 
     def list_notes(self, *, q: Optional[str], skip: int, limit: int) -> Dict[str, Any]:
@@ -200,38 +203,48 @@ class DocStorageService:
         canonical = payload.canonical_url or payload.source_url
         domain = _domain_from_url(canonical)
 
-        doc: Dict[str, Any] = {
-            "source_url": payload.source_url,
-            "canonical_url": canonical,
-            "domain": domain,
-            "title": payload.title,
-            "content_type": payload.content_type or "web",
-            "lang": payload.lang,
-            # Intentionally do not store raw HTML to minimize storage of PII/heavy blobs
-            "raw_markdown": payload.raw_markdown,
-            "cleaned_text": cleaned_text,
-            "tokens": tokens,
-            "hash": content_hash,
-            "summary": (payload.summary.model_dump() if payload.summary else None),
-            "topics": payload.topics,
-            "entities": None,
-            "tags": payload.tags or [],
-            "embedding": payload.embedding,
-            "captured_at": captured_at,
-            "captured_hour": captured_hour,
-            "day_bucket": day_bucket,
-            "published_at": payload.published_at,
-            "processed_at": payload.processed_at or now,
-            "created_at": now,
-            "updated_at": now,
-            "session_id": _maybe_object_id(payload.session_id),
-            "agent_run_id": None,
-            "metadata": payload.metadata or {},
-        }
+        # Optional enrichment block (normalized if present)
+        enrichment_block = None
+        try:
+            if (payload.metadata or {}).get("enrichment"):
+                enrichment_block = normalize_enrichment(
+                    payload.metadata.get("enrichment")
+                ).model_dump()
+        except Exception:
+            enrichment_block = None
+
+        record = DocumentRecord(
+            source_url=payload.source_url,
+            canonical_url=canonical,
+            domain=domain,
+            title=payload.title,
+            content_type=payload.content_type or "web",
+            lang=payload.lang,
+            raw_markdown=payload.raw_markdown,
+            cleaned_text=cleaned_text,
+            tokens=tokens,
+            hash=content_hash,
+            summary=(payload.summary.model_dump() if payload.summary else None),
+            topics=payload.topics,
+            entities=None,
+            tags=payload.tags or [],
+            embedding=payload.embedding,
+            captured_at=captured_at,
+            captured_hour=captured_hour,
+            day_bucket=day_bucket,
+            published_at=payload.published_at,
+            processed_at=payload.processed_at or now,
+            created_at=now,
+            updated_at=now,
+            session_id=_maybe_object_id(payload.session_id),
+            agent_run_id=None,
+            metadata=payload.metadata or {},
+            enrichment=enrichment_block,
+        )
 
         duplicate = False
         try:
-            res = self._documents.insert_one(doc)
+            res = self._documents.insert_one(record.model_dump())
             doc_id = res.inserted_id
         except DuplicateKeyError:
             duplicate = True
@@ -241,27 +254,29 @@ class DocStorageService:
             doc_id = existing["_id"]
 
         chunk_ids: List[str] = []
-        if payload.chunks:
+        chunk_payloads = payload.chunks
+        if (not chunk_payloads) and cleaned_text:
+            chunk_payloads = _CHUNKING_SERVICE.chunk(cleaned_text)
+        if chunk_payloads:
             chunk_docs: List[Dict[str, Any]] = []
-            for ch in payload.chunks:
+            for ch in chunk_payloads:
                 ctokens = ch.tokens if ch.tokens is not None else _token_count(ch.text)
-                chunk_docs.append(
-                    {
-                        "doc_id": doc_id,
-                        "idx": ch.idx,
-                        "text": ch.text,
-                        "tokens": ctokens,
-                        "section": ch.section,
-                        "char_start": ch.char_start,
-                        "char_end": ch.char_end,
-                        "embedding": ch.embedding,
-                        "topics": None,
-                        "captured_at": captured_at,
-                        "captured_hour": captured_hour,
-                        "day_bucket": day_bucket,
-                        "created_at": now,
-                    }
+                chunk_record = DocChunkRecord(
+                    doc_id=doc_id,
+                    idx=ch.idx,
+                    text=ch.text,
+                    tokens=ctokens,
+                    section=ch.section,
+                    char_start=ch.char_start,
+                    char_end=ch.char_end,
+                    embedding=ch.embedding,
+                    topics=None,
+                    captured_at=captured_at,
+                    captured_hour=captured_hour,
+                    day_bucket=day_bucket,
+                    created_at=now,
                 )
+                chunk_docs.append(chunk_record.model_dump())
             if chunk_docs:
                 r = self._chunks.insert_many(chunk_docs)
                 chunk_ids = [str(i) for i in r.inserted_ids]
