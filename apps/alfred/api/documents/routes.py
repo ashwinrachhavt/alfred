@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
 from bson import ObjectId
@@ -14,8 +15,10 @@ from alfred.schemas.documents import (
     NotesListResponse,
 )
 from alfred.services.doc_storage import DocStorageService
+from alfred.services.text_cleaning import TextCleaningService
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+logger = logging.getLogger(__name__)
 
 
 # Notes: Quick capture endpoints
@@ -90,10 +93,14 @@ def create_page(
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> PageResponse:
     try:
+        cleaner = TextCleaningService()
+        cleaned_text = cleaner.clean(payload.raw_text)
+        if not (cleaned_text or "").strip():
+            cleaned_text = payload.raw_text
         ingest = DocumentIngest(
             source_url=(payload.page_url or "about:blank"),
             title=payload.page_title,
-            cleaned_text=payload.raw_text,
+            cleaned_text=cleaned_text,
             content_type="web",
         )
         res = svc.ingest_document(ingest)
@@ -102,6 +109,7 @@ def create_page(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # pragma: no cover - external IO
+        logger.exception("Page extract ingestion failed: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to ingest page") from exc
 
 

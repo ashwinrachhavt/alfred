@@ -127,6 +127,26 @@ class Settings(BaseSettings):
         alias="COMPANY_RESEARCH_COLLECTION",
     )
 
+    # Text cleaning
+    text_cleaning_strategy: str = Field(
+        default="basic", alias="TEXT_CLEANING_STRATEGY"
+    )  # one of: basic, langextract, llm
+    text_cleaning_langextract_model: str = Field(
+        default="gpt-4o-mini", alias="TEXT_CLEANING_LANGEXTRACT_MODEL"
+    )
+    text_cleaning_langextract_passes: int = Field(
+        default=1, alias="TEXT_CLEANING_LANGEXTRACT_PASSES", ge=1, le=5
+    )
+    text_cleaning_langextract_workers: int = Field(
+        default=0, alias="TEXT_CLEANING_LANGEXTRACT_WORKERS", ge=0, le=64
+    )  # 0 -> library default
+    text_cleaning_langextract_char_buffer: int = Field(
+        default=0, alias="TEXT_CLEANING_LANGEXTRACT_CHAR_BUFFER", ge=0, le=10000
+    )  # 0 -> disabled, else e.g. 1000
+    text_cleaning_model_url: str | None = Field(
+        default=None, alias="TEXT_CLEANING_MODEL_URL"
+    )  # e.g., Ollama http://localhost:11434
+
     calendar_slot_duration_minutes: int = Field(
         default=30,
         alias="CALENDAR_SLOT_DURATION_MINUTES",

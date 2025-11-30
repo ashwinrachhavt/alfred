@@ -33,8 +33,13 @@ from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
 
 from alfred.connectors.mongo_connector import MongoConnector
-from alfred.schemas.documents import DocumentIngest, NoteCreate
-from alfred.schemas.mongo_records import DocChunkRecord, DocumentRecord, NoteRecord
+from alfred.schemas.documents import (
+    DocChunkRecord,
+    DocumentIngest,
+    DocumentRecord,
+    NoteCreate,
+    NoteRecord,
+)
 from alfred.services.chunking import ChunkingService
 from alfred.services.enrichment_normalization import normalize_enrichment
 
@@ -254,32 +259,46 @@ class DocStorageService:
             doc_id = existing["_id"]
 
         chunk_ids: List[str] = []
-        chunk_payloads = payload.chunks
-        if (not chunk_payloads) and cleaned_text:
-            chunk_payloads = _CHUNKING_SERVICE.chunk(cleaned_text)
-        if chunk_payloads:
-            chunk_docs: List[Dict[str, Any]] = []
-            for ch in chunk_payloads:
-                ctokens = ch.tokens if ch.tokens is not None else _token_count(ch.text)
-                chunk_record = DocChunkRecord(
-                    doc_id=doc_id,
-                    idx=ch.idx,
-                    text=ch.text,
-                    tokens=ctokens,
-                    section=ch.section,
-                    char_start=ch.char_start,
-                    char_end=ch.char_end,
-                    embedding=ch.embedding,
-                    topics=None,
-                    captured_at=captured_at,
-                    captured_hour=captured_hour,
-                    day_bucket=day_bucket,
-                    created_at=now,
+        try:
+            chunk_payloads = payload.chunks
+            if (not chunk_payloads) and (cleaned_text or (payload.raw_markdown or "").strip()):
+                # Prefer markdown source if provided to enable header-aware chunking
+                src_text = payload.raw_markdown or cleaned_text
+                chunk_payloads = _CHUNKING_SERVICE.chunk(
+                    src_text,
+                    max_tokens=tokens if tokens and tokens > 0 else 500,
+                    overlap=min(100, int((tokens or 500) * 0.2)),
+                    content_type=(
+                        "markdown" if payload.raw_markdown else (payload.content_type or "web")
+                    ),
+                    mode="auto",
                 )
-                chunk_docs.append(chunk_record.model_dump())
-            if chunk_docs:
-                r = self._chunks.insert_many(chunk_docs)
-                chunk_ids = [str(i) for i in r.inserted_ids]
+            if chunk_payloads:
+                chunk_docs: List[Dict[str, Any]] = []
+                for ch in chunk_payloads:
+                    ctokens = ch.tokens if ch.tokens is not None else _token_count(ch.text)
+                    chunk_record = DocChunkRecord(
+                        doc_id=doc_id,
+                        idx=ch.idx,
+                        text=ch.text,
+                        tokens=ctokens,
+                        section=ch.section,
+                        char_start=ch.char_start,
+                        char_end=ch.char_end,
+                        embedding=ch.embedding,
+                        topics=None,
+                        captured_at=captured_at,
+                        captured_hour=captured_hour,
+                        day_bucket=day_bucket,
+                        created_at=now,
+                    )
+                    chunk_docs.append(chunk_record.model_dump())
+                if chunk_docs:
+                    r = self._chunks.insert_many(chunk_docs)
+                    chunk_ids = [str(i) for i in r.inserted_ids]
+        except Exception:
+            # Non-fatal: proceed without chunks
+            chunk_ids = []
 
         return {
             "id": str(doc_id),
