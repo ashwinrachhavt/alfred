@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from alfred.api.mind_palace import routes as mp_routes
+from alfred.api.documents import routes as doc_routes
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -42,12 +42,12 @@ class _FakeDocStorage:
 
 def _app_with_fake_service() -> TestClient:
     app = FastAPI()
-    app.include_router(mp_routes.router)
+    app.include_router(doc_routes.router)
 
     fake = _FakeDocStorage()
 
     # Override dependency to use fake service
-    app.dependency_overrides[mp_routes.get_doc_storage_service] = lambda: fake
+    app.dependency_overrides[doc_routes.get_doc_storage_service] = lambda: fake
 
     return TestClient(app)
 
@@ -55,7 +55,7 @@ def _app_with_fake_service() -> TestClient:
 def test_create_note_happy_path():
     client = _app_with_fake_service()
     resp = client.post(
-        "/api/mind-palace/notes",
+        "/api/documents/notes",
         json={"text": "hello world", "source_url": "https://example.com"},
     )
     assert resp.status_code == 201
@@ -69,21 +69,22 @@ def test_create_note_happy_path():
 
 def test_create_note_validation_error():
     client = _app_with_fake_service()
-    resp = client.post("/api/mind-palace/notes", json={"text": "   "})
+    resp = client.post("/api/documents/notes", json={"text": "   "})
     # Validation occurs at request model parsing (422)
     assert resp.status_code == 422
 
 
 def test_list_notes_basic_pagination_and_filtering():
     client = _app_with_fake_service()
-    client.post("/api/mind-palace/notes", json={"text": "alpha"})
-    client.post("/api/mind-palace/notes", json={"text": "beta"})
-    client.post("/api/mind-palace/notes", json={"text": "alphabet"})
+    client.post("/api/documents/notes", json={"text": "alpha"})
+    client.post("/api/documents/notes", json={"text": "beta"})
+    client.post("/api/documents/notes", json={"text": "alphabet"})
 
-    resp = client.get("/api/mind-palace/notes", params={"q": "alp", "skip": 0, "limit": 10})
+    resp = client.get("/api/documents/notes", params={"q": "alp", "skip": 0, "limit": 10})
     assert resp.status_code == 200
     data = resp.json()
     assert data["total"] == 2
     assert len(data["items"]) == 2
     texts = [item["text"] for item in data["items"]]
     assert set(texts) == {"alpha", "alphabet"}
+
