@@ -57,4 +57,3 @@ if __name__ == "__main__":
     repo_root = Path(__file__).resolve().parents[1]
     count = cleanup(repo_root)
     logger.info("Removed %d bytecode artifacts", count)
-

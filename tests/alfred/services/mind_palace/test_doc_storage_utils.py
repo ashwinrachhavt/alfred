@@ -45,4 +45,3 @@ def test_maybe_object_id():
     assert _maybe_object_id(str(oid)) == oid
     assert _maybe_object_id("not-an-oid") is None
     assert _maybe_object_id(None) is None
-

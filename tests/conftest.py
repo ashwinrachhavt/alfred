@@ -9,8 +9,8 @@ API keys to avoid accidental HTTP calls.
 
 from __future__ import annotations
 
-import os
 import socket
+
 import pytest
 
 

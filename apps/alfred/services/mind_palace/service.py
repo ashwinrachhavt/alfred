@@ -106,7 +106,9 @@ class MindPalaceService:
         doc = self._mongo.find_one({"_id": oid})
         if not doc:
             return False
-        self._mongo.update_one({"_id": oid}, {"$set": {"status": "enriching", "updated_at": datetime.utcnow()}})
+        self._mongo.update_one(
+            {"_id": oid}, {"$set": {"status": "enriching", "updated_at": datetime.utcnow()}}
+        )
         try:
             result = self._enricher.run(
                 raw_text=doc.get("raw_text", ""),
@@ -136,7 +138,13 @@ class MindPalaceService:
         except Exception as exc:
             self._mongo.update_one(
                 {"_id": oid},
-                {"$set": {"status": "error", "error_message": str(exc), "updated_at": datetime.utcnow()}},
+                {
+                    "$set": {
+                        "status": "error",
+                        "error_message": str(exc),
+                        "updated_at": datetime.utcnow(),
+                    }
+                },
             )
             return False
 
@@ -147,7 +155,9 @@ class MindPalaceService:
             return None
         return _serialize_id(self._mongo.find_one({"_id": oid}))
 
-    def search(self, *, q: str | None, topic: str | None, domain: str | None, limit: int = 20) -> list[dict[str, Any]]:
+    def search(
+        self, *, q: str | None, topic: str | None, domain: str | None, limit: int = 20
+    ) -> list[dict[str, Any]]:
         filter_: dict[str, Any] = {}
         if topic:
             filter_["$or"] = [
@@ -159,27 +169,33 @@ class MindPalaceService:
         if domain:
             filter_["source.domain"] = {"$regex": f"^{domain}$", "$options": "i"}
         if q:
-            filter_ = {
-                "$and": [
-                    filter_,
-                    {
-                        "$or": [
-                            {"summary": {"$regex": q, "$options": "i"}},
-                            {"raw_text": {"$regex": q, "$options": "i"}},
-                            {"highlights.bullet": {"$regex": q, "$options": "i"}},
-                            {"insights.statement": {"$regex": q, "$options": "i"}},
-                        ]
-                    },
-                ]
-            } if filter_ else {
-                "$or": [
-                    {"summary": {"$regex": q, "$options": "i"}},
-                    {"raw_text": {"$regex": q, "$options": "i"}},
-                    {"highlights.bullet": {"$regex": q, "$options": "i"}},
-                    {"insights.statement": {"$regex": q, "$options": "i"}},
-                ]
-            }
-        rows = self._mongo.find_many(filter_, sort=[("created_at", -1)], limit=max(1, min(limit, 100)))
+            filter_ = (
+                {
+                    "$and": [
+                        filter_,
+                        {
+                            "$or": [
+                                {"summary": {"$regex": q, "$options": "i"}},
+                                {"raw_text": {"$regex": q, "$options": "i"}},
+                                {"highlights.bullet": {"$regex": q, "$options": "i"}},
+                                {"insights.statement": {"$regex": q, "$options": "i"}},
+                            ]
+                        },
+                    ]
+                }
+                if filter_
+                else {
+                    "$or": [
+                        {"summary": {"$regex": q, "$options": "i"}},
+                        {"raw_text": {"$regex": q, "$options": "i"}},
+                        {"highlights.bullet": {"$regex": q, "$options": "i"}},
+                        {"insights.statement": {"$regex": q, "$options": "i"}},
+                    ]
+                }
+            )
+        rows = self._mongo.find_many(
+            filter_, sort=[("created_at", -1)], limit=max(1, min(limit, 100))
+        )
         out: list[dict[str, Any]] = []
         for r in rows:
             sr = _serialize_id(r)
@@ -195,7 +211,12 @@ class MindPalaceService:
             coll.create_index([("source.domain", 1)], name="source_domain")
             try:
                 coll.create_index(
-                    [("summary", "text"), ("raw_text", "text"), ("highlights.bullet", "text"), ("insights.statement", "text")],
+                    [
+                        ("summary", "text"),
+                        ("raw_text", "text"),
+                        ("highlights.bullet", "text"),
+                        ("insights.statement", "text"),
+                    ],
                     name="text_search",
                     default_language="english",
                 )

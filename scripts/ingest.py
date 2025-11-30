@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import sys
 from hashlib import md5
 from pathlib import Path
 from typing import List
@@ -109,6 +108,7 @@ def load_web(urls: List[str]) -> List[Document]:
     depth = int(os.getenv("RECURSIVE_DEPTH", "0"))
     if depth > 0:
         import importlib.util
+
         if importlib.util.find_spec("bs4") is not None:
             from bs4 import BeautifulSoup  # type: ignore
         else:

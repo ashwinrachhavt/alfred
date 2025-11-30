@@ -25,6 +25,7 @@ class EnrichmentService:
             return self._heuristic(text, url=url, title=title)
         # Prefer DSPy pipeline if available
         import importlib.util
+
         if importlib.util.find_spec("dspy") is not None:
             try:
                 return self._run_dspy(text=text, url=url, title=title)
@@ -45,7 +46,9 @@ class EnrichmentService:
     # -----------------
     # LangGraph pipeline
     # -----------------
-    def _run_langgraph(self, *, text: str, url: Optional[str], title: Optional[str]) -> EnrichmentResult:
+    def _run_langgraph(
+        self, *, text: str, url: Optional[str], title: Optional[str]
+    ) -> EnrichmentResult:
         from langgraph.graph import StateGraph
 
         class GState(TypedDict, total=False):
@@ -63,7 +66,9 @@ class EnrichmentService:
         def _summary_node(state: GState) -> dict[str, Any]:
             sys = load_prompt("mind_palace", "system.md")
             prm = load_prompt("mind_palace", "summary.md").format(
-                title=state.get("title", "Untitled"), url=state.get("url", "N/A"), text=state.get("text", "")
+                title=state.get("title", "Untitled"),
+                url=state.get("url", "N/A"),
+                text=state.get("text", ""),
             )
             data = self._openai_json(system=sys, user=prm)
             return {
@@ -74,7 +79,10 @@ class EnrichmentService:
         def _highlights_node(state: GState) -> dict[str, Any]:
             sys = load_prompt("mind_palace", "system.md")
             prm = load_prompt("mind_palace", "highlights.md").format(
-                title=state.get("title", "Untitled"), url=state.get("url", "N/A"), text=state.get("text", ""), summary=state.get("summary", "")
+                title=state.get("title", "Untitled"),
+                url=state.get("url", "N/A"),
+                text=state.get("text", ""),
+                summary=state.get("summary", ""),
             )
             data = self._openai_json(system=sys, user=prm)
             return {"highlights": data.get("highlights") or []}
@@ -82,7 +90,10 @@ class EnrichmentService:
         def _insights_node(state: GState) -> dict[str, Any]:
             sys = load_prompt("mind_palace", "system.md")
             prm = load_prompt("mind_palace", "insights.md").format(
-                title=state.get("title", "Untitled"), url=state.get("url", "N/A"), text=state.get("text", ""), summary=state.get("summary", "")
+                title=state.get("title", "Untitled"),
+                url=state.get("url", "N/A"),
+                text=state.get("text", ""),
+                summary=state.get("summary", ""),
             )
             data = self._openai_json(system=sys, user=prm)
             return {"insights": data.get("insights") or []}
@@ -90,18 +101,25 @@ class EnrichmentService:
         def _tags_node(state: GState) -> dict[str, Any]:
             sys = load_prompt("mind_palace", "system.md")
             prm = load_prompt("mind_palace", "tags.md").format(
-                title=state.get("title", "Untitled"), url=state.get("url", "N/A"), text=state.get("text", ""), summary=state.get("summary", "")
+                title=state.get("title", "Untitled"),
+                url=state.get("url", "N/A"),
+                text=state.get("text", ""),
+                summary=state.get("summary", ""),
             )
             data = self._openai_json(system=sys, user=prm)
             return {
                 "tags": data.get("tags") or [],
-                "topic_graph": data.get("topic_graph") or {"primary_node": None, "related_nodes": []},
+                "topic_graph": data.get("topic_graph")
+                or {"primary_node": None, "related_nodes": []},
             }
 
         def _domain_node(state: GState) -> dict[str, Any]:
             sys = load_prompt("mind_palace", "system.md")
             prm = load_prompt("mind_palace", "domain.md").format(
-                title=state.get("title", "Untitled"), url=state.get("url", "N/A"), text=state.get("text", ""), summary=state.get("summary", "")
+                title=state.get("title", "Untitled"),
+                url=state.get("url", "N/A"),
+                text=state.get("text", ""),
+                summary=state.get("summary", ""),
             )
             data = self._openai_json(system=sys, user=prm)
             return {"domain_summary": data.get("domain_summary") or ""}
@@ -142,11 +160,16 @@ class EnrichmentService:
     # -----------------
     # Single-call JSON (fallback)
     # -----------------
-    def _single_call_json(self, *, text: str, url: Optional[str], title: Optional[str]) -> EnrichmentResult:
+    def _single_call_json(
+        self, *, text: str, url: Optional[str], title: Optional[str]
+    ) -> EnrichmentResult:
         from openai import OpenAI
+
         client = OpenAI(api_key=settings.openai_api_key)
         system = load_prompt("mind_palace", "system.md")
-        enrich = load_prompt("mind_palace", "enrich.md").format(title=title or "Untitled", url=url or "N/A", text=text[:12000])
+        enrich = load_prompt("mind_palace", "enrich.md").format(
+            title=title or "Untitled", url=url or "N/A", text=text[:12000]
+        )
         resp = client.chat.completions.create(
             model=settings.openai_model or "gpt-4o-mini",
             temperature=0.2,
@@ -173,6 +196,7 @@ class EnrichmentService:
     # -----------------
     def _openai_json(self, *, system: str, user: str) -> dict[str, Any]:
         from openai import OpenAI
+
         client = OpenAI(api_key=settings.openai_api_key)
         resp = client.chat.completions.create(
             model=settings.openai_model or "gpt-4o-mini",
@@ -190,10 +214,15 @@ class EnrichmentService:
         import dspy
 
         # Configure DSPy LM with OpenAI
-        dspy.settings.configure(lm=dspy.OpenAI(model=settings.openai_model or "gpt-4o-mini", api_key=settings.openai_api_key))
+        dspy.settings.configure(
+            lm=dspy.OpenAI(
+                model=settings.openai_model or "gpt-4o-mini", api_key=settings.openai_api_key
+            )
+        )
 
         class SummSig(dspy.Signature):
             """Summarize page and pick topic_category."""
+
             title = dspy.InputField(desc="page title")
             url = dspy.InputField(desc="page url")
             text = dspy.InputField(desc="page text")
@@ -202,6 +231,7 @@ class EnrichmentService:
 
         class HighlightsSig(dspy.Signature):
             """Return JSON array of highlights objects with bullet, importance, section_hint."""
+
             title = dspy.InputField()
             url = dspy.InputField()
             text = dspy.InputField()
@@ -210,6 +240,7 @@ class EnrichmentService:
 
         class InsightsSig(dspy.Signature):
             """Return JSON array of insights objects with statement, type, est_novelty."""
+
             title = dspy.InputField()
             url = dspy.InputField()
             text = dspy.InputField()
@@ -218,6 +249,7 @@ class EnrichmentService:
 
         class TagsSig(dspy.Signature):
             """Return JSON with tags array and topic_graph object."""
+
             title = dspy.InputField()
             url = dspy.InputField()
             text = dspy.InputField()
@@ -226,6 +258,7 @@ class EnrichmentService:
 
         class DomainSig(dspy.Signature):
             """Return JSON with domain_summary field."""
+
             title = dspy.InputField()
             url = dspy.InputField()
             text = dspy.InputField()
@@ -243,8 +276,12 @@ class EnrichmentService:
         summary = (s.summary or "").strip()
         topic_category = (s.topic_category or "general").strip()
 
-        h = highlights(title=title or "Untitled", url=url or "N/A", text=text[:12000], summary=summary)
-        i = insights(title=title or "Untitled", url=url or "N/A", text=text[:12000], summary=summary)
+        h = highlights(
+            title=title or "Untitled", url=url or "N/A", text=text[:12000], summary=summary
+        )
+        i = insights(
+            title=title or "Untitled", url=url or "N/A", text=text[:12000], summary=summary
+        )
         t = tags(title=title or "Untitled", url=url or "N/A", text=text[:12000], summary=summary)
         d = domain(title=title or "Untitled", url=url or "N/A", text=text[:12000], summary=summary)
 
@@ -298,16 +335,20 @@ class EnrichmentService:
         for line in text.splitlines():
             line_str = line.strip()
             if line_str.startswith("-") or line_str.startswith("*"):
-                bullets.append({
-                    "bullet": line_str.lstrip("-* ").strip(),
-                    "importance": "medium",
-                    "section_hint": None,
-                })
+                bullets.append(
+                    {
+                        "bullet": line_str.lstrip("-* ").strip(),
+                        "importance": "medium",
+                        "section_hint": None,
+                    }
+                )
             if len(bullets) >= limit:
                 break
         return bullets
 
-    def _heuristic(self, text: str, *, url: Optional[str], title: Optional[str]) -> EnrichmentResult:
+    def _heuristic(
+        self, text: str, *, url: Optional[str], title: Optional[str]
+    ) -> EnrichmentResult:
         summary = self._first_sentences(text, 5) or (text[:400] + ("…" if len(text) > 400 else ""))
         highlights = self._extract_bullets(text)
         if not highlights:

@@ -144,6 +144,8 @@ class Settings(BaseSettings):
         default=None,
         alias="CALENDAR_ORGANIZER_EMAIL",
     )
+
+
 settings = Settings()
 
 if settings.python_dont_write_bytecode:

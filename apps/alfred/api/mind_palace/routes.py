@@ -12,6 +12,7 @@ from alfred.services.mind_palace.service import MindPalaceService
 
 router = APIRouter(prefix="/api/mind-palace", tags=["mind-palace"])
 
+
 def get_service() -> MindPalaceService:
     svc = MindPalaceService(extractor=ExtractionService(), enricher=EnrichmentService())
     try:

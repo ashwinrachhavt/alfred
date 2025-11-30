@@ -48,4 +48,3 @@ if __name__ == "__main__":
             logger.error(" - %s", p)
         sys.exit(1)
     logger.info("No bytecode artifacts found.")
-

@@ -425,7 +425,11 @@ class DocStorageService:
                     "topics": d.get("topics"),
                     "captured_at": d.get("captured_at"),
                     "tokens": d.get("tokens"),
-                    "summary": ((d.get("summary") or {}).get("short") if isinstance(d.get("summary"), dict) else None),
+                    "summary": (
+                        (d.get("summary") or {}).get("short")
+                        if isinstance(d.get("summary"), dict)
+                        else None
+                    ),
                 }
             )
         total = self._documents.count_documents(filt)
@@ -463,7 +467,7 @@ class DocStorageService:
         )
         items = []
         for c in cursor:
-            text = (c.get("text") or "")
+            text = c.get("text") or ""
             preview = text[:260]
             items.append(
                 {
@@ -477,4 +481,3 @@ class DocStorageService:
             )
         total = self._chunks.count_documents(filt)
         return {"items": items, "total": total, "skip": skip, "limit": limit}
-

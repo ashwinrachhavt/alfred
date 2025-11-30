@@ -27,6 +27,7 @@ def persist_research_run(
     try:
         clean_state = json.loads(json.dumps(state, default=str))
         from alfred.models.research import ResearchRun  # type: ignore
+
         record = ResearchRun(
             query=query,
             target_length_words=target_length_words,
