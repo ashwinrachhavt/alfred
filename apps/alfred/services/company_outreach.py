@@ -5,6 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Optional, TypedDict
 
+from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
@@ -13,6 +14,8 @@ from alfred.prompts import load_prompt
 from alfred.services.agentic_rag import create_retriever_tool, make_llm, make_retriever
 from alfred.services.company_researcher import CompanyResearchService
 from alfred.services.web_search import search_web
+
+load_dotenv()
 
 _company_research_service = CompanyResearchService()
 

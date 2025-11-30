@@ -15,6 +15,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v3
         with:
@@ -28,13 +33,13 @@ jobs:
           restore-keys: ${{ runner.os }}-uv-
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: make install
 
       - name: Lint
-        run: uv run ruff check apps/alfred tests
+        run: make lint
 
       - name: Tests
-        run: uv run pytest -q
+        run: make test
 
       - name: Ensure no bytecode artifacts
-        run: uv run python scripts/check_no_bytecode.py
+        run: make check-no-bytecode

@@ -63,15 +63,7 @@ def build_system_prompt(mode: str = "minimal") -> str:
 
 
 # ------------------------ HELPERS ------------------------
-def _load_env() -> None:
-    """Environment is loaded via sitecustomize when apps/ is on sys.path.
-    This function remains for backward compatibility and is now a no-op.
-    """
-    return None
-
-
 def make_llm(temperature: float = 0.2):
-    _load_env()
     try:
         return ChatOpenAI(model=CHAT_MODEL, temperature=temperature)
     except Exception:

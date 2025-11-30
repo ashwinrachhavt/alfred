@@ -148,13 +148,8 @@ class DDGClient:
         retries: int = 2,
         backoff_factor: float = 0.4,
     ) -> None:
-        try:
-            from duckduckgo_search import DDGS  # type: ignore
-            from duckduckgo_search.exceptions import RatelimitException  # type: ignore
-        except ImportError as exc:  # pragma: no cover - optional dependency
-            raise ImportError(
-                "Optional dependency 'duckduckgo_search' not found; DDG client disabled."
-            ) from exc
+        from duckduckgo_search import DDGS  # type: ignore
+        from duckduckgo_search.exceptions import RatelimitException  # type: ignore
 
         self._DDGS = DDGS
         self._ratelimit_exc: type[Exception] = RatelimitException
@@ -307,13 +302,7 @@ class TavilyClient:
     ):
         if not _env("TAVILY_API_KEY"):
             raise RuntimeError("TAVILY_API_KEY is not set")
-        try:
-            from langchain_tavily import TavilySearch
-        except ImportError:
-            TavilySearch = None
-            logging.warning(
-                "Optional dependency 'langchain_tavily' not found; Tavily client disabled."
-            )
+        from langchain_tavily import TavilySearch
 
         self.tool = TavilySearch(
             max_results=max_results,
@@ -347,12 +336,7 @@ class YouClient:
 
 class SearxClient:
     def __init__(self, host: Optional[str] = None, k: int = 10):
-        try:
-            from langchain_community.utilities import SearxSearchWrapper  # type: ignore
-        except ImportError as exc:  # pragma: no cover - optional dependency
-            raise ImportError(
-                "Optional dependency 'langchain-community' missing Searx wrapper; Searx client disabled."
-            ) from exc
+        from langchain_community.utilities import SearxSearchWrapper  # type: ignore
 
         self._host = host or _env("SEARXNG_HOST") or _env("SEARX_HOST")
         if not self._host:
@@ -498,27 +482,34 @@ class WebConnector:
     ) -> None:
         self.clients: dict[Provider, Any] = {}
         if _env("EXA_API_KEY"):
-            self.clients["exa"] = ExaClient(default_num_results=exa_num_results)
+            try:
+                self.clients["exa"] = ExaClient(default_num_results=exa_num_results)
+            except ImportError as exc:
+                logging.warning("Exa client disabled: %s", exc)
         if _env("TAVILY_API_KEY"):
-            self.clients["tavily"] = TavilyClient(
-                max_results=tavily_max_results, topic=tavily_topic
-            )
+            try:
+                self.clients["tavily"] = TavilyClient(
+                    max_results=tavily_max_results, topic=tavily_topic
+                )
+            except ImportError as exc:
+                logging.warning("Tavily client disabled: %s", exc)
         if _env("BRAVE_SEARCH_API_KEY"):
             self.clients["brave"] = BraveClient(count=brave_count)
         if _env("YDC_API_KEY"):
-            self.clients["you"] = YouClient(num_web_results=you_num_results)
+            try:
+                self.clients["you"] = YouClient(num_web_results=you_num_results)
+            except ImportError as exc:
+                logging.warning("You.com client disabled: %s", exc)
         try:
             self.clients["ddg"] = DDGClient(max_results=ddg_max_results)
-        except ImportError:
-            logging.warning(
-                "Optional dependency 'duckduckgo_search' not found; DDG client disabled."
-            )
+        except ImportError as exc:
+            logging.warning("DDG client disabled: %s", exc)
         # SearxNG client (enabled when SEARXNG_HOST/SEARX_HOST is set and langchain-community is present)
         try:
             if _env("SEARXNG_HOST") or _env("SEARX_HOST"):
                 self.clients["searx"] = SearxClient(k=searx_k)
         except Exception as exc:
-            logging.warning(f"Searx client not available: {exc}")
+            logging.warning("Searx client not available: %s", exc)
         # Langsearch client (enabled when LANGSEARCH_API_KEY present)
         try:
             if _env("LANGSEARCH_API_KEY"):

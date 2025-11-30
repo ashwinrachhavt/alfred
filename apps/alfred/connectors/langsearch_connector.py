@@ -11,12 +11,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 import requests
 from requests import Response, Session
 from requests.adapters import HTTPAdapter
+from tinydb import TinyDB
 from urllib3.util.retry import Retry
-
-try:
-    from tinydb import TinyDB
-except ImportError:  # pragma: no cover - optional dependency
-    TinyDB = None  # type: ignore[assignment]
 
 from alfred.core.config import settings
 
@@ -105,13 +101,11 @@ class LangSearchClient:
 
         storage_path = db_path or settings.langsearch_db_path
         self.db: Optional[Any]
-        if storage_path and TinyDB is not None:
+        if storage_path:
             path_obj = Path(storage_path)
             path_obj.parent.mkdir(parents=True, exist_ok=True)
             self.db = TinyDB(path_obj)
         else:
-            if storage_path and TinyDB is None:
-                logger.info("TinyDB is not installed; LangSearch results will not be persisted.")
             self.db = None
 
     def _build_session(self) -> Session:

@@ -4,30 +4,19 @@ from pathlib import Path
 from typing import Optional
 
 from pydantic import AnyHttpUrl, Field
-from pydantic_settings import BaseSettings
-
-# Load environment from project .env early so Settings can pick it up.
-# Skip if already handled by `apps/sitecustomize.py`.
-if os.environ.get("ALFRED_ENV_LOADED") != "1":
-    try:  # optional dependency
-        from dotenv import load_dotenv  # type: ignore
-
-        # Load env from package-local .env first (alfred/.env)
-        _PKG_ENV = Path(__file__).resolve().parents[1] / ".env"
-        if _PKG_ENV.exists():
-            load_dotenv(_PKG_ENV)
-        else:
-            # Fallback to repo root .env if present
-            _ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
-            if _ROOT_ENV.exists():
-                load_dotenv(_ROOT_ENV)
-    except Exception:
-        pass
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "alfred.db"
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=[
+            str((Path(__file__).resolve().parent / ".env")),
+            str((Path(__file__).resolve().parents[2] / ".env")),
+        ],
+        extra="ignore",
+    )
     app_env: str = Field(default="dev", alias="APP_ENV")
     secret_key: str = Field(default="dev", alias="SECRET_KEY")
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
@@ -155,11 +144,6 @@ class Settings(BaseSettings):
         default=None,
         alias="CALENDAR_ORGANIZER_EMAIL",
     )
-
-
-class Config:
-    env_file = "alfred/.env"
-    extra = "ignore"
 
 
 settings = Settings()
