@@ -3,17 +3,21 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
 from pydantic import AnyHttpUrl, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "alfred.db"
 
+load_dotenv()
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
+        # Load env vars from apps/alfred/.env first, then repo root .env
         env_file=[
-            str((Path(__file__).resolve().parent / ".env")),
-            str((Path(__file__).resolve().parents[2] / ".env")),
+            str((Path(__file__).resolve().parents[1] / ".env")),  # apps/alfred/.env
+            str((Path(__file__).resolve().parents[3] / ".env")),  # repo root .env
         ],
         extra="ignore",
     )
@@ -144,6 +148,13 @@ class Settings(BaseSettings):
         default=None,
         alias="CALENDAR_ORGANIZER_EMAIL",
     )
+
+    # MongoDB Lens MCP
+    mcp_server_url: Optional[str] = Field(default="http://localhost:8001", alias="MCP_SERVER_URL")
+    mcp_database: Optional[str] = Field(default=None, alias="MCP_DATABASE")
+
+    # Agent tracing (LangGraph reasoning trace)
+    enable_agent_trace: bool = Field(default=False, alias="ENABLE_AGENT_TRACE")
 
 
 settings = Settings()

@@ -17,3 +17,12 @@ apps/alfred/alfred.db
 # Python bytecode and caches
 __pycache__/
 *.py[cod]
+
+# Packaging artifacts
+*.egg-info/
+*.dist-info/
+build/
+dist/
+apps/alfred.egg-info/
+
+mlruns

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from alfred.api import register_routes
 from alfred.core.config import settings
 from alfred.core.logging import setup_logging
-from alfred.services.mind_palace.doc_storage import DocStorageService
+from alfred.services.doc_storage import DocStorageService
 
 # Bytecode disabling is controlled via environment (Makefile/Docker) or settings.
 

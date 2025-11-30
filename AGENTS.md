@@ -195,6 +195,42 @@ The current backend stack includes:
 
 ---
 
+## Global LLM Service
+
+Provider-agnostic LLM spine with two layers:
+
+- Factory (LangChain/LangGraph): `alfred/core/llm_factory.py`
+  - `get_chat_model(...)`, `get_embedding_model(...)`
+- Service: `alfred/services/llm_service.py`
+  - `chat`, `chat_stream`, `structured` (OpenAI JSON -> Pydantic)
+
+Usage
+```python
+from alfred.core.llm_factory import get_chat_model
+from alfred.services.llm_service import LLMService
+
+llm = get_chat_model()  # uses ALFRED_* defaults
+
+from pydantic import BaseModel
+class Quiz(BaseModel):
+    topic: str
+    questions: list[str]
+
+quiz = LLMService().structured(
+    [
+        {"role": "system", "content": "Return valid JSON only."},
+        {"role": "user", "content": "Generate a short quiz about LangGraph."},
+    ],
+    schema=Quiz,
+)
+```
+
+Notes
+- Prefer the factory in agents; use `LLMService.structured()` for strict JSON.
+- Defaults come from `ALFRED_*` env vars (see `alfred/core/llm_config.py`).
+
+---
+
 ## CI
 
 GitHub Actions runs on `push` and `pull_request` to `main` / `master`:

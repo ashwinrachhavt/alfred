@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from alfred.services.mind_palace.doc_storage import (
+from alfred.services.doc_storage import (
     _domain_from_url,
     _maybe_object_id,
     _sha256_hex,

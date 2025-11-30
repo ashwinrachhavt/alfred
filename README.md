@@ -104,6 +104,39 @@ docker compose -f infra/docker-compose.yml up --build
   - Check availability with `importlib.util.find_spec('pkg')` and fall back, or
   - Catch `ImportError` only at instantiation time and log a clear message.
 
+## Global LLM Service
+
+Provider-agnostic LLM spine:
+
+- Factory (LangChain/LangGraph): `alfred/core/llm_factory.py`
+  - `get_chat_model(...)`, `get_embedding_model(...)`
+- Service: `alfred/services/llm_service.py`
+  - `chat`, `chat_stream`, `structured` (OpenAI JSON -> Pydantic)
+
+Usage
+```python
+from alfred.core.llm_factory import get_chat_model
+from alfred.services.llm_service import LLMService
+
+llm = get_chat_model()  # uses ALFRED_* defaults
+
+from pydantic import BaseModel
+class Quiz(BaseModel):
+    topic: str
+    questions: list[str]
+
+quiz = LLMService().structured(
+    [
+        {"role": "system", "content": "Return valid JSON only."},
+        {"role": "user", "content": "Generate a short quiz about LangGraph."},
+    ],
+    schema=Quiz,
+)
+```
+
+Tip
+- Override provider/model via `ALFRED_*` env vars (see `alfred/core/llm_config.py`).
+
 ## Database & Migrations
 
 - Configure `DATABASE_URL` in `alfred/.env` (defaults to a local SQLite file).
@@ -116,7 +149,7 @@ docker compose -f infra/docker-compose.yml up --build
 
 ## Mind Palace: Document Storage
 
-A simple Mongo-backed storage service for notes and documents lives in `alfred/services/mind_palace/doc_storage.py`.
+A simple Mongo-backed storage service for notes and documents lives in `alfred/services/doc_storage.py`.
 
 - Notes API surface (service methods): `create_note`, `list_notes`, `get_note`, `delete_note`.
 - Documents ingestion: `ingest_document(payload)` supports chunked text, metadata, and dedup by content hash.
@@ -125,7 +158,8 @@ A simple Mongo-backed storage service for notes and documents lives in `alfred/s
 
 Example usage in a route or task:
 ```python
-from alfred.services.mind_palace import DocStorageService, NoteCreate
+from alfred.services.doc_storage import DocStorageService
+from alfred.schemas.documents import NoteCreate
 
 svc = DocStorageService()
 svc.ensure_indexes()
@@ -272,7 +306,7 @@ Company research pipeline
 
 Observability (Langfuse)
 - `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` — project keys from your Langfuse instance.
-- `LANGFUSE_HOST` — base URL for your self-hosted Langfuse (e.g. `http://localhost:3000`).
+- `LANGFUSE_HOST` — base URL for your self-hosted Langfuse (e.g. `http://localhost:3030`).
 - `LANGFUSE_DEBUG` — `true/false` to enable SDK debug logs (default `false`).
 - `LANGFUSE_TRACING_ENABLED` — `true/false` master switch (default `true`).
 
