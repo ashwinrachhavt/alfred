@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass
-
-from pydantic import BaseModel
 
 from alfred.core.llm_config import LLMProvider
-from alfred.core.llm_service import LLMService
+from alfred.services.llm_service import LLMService
+from pydantic import BaseModel
 
 
 class DemoSchema(BaseModel):
@@ -51,4 +49,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

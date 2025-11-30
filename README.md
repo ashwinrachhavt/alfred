@@ -106,56 +106,36 @@ docker compose -f infra/docker-compose.yml up --build
 
 ## Global LLM Service
 
-Alfred consolidates LLM access behind a clean provider-agnostic spine:
+Provider-agnostic LLM spine:
 
-- Factory for LangChain/LangGraph: `alfred/core/llm_factory.py`
-  - `get_chat_model(provider?, model?, temperature?)`
-  - `get_embedding_model(provider?, model?)`
-- Lower-level service: `alfred/core/llm_service.py`
-  - `chat`, `chat_stream` (OpenAI + Ollama)
-  - `structured` (OpenAI JSON schema -> Pydantic)
+- Factory (LangChain/LangGraph): `alfred/core/llm_factory.py`
+  - `get_chat_model(...)`, `get_embedding_model(...)`
+- Service: `alfred/services/llm_service.py`
+  - `chat`, `chat_stream`, `structured` (OpenAI JSON -> Pydantic)
 
-Usage (agents/graphs):
+Usage
 ```python
-from alfred.core.llm_config import LLMProvider
-from alfred.core.llm_factory import get_chat_model, get_embedding_model
+from alfred.core.llm_factory import get_chat_model
+from alfred.services.llm_service import LLMService
 
-llm = get_chat_model()       # default provider/model from env
-embed = get_embedding_model()
+llm = get_chat_model()  # uses ALFRED_* defaults
 
-# Per-node override
-llm_local = get_chat_model(provider=LLMProvider.ollama, model="llama3.2")
-llm_cloud = get_chat_model(provider=LLMProvider.openai, model="gpt-4.1-mini")
-```
-
-Structured outputs (OpenAI):
-```python
 from pydantic import BaseModel
-from alfred.core.llm_service import LLMService
-
 class Quiz(BaseModel):
     topic: str
     questions: list[str]
 
-svc = LLMService()
-quiz = svc.structured([
-    {"role": "system", "content": "Return valid JSON only."},
-    {"role": "user", "content": "Generate a short quiz about LangGraph."},
-], schema=Quiz)
+quiz = LLMService().structured(
+    [
+        {"role": "system", "content": "Return valid JSON only."},
+        {"role": "user", "content": "Generate a short quiz about LangGraph."},
+    ],
+    schema=Quiz,
+)
 ```
 
-Env vars (prefix `ALFRED_`):
-- `ALFRED_LLM_PROVIDER` — `openai` (default) or `ollama`
-- `ALFRED_LLM_MODEL` — default chat model (`gpt-4.1-mini`)
-- `ALFRED_LLM_TEMPERATURE` — default temperature (`0.2`)
-- `ALFRED_OPENAI_API_KEY`, `ALFRED_OPENAI_BASE_URL`, `ALFRED_OPENAI_ORGANIZATION`
-- `ALFRED_OLLAMA_BASE_URL` (default `http://localhost:11434`)
-- `ALFRED_OLLAMA_CHAT_MODEL` (default `llama3.2`)
-- `ALFRED_OLLAMA_EMBED_MODEL` (default `nomic-embed-text`)
-
-Local dev tip
-- Set `ALFRED_LLM_PROVIDER=ollama` to keep iterations cheap/private; switch to `openai` for best quality.
-- Ensure `ollama serve` is running and models are pulled.
+Tip
+- Override provider/model via `ALFRED_*` env vars (see `alfred/core/llm_config.py`).
 
 ## Database & Migrations
 
@@ -169,7 +149,7 @@ Local dev tip
 
 ## Mind Palace: Document Storage
 
-A simple Mongo-backed storage service for notes and documents lives in `alfred/services/documents/doc_storage.py`.
+A simple Mongo-backed storage service for notes and documents lives in `alfred/services/doc_storage.py`.
 
 - Notes API surface (service methods): `create_note`, `list_notes`, `get_note`, `delete_note`.
 - Documents ingestion: `ingest_document(payload)` supports chunked text, metadata, and dedup by content hash.

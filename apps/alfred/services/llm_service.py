@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Iterable, Optional, Type, TypeVar
+from typing import Iterable, Optional, Type, TypeVar
 
 from ollama import chat as ollama_chat
 from openai import OpenAI
 from pydantic import BaseModel
 
-from .llm_config import LLMProvider, settings
+from alfred.core.llm_config import LLMProvider, settings
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -143,4 +143,3 @@ class LLMService:
         )
         raw = resp.choices[0].message.content
         return schema.model_validate_json(raw or "{}")
-

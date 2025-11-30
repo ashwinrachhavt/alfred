@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
 from alfred.api.mind_palace_agent import routes as mp_agent_routes
 from alfred.services.agents.mind_palace_agent import KnowledgeAgentService
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 class _FakeDocStorage:
@@ -50,4 +49,3 @@ def test_agent_falls_back_when_mcp_empty():
     data = resp.json()
     assert data["sources"], "Should contain fallback document sources"
     assert data["meta"]["mode"] == "fallback"
-

@@ -3,7 +3,8 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseSettings, Field
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class LLMProvider(str, Enum):
@@ -12,12 +13,13 @@ class LLMProvider(str, Enum):
 
 
 class LLMSettings(BaseSettings):
-    """
-    Centralized LLM configuration controlled via environment variables.
+    """Centralized LLM configuration controlled via environment variables.
 
     Defaults favor OpenAI for quality; override to Ollama for local dev.
     Env prefix: ALFRED_
     """
+
+    model_config = SettingsConfigDict(env_prefix="ALFRED_", case_sensitive=False, extra="ignore")
 
     # Global defaults
     llm_provider: LLMProvider = Field(
@@ -49,10 +51,5 @@ class LLMSettings(BaseSettings):
         description="Embedding model to use with Ollama.",
     )
 
-    class Config:
-        env_prefix = "ALFRED_"
-        case_sensitive = False
-
 
 settings = LLMSettings()
-

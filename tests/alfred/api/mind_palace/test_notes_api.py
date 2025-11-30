@@ -87,4 +87,3 @@ def test_list_notes_basic_pagination_and_filtering():
     assert len(data["items"]) == 2
     texts = [item["text"] for item in data["items"]]
     assert set(texts) == {"alpha", "alphabet"}
-

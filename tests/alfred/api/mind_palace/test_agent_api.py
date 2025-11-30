@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+from alfred.api.mind_palace_agent import routes as mp_agent_routes
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
-from alfred.api.mind_palace_agent import routes as mp_agent_routes
 
 
 class _FakeAgent:
@@ -35,4 +34,3 @@ def test_agent_query_endpoint():
     assert data["answer"].startswith("You asked:")
     assert data["sources"][0]["title"] == "Doc A"
     assert data["meta"]["mode"] == "test"
-

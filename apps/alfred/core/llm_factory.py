@@ -5,8 +5,8 @@ from typing import Optional
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_ollama import ChatOllama, OllamaEmbeddings
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from .llm_config import LLMProvider, LLMSettings, settings
 
@@ -67,4 +67,3 @@ def get_embedding_model(
         )
 
     raise ValueError(f"Unsupported provider: {provider}")
-

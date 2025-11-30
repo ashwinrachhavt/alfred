@@ -197,57 +197,37 @@ The current backend stack includes:
 
 ## Global LLM Service
 
-We use a single, modular LLM spine that supports both OpenAI (cloud) and Ollama (local). It exposes two layers:
+Provider-agnostic LLM spine with two layers:
 
-- LangChain/LangGraph-friendly factory: `alfred/core/llm_factory.py`
-  - `get_chat_model(provider?, model?, temperature?) -> BaseChatModel`
-  - `get_embedding_model(provider?, model?) -> Embeddings`
-- Lower-level service: `alfred/core/llm_service.py`
-  - Direct chat and streaming across providers
-  - OpenAI-only structured outputs enforced via Pydantic schemas
+- Factory (LangChain/LangGraph): `alfred/core/llm_factory.py`
+  - `get_chat_model(...)`, `get_embedding_model(...)`
+- Service: `alfred/services/llm_service.py`
+  - `chat`, `chat_stream`, `structured` (OpenAI JSON -> Pydantic)
 
-Preferred usage in agents (LangGraph/LCEL):
+Usage
 ```python
-from alfred.core.llm_config import LLMProvider
-from alfred.core.llm_factory import get_chat_model, get_embedding_model
+from alfred.core.llm_factory import get_chat_model
+from alfred.services.llm_service import LLMService
 
-llm = get_chat_model()  # uses defaults from env
-embed = get_embedding_model()
+llm = get_chat_model()  # uses ALFRED_* defaults
 
-# override per-node if needed
-llm_local = get_chat_model(provider=LLMProvider.ollama, model="llama3.2")
-llm_cloud = get_chat_model(provider=LLMProvider.openai, model="gpt-4.1-mini")
-```
-
-Structured outputs (OpenAI JSON schema):
-```python
 from pydantic import BaseModel
-from alfred.core.llm_service import LLMService
-
 class Quiz(BaseModel):
     topic: str
     questions: list[str]
 
-svc = LLMService()
-quiz = svc.structured([
-    {"role": "system", "content": "Return valid JSON only."},
-    {"role": "user", "content": "Generate a short quiz about LangGraph."},
-], schema=Quiz)
+quiz = LLMService().structured(
+    [
+        {"role": "system", "content": "Return valid JSON only."},
+        {"role": "user", "content": "Generate a short quiz about LangGraph."},
+    ],
+    schema=Quiz,
+)
 ```
 
-Environment variables (prefix `ALFRED_`):
-- `ALFRED_LLM_PROVIDER` — `openai` (default) or `ollama`
-- `ALFRED_LLM_MODEL` — default chat model (`gpt-4.1-mini`)
-- `ALFRED_LLM_TEMPERATURE` — default temperature (`0.2`)
-- `ALFRED_OPENAI_API_KEY`, `ALFRED_OPENAI_BASE_URL`, `ALFRED_OPENAI_ORGANIZATION`
-- `ALFRED_OLLAMA_BASE_URL` (default `http://localhost:11434`)
-- `ALFRED_OLLAMA_CHAT_MODEL` (default `llama3.2`)
-- `ALFRED_OLLAMA_EMBED_MODEL` (default `nomic-embed-text`)
-
 Notes
-- Agents should prefer the factory functions over instantiating `ChatOpenAI`/`ChatOllama` directly.
-- Use `LLMService.structured()` any time you need strict JSON outputs bound to Pydantic schemas.
-- Ollama must be running locally (`ollama serve`) and the target model pulled.
+- Prefer the factory in agents; use `LLMService.structured()` for strict JSON.
+- Defaults come from `ALFRED_*` env vars (see `alfred/core/llm_config.py`).
 
 ---
 
