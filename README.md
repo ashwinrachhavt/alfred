@@ -76,7 +76,7 @@ Install & Run API
 ```bash
 uv python install 3.11          # optional: ensure matching runtime
 uv sync --dev                    # install app + tooling into .venv
-uv run pip install -e .          # install project in editable mode
+uv pip install -e .              # install project in editable mode
 uv run playwright install chromium  # optional: enable dynamic crawling
 make run-api        # alias: make runapi
 ```

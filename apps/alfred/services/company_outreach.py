@@ -13,6 +13,9 @@ from alfred.prompts import load_prompt
 from alfred.services.agentic_rag import create_retriever_tool, make_llm, make_retriever
 from alfred.services.company_researcher import CompanyResearchService
 from alfred.services.web_search import search_web
+from dotenv import load_dotenv
+
+load_dotenv()
 
 _company_research_service = CompanyResearchService()
 
