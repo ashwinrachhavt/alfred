@@ -6,13 +6,14 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from alfred.services.mind_palace.doc_storage import DocStorageService
-from alfred.schemas.mind_palace import NoteCreate, DocumentIngest
 from alfred.schemas.mind_palace import (
+    DocumentIngest,
+    NoteCreate,
     NoteCreateRequest,
     NoteResponse,
     NotesListResponse,
 )
+from alfred.services.mind_palace.doc_storage import DocStorageService
 
 router = APIRouter(prefix="/api/mind-palace", tags=["mind-palace"])
 
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/api/mind-palace", tags=["mind-palace"])
 # ----------------------------
 # Notes: Quick capture endpoints
 # ----------------------------
+
 
 def get_doc_storage_service() -> DocStorageService:
     # Indexes are ensured on app startup; this is a simple DI hook.
@@ -135,7 +137,9 @@ def get_document(
             "captured_at": doc.get("captured_at"),
             "tokens": doc.get("tokens"),
             "summary": (
-                (doc.get("summary") or {}).get("short") if isinstance(doc.get("summary"), dict) else None
+                (doc.get("summary") or {}).get("short")
+                if isinstance(doc.get("summary"), dict)
+                else None
             ),
         }
     except HTTPException:

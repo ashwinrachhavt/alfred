@@ -61,6 +61,8 @@ apps/alfred/models/system.py
 apps/alfred/prompts/__init__.py
 apps/alfred/schemas/__init__.py
 apps/alfred/schemas/airtable_auth_credentials.py
+apps/alfred/schemas/mind_palace.py
+apps/alfred/schemas/mind_palace_notes.py
 apps/alfred/services/__init__.py
 apps/alfred/services/agentic_rag.py
 apps/alfred/services/company_outreach.py
@@ -73,10 +75,6 @@ apps/alfred/services/web_search.py
 apps/alfred/services/wikipedia.py
 apps/alfred/services/mind_palace/__init__.py
 apps/alfred/services/mind_palace/doc_storage.py
-apps/alfred/services/mind_palace/enrichment.py
-apps/alfred/services/mind_palace/extraction.py
-apps/alfred/services/mind_palace/models.py
-apps/alfred/services/mind_palace/service.py
 apps/alfred/services/research/__init__.py
 apps/alfred/services/research/graph.py
 apps/alfred/services/research/llm.py

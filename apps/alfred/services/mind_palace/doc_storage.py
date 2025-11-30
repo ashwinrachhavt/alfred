@@ -33,15 +33,10 @@ from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
 
 from alfred.connectors.mongo_connector import MongoConnector
-
-
 from alfred.schemas.mind_palace import (
-    DocSummary,
     DocumentIngest,
-    DocumentIngestChunk,
     NoteCreate,
 )
-
 
 
 def _maybe_object_id(val: Optional[str]) -> Optional[ObjectId]:
