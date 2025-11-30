@@ -145,6 +145,13 @@ class Settings(BaseSettings):
         alias="CALENDAR_ORGANIZER_EMAIL",
     )
 
+    # MongoDB Lens MCP
+    mcp_server_url: Optional[str] = Field(default="http://localhost:8001", alias="MCP_SERVER_URL")
+    mcp_database: Optional[str] = Field(default=None, alias="MCP_DATABASE")
+
+    # Agent tracing (LangGraph reasoning trace)
+    enable_agent_trace: bool = Field(default=False, alias="ENABLE_AGENT_TRACE")
+
 
 settings = Settings()
 

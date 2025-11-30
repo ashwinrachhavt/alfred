@@ -81,7 +81,7 @@ class DocumentIngest(BaseModel):
     title: Optional[str] = None
     content_type: Optional[str] = None
     lang: Optional[str] = None
-    raw_html: Optional[str] = None
+    # raw_html removed intentionally; we do not store HTML
     raw_markdown: Optional[str] = None
     cleaned_text: str
     tokens: Optional[int] = None

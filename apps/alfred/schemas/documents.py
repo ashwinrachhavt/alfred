@@ -1,6 +1,12 @@
-"""Pydantic schemas shared across the app."""
+"""Documents schemas shim.
 
-from .documents import (
+Re-exports the Mind Palace schemas under a `documents` name to
+support recent renames without breaking imports.
+"""
+
+from __future__ import annotations
+
+from .mind_palace import (
     DocSummary,
     DocumentIngest,
     DocumentIngestChunk,
@@ -9,10 +15,8 @@ from .documents import (
     NoteResponse,
     NotesListResponse,
 )
-from .mind_palace_agent import AgentQueryRequest, AgentResponse, ChatMessage
 
 __all__ = [
-    # Documents
     "NoteCreate",
     "NoteCreateRequest",
     "NoteResponse",
@@ -20,8 +24,5 @@ __all__ = [
     "DocSummary",
     "DocumentIngestChunk",
     "DocumentIngest",
-    # Agent
-    "ChatMessage",
-    "AgentQueryRequest",
-    "AgentResponse",
 ]
+

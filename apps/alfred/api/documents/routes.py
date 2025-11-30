@@ -15,16 +15,11 @@ from alfred.schemas.documents import (
 )
 from alfred.services.doc_storage import DocStorageService
 
-router = APIRouter(prefix="/api/mind-palace", tags=["mind-palace"])
+router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 
-# ----------------------------
 # Notes: Quick capture endpoints
-# ----------------------------
-
-
 def get_doc_storage_service() -> DocStorageService:
-    # Indexes are ensured on app startup; this is a simple DI hook.
     return DocStorageService()
 
 
@@ -75,11 +70,7 @@ def list_notes(
     )
 
 
-# ---------------------------------
-# Back-compat: page, doc, search
-# ---------------------------------
-
-
+# Back-compat: page, doc, search (aliased under documents)
 class PageRequest(BaseModel):
     raw_text: str = Field(..., min_length=50)
     html: str | None = None
@@ -98,9 +89,7 @@ def create_page(
     payload: PageRequest,
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> PageResponse:
-    # Minimal ingestion path using DocumentIngest; no enrichment.
     try:
-        # Do not store HTML at all: ignore payload.html entirely
         ingest = DocumentIngest(
             source_url=(payload.page_url or "about:blank"),
             title=payload.page_title,
@@ -127,7 +116,6 @@ def get_document(
         doc = svc.database.get_collection("documents").find_one({"_id": ObjectId(id)})
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
-        # Serialize minimal fields similar to list_documents
         return {
             "id": str(doc.get("_id")),
             "title": doc.get("title"),
@@ -137,9 +125,7 @@ def get_document(
             "captured_at": doc.get("captured_at"),
             "tokens": doc.get("tokens"),
             "summary": (
-                (doc.get("summary") or {}).get("short")
-                if isinstance(doc.get("summary"), dict)
-                else None
+                (doc.get("summary") or {}).get("short") if isinstance(doc.get("summary"), dict) else None
             ),
         }
     except HTTPException:
@@ -156,10 +142,9 @@ def search_documents(
     limit: int = Query(default=20, ge=1, le=100),
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> dict:
-    # domain filter is not directly supported in DocStorageService.list_documents;
-    # we approximate via q if provided, otherwise ignore domain.
     try:
         data = svc.list_documents(q=q, topic=topic, limit=limit)
         return {"items": data["items"]}
     except Exception as exc:  # pragma: no cover - external IO
         raise HTTPException(status_code=500, detail="Failed to search documents") from exc
+

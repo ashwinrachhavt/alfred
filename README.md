@@ -104,6 +104,59 @@ docker compose -f infra/docker-compose.yml up --build
   - Check availability with `importlib.util.find_spec('pkg')` and fall back, or
   - Catch `ImportError` only at instantiation time and log a clear message.
 
+## Global LLM Service
+
+Alfred consolidates LLM access behind a clean provider-agnostic spine:
+
+- Factory for LangChain/LangGraph: `alfred/core/llm_factory.py`
+  - `get_chat_model(provider?, model?, temperature?)`
+  - `get_embedding_model(provider?, model?)`
+- Lower-level service: `alfred/core/llm_service.py`
+  - `chat`, `chat_stream` (OpenAI + Ollama)
+  - `structured` (OpenAI JSON schema -> Pydantic)
+
+Usage (agents/graphs):
+```python
+from alfred.core.llm_config import LLMProvider
+from alfred.core.llm_factory import get_chat_model, get_embedding_model
+
+llm = get_chat_model()       # default provider/model from env
+embed = get_embedding_model()
+
+# Per-node override
+llm_local = get_chat_model(provider=LLMProvider.ollama, model="llama3.2")
+llm_cloud = get_chat_model(provider=LLMProvider.openai, model="gpt-4.1-mini")
+```
+
+Structured outputs (OpenAI):
+```python
+from pydantic import BaseModel
+from alfred.core.llm_service import LLMService
+
+class Quiz(BaseModel):
+    topic: str
+    questions: list[str]
+
+svc = LLMService()
+quiz = svc.structured([
+    {"role": "system", "content": "Return valid JSON only."},
+    {"role": "user", "content": "Generate a short quiz about LangGraph."},
+], schema=Quiz)
+```
+
+Env vars (prefix `ALFRED_`):
+- `ALFRED_LLM_PROVIDER` — `openai` (default) or `ollama`
+- `ALFRED_LLM_MODEL` — default chat model (`gpt-4.1-mini`)
+- `ALFRED_LLM_TEMPERATURE` — default temperature (`0.2`)
+- `ALFRED_OPENAI_API_KEY`, `ALFRED_OPENAI_BASE_URL`, `ALFRED_OPENAI_ORGANIZATION`
+- `ALFRED_OLLAMA_BASE_URL` (default `http://localhost:11434`)
+- `ALFRED_OLLAMA_CHAT_MODEL` (default `llama3.2`)
+- `ALFRED_OLLAMA_EMBED_MODEL` (default `nomic-embed-text`)
+
+Local dev tip
+- Set `ALFRED_LLM_PROVIDER=ollama` to keep iterations cheap/private; switch to `openai` for best quality.
+- Ensure `ollama serve` is running and models are pulled.
+
 ## Database & Migrations
 
 - Configure `DATABASE_URL` in `alfred/.env` (defaults to a local SQLite file).
@@ -116,7 +169,7 @@ docker compose -f infra/docker-compose.yml up --build
 
 ## Mind Palace: Document Storage
 
-A simple Mongo-backed storage service for notes and documents lives in `alfred/services/mind_palace/doc_storage.py`.
+A simple Mongo-backed storage service for notes and documents lives in `alfred/services/documents/doc_storage.py`.
 
 - Notes API surface (service methods): `create_note`, `list_notes`, `get_note`, `delete_note`.
 - Documents ingestion: `ingest_document(payload)` supports chunked text, metadata, and dedup by content hash.
@@ -125,7 +178,8 @@ A simple Mongo-backed storage service for notes and documents lives in `alfred/s
 
 Example usage in a route or task:
 ```python
-from alfred.services.mind_palace import DocStorageService, NoteCreate
+from alfred.services.doc_storage import DocStorageService
+from alfred.schemas.documents import NoteCreate
 
 svc = DocStorageService()
 svc.ensure_indexes()

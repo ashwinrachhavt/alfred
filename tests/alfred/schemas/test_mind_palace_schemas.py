@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from alfred.schemas.mind_palace import (
+from alfred.schemas.documents import (
     DocumentIngest,
     DocumentIngestChunk,
     NoteCreate,
@@ -27,4 +27,3 @@ def test_chunk_and_ingest_validators():
     assert ing.cleaned_text == "body"
     assert ing.source_url == "https://x"
     assert ing.chunks[0].idx == 0
-

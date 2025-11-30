@@ -1,9 +1,9 @@
 """Backwards-compat re-exports for Mind Palace note schemas.
 
-Prefer importing from `alfred.schemas.mind_palace`.
+Prefer importing from `alfred.schemas.documents`.
 """
 
-from .mind_palace import NoteCreateRequest, NoteResponse, NotesListResponse
+from .documents import NoteCreateRequest, NoteResponse, NotesListResponse
 
 __all__ = [
     "NoteCreateRequest",

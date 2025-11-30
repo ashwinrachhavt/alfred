@@ -33,7 +33,7 @@ from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
 
 from alfred.connectors.mongo_connector import MongoConnector
-from alfred.schemas.mind_palace import (
+from alfred.schemas.documents import (
     DocumentIngest,
     NoteCreate,
 )
@@ -207,7 +207,7 @@ class DocStorageService:
             "title": payload.title,
             "content_type": payload.content_type or "web",
             "lang": payload.lang,
-            "raw_html": payload.raw_html,
+            # Intentionally do not store raw HTML to minimize storage of PII/heavy blobs
             "raw_markdown": payload.raw_markdown,
             "cleaned_text": cleaned_text,
             "tokens": tokens,
@@ -320,6 +320,7 @@ class DocStorageService:
                 filt,
                 {
                     "cleaned_text": 0,
+                    # raw_html was removed from storage; keep excluded if present in legacy data
                     "raw_html": 0,
                     "raw_markdown": 0,
                     "embedding": 0,
