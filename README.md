@@ -306,7 +306,7 @@ Company research pipeline
 
 Observability (Langfuse)
 - `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` — project keys from your Langfuse instance.
-- `LANGFUSE_HOST` — base URL for your self-hosted Langfuse (e.g. `http://localhost:3000`).
+- `LANGFUSE_HOST` — base URL for your self-hosted Langfuse (e.g. `http://localhost:3030`).
 - `LANGFUSE_DEBUG` — `true/false` to enable SDK debug logs (default `false`).
 - `LANGFUSE_TRACING_ENABLED` — `true/false` master switch (default `true`).
 
