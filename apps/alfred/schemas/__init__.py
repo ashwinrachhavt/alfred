@@ -1,3 +1,22 @@
 """Pydantic schemas shared across the app."""
 
-__all__ = []
+from .mind_palace import (
+    DocSummary,
+    DocumentIngest,
+    DocumentIngestChunk,
+    NoteCreate,
+    NoteCreateRequest,
+    NoteResponse,
+    NotesListResponse,
+)
+
+__all__ = [
+    # Mind Palace
+    "NoteCreate",
+    "NoteCreateRequest",
+    "NoteResponse",
+    "NotesListResponse",
+    "DocSummary",
+    "DocumentIngestChunk",
+    "DocumentIngest",
+]

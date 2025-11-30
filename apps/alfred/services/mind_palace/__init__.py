@@ -14,20 +14,15 @@ Design goals
 
 from __future__ import annotations
 
-from alfred.services.mind_palace.doc_storage import (
-    DocStorageService,
+from alfred.services.mind_palace.doc_storage import DocStorageService
+from alfred.schemas.mind_palace import (
     DocSummary,
     DocumentIngest,
     DocumentIngestChunk,
     NoteCreate,
 )
-from alfred.services.mind_palace.service import MindPalaceService, PageInput, PageResult
 
 __all__ = [
-    "MindPalaceService",
-    "PageInput",
-    "PageResult",
-    # Doc storage service exports
     "DocStorageService",
     "NoteCreate",
     "DocSummary",
