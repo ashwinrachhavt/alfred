@@ -44,6 +44,9 @@ dependencies = [
     "langchain-tavily>=0.2.13",
     "ddgs>=9.5.5",
     "pymongo>=4.8,<5",
+    "agno>=0.1.0",
+    "lancedb>=0.1",
+    "mlflow>=2.0",
 ]
 
 [tool.uv]

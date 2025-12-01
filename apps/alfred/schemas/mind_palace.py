@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from bson import ObjectId
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # -----------------
@@ -123,3 +124,110 @@ __all__ = [
     "DocumentIngestChunk",
     "DocumentIngest",
 ]
+
+
+# -----------------
+# Canonical Mongo Records
+# -----------------
+
+
+class _ObjectIdOrStr(ObjectId):
+    @classmethod
+    def __get_validators__(cls):  # type: ignore[override]
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, v: Any) -> ObjectId:  # noqa: D401
+        if v is None:
+            return v
+        if isinstance(v, ObjectId):
+            return v
+        if isinstance(v, str) and ObjectId.is_valid(v):
+            return ObjectId(v)
+        raise TypeError("Not a valid ObjectId or str ObjectId")
+
+
+class DocumentRecord(BaseModel):
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+
+    source_url: str
+    canonical_url: Optional[str] = None
+    domain: Optional[str] = None
+    title: Optional[str] = None
+    content_type: str = "web"
+    lang: Optional[str] = None
+    raw_markdown: Optional[str] = None
+    cleaned_text: str
+    tokens: int
+    hash: str
+    summary: Optional[Dict[str, Any]] = None
+    topics: Optional[Dict[str, Any]] = None
+    entities: Optional[Dict[str, Any]] = None
+    tags: List[str] = Field(default_factory=list)
+    embedding: Optional[List[float]] = None
+    captured_at: datetime
+    captured_hour: int
+    day_bucket: datetime
+    published_at: Optional[datetime] = None
+    processed_at: datetime
+    created_at: datetime
+    updated_at: datetime
+    session_id: Optional[_ObjectIdOrStr] = None
+    agent_run_id: Optional[str | _ObjectIdOrStr] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("captured_hour")
+    @classmethod
+    def hour_bounds(cls, v: int) -> int:
+        if v < 0 or v > 23:
+            raise ValueError("captured_hour must be within 0-23")
+        return v
+
+
+class DocChunkRecord(BaseModel):
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+
+    doc_id: _ObjectIdOrStr
+    idx: int
+    text: str
+    tokens: int
+    section: Optional[str] = None
+    char_start: Optional[int] = None
+    char_end: Optional[int] = None
+    embedding: Optional[List[float]] = None
+    topics: Optional[Dict[str, Any]] = None
+    captured_at: datetime
+    captured_hour: int
+    day_bucket: datetime
+    created_at: datetime
+
+    @field_validator("idx")
+    @classmethod
+    def idx_nonneg(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("idx must be >= 0")
+        return v
+
+
+class NoteRecord(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    text: str
+    source_url: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class MindPalaceDocumentRecord(BaseModel):
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+
+    doc_id: _ObjectIdOrStr
+    chunk_ids: List[_ObjectIdOrStr] = Field(default_factory=list)
+    title: Optional[str] = None
+    summary: Optional[Dict[str, Any]] = None
+    tags: List[str] = Field(default_factory=list)
+    topics: Optional[Dict[str, Any]] = None
+    annotation: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    metadata: Dict[str, Any] = Field(default_factory=dict)
