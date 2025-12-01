@@ -11,9 +11,15 @@ logger = logging.getLogger(__name__)
 
 
 def render_web_search_markdown(query: str, max_results: int = 10) -> str:
-    """Return markdown for a web search using service results."""
+    """Return markdown for a web search using service results.
+
+    Defaults to SearxNG provider for agent/tool calls to avoid public engine
+    rate limits. Set `SEARXNG_HOST` (or `SEARX_HOST`) in env to enable.
+    """
     try:
-        payload = _service_search_web(q=query)
+        # Prefer SearxNG by default for tools/agents
+        k = max(1, int(max_results))
+        payload = _service_search_web(q=query, mode="searx", searx_k=k)
         hits = payload.get("hits", [])[: max(0, int(max_results))]
         provider = payload.get("provider", "web")
 
