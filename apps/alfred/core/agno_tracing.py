@@ -24,13 +24,42 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Dict, Generator, Optional
+
+try:  # optional helper to load .env files lazily
+    from dotenv import load_dotenv  # type: ignore
+except Exception:  # pragma: no cover - fallback when dotenv missing
+    load_dotenv = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
 _mlflow: Any | None = None
 _active: bool = False
 _current_agent: Optional[str] = None
+_env_loaded: bool = False
+
+
+def _load_env_files() -> None:
+    """Load env from apps/alfred/.env then repo root .env (non-overriding)."""
+    global _env_loaded
+    if _env_loaded:
+        return
+    if load_dotenv is None:
+        _env_loaded = True
+        return
+    try:
+        here = Path(__file__).resolve()
+        app_env = here.parents[1] / ".env"  # apps/alfred/.env
+        repo_env = here.parents[3] / ".env"  # repo root .env
+        if app_env.exists():
+            load_dotenv(dotenv_path=str(app_env), override=False)
+        if repo_env.exists():
+            load_dotenv(dotenv_path=str(repo_env), override=False)
+    except Exception:
+        pass
+    finally:
+        _env_loaded = True
 
 
 def _load_mlflow() -> Any | None:
@@ -62,6 +91,10 @@ def init() -> bool:
     if is_enabled():
         return True
 
+    # Ensure env files are loaded before reading MLFLOW_* vars
+    if not os.getenv("MLFLOW_TRACKING_URI"):
+        _load_env_files()
+
     mlflow = _load_mlflow()
     if mlflow is None:
         logger.debug("MLflow not installed; Agno tracing disabled")
@@ -75,6 +108,16 @@ def init() -> bool:
         return False
 
     try:
+        # Ensure local file store exists when using file:// scheme
+        if uri.startswith("file://"):
+            from urllib.parse import urlsplit
+
+            p = urlsplit(uri).path
+            try:
+                Path(p).mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
+
         mlflow.set_tracking_uri(uri)
         exp_name = os.getenv("MLFLOW_EXPERIMENT_NAME", "Alfred-Agno")
         mlflow.set_experiment(exp_name)
