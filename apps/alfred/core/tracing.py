@@ -9,6 +9,7 @@ installed, the decorator becomes a no-op.
 
 from __future__ import annotations
 
+import importlib.util
 from typing import Any, Callable, Optional
 
 from .config import settings
@@ -29,23 +30,20 @@ def _init_client() -> Any | None:
     # Only initialize when keys are present
     if not (settings.langfuse_public_key and settings.langfuse_secret_key):
         return None
-    try:
-        from langfuse import Langfuse  # type: ignore
-        from langfuse import observe as _obs
-
-        _observe_impl = _obs
-        _client_cache = Langfuse(
-            public_key=settings.langfuse_public_key,
-            secret_key=settings.langfuse_secret_key,
-            host=settings.langfuse_host or None,
-            debug=settings.langfuse_debug,
-        )
-        return _client_cache
-    except Exception:
-        # Silently degrade if SDK missing or misconfigured
-        _client_cache = None
-        _observe_impl = None
+    # Import langfuse lazily and only if installed
+    if importlib.util.find_spec("langfuse") is None:
         return None
+    from langfuse import Langfuse  # type: ignore
+    from langfuse import observe as _obs  # type: ignore
+
+    _observe_impl = _obs
+    _client_cache = Langfuse(
+        public_key=settings.langfuse_public_key,
+        secret_key=settings.langfuse_secret_key,
+        host=settings.langfuse_host or None,
+        debug=settings.langfuse_debug,
+    )
+    return _client_cache
 
 
 def lf_get_client() -> Any | None:

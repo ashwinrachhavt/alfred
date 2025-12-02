@@ -5,6 +5,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Optional, TypedDict
 
+from docling.backend.docling_parse_v4_backend import DoclingParseV4DocumentBackend
+from docling.datamodel.base_models import InputFormat
+from docling.document_converter import DocumentConverter, FormatOption
+from docling.pipeline.standard_pdf_pipeline import PdfPipelineOptions, StandardPdfPipeline
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
@@ -94,33 +98,22 @@ def _load_resume_context() -> str:
     if not pdf_path.is_file():
         return ""
 
-    try:
-        from docling.backend.docling_parse_v4_backend import DoclingParseV4DocumentBackend
-        from docling.datamodel.base_models import InputFormat
-        from docling.document_converter import DocumentConverter, FormatOption
-        from docling.pipeline.standard_pdf_pipeline import PdfPipelineOptions, StandardPdfPipeline
-    except Exception as exc:  # pragma: no cover - docling optional import guard
-        return f"(resume parsing unavailable: {exc})"
-
-    try:
-        options = PdfPipelineOptions(
-            do_ocr=False,
-            do_table_structure=False,
-            force_backend_text=True,
-        )
-        converter = DocumentConverter(
-            format_options={
-                InputFormat.PDF: FormatOption(
-                    backend=DoclingParseV4DocumentBackend,
-                    pipeline_cls=StandardPdfPipeline,
-                    pipeline_options=options,
-                )
-            }
-        )
-        result = converter.convert(str(pdf_path))
-        text = result.document.export_to_text().strip()
-    except Exception as exc:  # pragma: no cover - docling runtime fallback
-        return f"(resume parsing failed: {exc})"
+    options = PdfPipelineOptions(
+        do_ocr=False,
+        do_table_structure=False,
+        force_backend_text=True,
+    )
+    converter = DocumentConverter(
+        format_options={
+            InputFormat.PDF: FormatOption(
+                backend=DoclingParseV4DocumentBackend,
+                pipeline_cls=StandardPdfPipeline,
+                pipeline_options=options,
+            )
+        }
+    )
+    result = converter.convert(str(pdf_path))
+    text = result.document.export_to_text().strip()
 
     max_chars = 6000
     if len(text) > max_chars:

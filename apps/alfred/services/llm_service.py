@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import os
 from typing import Iterable, Optional, Type, TypeVar
 
+from dotenv import load_dotenv
 from ollama import chat as ollama_chat
 from openai import OpenAI
 from pydantic import BaseModel
 
 from alfred.core.llm_config import LLMProvider, settings
+
+# Ensure local .env is loaded for OPENAI_ and related envs
+load_dotenv()
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -28,9 +33,9 @@ class LLMService:
     def openai_client(self) -> OpenAI:
         if self._openai_client is None:
             self._openai_client = OpenAI(
-                api_key=self.cfg.openai_api_key,
-                base_url=self.cfg.openai_base_url,
-                organization=self.cfg.openai_organization,
+                api_key=self.cfg.openai_api_key or os.getenv("OPENAI_API_KEY"),
+                base_url=self.cfg.openai_base_url or os.getenv("OPENAI_BASE_URL"),
+                organization=self.cfg.openai_organization or os.getenv("OPENAI_ORG"),
             )
         return self._openai_client
 
@@ -128,6 +133,45 @@ class LLMService:
         model_name = model or self.cfg.llm_model
 
         json_schema = schema.model_json_schema()
+
+        # Recursively normalize all object schemas to be strict for OpenAI
+        def _strictify(obj: object) -> None:
+            if isinstance(obj, dict):
+                t = obj.get("type")
+                if t == "object":
+                    obj.setdefault("type", "object")
+                    # Disallow unknown keys
+                    obj["additionalProperties"] = False
+                    props = obj.get("properties")
+                    if isinstance(props, dict):
+                        # OpenAI expects 'required' listing all keys in properties
+                        obj["required"] = list(props.keys())
+                        # Recurse into nested properties
+                        for v in props.values():
+                            _strictify(v)
+                # Recurse into common schema containers
+                for key in ("items", "allOf", "anyOf", "oneOf", "$defs", "definitions"):
+                    if key in obj:
+                        val = obj[key]
+                        if isinstance(val, list):
+                            for it in val:
+                                _strictify(it)
+                        elif isinstance(val, dict):
+                            _strictify(val)
+
+        try:
+            _strictify(json_schema)
+        except Exception:
+            # Best-effort; fallback to root-only strict settings
+            try:
+                if isinstance(json_schema, dict):
+                    json_schema.setdefault("type", "object")
+                    json_schema["additionalProperties"] = False
+                    props = json_schema.get("properties")
+                    if isinstance(props, dict):
+                        json_schema["required"] = list(props.keys())
+            except Exception:
+                pass
 
         resp = client.chat.completions.create(
             model=model_name,

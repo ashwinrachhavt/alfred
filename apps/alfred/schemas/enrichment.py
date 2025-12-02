@@ -119,4 +119,77 @@ class EnrichmentResult(BaseModel):
         return slug[:40] if slug else None
 
 
-__all__ = ["EnrichmentResult"]
+def normalize_enrichment(data: dict | EnrichmentResult | None) -> EnrichmentResult:
+    """
+    Normalize various enrichment shapes into EnrichmentResult.
+
+    Accepts either a dict with keys like `summary`, `topics`, `tags`, `insights`,
+    or an already-validated EnrichmentResult. Missing fields are filled with
+    reasonable defaults.
+    """
+    if isinstance(data, EnrichmentResult):
+        return data
+
+    data = data or {}
+
+    # Defaults
+    summary_short = None
+    summary_long = None
+    highlights: list[str] = []
+    tags: list[str] = []
+    topic_category = None
+    topic_graph = None
+
+    # 1) Enrichment-like direct keys
+    if isinstance(data.get("summary_short"), str):
+        summary_short = data.get("summary_short")
+    if isinstance(data.get("summary_long"), str):
+        summary_long = data.get("summary_long")
+    if isinstance(data.get("highlights"), list):
+        highlights = [str(x) for x in data.get("highlights") or []]
+    if isinstance(data.get("tags"), list):
+        tags = [str(x) for x in data.get("tags") or []]
+    if isinstance(data.get("topic_category"), str):
+        topic_category = data.get("topic_category")
+    if isinstance(data.get("topic_graph"), dict):
+        topic_graph = data.get("topic_graph")
+
+    # 2) Map from alternative shapes (summary/topics/insights)
+    if not summary_short:
+        summary = data.get("summary") or {}
+        if isinstance(summary, dict):
+            summary_short = summary.get("short") or summary.get("summary") or summary.get("brief")
+            summary_long = summary_long or summary.get("detailed") or summary.get("long")
+        elif isinstance(summary, str):
+            summary_short = summary
+
+    if not highlights:
+        # try bullets, key_points, insights
+        bullets = data.get("bullets") or data.get("key_points") or data.get("insights")
+        if isinstance(bullets, list):
+            highlights = [str(x) for x in bullets if isinstance(x, str)]
+
+    if not tags:
+        if isinstance(data.get("tags"), list):
+            tags = [str(x) for x in data.get("tags") if isinstance(x, str)]
+
+    topics = data.get("topics")
+    if isinstance(topics, dict):
+        topic_category = topic_category or topics.get("primary") or topics.get("category")
+        # carry over additional topics if present
+        secondary = topics.get("secondary")
+        if isinstance(secondary, list) and not tags:
+            tags = [str(x) for x in secondary if isinstance(x, str)]
+
+    # Build result (validators normalize/cap fields)
+    return EnrichmentResult(
+        summary_short=summary_short or "",
+        summary_long=summary_long,
+        highlights=highlights,
+        tags=tags,
+        topic_category=topic_category,
+        topic_graph=topic_graph,
+    )
+
+
+__all__ = ["EnrichmentResult", "normalize_enrichment"]

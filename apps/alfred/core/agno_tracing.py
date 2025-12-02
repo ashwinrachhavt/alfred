@@ -91,9 +91,8 @@ def init() -> bool:
     if is_enabled():
         return True
 
-    # Ensure env files are loaded before reading MLFLOW_* vars
-    if not os.getenv("MLFLOW_TRACKING_URI"):
-        _load_env_files()
+    # Rely on environment as-is; do not auto-load .env here. Tests expect
+    # disabled tracing when MLFLOW_TRACKING_URI is not present.
 
     mlflow = _load_mlflow()
     if mlflow is None:
