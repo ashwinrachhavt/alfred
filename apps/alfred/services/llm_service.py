@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import os
 from typing import Iterable, Optional, Type, TypeVar
 
+from dotenv import load_dotenv
 from ollama import chat as ollama_chat
 from openai import OpenAI
 from pydantic import BaseModel
 
 from alfred.core.llm_config import LLMProvider, settings
+
+# Ensure local .env is loaded for OPENAI_ and related envs
+load_dotenv()
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -28,9 +33,9 @@ class LLMService:
     def openai_client(self) -> OpenAI:
         if self._openai_client is None:
             self._openai_client = OpenAI(
-                api_key=self.cfg.openai_api_key,
-                base_url=self.cfg.openai_base_url,
-                organization=self.cfg.openai_organization,
+                api_key=self.cfg.openai_api_key or os.getenv("OPENAI_API_KEY"),
+                base_url=self.cfg.openai_base_url or os.getenv("OPENAI_BASE_URL"),
+                organization=self.cfg.openai_organization or os.getenv("OPENAI_ORG"),
             )
         return self._openai_client
 
@@ -128,6 +133,88 @@ class LLMService:
         model_name = model or self.cfg.llm_model
 
         json_schema = schema.model_json_schema()
+
+        # Inline local $ref references because OpenAI structured outputs do not
+        # accept $ref in the response_format schema.
+        def _deref(obj: object, defs: dict[str, object]) -> object:
+            if isinstance(obj, dict):
+                # Replace local refs like #/$defs/Name
+                if "$ref" in obj:
+                    ref = obj["$ref"]
+                    if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                        name = ref.split("/")[-1]
+                        target = defs.get(name, {})
+                        # Deep copy via recursion
+                        return _deref(target, defs)
+                # Recurse
+                out: dict[str, object] = {}
+                for k, v in obj.items():
+                    out[k] = _deref(v, defs)
+                return out
+            if isinstance(obj, list):
+                return [_deref(x, defs) for x in obj]
+            return obj
+
+        if isinstance(json_schema, dict):
+            defs = {}
+            for key in ("$defs", "definitions"):
+                if isinstance(json_schema.get(key), dict):
+                    defs = json_schema[key]  # type: ignore[assignment]
+                    break
+            if defs:
+                json_schema = _deref(json_schema, defs)  # type: ignore[assignment]
+                # Drop defs after inlining
+                json_schema.pop("$defs", None)
+                json_schema.pop("definitions", None)
+
+        # Recursively normalize all object schemas to be strict for OpenAI
+        def _strictify(obj: object) -> None:
+            if isinstance(obj, dict):
+                t = obj.get("type")
+                if t == "object":
+                    obj.setdefault("type", "object")
+                    # Disallow unknown keys
+                    obj["additionalProperties"] = False
+                    props = obj.get("properties")
+                    if isinstance(props, dict):
+                        # OpenAI expects 'required' listing all keys in properties
+                        obj["required"] = list(props.keys())
+                        # Recurse into nested properties
+                        for v in props.values():
+                            _strictify(v)
+                # Recurse into common schema containers
+                for key in ("items", "allOf", "anyOf", "oneOf", "$defs", "definitions"):
+                    if key in obj:
+                        val = obj[key]
+                        if isinstance(val, list):
+                            for it in val:
+                                _strictify(it)
+                        elif isinstance(val, dict):
+                            _strictify(val)
+
+        try:
+            _strictify(json_schema)
+        except Exception:
+            # Fall through to harden root below
+            pass
+
+        # Ensure root object is strict per OpenAI requirements
+        if isinstance(json_schema, dict):
+            # Some pydantic schemas use $ref at root; still enforce a strict object wrapper
+            if json_schema.get("type") != "object":
+                # Wrap in an object if needed
+                props = (
+                    json_schema.get("properties")
+                    if isinstance(json_schema.get("properties"), dict)
+                    else {}
+                )
+                json_schema["type"] = "object"
+                if not props:
+                    json_schema.setdefault("properties", {})
+            json_schema["additionalProperties"] = False
+            # If pydantic already provided 'required', keep it; otherwise default to listed properties
+            if not json_schema.get("required") and isinstance(json_schema.get("properties"), dict):
+                json_schema["required"] = list(json_schema["properties"].keys())
 
         resp = client.chat.completions.create(
             model=model_name,

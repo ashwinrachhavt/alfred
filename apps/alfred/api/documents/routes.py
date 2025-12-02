@@ -15,7 +15,6 @@ from alfred.schemas.documents import (
     NotesListResponse,
 )
 from alfred.services.doc_storage import DocStorageService
-from alfred.services.text_cleaning import TextCleaningService
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 logger = logging.getLogger(__name__)
@@ -93,8 +92,7 @@ def create_page(
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> PageResponse:
     try:
-        cleaner = TextCleaningService()
-        cleaned_text = cleaner.clean(payload.raw_text)
+        cleaned_text = payload.raw_text
         if not (cleaned_text or "").strip():
             cleaned_text = payload.raw_text
         ingest = DocumentIngest(

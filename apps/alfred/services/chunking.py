@@ -3,32 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional
 
+from langchain_text_splitters import (
+    CharacterTextSplitter,
+    HTMLHeaderTextSplitter,
+    MarkdownHeaderTextSplitter,
+    RecursiveCharacterTextSplitter,
+)
+
 from alfred.schemas.documents import DocumentIngestChunk
-
-
-def _safe_imports():
-    try:
-        from langchain_text_splitters import (
-            CharacterTextSplitter,
-            RecursiveCharacterTextSplitter,
-        )
-    except Exception:  # pragma: no cover - optional dep
-        CharacterTextSplitter = None  # type: ignore[assignment]
-        RecursiveCharacterTextSplitter = None  # type: ignore[assignment]
-    try:
-        from langchain_text_splitters import MarkdownHeaderTextSplitter
-    except Exception:  # pragma: no cover - optional dep
-        MarkdownHeaderTextSplitter = None  # type: ignore[assignment]
-    try:
-        from langchain_text_splitters import HTMLHeaderTextSplitter
-    except Exception:  # pragma: no cover - optional dep
-        HTMLHeaderTextSplitter = None  # type: ignore[assignment]
-    return (
-        CharacterTextSplitter,
-        RecursiveCharacterTextSplitter,
-        MarkdownHeaderTextSplitter,
-        HTMLHeaderTextSplitter,
-    )
 
 
 def _count_tokens(text: str, encoding_name: str = "cl100k_base") -> int:
@@ -65,13 +47,6 @@ class ChunkingService:
         if not src:
             return []
 
-        (
-            CharacterTextSplitter,
-            RecursiveCharacterTextSplitter,
-            MarkdownHeaderTextSplitter,
-            HTMLHeaderTextSplitter,
-        ) = _safe_imports()
-
         chosen = (mode or "").strip().lower()
         if not chosen or chosen == "auto":
             if (content_type or "").lower() == "markdown" or src.startswith("#"):
@@ -79,7 +54,7 @@ class ChunkingService:
             else:
                 chosen = "recursive"
 
-        if chosen == "markdown" and MarkdownHeaderTextSplitter is not None:
+        if chosen == "markdown":
             splitter = MarkdownHeaderTextSplitter(
                 headers_to_split_on=[("#", "h1"), ("##", "h2"), ("###", "h3")],
                 strip_headers=False,
@@ -103,7 +78,7 @@ class ChunkingService:
                 )
             return chunks
 
-        if chosen == "html" and HTMLHeaderTextSplitter is not None:
+        if chosen == "html":
             docs = HTMLHeaderTextSplitter().split_text(src)
             out: List[DocumentIngestChunk] = []
             for idx, d in enumerate(docs):
@@ -120,7 +95,7 @@ class ChunkingService:
                 )
             return out
 
-        if chosen == "token" and CharacterTextSplitter is not None:
+        if chosen == "token":
             splitter = CharacterTextSplitter.from_tiktoken_encoder(
                 encoding_name="cl100k_base", chunk_size=max_tokens, chunk_overlap=max(0, overlap)
             )
@@ -137,14 +112,11 @@ class ChunkingService:
                 for i, part in enumerate(parts)
             ]
 
-        # default recursive fallback
-        if RecursiveCharacterTextSplitter is None:  # pragma: no cover - optional dep
-            parts = _fallback_split(src, max_tokens, overlap)
-        else:
-            splitter = RecursiveCharacterTextSplitter(
-                chunk_size=max_tokens, chunk_overlap=max(0, overlap)
-            )
-            parts = splitter.split_text(src)
+        # default recursive
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=max_tokens, chunk_overlap=max(0, overlap)
+        )
+        parts = splitter.split_text(src)
         return [
             DocumentIngestChunk(
                 idx=i,

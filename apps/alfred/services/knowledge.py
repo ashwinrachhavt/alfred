@@ -1,6 +1,6 @@
 """Knowledge service using Qdrant for vector storage and retrieval.
 
-Provides RAG capabilities for Agno agents with document indexing and search.
+Provides vector indexing and search capabilities over documents.
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ from uuid import uuid4
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 
-from alfred.core import agno_tracing
 from alfred.core.llm_factory import get_embedding_model
 
 
@@ -146,18 +145,6 @@ class KnowledgeService:
                 }
             )
 
-        try:
-            agno_tracing.log_knowledge_event(
-                op="search",
-                details={
-                    "collection": self.collection_name,
-                    "query": query,
-                    "limit": limit,
-                    "returned": len(matches),
-                },
-            )
-        except Exception:
-            pass
         return matches
 
     def delete_documents(self, doc_ids: List[str]) -> None:

@@ -1,6 +1,6 @@
-"""Agno-compatible tool wrappers under services.
+"""Reusable tool wrappers under services.
 
-Import from this module to access reusable tools.
+Import from this module to access helper functions for web, wiki, mongo, and Slack.
 """
 
 from __future__ import annotations

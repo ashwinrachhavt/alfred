@@ -5,12 +5,15 @@ import logging
 import os
 from typing import Any, Iterable, List, Literal, Sequence, TypedDict
 
+from langchain_community.tools import DuckDuckGoSearchRun  # type: ignore
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_qdrant import QdrantVectorStore  # type: ignore
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
+from qdrant_client import QdrantClient  # type: ignore
 
 from alfred.prompts import load_prompt
 from alfred.services.web_search import search_web
@@ -130,13 +133,6 @@ def _build_qdrant_vector_store(embed: OpenAIEmbeddings):  # type: ignore[name-de
         return None
 
     try:
-        from langchain_qdrant import QdrantVectorStore  # type: ignore
-        from qdrant_client import QdrantClient  # type: ignore
-    except ImportError as exc:  # pragma: no cover - optional dependency
-        logger.warning("Qdrant client not installed; using no-op retriever (%s)", exc)
-        return None
-
-    try:
         if QDRANT_URL:
             client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
         else:
@@ -202,18 +198,13 @@ def make_tools(k: int = 4):
     )
 
     # DuckDuckGo web search tool
-    try:
-        from langchain_community.tools import DuckDuckGoSearchRun  # type: ignore
-
-        ddg = DuckDuckGoSearchRun()
-        ddg.name = "web_search"
-        ddg.description = (
-            "Look up current information on the public web (DuckDuckGo). "
-            "Use this when asked to research external companies or topics beyond my notes."
-        )
-        tools = [retriever_tool, ddg]
-    except Exception:
-        tools = [retriever_tool]
+    ddg = DuckDuckGoSearchRun()
+    ddg.name = "web_search"
+    ddg.description = (
+        "Look up current information on the public web (DuckDuckGo). "
+        "Use this when asked to research external companies or topics beyond my notes."
+    )
+    tools = [retriever_tool, ddg]
 
     # Always include a web search tool for richer sourcing
     tools.append(_WebSearchTool())

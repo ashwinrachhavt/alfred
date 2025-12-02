@@ -176,6 +176,18 @@ class Settings(BaseSettings):
     # Agent tracing (LangGraph reasoning trace)
     enable_agent_trace: bool = Field(default=False, alias="ENABLE_AGENT_TRACE")
 
+    # Enrichment & graph (optional)
+    enable_ingest_enrichment: bool = Field(default=False, alias="ENABLE_INGEST_ENRICHMENT")
+    neo4j_uri: Optional[str] = Field(default=None, alias="NEO4J_URI")
+    neo4j_user: Optional[str] = Field(default=None, alias="NEO4J_USER")
+    neo4j_password: Optional[str] = Field(default=None, alias="NEO4J_PASSWORD")
+
+    # Classification (taxonomy)
+    enable_ingest_classification: bool = Field(default=False, alias="ENABLE_INGEST_CLASSIFICATION")
+    classification_taxonomy_path: Optional[str] = Field(
+        default=None, alias="CLASSIFICATION_TAXONOMY_PATH"
+    )
+
 
 settings = Settings()
 

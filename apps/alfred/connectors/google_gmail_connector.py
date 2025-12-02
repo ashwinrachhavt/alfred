@@ -5,6 +5,7 @@ Google Gmail Connector Module | Google OAuth Credentials | Gmail API
 import base64
 import inspect
 import re
+from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Optional
 
 from google.auth.transport.requests import Request
@@ -143,8 +144,6 @@ class GoogleGmailConnector:
     ) -> tuple[list[dict[str, Any]], str | None]:
         """Fetch recent messages from Gmail within specified days."""
         try:
-            from datetime import datetime, timedelta
-
             cutoff_date = datetime.now() - timedelta(days=days_back)
             date_query = cutoff_date.strftime("%Y/%m/%d")
             query = f"after:{date_query}"

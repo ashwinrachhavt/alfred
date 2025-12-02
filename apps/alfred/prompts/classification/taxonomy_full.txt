@@ -1,0 +1,440 @@
+🧠 DOMAIN 1: Artificial Intelligence (AI)
+
+SUBDOMAIN A — Foundations
+Microtopics
+1. Linear Algebra Basics
+2. Matrix Multiplication
+3. Eigenvalues & Eigenvectors
+4. Singular Value Decomposition
+5. Probability Distributions
+6. Bayes Theorem
+7. Maximum Likelihood Estimation
+8. Entropy & KL Divergence
+9. Optimization Theory
+10. Gradient Descent
+11. Stochastic Gradient Descent
+12. Momentum & Adam
+13. Loss Functions (Cross-Entropy, MSE)
+14. Regularization (L1/L2)
+15. Bias-Variance Tradeoff
+16. Overfitting/Underfitting
+17. Train/Val/Test Splits
+18. Feature Scaling
+19. Hyperparameter Tuning
+20. Learning Rate Schedules
+
+SUBDOMAIN B — Neural Networks
+Microtopics
+21. Perceptrons
+22. Activation Functions (ReLU, GELU)
+23. Backpropagation
+24. Weight Initialization
+25. Dropout
+26. Layer Normalization
+27. BatchNorm
+28. Residual Connections
+29. Multi-Layer Perceptrons (MLPs)
+30. Convolutional Networks
+31. Pooling
+32. RNNs / LSTMs / GRUs
+33. Seq2Seq Models
+34. Attention vs RNNs
+35. Universal Function Approximation
+
+SUBDOMAIN C — Transformers & LLM Architecture
+Microtopics
+36. Transformer Encoder
+37. Transformer Decoder
+38. Self-Attention
+39. Cross-Attention
+40. Multi-Head Attention
+41. Query-Key-Value Mechanism
+42. Scaled Dot-Product Attention
+43. Causal Masking
+44. Rotary Positional Embeddings (RoPE)
+45. Absolute/Relative Positional Encoding
+46. KV Cache
+47. Prefill Phase vs Decode Phase
+48. Multi-Query Attention
+49. Grouped Query Attention
+50. Flash Attention
+51. MoE (Mixture of Experts)
+52. Router Networks
+53. Sparse Attention
+54. Attention Scaling Limits
+55. Transformer Inference Optimization
+
+SUBDOMAIN D — Tokenization & Text Processing
+Microtopics
+56. Byte-Pair Encoding (BPE)
+57. SentencePiece
+58. Unigram Tokenization
+59. Token Merging
+60. Vocabulary Construction
+61. Token Efficiency
+62. Subword Decomposition
+63. Embedding Matrices
+64. Context Window Management
+
+SUBDOMAIN E — Training LLMs
+Microtopics
+65. Pretraining Objectives
+66. Masked Language Modeling
+67. Causal Language Modeling
+68. Next-Token Prediction
+69. Distributed Training
+70. Data Parallelism
+71. Tensor Parallelism
+72. Pipeline Parallelism
+73. ZeRO Optimization
+74. Data Curation
+75. Instruction Tuning
+76. Supervised Fine-Tuning (SFT)
+77. Reinforcement Learning from Human Feedback (RLHF)
+78. Preference Modeling
+79. Policy Optimization (PPO, DPO)
+80. Reward Modeling
+81. Safety Training
+82. Alignment Techniques
+83. Catastrophic Forgetting
+84. Continual Learning
+85. Learning Rate Warmup
+86. Token Dropping
+87. LoRA & Adapters
+88. Mixture-of-Experts Training
+
+SUBDOMAIN F — Inference & Serving
+Microtopics
+89. Beam Search
+90. Top-k Sampling
+91. Top-p (Nucleus) Sampling
+92. Temperature Scaling
+93. Repetition Penalty
+94. System Prompt Conditioning
+95. Token Streaming
+96. Hardware Acceleration (GPU/TPU)
+97. Quantization (INT8, FP16, GGUF, GPTQ)
+98. Speculative Decoding
+99. Assisted Generation
+100. KV Cache Optimization
+101. Prompt Optimization
+102. Latency Optimization
+103. Memory Management
+104. Multi-Tenant LLM Serving
+105. Routing Large Model Systems
+
+SUBDOMAIN G — RAG (Retrieval-Augmented Generation)
+Microtopics
+106. Chunking Strategies
+107. Semantic Chunking
+108. Windowed Retrieval
+109. Hybrid Retrieval (BM25 + Embeddings)
+110. Dense Retrieval
+111. Sparse Retrieval
+112. Metadata Filtering
+113. Vector Stores
+114. HNSW
+115. FAISS
+116. Qdrant
+117. Re-ranking
+118. Query Expansion
+119. HyDE Retrieval
+120. Context Compression
+121. Retrieval Pipeline Latency
+122. Multi-Hop Retrieval
+123. Query Understanding
+124. Source Attribution
+125. Evidence Grounding
+
+SUBDOMAIN H — Agents
+Microtopics
+126. ReAct Pattern
+127. Plan-and-Execute
+128. Tool Calling
+129. Memory (Episodic/Semantic)
+130. Multi-Agent Collaboration
+131. Long-Term Memory
+132. Working Memory
+133. Task Decomposition
+134. World Models
+135. Belief Updating
+136. Self-Evaluation Agents
+137. Correctness Checking
+138. Retrieval Agents
+139. Orchestrators
+
+SUBDOMAIN I — Evaluation & Safety
+Microtopics
+140. Precision/Recall
+141. Truthfulness
+142. Hallucination Metrics
+143. Adversarial Testing
+144. Bias & Fairness
+145. Robustness Testing
+146. Jailbreak Defense
+147. Safety Alignment
+148. Guardrails
+149. Structured Output Validation
+150. Benchmarking (MMLU, GPQA, HumanEval)
+
+🏗 DOMAIN 2: System Design
+
+SUBDOMAIN A — Distributed Systems
+Microtopics
+151. CAP Theorem
+152. Consistency Models
+153. Eventual Consistency
+154. Strong Consistency
+155. Quorum Reads/Writes
+156. Gossip Protocols
+157. Leader Election
+158. Heartbeats
+159. Failure Detection
+160. Distributed Transactions
+161. Idempotency
+162. Circuit Breakers
+163. Distributed Locks
+
+SUBDOMAIN B — Databases
+Microtopics
+164. Storage Engines
+165. B-Trees
+166. Hash Indexes
+167. LSM Trees
+168. Write-Ahead Logs
+169. MVCC
+170. Query Execution Plans
+171. Sharding
+172. Replication
+173. Partition Keys
+174. Global Secondary Indexes
+175. Bloom Filters
+176. Read/Write Skew
+177. Hotspotting
+
+SUBDOMAIN C — Scalability
+Microtopics
+178. Vertical vs Horizontal Scaling
+179. Load Balancers
+180. Reverse Proxies
+181. Caching Layers
+182. CDN
+183. Rate Limiting
+184. Throttling
+185. Backpressure
+186. Queue Systems
+187. Distributed Queues
+188. Throughput vs Latency
+189. SLA/SLO/SLI
+
+SUBDOMAIN D — Storage
+Microtopics
+190. File Systems
+191. Block Storage
+192. Object Storage
+193. Append-only Logs
+194. Time-Series Storage
+195. Cold vs Hot Storage
+196. Snapshots
+197. Deduplication
+
+SUBDOMAIN E — Networking
+Microtopics
+198. TCP/IP
+199. UDP
+200. DNS
+201. NAT
+202. TLS
+203. HTTP/2, HTTP/3
+204. WebSockets
+205. Reverse Tunnels
+
+SUBDOMAIN F — Observability
+Microtopics
+206. Logging
+207. Metrics
+208. Tracing
+209. Distributed Tracing
+210. Dashboards
+211. Rate of Error Spikes
+212. Profiling (CPU, Memory)
+
+💰 DOMAIN 3: Finance
+
+SUBDOMAIN A — Corporate Finance
+Microtopics
+213. Balance Sheet
+214. Income Statement
+215. Cash Flow Statement
+216. Working Capital
+217. Capital Structure
+218. Cost of Capital
+219. Depreciation Methods
+220. Amortization
+221. Free Cash Flow
+222. EBITDA
+223. Net Present Value
+
+SUBDOMAIN B — Markets
+Microtopics
+224. Equities
+225. Bonds
+226. Commodities
+227. FX Markets
+228. Yield Curves
+229. Duration
+230. Convexity
+231. Credit Risk
+232. Market Microstructure
+233. Dark Pools
+234. Order Books
+
+SUBDOMAIN C — Derivatives
+Microtopics
+235. Options
+236. Greeks (Delta, Gamma...)
+237. Futures
+238. Swaps
+239. Hedging Strategies
+
+SUBDOMAIN D — Accounting
+Microtopics
+240. GAAP Principles
+241. Accrual Accounting
+242. Revenue Recognition
+243. Inventory Methods
+244. Matching Principle
+245. Consolidation
+
+🚀 DOMAIN 4: Startups & Product
+
+SUBDOMAIN A — Product
+Microtopics
+246. Product-Market Fit
+247. MVP Design
+248. User Discovery
+249. Value Propositions
+250. Feature Prioritization
+251. Roadmapping
+252. UX Principles
+253. Experimentation Frameworks
+
+SUBDOMAIN B — Growth
+Microtopics
+254. Growth Loops
+255. Network Effects
+256. CAC
+257. LTV
+258. Retention
+259. Activation
+260. Churn Drivers
+
+SUBDOMAIN C — Fundraising
+Microtopics
+261. SAFE Notes
+262. Convertible Notes
+263. Cap Tables
+264. Dilution
+265. Seed → Series A Mechanics
+
+📈 DOMAIN 5: Investing
+
+SUBDOMAIN A — Portfolio Theory
+Microtopics
+266. Efficient Frontier
+267. Sharpe Ratio
+268. Risk Parity
+269. Diversification
+270. Correlation Structure
+
+SUBDOMAIN B — Analysis
+Microtopics
+271. Fundamental Analysis
+272. Technical Indicators
+273. Valuation Models
+274. DCF
+275. Factor Models
+
+✍️ DOMAIN 6: Writing & Literature
+
+SUBDOMAIN A — Narrative
+Microtopics
+276. Story Arc
+277. Three-Act Structure
+278. Character Development
+279. Pacing
+280. Voice
+281. Tone
+
+SUBDOMAIN B — Rhetoric
+Microtopics
+282. Ethos
+283. Pathos
+284. Logos
+285. Persuasion Techniques
+286. Clarity
+287. Brevity
+
+🏛 DOMAIN 7: Politics
+
+SUBDOMAIN A — Governance
+Microtopics
+288. Federalism
+289. Democracy Models
+290. Separation of Powers
+291. Constitutionality
+
+SUBDOMAIN B — Policy
+Microtopics
+292. Monetary Policy
+293. Fiscal Policy
+294. Trade Policy
+295. Regulatory Capture
+
+🎬 DOMAIN 8: Movies & Pop Culture
+
+SUBDOMAIN A — Film Analysis
+Microtopics
+296. Cinematography
+297. Editing
+298. Mise-en-scène
+299. Sound Design
+300. Narrative Structure
+301. Themes & Symbols
+
+🧘 DOMAIN 9: Philosophy
+
+SUBDOMAIN A — Ethics
+Microtopics
+302. Utilitarianism
+303. Deontology
+304. Virtue Ethics
+305. Moral Reasoning
+
+SUBDOMAIN B — Epistemology
+Microtopics
+306. Knowledge vs Belief
+307. Rationalism
+308. Empiricism
+309. Skepticism
+
+🧭 DOMAIN 10: Productivity & Career
+
+SUBDOMAIN A — Productivity Systems
+Microtopics
+310. Deep Work
+311. Flow States
+312. Habit Formation
+313. Time Blocking
+314. Task Decomposition
+315. Eisenhower Matrix
+
+SUBDOMAIN B — Career Development
+Microtopics
+316. Negotiation
+317. Networking
+318. Leadership Styles
+319. Communication Frameworks
+
+⭐ TOTAL MICROTOPICS: ≈ 450 (extensible)
+
