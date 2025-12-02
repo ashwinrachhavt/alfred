@@ -184,7 +184,9 @@ class Settings(BaseSettings):
 
     # Classification (taxonomy)
     enable_ingest_classification: bool = Field(default=False, alias="ENABLE_INGEST_CLASSIFICATION")
-    classification_taxonomy_path: Optional[str] = Field(default=None, alias="CLASSIFICATION_TAXONOMY_PATH")
+    classification_taxonomy_path: Optional[str] = Field(
+        default=None, alias="CLASSIFICATION_TAXONOMY_PATH"
+    )
 
 
 settings = Settings()

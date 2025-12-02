@@ -261,14 +261,14 @@ def main(argv: Optional[List[str]] = None) -> int:
                         text=cleaned_text or base_text, taxonomy_context=taxonomy_ctx
                     )
                     # diff-aware nested set for topics.classification
-                    existing_topics = doc.get("topics") or {}
-                    existing_cls = (
-                        existing_topics.get("classification")
-                        if isinstance(existing_topics, dict)
-                        else None
-                    )
-                    if existing_cls != cls_doc:
-                        set_fields["topics.classification"] = cls_doc
+                    existing_topics = doc.get("topics")
+                    if isinstance(existing_topics, dict):
+                        existing_cls = existing_topics.get("classification")
+                        if existing_cls != cls_doc:
+                            set_fields["topics.classification"] = cls_doc
+                    else:
+                        # If topics is missing or not a dict, set it to a dict with classification
+                        set_fields["topics"] = {"classification": cls_doc}
                     # If title missing, fill from classification
                     if not (doc.get("title") or "").strip():
                         title = (

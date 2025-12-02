@@ -18,3 +18,4 @@ class Quiz(BaseModel):
 def validate_quiz(data: dict) -> Quiz:
     """Parse and validate a quiz payload."""
     return Quiz.model_validate(data)
+

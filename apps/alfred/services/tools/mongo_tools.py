@@ -4,15 +4,11 @@ import json
 import logging
 from typing import Any
 
-from alfred.core import agno_tracing
 from alfred.services.mongo import MongoService
-
-from ._tooling import agno_tool as tool
 
 logger = logging.getLogger(__name__)
 
 
-@tool()
 def query_mongo(collection: str, filter_json: str, limit: int = 20) -> str:
     """Query MongoDB for documents using a JSON filter (read-only).
 
@@ -54,24 +50,7 @@ def query_mongo(collection: str, filter_json: str, limit: int = 20) -> str:
         meta = f"Filter: `{json.dumps(filt, ensure_ascii=False)}`\n" f"Limit: {n}\n\n"
         body = f"```json\n{as_json}\n```"
         out = header + meta + body
-        try:
-            agno_tracing.log_tool_call(
-                name="query_mongo",
-                args={"collection": coll, "filter": filt, "limit": n},
-                result={"count": len(docs)},
-            )
-        except Exception:
-            pass
         return out
     except Exception as exc:  # pragma: no cover - defensive path
         logger.warning("mongo query failed: %s", exc)
-        try:
-            agno_tracing.log_tool_call(
-                name="query_mongo",
-                args={"collection": coll, "filter": (filter_json or ""), "limit": limit},
-                result=None,
-                error=str(exc),
-            )
-        except Exception:
-            pass
         return f"### Mongo Query — collection `{coll}`\n\n" f"⚠️ Query failed. Error: {exc}"

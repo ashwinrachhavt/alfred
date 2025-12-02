@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from alfred.core import agno_tracing
 from alfred.services.web_search import search_web as _service_search_web
-
-from ._tooling import agno_tool as tool
 
 logger = logging.getLogger(__name__)
 
@@ -37,26 +34,9 @@ def render_web_search_markdown(query: str, max_results: int = 10) -> str:
             if snippet:
                 lines.append(f"   - {snippet}")
         result = "\n".join(lines)
-        try:
-            agno_tracing.log_tool_call(
-                name="search_web",
-                args={"query": query, "max_results": max_results},
-                result={"provider": provider, "hits_count": len(hits)},
-            )
-        except Exception:
-            pass
         return result
     except Exception as exc:  # pragma: no cover - defensive path
         logger.warning("web search failed: %s", exc)
-        try:
-            agno_tracing.log_tool_call(
-                name="search_web",
-                args={"query": query, "max_results": max_results},
-                result=None,
-                error=str(exc),
-            )
-        except Exception:
-            pass
         return (
             "### Web Search\n\n"
             f"⚠️ Unable to complete web search for: {query}.\n\n"
@@ -64,7 +44,6 @@ def render_web_search_markdown(query: str, max_results: int = 10) -> str:
         )
 
 
-@tool()
 def search_web(query: str, max_results: int = 10) -> str:
     """Search the web for recent and relevant results.
 

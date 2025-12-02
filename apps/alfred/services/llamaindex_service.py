@@ -14,6 +14,7 @@ from alfred.services.doc_storage import DocStorageService
 logger = logging.getLogger(__name__)
 load_dotenv()
 
+
 @dataclass
 class LlamaIndexService:
     """Builds a simple in-memory VectorStoreIndex over Mongo-backed documents."""

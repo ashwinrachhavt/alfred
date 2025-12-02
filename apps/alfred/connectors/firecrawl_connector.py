@@ -14,6 +14,7 @@ class FirecrawlResponse(BaseModel):
     data: Optional[Any] = None
     error: Optional[Any] = None
     markdown: Optional[str] = None
+    html: Optional[str] = None
     status_code: Optional[int] = None
 
 
@@ -73,7 +74,15 @@ class FirecrawlClient:
     ) -> FirecrawlResponse:
         url = urljoin(self.base_url + "/", endpoint.lstrip("/"))
         try:
-            kwargs: Dict[str, Any] = {"timeout": self.timeout}
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0 Safari/537.36"
+                ),
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+            kwargs: Dict[str, Any] = {"timeout": self.timeout, "headers": headers}
             if payload is not None:
                 kwargs["json"] = payload
             response = requests.request(method=method.lower(), url=url, **kwargs)
@@ -88,26 +97,69 @@ class FirecrawlClient:
             payload = response.text or ""
         if response.ok:
             markdown = self._extract_markdown(payload)
+            html = self._extract_html(payload)
             return FirecrawlResponse(
                 success=True,
                 data=payload,
                 markdown=markdown,
+                html=html,
                 status_code=response.status_code,
             )
         return FirecrawlResponse(success=False, error=payload, status_code=response.status_code)
 
     def _extract_markdown(self, payload: Any) -> Optional[str]:
-        if isinstance(payload, str):
-            return payload
-        if isinstance(payload, dict):
-            direct = payload.get("markdown")
-            if isinstance(direct, str):
-                return direct
-            nested = payload.get("data")
-            if isinstance(nested, dict):
-                nested_markdown = nested.get("markdown")
-                if isinstance(nested_markdown, str):
-                    return nested_markdown
+        """Best-effort extraction of markdown/content from Firecrawl responses.
+
+        Recursively searches for any of keys (markdown, content, text) and merges list items.
+        """
+        keys = ("markdown", "content", "text")
+
+        def _search(obj: Any) -> List[str]:
+            found: List[str] = []
+            if isinstance(obj, str):
+                s = obj.strip()
+                if s:
+                    found.append(s)
+            elif isinstance(obj, dict):
+                for k in keys:
+                    v = obj.get(k)
+                    if isinstance(v, str) and v.strip():
+                        found.append(v.strip())
+                # Recurse into dict values
+                for v in obj.values():
+                    found.extend(_search(v))
+            elif isinstance(obj, list):
+                for it in obj:
+                    found.extend(_search(it))
+            return found
+
+        results = _search(payload)
+        if results:
+            # Prefer the first non-empty, else join unique snippets
+            return results[0]
+        return None
+
+    def _extract_html(self, payload: Any) -> Optional[str]:
+        def _search_html(obj: Any) -> List[str]:
+            found: List[str] = []
+            if isinstance(obj, str):
+                s = obj.strip()
+                if s.startswith("<"):
+                    found.append(s)
+            elif isinstance(obj, dict):
+                v = obj.get("html")
+                if isinstance(v, str) and v.strip():
+                    found.append(v)
+                for val in obj.values():
+                    found.extend(_search_html(val))
+            elif isinstance(obj, list):
+                for it in obj:
+                    found.extend(_search_html(it))
+            return found
+
+        results = _search_html(payload)
+        if results:
+            return results[0]
         return None
 
 

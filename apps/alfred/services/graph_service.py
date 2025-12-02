@@ -68,7 +68,9 @@ if _NEO4J_AVAILABLE:
             """
             self._run(query, {"doc_id": doc_id, "name": name})
 
-        def link_entities(self, *, from_name: str, to_name: str, rel_type: str = "RELATED_TO") -> None:
+        def link_entities(
+            self, *, from_name: str, to_name: str, rel_type: str = "RELATED_TO"
+        ) -> None:
             query = f"""
             MATCH (a:Entity {{name: $from}}), (b:Entity {{name: $to}})
             MERGE (a)-[r:{rel_type}]->(b)
@@ -76,6 +78,7 @@ if _NEO4J_AVAILABLE:
             """
             self._run(query, {"from": from_name, "to": to_name})
 else:
+
     @dataclass
     class GraphService:
         """No-op GraphService when `neo4j` is not installed.
@@ -107,5 +110,7 @@ else:
         def link_doc_to_entity(self, *, doc_id: str, name: str, rel_type: str = "MENTIONS") -> None:
             return
 
-        def link_entities(self, *, from_name: str, to_name: str, rel_type: str = "RELATED_TO") -> None:
+        def link_entities(
+            self, *, from_name: str, to_name: str, rel_type: str = "RELATED_TO"
+        ) -> None:
             return

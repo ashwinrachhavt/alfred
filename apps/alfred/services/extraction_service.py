@@ -1,19 +1,25 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-import langextract as lx  # type: ignore
 from dotenv import load_dotenv
-from openai import OpenAI  # type: ignore
 from pydantic import BaseModel, Field
 
 from alfred.prompts import load_prompt
 from alfred.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
+
+# Optional dependency: langextract
+_LANGEXTRACT_AVAILABLE = importlib.util.find_spec("langextract") is not None
+if _LANGEXTRACT_AVAILABLE:  # pragma: no cover - environment dependent
+    import langextract as lx  # type: ignore
+else:  # pragma: no cover - environment dependent
+    lx = None  # type: ignore
 
 
 @dataclass
@@ -38,61 +44,67 @@ class ExtractionService:
         if not text:
             return out
 
-        # LangExtract graph extraction (OpenAI provider)
-        from dataclasses import dataclass as _dc_dataclass
+        # LangExtract graph extraction (OpenAI provider), if available
+        try:
+            if _LANGEXTRACT_AVAILABLE and lx is not None:
+                from dataclasses import dataclass as _dc_dataclass
 
-        @_dc_dataclass
-        class Entity:
-            name: Optional[str] = None
-            type: Optional[str] = None
+                @_dc_dataclass
+                class Entity:
+                    name: Optional[str] = None
+                    type: Optional[str] = None
 
-        @_dc_dataclass
-        class Relation:
-            source: Optional[str] = field(default=None, metadata={"alias": "from"})
-            target: Optional[str] = field(default=None, metadata={"alias": "to"})
-            type: Optional[str] = None
+                @_dc_dataclass
+                class Relation:
+                    source: Optional[str] = field(default=None, metadata={"alias": "from"})
+                    target: Optional[str] = field(default=None, metadata={"alias": "to"})
+                    type: Optional[str] = None
 
-        @_dc_dataclass
-        class GraphExtraction:
-            entities: List[Entity] = field(default_factory=list)
-            relations: List[Relation] = field(default_factory=list)
-            topics: List[str] = field(default_factory=list)
+                @_dc_dataclass
+                class GraphExtraction:
+                    entities: List[Entity] = field(default_factory=list)
+                    relations: List[Relation] = field(default_factory=list)
+                    topics: List[str] = field(default_factory=list)
 
-        instr = (
-            "Extract entities (name,type) and relations (from,to,type). "
-            "Return JSON that matches the schema exactly. Use snake_case for types and topics."
-        )
-        result = lx.extract(
-            text_or_documents=text,
-            prompt_description=instr,
-            examples=[],
-            target_schemas=[GraphExtraction],
-            model_id="openai:gpt-4o-mini",
-            max_workers=0,
-            extraction_passes=1,
-        )
-        entities_list: List[Dict[str, Any]] = []
-        relations_list: List[Dict[str, Any]] = []
-        topics_list: List[str] = []
-        for ex in getattr(result, "extractions", []) or []:
-            attrs = getattr(ex, "attributes", {}) or {}
-            for e in attrs.get("entities", []) or []:
-                n = e.get("name") or e.get("Name")
-                t = e.get("type") or e.get("Type")
-                if n:
-                    entities_list.append({"name": n, "type": t})
-            for r in attrs.get("relations", []) or []:
-                f = r.get("from") or r.get("source")
-                t = r.get("to") or r.get("target")
-                rt = r.get("type") or "RELATED_TO"
-                if f and t:
-                    relations_list.append({"from": f, "to": t, "type": rt})
-            topics_list.extend([str(x) for x in attrs.get("topics", []) if isinstance(x, str)])
-        if entities_list or relations_list or topics_list:
-            out["entities"] = entities_list
-            out["relations"] = relations_list
-            out["topics"] = list(dict.fromkeys(topics_list))
-            return out
+                instr = (
+                    "Extract entities (name,type) and relations (from,to,type). "
+                    "Return JSON that matches the schema exactly. Use snake_case for types and topics."
+                )
+                result = lx.extract(  # type: ignore[attr-defined]
+                    text_or_documents=text,
+                    prompt_description=instr,
+                    examples=[],
+                    target_schemas=[GraphExtraction],
+                    model_id="openai:gpt-4o-mini",
+                    max_workers=0,
+                    extraction_passes=1,
+                )
+                entities_list: List[Dict[str, Any]] = []
+                relations_list: List[Dict[str, Any]] = []
+                topics_list: List[str] = []
+                for ex in getattr(result, "extractions", []) or []:
+                    attrs = getattr(ex, "attributes", {}) or {}
+                    for e in attrs.get("entities", []) or []:
+                        n = e.get("name") or e.get("Name")
+                        t = e.get("type") or e.get("Type")
+                        if n:
+                            entities_list.append({"name": n, "type": t})
+                    for r in attrs.get("relations", []) or []:
+                        f = r.get("from") or r.get("source")
+                        t = r.get("to") or r.get("target")
+                        rt = r.get("type") or "RELATED_TO"
+                        if f and t:
+                            relations_list.append({"from": f, "to": t, "type": rt})
+                    topics_list.extend(
+                        [str(x) for x in attrs.get("topics", []) if isinstance(x, str)]
+                    )
+                if entities_list or relations_list or topics_list:
+                    out["entities"] = entities_list
+                    out["relations"] = relations_list
+                    out["topics"] = list(dict.fromkeys(topics_list))
+                    return out
+        except Exception as exc:
+            logger.debug("LangExtract graph failed: %s", exc)
 
         # Fallback: OpenAI structured outputs
         class EntityModel(BaseModel):
@@ -179,42 +191,45 @@ class ExtractionService:
 
         out: EnrichOut
         try:
+            if _LANGEXTRACT_AVAILABLE and lx is not None:
 
-            @dataclass
-            class DocEnrichment:
-                lang: Optional[str] = None
-                summary_short: Optional[str] = None
-                summary_long: Optional[str] = None
-                bullets: List[str] = field(default_factory=list)
-                key_points: List[str] = field(default_factory=list)
-                topics_primary: Optional[str] = None
-                topics_secondary: List[str] = field(default_factory=list)
-                tags: List[str] = field(default_factory=list)
+                @dataclass
+                class DocEnrichment:
+                    lang: Optional[str] = None
+                    summary_short: Optional[str] = None
+                    summary_long: Optional[str] = None
+                    bullets: List[str] = field(default_factory=list)
+                    key_points: List[str] = field(default_factory=list)
+                    topics_primary: Optional[str] = None
+                    topics_secondary: List[str] = field(default_factory=list)
+                    tags: List[str] = field(default_factory=list)
 
-            instr = (
-                "Detect `lang` (ISO 639-1). "
-                "Write a richer summary_short (3-6 sentences in a single cohesive paragraph) and "
-                "a more detailed summary_long (2-4 paragraphs, each with 5-8 sentences). "
-                "Also include bullets (2-6) and key_points (2-6). "
-                "Return topics_primary and topics_secondary in snake_case, and 2-10 snake_case tags."
-            )
-            result = lx.extract(
-                text_or_documents=text,
-                prompt_description=instr,
-                examples=[],
-                target_schemas=[DocEnrichment],
-                model_id="openai:gpt-4o-mini",
-                max_workers=0,
-                extraction_passes=1,
-            )
-            attrs = None
-            exs = getattr(result, "extractions", []) or []
-            if exs:
-                attrs = getattr(exs[0], "attributes", None)
-            if attrs is None:
-                out = EnrichOut()
+                instr = (
+                    "Detect `lang` (ISO 639-1). "
+                    "Write a richer summary_short (3-6 sentences in a single cohesive paragraph) and "
+                    "a more detailed summary_long (2-4 paragraphs, each with 5-8 sentences). "
+                    "Also include bullets (2-6) and key_points (2-6). "
+                    "Return topics_primary and topics_secondary in snake_case, and 2-10 snake_case tags."
+                )
+                result = lx.extract(  # type: ignore[attr-defined]
+                    text_or_documents=text,
+                    prompt_description=instr,
+                    examples=[],
+                    target_schemas=[DocEnrichment],
+                    model_id="openai:gpt-4o-mini",
+                    max_workers=0,
+                    extraction_passes=1,
+                )
+                attrs = None
+                exs = getattr(result, "extractions", []) or []
+                if exs:
+                    attrs = getattr(exs[0], "attributes", None)
+                if attrs is None:
+                    out = EnrichOut()
+                else:
+                    out = EnrichOut.model_validate(attrs)  # type: ignore[arg-type]
             else:
-                out = EnrichOut.model_validate(attrs)  # type: ignore[arg-type]
+                raise RuntimeError("langextract not available")
         except Exception as exc:
             logger.debug("LangExtract enrich failed: %s", exc)
             ls = LLMService()
@@ -253,6 +268,8 @@ class ExtractionService:
         embedding: Optional[List[float]] = None
         if include_embedding:
             try:
+                from openai import OpenAI  # type: ignore
+
                 client = OpenAI()
                 resp = client.embeddings.create(model="text-embedding-3-small", input=text)
                 embedding = list(resp.data[0].embedding)
@@ -329,26 +346,27 @@ class ExtractionService:
             topic: Topic = field(default_factory=Topic)
 
         try:
-            result = lx.extract(
-                text_or_documents=txt,
-                prompt_description=prompt_description,
-                examples=[],
-                target_schemas=[Classification],
-                model_id="openai:gpt-4o-mini",
-                max_workers=0,
-                extraction_passes=1,
-            )
-            exs = getattr(result, "extractions", []) or []
-            attrs = getattr(exs[0], "attributes", None) if exs else None
-            if isinstance(attrs, dict):
-                # Ensure keys exist as expected
-                out = {
-                    "domain": attrs.get("domain"),
-                    "subdomain": attrs.get("subdomain"),
-                    "microtopics": attrs.get("microtopics") or [],
-                    "topic": attrs.get("topic") or {},
-                }
-                return out
+            if _LANGEXTRACT_AVAILABLE and lx is not None:
+                result = lx.extract(  # type: ignore[attr-defined]
+                    text_or_documents=txt,
+                    prompt_description=prompt_description,
+                    examples=[],
+                    target_schemas=[Classification],
+                    model_id="openai:gpt-4o-mini",
+                    max_workers=0,
+                    extraction_passes=1,
+                )
+                exs = getattr(result, "extractions", []) or []
+                attrs = getattr(exs[0], "attributes", None) if exs else None
+                if isinstance(attrs, dict):
+                    # Ensure keys exist as expected
+                    out = {
+                        "domain": attrs.get("domain"),
+                        "subdomain": attrs.get("subdomain"),
+                        "microtopics": attrs.get("microtopics") or [],
+                        "topic": attrs.get("topic") or {},
+                    }
+                    return out
         except Exception as exc:
             logger.debug("LangExtract classify failed: %s", exc)
 

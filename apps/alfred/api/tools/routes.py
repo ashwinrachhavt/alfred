@@ -6,7 +6,6 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from alfred.core import agno_tracing
 from alfred.services.mongo import MongoService
 from alfred.services.slack import SlackService
 
@@ -32,14 +31,6 @@ def slack_send(payload: SlackSendRequest) -> dict[str, Any]:
         result = svc.send_message(
             channel=payload.channel, text=payload.text, thread_ts=payload.thread_ts
         )
-        try:
-            agno_tracing.log_tool_call(
-                name="slack_send",
-                args={"channel": payload.channel, "thread": bool(payload.thread_ts)},
-                result={"permalink": result.get("permalink")},
-            )
-        except Exception:
-            pass
         return result
     except Exception as exc:
         logger.warning("Slack send failed: %s", exc)
@@ -62,14 +53,6 @@ def mongo_query(payload: MongoQueryRequest) -> dict[str, Any]:
     try:
         svc = MongoService(default_collection=coll)
         docs = svc.find_many(payload.filter or {}, limit=payload.limit)
-        try:
-            agno_tracing.log_tool_call(
-                name="mongo_query",
-                args={"collection": coll, "filter": payload.filter or {}, "limit": payload.limit},
-                result={"count": len(docs)},
-            )
-        except Exception:
-            pass
         return {"collection": coll, "count": len(docs), "items": docs}
     except Exception as exc:
         logger.warning("Mongo query failed: %s", exc)
@@ -91,9 +74,8 @@ def tools_status() -> dict[str, Any]:
     except Exception:
         mongo_ok = False
 
-    tracing_enabled = agno_tracing.init() and agno_tracing.is_enabled()
     return {
         "slack": has_slack,
         "mongo": mongo_ok,
-        "tracing": tracing_enabled,
+        "tracing": False,
     }

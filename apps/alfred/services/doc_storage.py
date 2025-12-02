@@ -281,7 +281,9 @@ class DocStorageService:
                 taxonomy_ctx = None
                 if settings.classification_taxonomy_path:
                     try:
-                        with open(settings.classification_taxonomy_path, "r", encoding="utf-8") as fh:
+                        with open(
+                            settings.classification_taxonomy_path, "r", encoding="utf-8"
+                        ) as fh:
                             taxonomy_ctx = fh.read()
                     except Exception:
                         taxonomy_ctx = None
@@ -395,9 +397,10 @@ class DocStorageService:
             # Non-fatal: proceed without chunks
             chunk_ids = []
 
-        # Optional: graph enrichment after persistence (best-effort)
+        # Optional: content graph extraction and topic hinting (best-effort)
+        # Decoupled from Neo4j so topics.extracted can be written even without a graph backend.
         try:
-            if self.extraction_service and self.graph_service:
+            if self.extraction_service:
                 full_text = payload.raw_markdown or cleaned_text
                 extraction = self.extraction_service.extract_graph(
                     text=full_text,
@@ -408,30 +411,33 @@ class DocStorageService:
                 topics_from_extraction = extraction.get("topics") or []
                 doc_id_str = str(doc_id)
 
-                # Upserts
-                self.graph_service.upsert_document_node(
-                    doc_id=doc_id_str,
-                    title=payload.title,
-                    source_url=payload.source_url,
-                )
-                for ent in entities:
-                    name = ent.get("name")
-                    etype = ent.get("type") or ent.get("type_")
-                    if not name:
-                        continue
-                    self.graph_service.upsert_entity(name=name, type_=etype)
-                    self.graph_service.link_doc_to_entity(doc_id=doc_id_str, name=name)
-                for rel in relations:
-                    f = rel.get("from")
-                    t = rel.get("to")
-                    r = rel.get("type") or "RELATED_TO"
-                    if f and t:
-                        self.graph_service.link_entities(from_name=f, to_name=t, rel_type=r)
+                # Write topics.extracted regardless of graph availability
                 if topics_from_extraction:
                     self._documents.update_one(
                         {"_id": doc_id},
                         {"$set": {"topics.extracted": topics_from_extraction}},
                     )
+
+                # If a graph service is configured, upsert nodes/edges
+                if self.graph_service:
+                    self.graph_service.upsert_document_node(
+                        doc_id=doc_id_str,
+                        title=payload.title,
+                        source_url=payload.source_url,
+                    )
+                    for ent in entities:
+                        name = ent.get("name")
+                        etype = ent.get("type") or ent.get("type_")
+                        if not name:
+                            continue
+                        self.graph_service.upsert_entity(name=name, type_=etype)
+                        self.graph_service.link_doc_to_entity(doc_id=doc_id_str, name=name)
+                    for rel in relations:
+                        f = rel.get("from")
+                        t = rel.get("to")
+                        r = rel.get("type") or "RELATED_TO"
+                        if f and t:
+                            self.graph_service.link_entities(from_name=f, to_name=t, rel_type=r)
         except Exception:
             pass
 

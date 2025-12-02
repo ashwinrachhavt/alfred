@@ -9,6 +9,7 @@ API keys to avoid accidental HTTP calls.
 
 from __future__ import annotations
 
+import os
 import socket
 
 import pytest
@@ -20,6 +21,11 @@ def _disable_network(monkeypatch: pytest.MonkeyPatch):
 
     Blocks low-level socket usage to prevent accidental HTTP egress.
     """
+
+    # Allow opt-out for explicit integration runs
+    allow = os.getenv("ALLOW_NETWORK", "").strip().lower()
+    if allow in {"1", "true", "yes"}:
+        return
 
     # Block socket.create_connection (used by many HTTP clients)
     def _blocked_create_connection(*args, **kwargs):  # noqa: ANN001, ANN002
