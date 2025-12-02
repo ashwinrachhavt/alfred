@@ -12,7 +12,6 @@ from llama_index.llms.openai import OpenAI
 from alfred.services.doc_storage import DocStorageService
 
 logger = logging.getLogger(__name__)
-from dotenv import load_dotenv
 load_dotenv()
 
 @dataclass

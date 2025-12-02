@@ -21,11 +21,11 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
+from alfred.prompts import load_prompt
 from alfred.schemas.documents import DocChunkRecord
 from alfred.services.chunking import ChunkingService
 from alfred.services.extraction_service import ExtractionService
 from alfred.services.mongo import MongoService
-from alfred.prompts import load_prompt
 from bson import ObjectId
 from dotenv import load_dotenv
 from pymongo.errors import DuplicateKeyError
