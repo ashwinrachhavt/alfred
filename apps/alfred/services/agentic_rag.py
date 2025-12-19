@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from typing import Any, Iterable, List, Literal, Sequence, TypedDict
 
 from langchain_community.tools import DuckDuckGoSearchRun  # type: ignore
@@ -15,6 +14,7 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient  # type: ignore
 
+from alfred.core.settings import settings
 from alfred.prompts import load_prompt
 from alfred.services.web_search import search_web
 
@@ -27,16 +27,13 @@ class AgentState(TypedDict):
 
 
 # ------------------------ CONFIG ------------------------
-COLLECTION = os.getenv("QDRANT_COLLECTION", os.getenv("CHROMA_COLLECTION", "personal_kb"))
-EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-small")
-CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4.1")
-FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "gpt-4.1-mini")
-CHROMA_PATH = os.getenv("CHROMA_PATH", "./chroma_store")
-QDRANT_URL = os.getenv("QDRANT_URL")
-QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
-QDRANT_HOST = os.getenv("QDRANT_HOST")
-QDRANT_PORT = os.getenv("QDRANT_PORT")
-ENABLE_QDRANT = os.getenv("ALFRED_ENABLE_QDRANT", "0").lower() in {"1", "true", "yes"}
+COLLECTION = settings.qdrant_collection or "personal_kb"
+EMBED_MODEL = "text-embedding-3-small"
+CHAT_MODEL = settings.llm_model
+FALLBACK_MODEL = "gpt-4.1-mini"
+QDRANT_URL = settings.qdrant_url
+QDRANT_API_KEY = settings.qdrant_api_key.get_secret_value() if settings.qdrant_api_key else None
+ENABLE_QDRANT = bool(QDRANT_URL)
 
 
 # ------------------------ PROMPTS ------------------------
@@ -68,7 +65,15 @@ def build_system_prompt(mode: str = "minimal") -> str:
 # ------------------------ HELPERS ------------------------
 def make_llm(temperature: float = 0.2):
     try:
-        return ChatOpenAI(model=CHAT_MODEL, temperature=temperature)
+        return ChatOpenAI(
+            model=CHAT_MODEL,
+            temperature=temperature,
+            api_key=(
+                settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
+            ),
+            base_url=settings.openai_base_url,
+            organization=settings.openai_organization,
+        )
     except Exception:
         return ChatOpenAI(model=FALLBACK_MODEL, temperature=temperature)
 
@@ -129,19 +134,11 @@ class _WebSearchTool(BaseTool):  # pragma: no cover - HTTP-backed search tool
 
 
 def _build_qdrant_vector_store(embed: OpenAIEmbeddings):  # type: ignore[name-defined]
-    if not ((QDRANT_URL and QDRANT_API_KEY) or (QDRANT_HOST and QDRANT_PORT)):
+    if not (QDRANT_URL):
         return None
 
     try:
-        if QDRANT_URL:
-            client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
-        else:
-            client = QdrantClient(
-                host=QDRANT_HOST,
-                port=int(QDRANT_PORT or 6333),
-                api_key=QDRANT_API_KEY,
-            )
-
+        client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
         if hasattr(client, "collection_exists"):
             exists = client.collection_exists(collection_name=COLLECTION)
             if not exists:
@@ -157,7 +154,11 @@ def make_retriever(k: int = 4):
     if not ENABLE_QDRANT:
         return _NullRetriever()
 
-    embed = OpenAIEmbeddings(model=EMBED_MODEL)
+    embed = OpenAIEmbeddings(
+        model=EMBED_MODEL,
+        api_key=(settings.openai_api_key.get_secret_value() if settings.openai_api_key else None),
+        base_url=settings.openai_base_url,
+    )
     vs = _build_qdrant_vector_store(embed)
     if vs is None:
         return _NullRetriever()

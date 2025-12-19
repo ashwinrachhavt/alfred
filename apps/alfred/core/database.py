@@ -1,13 +1,13 @@
-"""Database engine and session helpers."""
+"""Database engine and session helpers (SQLModel-compatible)."""
 
 import logging
 from collections.abc import Generator
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import Session
 
 from alfred.core.settings import settings
-from alfred.models import Base
 
 logger = logging.getLogger(__name__)
 
@@ -54,4 +54,4 @@ def get_session() -> Generator[Session, None, None]:
         session.close()
 
 
-__all__ = ["Base", "engine", "get_session", "SessionLocal"]
+__all__ = ["engine", "get_session", "SessionLocal"]

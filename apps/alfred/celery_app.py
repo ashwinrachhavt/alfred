@@ -1,5 +1,4 @@
 import logging
-from datetime import timedelta
 
 from celery import Celery
 
@@ -23,14 +22,6 @@ app.conf.update(
     enable_utc=True,
 )
 
-# Beat schedule: renew Gmail watch daily if enabled/configured
-app.conf.beat_schedule = {
-    "renew-gmail-watch-daily": {
-        # Adjusted task path to the new package name; ensure module exists if enabled
-        "task": "alfred.tasks.gmail_watch.renew_gmail_watch",
-        "schedule": timedelta(days=1),
-        "options": {"expires": 60 * 60},
-    }
-}
+# No beat schedule defined by default to avoid referencing missing tasks.
 
 logging.getLogger(__name__).info("Celery app initialized")

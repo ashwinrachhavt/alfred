@@ -7,6 +7,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+from sqlmodel import SQLModel
 
 _config_mod = importlib.import_module("alfred.core.settings")
 settings = getattr(_config_mod, "settings")
@@ -21,8 +22,7 @@ def _with_psycopg(url: str) -> str:
     return url
 
 
-_models_mod = importlib.import_module("alfred.models")
-Base = getattr(_models_mod, "Base")
+_models_mod = importlib.import_module("alfred.models")  # ensure models are imported
 
 config = context.config
 
@@ -32,7 +32,7 @@ if config.config_file_name is not None:
 config.set_main_option("sqlalchemy.url", _with_psycopg(settings.database_url))
 
 
-target_metadata = Base.metadata
+target_metadata = SQLModel.metadata
 
 
 def run_migrations_offline() -> None:

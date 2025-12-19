@@ -2,7 +2,7 @@
 
 from collections.abc import Generator
 
-from sqlalchemy.orm import Session
+from sqlmodel import Session
 
 from alfred.core.database import get_session
 

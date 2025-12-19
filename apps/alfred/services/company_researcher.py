@@ -80,7 +80,15 @@ class CompanyResearchService:
         self._firecrawl_render_js = firecrawl_render_js
         self._mongo = MongoService(default_collection=settings.company_research_collection)
         self._model_name = settings.company_research_model
-        self._llm = ChatOpenAI(model=self._model_name, temperature=0.15)
+        self._llm = ChatOpenAI(
+            model=self._model_name,
+            temperature=0.15,
+            api_key=(
+                settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
+            ),
+            base_url=settings.openai_base_url,
+            organization=settings.openai_organization,
+        )
         self._structured_llm = self._llm.with_structured_output(CompanyResearchReport)
 
     # ------------------------------------------------------------------

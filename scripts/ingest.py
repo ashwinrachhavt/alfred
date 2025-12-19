@@ -8,6 +8,7 @@ from hashlib import md5
 from pathlib import Path
 from typing import List
 
+from alfred.core.settings import settings
 from langchain_community.document_loaders import PyPDFLoader, RecursiveUrlLoader
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
@@ -48,10 +49,10 @@ def parse_args():
     p.add_argument("--url", action="append", help="URL to ingest (repeatable)")
     p.add_argument("--no-defaults", action="store_true", help="Do not include built-in static URLs")
     p.add_argument("--datadir", type=str, default=str(ROOT / "data"))
-    p.add_argument("--collection", default=os.getenv("QDRANT_COLLECTION", "personal_kb"))
+    p.add_argument("--collection", default=(settings.qdrant_collection or "personal_kb"))
     p.add_argument("--chunk-size", type=int, default=12000)
     p.add_argument("--overlap", type=int, default=200)
-    p.add_argument("--embed-model", default=os.getenv("EMBED_MODEL", "text-embedding-3-small"))
+    p.add_argument("--embed-model", default="text-embedding-3-small")
     return p.parse_args()
 
 
@@ -93,7 +94,7 @@ def load_web(urls: List[str]) -> List[Document]:
     docs: List[Document] = []
     # 1) Direct fetch of provided URLs
     header_template = {
-        "User-Agent": os.getenv("USER_AGENT", "Mozilla/5.0 (compatible; AlfredBot/1.0)"),
+        "User-Agent": settings.user_agent,
         "Accept-Language": "en-US,en;q=0.9",
     }
     try:
@@ -105,7 +106,7 @@ def load_web(urls: List[str]) -> List[Document]:
         logging.getLogger("scripts.ingest").warning("WebBaseLoader error: %s", e)
 
     # 2) Optional recursive crawl for more coverage (controlled via env)
-    depth = int(os.getenv("RECURSIVE_DEPTH", "0"))
+    depth = int(settings.recursive_depth or 0)
     if depth > 0:
         import importlib.util
 
@@ -202,8 +203,8 @@ def main():
     docs = chunk_docs(base_docs, args.chunk_size, args.overlap)
 
     # 3) Embed + Upsert to Qdrant Cloud
-    qdrant_url = os.environ.get("QDRANT_URL")
-    qdrant_key = os.environ.get("QDRANT_API_KEY")
+    qdrant_url = settings.qdrant_url
+    qdrant_key = settings.qdrant_api_key.get_secret_value() if settings.qdrant_api_key else None
     collection = args.collection
 
     if not qdrant_url:

@@ -4,11 +4,12 @@ import asyncio
 import itertools
 import json
 import logging
-import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, List, Literal, Optional, Sequence
+
+from alfred.core.settings import settings
 
 Provider = Literal["brave", "ddg", "exa", "tavily", "you", "searx", "langsearch"]
 DEFAULT_PROVIDER_PRIORITY: List[Provider] = [
@@ -40,9 +41,8 @@ class SearchResponse:
     meta: dict[str, Any] | None = None
 
 
-def _env(key: str) -> Optional[str]:
-    val = os.getenv(key)
-    return val.strip() if val and val.strip() else None
+def _env_unused(_key: str) -> Optional[str]:  # kept for compatibility if needed
+    return None
 
 
 def _normalize_list_result(items: Any, provider: Provider) -> List[SearchHit]:
@@ -110,7 +110,7 @@ def _dedupe_by_url(hits: Sequence[SearchHit]) -> List[SearchHit]:
 
 class BraveClient:
     def __init__(self, count: int = 20):
-        api_key = _env("BRAVE_SEARCH_API_KEY")
+        api_key = settings.brave_search_api_key
         if not api_key:
             raise RuntimeError("BRAVE_SEARCH_API_KEY is not set")
         from langchain_community.tools import BraveSearch
@@ -166,7 +166,7 @@ class DDGClient:
         self._timeout = timeout
         self._retries = max(retries, 0)
         self._backoff_factor = max(backoff_factor, 0.0)
-        self._user_agent = os.getenv("USER_AGENT", DEFAULT_DDG_USER_AGENT)
+        self._user_agent = settings.user_agent or DEFAULT_DDG_USER_AGENT
         self._client = self._make_client()
 
     def _make_client(self):
@@ -264,7 +264,7 @@ class DDGClient:
 
 class ExaClient:
     def __init__(self, default_num_results: int = 100, **kwargs: Any):
-        if not _env("EXA_API_KEY"):
+        if not settings.exa_api_key:
             raise RuntimeError("EXA_API_KEY is not set")
         from langchain_exa import ExaSearchResults
 
@@ -301,7 +301,7 @@ class TavilyClient:
         include_raw_content: bool = True,
         **kwargs: Any,
     ):
-        if not _env("TAVILY_API_KEY"):
+        if not settings.tavily_api_key:
             raise RuntimeError("TAVILY_API_KEY is not set")
         from langchain_tavily import TavilySearch
 
@@ -310,6 +310,7 @@ class TavilyClient:
             topic=topic,
             include_answer=include_answer,
             include_raw_content=include_raw_content,
+            tavily_api_key=settings.tavily_api_key,
             **kwargs,
         )
 
@@ -321,7 +322,7 @@ class TavilyClient:
 
 class YouClient:
     def __init__(self, num_web_results: int = 20, **kwargs: Any):
-        if not _env("YDC_API_KEY"):
+        if not settings.ydc_api_key:
             raise RuntimeError("YDC_API_KEY is not set")
         from langchain_community.tools.you import YouSearchTool
         from langchain_community.utilities.you import YouSearchAPIWrapper
@@ -339,7 +340,7 @@ class SearxClient:
     def __init__(self, host: Optional[str] = None, k: int = 10):
         from langchain_community.utilities import SearxSearchWrapper  # type: ignore
 
-        self._host = host or _env("SEARXNG_HOST") or _env("SEARX_HOST")
+        self._host = host or settings.searxng_host or settings.searx_host
         if not self._host:
             raise RuntimeError("SEARXNG_HOST (or SEARX_HOST) is not set")
         self._k_default = max(1, k)
@@ -368,12 +369,10 @@ class SearxClient:
 class LangsearchClient:
     def __init__(self, *, api_key: Optional[str] = None, base_url: Optional[str] = None):
         # Minimal HTTP client; enable only when properly configured
-        self._api_key = api_key or _env("LANGSEARCH_API_KEY")
+        self._api_key = api_key or settings.langsearch_api_key
         if not self._api_key:
             raise RuntimeError("LANGSEARCH_API_KEY is not set")
-        self._base_url = (
-            base_url or _env("LANGSEARCH_API_URL") or "https://api.langsearch.com/v1"
-        ).rstrip("/")
+        self._base_url = (base_url or settings.langsearch_base_url).rstrip("/")
         try:
             import httpx  # type: ignore
         except ImportError as exc:  # pragma: no cover - httpx is a common dep
@@ -482,21 +481,21 @@ class WebConnector:
         searx_k: int,
     ) -> None:
         self.clients: dict[Provider, Any] = {}
-        if _env("EXA_API_KEY"):
+        if settings.exa_api_key:
             try:
                 self.clients["exa"] = ExaClient(default_num_results=exa_num_results)
             except ImportError as exc:
                 logging.warning("Exa client disabled: %s", exc)
-        if _env("TAVILY_API_KEY"):
+        if settings.tavily_api_key:
             try:
                 self.clients["tavily"] = TavilyClient(
                     max_results=tavily_max_results, topic=tavily_topic
                 )
             except ImportError as exc:
                 logging.warning("Tavily client disabled: %s", exc)
-        if _env("BRAVE_SEARCH_API_KEY"):
+        if settings.brave_search_api_key:
             self.clients["brave"] = BraveClient(count=brave_count)
-        if _env("YDC_API_KEY"):
+        if settings.ydc_api_key:
             try:
                 self.clients["you"] = YouClient(num_web_results=you_num_results)
             except ImportError as exc:
@@ -507,13 +506,13 @@ class WebConnector:
             logging.warning("DDG client disabled: %s", exc)
         # SearxNG client (enabled when SEARXNG_HOST/SEARX_HOST is set and langchain-community is present)
         try:
-            if _env("SEARXNG_HOST") or _env("SEARX_HOST"):
+            if settings.searxng_host or settings.searx_host:
                 self.clients["searx"] = SearxClient(k=searx_k)
         except Exception as exc:
             logging.warning("Searx client not available: %s", exc)
         # Langsearch client (enabled when LANGSEARCH_API_KEY present)
         try:
-            if _env("LANGSEARCH_API_KEY"):
+            if settings.langsearch_api_key:
                 self.clients["langsearch"] = LangsearchClient()
         except Exception as exc:
             logging.warning(f"Langsearch client not available: {exc}")

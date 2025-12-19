@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     app_env: str = Field(default="dev", alias="APP_ENV")
     app_name: str = Field(default="alfred", alias="APP_NAME")
     debug: bool = Field(default=False, alias="DEBUG")
+    # Logging
+    log_level: str | None = Field(default=None, alias="ALFRED_LOG_LEVEL")
+    log_level_fallback: str | None = Field(default=None, alias="LOG_LEVEL")
 
     secret_key: SecretStr | None = Field(default=None, alias="SECRET_KEY")
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
@@ -132,6 +135,11 @@ class Settings(BaseSettings):
     langfuse_host: Optional[str] = Field(default=None, alias="LANGFUSE_HOST")
     langfuse_debug: bool = Field(default=False, alias="LANGFUSE_DEBUG")
     langfuse_tracing_enabled: bool = Field(default=True, alias="LANGFUSE_TRACING_ENABLED")
+    # Observability (MLflow)
+    observability_backend: str | None = Field(default=None, alias="OBSERVABILITY_BACKEND")
+    mlflow_tracking_uri: str = Field(default="http://localhost:5000", alias="MLFLOW_TRACKING_URI")
+    mlflow_experiment_name: str = Field(default="alfred", alias="MLFLOW_EXPERIMENT_NAME")
+    mlflow_run_name_prefix: str = Field(default="", alias="MLFLOW_RUN_NAME_PREFIX")
 
     # Connectors (misc)
     linear_api_key: SecretStr | None = Field(default=None, alias="LINEAR_API_KEY")
@@ -215,6 +223,20 @@ class Settings(BaseSettings):
     ollama_base_url: str = Field(default="http://localhost:11434", alias="ALFRED_OLLAMA_BASE_URL")
     ollama_chat_model: str = Field(default="llama3.2", alias="ALFRED_OLLAMA_CHAT_MODEL")
     ollama_embed_model: str = Field(default="nomic-embed-text", alias="ALFRED_OLLAMA_EMBED_MODEL")
+
+    # Search providers / connectors
+    brave_search_api_key: str | None = Field(default=None, alias="BRAVE_SEARCH_API_KEY")
+    exa_api_key: str | None = Field(default=None, alias="EXA_API_KEY")
+    tavily_api_key: str | None = Field(default=None, alias="TAVILY_API_KEY")
+    ydc_api_key: str | None = Field(default=None, alias="YDC_API_KEY")
+    searxng_host: str | None = Field(default=None, alias="SEARXNG_HOST")
+    searx_host: str | None = Field(default=None, alias="SEARX_HOST")
+    user_agent: str = Field(
+        default="Mozilla/5.0 (compatible; AlfredBot/1.0; +https://github.com/alfred)",
+        alias="USER_AGENT",
+    )
+    # Scripts / utilities
+    recursive_depth: int = Field(default=0, alias="RECURSIVE_DEPTH")
 
 
 @lru_cache()

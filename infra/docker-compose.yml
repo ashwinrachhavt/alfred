@@ -1,37 +1,60 @@
 version: "3.9"
 services:
   api:
-    build: ../alfred
+    build:
+      context: ..
+      dockerfile: apps/alfred/Dockerfile
     container_name: commander_api
     env_file:
-      - ../alfred/.env
+      - ../apps/alfred/.env
     environment:
       - PYTHONDONTWRITEBYTECODE=1
+      - DATABASE_URL=postgresql+psycopg://postgres:postgres@postgres:5432/alfred
     command: uvicorn alfred.main:app --host 0.0.0.0 --port 8000 --reload
     ports: ["8000:8000"]
-    depends_on: [redis]
+    depends_on: [redis, postgres]
 
   worker:
-    build: ../alfred
+    build:
+      context: ..
+      dockerfile: apps/alfred/Dockerfile
     container_name: commander_worker
     env_file:
-      - ../alfred/.env
+      - ../apps/alfred/.env
     environment:
       - PYTHONDONTWRITEBYTECODE=1
+      - DATABASE_URL=postgresql+psycopg://postgres:postgres@postgres:5432/alfred
     command: celery -A alfred.celery_app.app worker -l INFO --concurrency=2
-    depends_on: [redis]
+    depends_on: [redis, postgres]
 
   beat:
-    build: ../alfred
+    build:
+      context: ..
+      dockerfile: apps/alfred/Dockerfile
     container_name: commander_beat
     env_file:
-      - ../alfred/.env
+      - ../apps/alfred/.env
     environment:
       - PYTHONDONTWRITEBYTECODE=1
+      - DATABASE_URL=postgresql+psycopg://postgres:postgres@postgres:5432/alfred
     command: celery -A alfred.celery_app.app beat -l INFO
-    depends_on: [redis]
+    depends_on: [redis, postgres]
 
   redis:
     image: redis:7-alpine
     container_name: commander_redis
     ports: ["6379:6379"]
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: commander_postgres
+    environment:
+      - POSTGRES_DB=alfred
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

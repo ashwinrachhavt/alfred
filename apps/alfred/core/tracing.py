@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import importlib.util
 import logging
-import os
 import time
 from typing import Any, Callable, Optional
 
@@ -108,7 +107,7 @@ def _init_mlflow() -> bool:
     if _mlflow_ready is not None:
         return _mlflow_ready
 
-    if os.getenv("OBSERVABILITY_BACKEND", "").lower() != "mlflow":
+    if (settings.observability_backend or "").lower() != "mlflow":
         _mlflow_ready = False
         return False
 
@@ -120,9 +119,9 @@ def _init_mlflow() -> bool:
     import mlflow  # type: ignore
 
     _mlflow = mlflow
-    tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
-    experiment_name = os.getenv("MLFLOW_EXPERIMENT_NAME", "alfred")
-    _mlflow_run_name_prefix = os.getenv("MLFLOW_RUN_NAME_PREFIX", "")
+    tracking_uri = settings.mlflow_tracking_uri
+    experiment_name = settings.mlflow_experiment_name
+    _mlflow_run_name_prefix = settings.mlflow_run_name_prefix
 
     try:
         _mlflow.set_tracking_uri(tracking_uri)

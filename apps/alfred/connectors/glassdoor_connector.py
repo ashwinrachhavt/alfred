@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import urljoin
@@ -86,10 +85,7 @@ class GlassdoorClient:
         self.base_url = base_url.rstrip("/")
         # Prefer explicitly passed key, then settings, then alt env var for backward-compat
         self.api_key = (
-            api_key
-            or settings.openweb_ninja_api_key
-            or settings.openweb_ninja_glassdoor_api_key
-            or os.getenv("OPENWEBNINJA_GLASSDOOR_API_KEY", "")
+            api_key or settings.openweb_ninja_api_key or settings.openweb_ninja_glassdoor_api_key
         )
         self.timeout = timeout
         self.max_retries = max_retries
@@ -361,7 +357,7 @@ if __name__ == "__main__":
         base_url=settings.openweb_ninja_base_url,
         api_key=settings.openweb_ninja_api_key
         or settings.openweb_ninja_glassdoor_api_key
-        or os.getenv("OPENWEBNINJA_GLASSDOOR_API_KEY"),
+        or settings.openweb_ninja_glassdoor_api_key,
     )
 
     res = client.get_company_interviews(

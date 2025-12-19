@@ -68,7 +68,7 @@ Prereqs
 
 Configure
 ```bash
-cp alfred/.env.example alfred/.env
+cp apps/alfred/.env.example apps/alfred/.env
 # Fill in: OPENAI_API_KEY, (optional) QDRANT_URL/QDRANT_API_KEY, NOTION_TOKEN, etc.
 ```
 
@@ -135,7 +135,7 @@ quiz = LLMService().structured(
 ```
 
 Tip
-- Override provider/model via `ALFRED_*` env vars (see `alfred/core/llm_config.py`).
+- Override provider/model via `ALFRED_*` env vars (see `alfred/core/settings.py`).
 
 ## Database & Migrations
 
@@ -143,7 +143,7 @@ Tip
 - Run migrations locally: `uv run alembic -c alembic.ini upgrade head`.
 - Create a new migration: `uv run alembic -c alembic.ini revision --autogenerate -m "<description>"`.
 - If you point `DATABASE_URL` at Postgres, install a driver such as `psycopg[binary]` in your environment.
-- Base models live in `alfred/models/`; extend `Model` for timestamped tables with an auto primary key, and declare columns directly with SQLAlchemy's `mapped_column` helpers.
+- Base models live in `alfred/models/`; extend `Model` (SQLModel) for timestamped tables with an auto primary key, and declare fields using `sqlmodel.Field(...)` (with `sa_column=Column(...)` for DB-specific types/defaults).
 - Mongo access lives in `alfred/services/mongo.py`; configure `MONGO_URI`, `MONGO_DATABASE`, and `MONGO_APP_NAME` (defaults connect to `mongodb://localhost:27017/alfred`).
 - Company research runs persist their structured reports into Mongo (collection defaults to `company_research_reports`). Use `/company/research?refresh=true` to force a fresh crawl + regeneration.
 

@@ -29,7 +29,7 @@ async def company_outreach(
     role: str = Query("AI Engineer", description="Target role or angle for the outreach"),
 ):
     try:
-        payload = generate_company_outreach(company=name, role=role)
+        payload = await run_in_threadpool(generate_company_outreach, company=name, role=role)
         return {"company": name, "role": role, **payload}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -50,7 +50,8 @@ class OutreachRequest(BaseModel):
 @router.post("/outreach")
 async def company_outreach_post(payload: OutreachRequest):
     try:
-        data = generate_company_outreach(
+        data = await run_in_threadpool(
+            generate_company_outreach,
             company=payload.name,
             role=payload.role or "AI Engineer",
             personal_context=payload.context or "",

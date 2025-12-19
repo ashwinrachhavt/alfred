@@ -227,7 +227,7 @@ quiz = LLMService().structured(
 
 Notes
 - Prefer the factory in agents; use `LLMService.structured()` for strict JSON.
-- Defaults come from `ALFRED_*` env vars (see `alfred/core/llm_config.py`).
+- Defaults come from `ALFRED_*` env vars (see `alfred/core/settings.py`).
 
 ---
 
