@@ -3,8 +3,8 @@ from datetime import timedelta
 
 from celery import Celery
 
-from alfred.core.settings import settings
 from alfred.core.logging import setup_logging
+from alfred.core.settings import settings
 
 # Bytecode disabling is controlled via environment or settings.
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import json
 from functools import lru_cache
 from pathlib import Path
@@ -17,7 +19,6 @@ from alfred.prompts import load_prompt
 from alfred.services.agentic_rag import create_retriever_tool, make_llm, make_retriever
 from alfred.services.company_researcher import CompanyResearchService
 from alfred.services.web_search import search_web
-
 
 _company_research_service = CompanyResearchService()
 
@@ -94,6 +95,18 @@ _SEED_PROMPT = load_prompt("company_outreach", "seed.md")
 def _load_resume_context() -> str:
     pdf_path = Path(__file__).resolve().parents[3] / "data" / "ashwin_rachha_resume.pdf"
     if not pdf_path.is_file():
+        return ""
+
+    # Use Docling if available; otherwise, skip resume context.
+    if importlib.util.find_spec("docling") is None:
+        return ""
+
+    try:
+        from docling.backend.docling_parse_v4_backend import DoclingParseV4DocumentBackend
+        from docling.datamodel.base_models import InputFormat
+        from docling.document_converter import DocumentConverter, FormatOption
+        from docling.pipeline.standard_pdf_pipeline import PdfPipelineOptions, StandardPdfPipeline
+    except ImportError:
         return ""
 
     options = PdfPipelineOptions(

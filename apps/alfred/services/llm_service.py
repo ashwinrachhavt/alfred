@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from typing import Iterable, Optional, Type, TypeVar
+
 from ollama import chat as ollama_chat
 from openai import OpenAI
 from pydantic import BaseModel
@@ -28,7 +29,9 @@ class LLMService:
     def openai_client(self) -> OpenAI:
         if self._openai_client is None:
             api_key = (
-                self.cfg.openai_api_key.get_secret_value() if getattr(self.cfg, "openai_api_key", None) else None
+                self.cfg.openai_api_key.get_secret_value()
+                if getattr(self.cfg, "openai_api_key", None)
+                else None
             ) or os.getenv("OPENAI_API_KEY")
             self._openai_client = OpenAI(
                 api_key=api_key,

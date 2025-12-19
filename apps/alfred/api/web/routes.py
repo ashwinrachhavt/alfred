@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Query
 
-from alfred.core.tracing import lf_observe, lf_update_span
+from alfred.core.tracing import lf_update_span, observe
 from alfred.services.web_search import search_web
 
 router = APIRouter(prefix="/api/web", tags=["web"])
 
 
 @router.get("/search")
-@lf_observe(name="api_web_search", as_type="chain")
+@observe(name="api_web_search", as_type="chain")
 def search(
     q: str = Query(...),
     mode: str | None = Query(

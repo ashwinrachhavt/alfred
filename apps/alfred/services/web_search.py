@@ -1,8 +1,8 @@
 from alfred.connectors.web_connector import WebConnector
-from alfred.core.tracing import lf_observe, lf_update_span
+from alfred.core.tracing import lf_update_span, observe
 
 
-@lf_observe(name="web_search", as_type="tool")
+@observe(name="web_search", as_type="tool")
 def search_web(
     q: str,
     mode: str = "auto",

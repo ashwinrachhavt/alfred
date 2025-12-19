@@ -21,9 +21,7 @@ class SlackService:
     """Send messages to Slack channels or threads."""
 
     def __init__(self, token: Optional[str] = None) -> None:
-        configured = (
-            settings.slack_api_key.get_secret_value() if settings.slack_api_key else None
-        )
+        configured = settings.slack_api_key.get_secret_value() if settings.slack_api_key else None
         self._token = token or configured
         if not self._token:
             raise ValueError("Slack API key not configured. Set SLACK_API_KEY in the environment.")

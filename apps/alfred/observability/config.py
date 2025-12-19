@@ -37,29 +37,19 @@ class ObservabilityConfig(BaseSettings):
     mlflow_tracking_uri: str = Field(
         default="http://localhost:5000", validation_alias="MLFLOW_TRACKING_URI"
     )
-    mlflow_experiment_name: str = Field(
-        default="alfred", validation_alias="MLFLOW_EXPERIMENT_NAME"
-    )
-    mlflow_run_name_prefix: str = Field(
-        default="", validation_alias="MLFLOW_RUN_NAME_PREFIX"
-    )
+    mlflow_experiment_name: str = Field(default="alfred", validation_alias="MLFLOW_EXPERIMENT_NAME")
+    mlflow_run_name_prefix: str = Field(default="", validation_alias="MLFLOW_RUN_NAME_PREFIX")
 
     # Langfuse configuration (legacy support)
-    langfuse_public_key: Optional[str] = Field(
-        default=None, validation_alias="LANGFUSE_PUBLIC_KEY"
-    )
+    langfuse_public_key: Optional[str] = Field(default=None, validation_alias="LANGFUSE_PUBLIC_KEY")
     langfuse_secret_key: SecretStr | None = Field(
         default=None, validation_alias="LANGFUSE_SECRET_KEY"
     )
     langfuse_host: Optional[str] = Field(default=None, validation_alias="LANGFUSE_HOST")
 
     # OpenTelemetry configuration (future)
-    otel_endpoint: HttpUrl | None = Field(
-        default=None, validation_alias="OTEL_ENDPOINT"
-    )
-    otel_service_name: str = Field(
-        default="alfred", validation_alias="OTEL_SERVICE_NAME"
-    )
+    otel_endpoint: HttpUrl | None = Field(default=None, validation_alias="OTEL_ENDPOINT")
+    otel_service_name: str = Field(default="alfred", validation_alias="OTEL_SERVICE_NAME")
 
     # Sampling and performance
     sample_rate: float = Field(
@@ -67,13 +57,8 @@ class ObservabilityConfig(BaseSettings):
     )
 
     # Enrichment
-    capture_input: bool = Field(
-        default=True, description="Capture function inputs in traces"
-    )
-    capture_output: bool = Field(
-        default=True, description="Capture function outputs in traces"
-    )
+    capture_input: bool = Field(default=True, description="Capture function inputs in traces")
+    capture_output: bool = Field(default=True, description="Capture function outputs in traces")
     max_payload_size: int = Field(
         default=10000, ge=0, description="Max size of input/output to capture (chars)"
     )
-

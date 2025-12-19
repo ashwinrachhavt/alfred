@@ -3,13 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 
 from alfred.connectors.google_gmail_connector import GoogleGmailConnector
+from alfred.core.settings import settings
 from alfred.services.google_oauth import (
     exchange_code_for_tokens,
     generate_authorization_url,
     load_credentials,
     persist_credentials,
 )
-from alfred.core.settings import settings
 
 router = APIRouter(prefix="/api/gmail", tags=["gmail"])
 

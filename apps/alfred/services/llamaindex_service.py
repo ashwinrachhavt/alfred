@@ -8,8 +8,8 @@ from llama_index.core import Document, Settings, VectorStoreIndex
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
 
-from alfred.services.doc_storage import DocStorageService
 from alfred.core.settings import settings
+from alfred.services.doc_storage import DocStorageService
 
 logger = logging.getLogger(__name__)
 

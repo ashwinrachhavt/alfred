@@ -5,8 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Environment is loaded by Pydantic Settings (see alfred.core.settings).
 from alfred.api import register_routes
-from alfred.core.settings import settings
 from alfred.core.logging import setup_logging
+from alfred.core.settings import settings
 from alfred.services.doc_storage import DocStorageService
 
 # Bytecode disabling is controlled via environment (Makefile/Docker) or settings.

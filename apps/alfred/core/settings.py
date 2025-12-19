@@ -8,7 +8,6 @@ from typing import Optional
 from pydantic import AnyHttpUrl, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "alfred.db"
 
 
@@ -177,9 +176,15 @@ class Settings(BaseSettings):
     )  # e.g., Ollama http://localhost:11434
 
     # Calendar defaults
-    calendar_slot_duration_minutes: int = Field(default=30, alias="CALENDAR_SLOT_DURATION_MINUTES", ge=1)
-    calendar_working_hours_start: int = Field(default=9, alias="CALENDAR_WORKING_HOURS_START", ge=0, le=23)
-    calendar_working_hours_end: int = Field(default=18, alias="CALENDAR_WORKING_HOURS_END", ge=0, le=23)
+    calendar_slot_duration_minutes: int = Field(
+        default=30, alias="CALENDAR_SLOT_DURATION_MINUTES", ge=1
+    )
+    calendar_working_hours_start: int = Field(
+        default=9, alias="CALENDAR_WORKING_HOURS_START", ge=0, le=23
+    )
+    calendar_working_hours_end: int = Field(
+        default=18, alias="CALENDAR_WORKING_HOURS_END", ge=0, le=23
+    )
     calendar_organizer_email: str | None = Field(default=None, alias="CALENDAR_ORGANIZER_EMAIL")
 
     # MongoDB Lens MCP
@@ -197,7 +202,9 @@ class Settings(BaseSettings):
 
     # Classification (taxonomy)
     enable_ingest_classification: bool = Field(default=False, alias="ENABLE_INGEST_CLASSIFICATION")
-    classification_taxonomy_path: Optional[str] = Field(default=None, alias="CLASSIFICATION_TAXONOMY_PATH")
+    classification_taxonomy_path: Optional[str] = Field(
+        default=None, alias="CLASSIFICATION_TAXONOMY_PATH"
+    )
 
     # --- LLM unified ---
     llm_provider: LLMProvider = Field(default=LLMProvider.openai, alias="ALFRED_LLM_PROVIDER")
@@ -217,4 +224,3 @@ def get_settings() -> Settings:
 
 # Convenience singleton for modules still expecting a module-level "settings"
 settings = get_settings()
-

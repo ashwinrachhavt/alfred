@@ -6,10 +6,11 @@ from contextlib import contextmanager
 from functools import lru_cache
 from typing import Any
 
-from .config import ObservabilityConfig, TracingBackend as BackendEnum
 from .backends.base import TracingBackend
 from .backends.mlflow import MLflowBackend
 from .backends.noop import NoOpBackend
+from .config import ObservabilityConfig
+from .config import TracingBackend as BackendEnum
 from .context import (
     get_current_span,
     get_current_trace,
@@ -61,9 +62,7 @@ class Tracer:
                         host=self.config.langfuse_host,
                     )
                 except Exception:  # noqa: BLE001
-                    logger.warning(
-                        "Langfuse backend requested but not available; using NoOp"
-                    )
+                    logger.warning("Langfuse backend requested but not available; using NoOp")
                     self._backend = NoOpBackend()
             else:
                 self._backend = NoOpBackend()
@@ -182,4 +181,3 @@ def get_tracer() -> Tracer:
     """Get singleton tracer instance."""
     config = ObservabilityConfig()
     return Tracer(config)
-

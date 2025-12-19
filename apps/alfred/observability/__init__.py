@@ -1,6 +1,6 @@
-from .tracer import get_tracer, Tracer
-from .decorators import trace
 from .config import ObservabilityConfig, TracingBackend
+from .decorators import trace
+from .tracer import Tracer, get_tracer
 
 __all__ = [
     "get_tracer",
@@ -9,4 +9,3 @@ __all__ = [
     "ObservabilityConfig",
     "TracingBackend",
 ]
-

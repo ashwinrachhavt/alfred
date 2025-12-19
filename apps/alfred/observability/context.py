@@ -30,4 +30,3 @@ def get_current_span() -> Optional[str]:
 def set_current_span(span_id: Optional[str]) -> None:
     """Set the current span ID."""
     _current_span.set(span_id)
-

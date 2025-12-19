@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
-from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 from alfred.services.company_outreach import generate_company_outreach
 from alfred.services.company_researcher import CompanyResearchService

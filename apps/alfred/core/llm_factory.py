@@ -63,4 +63,3 @@ def get_embedding_model(
         )
 
     raise ValueError(f"Unsupported provider: {provider}")
-

@@ -267,9 +267,12 @@ class ExtractionService:
         if include_embedding:
             try:
                 from openai import OpenAI  # type: ignore
+
                 from alfred.core.settings import settings
 
-                api_key = settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
+                api_key = (
+                    settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
+                )
                 client = OpenAI(
                     api_key=api_key,
                     base_url=settings.openai_base_url,
