@@ -1,12 +1,21 @@
 from __future__ import annotations
 
+import importlib.util
 from typing import Iterable, Optional, Type, TypeVar
 
-from ollama import chat as ollama_chat
 from openai import OpenAI
 from pydantic import BaseModel
 
 from alfred.core.settings import LLMProvider, settings
+
+
+def _get_ollama_chat():
+    if importlib.util.find_spec("ollama") is None:
+        return None
+    from ollama import chat as ollama_chat  # type: ignore[import-not-found]
+
+    return ollama_chat
+
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -18,9 +27,9 @@ class LLMService:
     - Chat, streaming, structured outputs (OpenAI).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, openai_client: Optional[OpenAI] = None) -> None:
         self.cfg = settings
-        self._openai_client: Optional[OpenAI] = None
+        self._openai_client: Optional[OpenAI] = openai_client
 
     # ---------- internal helpers ----------
 
@@ -66,6 +75,9 @@ class LLMService:
             return resp.choices[0].message.content or ""
 
         if provider == LLMProvider.ollama:
+            ollama_chat = _get_ollama_chat()
+            if ollama_chat is None:
+                raise RuntimeError("Ollama provider is not available (missing 'ollama' package)")
             resp = ollama_chat(
                 model=model or self.cfg.ollama_chat_model,
                 messages=messages,
@@ -104,6 +116,9 @@ class LLMService:
                     yield chunk.choices[0].delta.content
 
         elif provider == LLMProvider.ollama:
+            ollama_chat = _get_ollama_chat()
+            if ollama_chat is None:
+                raise RuntimeError("Ollama provider is not available (missing 'ollama' package)")
             stream = ollama_chat(
                 model=model or self.cfg.ollama_chat_model,
                 messages=messages,

@@ -30,20 +30,22 @@ class KnowledgeService:
     vector_size: int = 1536  # OpenAI default, adjust for other models
 
     def __post_init__(self) -> None:
-        """Initialize Qdrant client and embedder."""
-        if self.client is None:
-            # Use in-memory Qdrant for prototyping
-            self.client = QdrantClient(":memory:")
+        """Defer heavy initialization until first use."""
+        # Eager work removed to support DI and lazy init
+        pass
 
+    # Lazy initialization helpers
+    def _ensure_initialized(self) -> None:
+        if self.client is None:
+            # Use in-memory Qdrant for prototyping by default
+            self.client = QdrantClient(":memory:")
         if self.embedder is None:
             # Use existing embedding factory, fallback to Ollama if no OpenAI key
             try:
                 self.embedder = get_embedding_model()
             except Exception:
-                # Fallback to Ollama embeddings
                 self.embedder = get_embedding_model(provider=LLMProvider.ollama)
-
-        # Create collection if it doesn't exist
+        # Ensure collection availability
         self._ensure_collection()
 
     def _ensure_collection(self) -> None:
@@ -72,6 +74,8 @@ class KnowledgeService:
         Returns:
             List of document IDs that were indexed
         """
+        # Ensure dependencies exist
+        self._ensure_initialized()
         indexed_ids = []
 
         for i in range(0, len(docs), batch_size):
@@ -121,6 +125,8 @@ class KnowledgeService:
         Returns:
             List of matching documents with scores
         """
+        # Ensure dependencies exist
+        self._ensure_initialized()
         # Generate query embedding
         query_embedding = self.embedder.embed_query(query)
 
@@ -148,6 +154,7 @@ class KnowledgeService:
 
     def delete_documents(self, doc_ids: List[str]) -> None:
         """Delete documents by ID."""
+        self._ensure_initialized()
         point_ids = [self._hash_id(doc_id) for doc_id in doc_ids]
         self.client.delete(
             collection_name=self.collection_name,
@@ -156,6 +163,7 @@ class KnowledgeService:
 
     def count(self) -> int:
         """Get total number of indexed documents."""
+        self._ensure_initialized()
         info = self.client.get_collection(self.collection_name)
         return info.points_count
 

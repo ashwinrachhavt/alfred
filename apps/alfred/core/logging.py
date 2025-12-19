@@ -1,7 +1,6 @@
 import logging
+import os
 import sys
-
-from alfred.core.settings import settings
 
 
 def setup_logging(level: str | int | None = None) -> None:
@@ -12,7 +11,7 @@ def setup_logging(level: str | int | None = None) -> None:
       2) env `ALFRED_LOG_LEVEL` or `LOG_LEVEL`
       3) default INFO
     """
-    raw = level if level is not None else (settings.log_level or settings.log_level_fallback)
+    raw = level if level is not None else (os.getenv("ALFRED_LOG_LEVEL") or os.getenv("LOG_LEVEL"))
     if isinstance(raw, int):
         desired_level = raw
     elif isinstance(raw, str):

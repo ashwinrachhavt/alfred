@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, HTTPException, Query
 
 from alfred.connectors.google_gmail_connector import GoogleGmailConnector
-from alfred.core.settings import settings
 from alfred.services.google_oauth import (
     exchange_code_for_tokens,
     generate_authorization_url,
@@ -22,12 +23,12 @@ def _truthy(val: str | None) -> bool:
 
 @router.get("/status")
 def gmail_status():
-    enabled = bool(settings.enable_gmail)
-    client_id = settings.google_client_id or ""
-    client_secret = settings.google_client_secret or ""
-    redirect_uri = str(settings.google_redirect_uri or "")
-    project_id = settings.google_project_id or ""
-    token_dir = settings.token_store_dir or ""
+    enabled = _truthy(os.getenv("ENABLE_GMAIL"))
+    client_id = (os.getenv("GOOGLE_CLIENT_ID") or "").strip()
+    client_secret = (os.getenv("GOOGLE_CLIENT_SECRET") or "").strip()
+    redirect_uri = (os.getenv("GOOGLE_REDIRECT_URI") or "").strip()
+    project_id = (os.getenv("GOOGLE_PROJECT_ID") or "").strip()
+    token_dir = (os.getenv("TOKEN_STORE_DIR") or "").strip()
     configured = all([client_id, client_secret, redirect_uri, project_id])
     token_dir_ready = bool(token_dir)
     deps_ok = True

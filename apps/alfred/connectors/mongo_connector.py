@@ -9,6 +9,7 @@ from pymongo.collection import Collection
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
+from alfred.core.exceptions import ConfigurationError
 from alfred.core.settings import settings
 
 
@@ -26,11 +27,11 @@ class MongoConnector(ContextManager["MongoConnector"]):
     ) -> None:
         self._uri = (uri or settings.mongo_uri).strip()
         if not self._uri:
-            raise ValueError("Mongo URI is required. Set MONGO_URI in the environment.")
+            raise ConfigurationError("Mongo URI is required. Set MONGO_URI in the environment.")
 
         self._database_name = (database or settings.mongo_database).strip()
         if not self._database_name:
-            raise ValueError(
+            raise ConfigurationError(
                 "Mongo database name is required. Set MONGO_DATABASE in the environment."
             )
 
@@ -54,7 +55,7 @@ class MongoConnector(ContextManager["MongoConnector"]):
     def get_collection(self, name: str) -> Collection:
         name = name.strip()
         if not name:
-            raise ValueError("Collection name cannot be empty.")
+            raise ConfigurationError("Collection name cannot be empty.")
         return self._database[name]
 
     def ping(self) -> bool:

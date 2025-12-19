@@ -20,12 +20,14 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.quiz import router as quiz_router
     from alfred.api.rag import router as rag_router
     from alfred.api.system import router as system_router
+    from alfred.api.tasks import router as tasks_router
     from alfred.api.tools import router as tools_router
     from alfred.api.web import router as web_router
     from alfred.api.wikipedia import router as wikipedia_router
 
     routers = [
         system_router,
+        tasks_router,
         rag_router,
         notion_router,
         gmail_router,

@@ -4,6 +4,7 @@ import asyncio
 import itertools
 import json
 import logging
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -41,7 +42,13 @@ class SearchResponse:
     meta: dict[str, Any] | None = None
 
 
-def _env_unused(_key: str) -> Optional[str]:  # kept for compatibility if needed
+def _env(key: str) -> Optional[str]:
+    val = os.getenv(key)
+    return val.strip() if val and val.strip() else None
+
+
+def _env_unused(_key: str) -> Optional[str]:  # pragma: no cover
+    # Backward-compat shim kept for older imports; prefer `_env`.
     return None
 
 

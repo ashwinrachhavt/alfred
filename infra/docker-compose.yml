@@ -24,7 +24,7 @@ services:
     environment:
       - PYTHONDONTWRITEBYTECODE=1
       - DATABASE_URL=postgresql+psycopg://postgres:postgres@postgres:5432/alfred
-    command: celery -A alfred.celery_app.app worker -l INFO --concurrency=2
+    command: celery -A alfred.celery_app.app worker -l INFO --concurrency=2 -Q default,llm,agent
     depends_on: [redis, postgres]
 
   beat:

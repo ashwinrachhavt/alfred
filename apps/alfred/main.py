@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Environment is loaded by Pydantic Settings (see alfred.core.settings).
 from alfred.api import register_routes
+from alfred.core.exceptions import register_exception_handlers
 from alfred.core.logging import setup_logging
 from alfred.core.settings import settings
 from alfred.services.doc_storage import DocStorageService
@@ -15,6 +16,7 @@ from alfred.services.doc_storage import DocStorageService
 setup_logging()
 
 app = FastAPI(title="Alfred API")
+register_exception_handlers(app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allow_origins,

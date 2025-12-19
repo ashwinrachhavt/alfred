@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from alfred.core.exceptions import ServiceUnavailableError
 from alfred.services.research import run_research
 
 router = APIRouter(prefix="/research", tags=["research"])
+logger = logging.getLogger(__name__)
 
 
 class ResearchRequest(BaseModel):
@@ -36,7 +40,8 @@ async def deep_research_endpoint(payload: ResearchRequest) -> ResearchResponse:
             tone=payload.tone,
         )
     except Exception as exc:  # pragma: no cover - surface orchestration issues
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.exception("Research pipeline failed")
+        raise ServiceUnavailableError("Research pipeline failed") from exc
 
     if not article:
         raise HTTPException(status_code=500, detail="Research pipeline returned no article")

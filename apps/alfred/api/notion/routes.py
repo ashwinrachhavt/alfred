@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
+from alfred.core.exceptions import ServiceUnavailableError
 from alfred.services import notion
 
 router = APIRouter(prefix="/api/notion", tags=["notion"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/history", response_model=dict[str, Any])
@@ -41,6 +44,8 @@ async def get_notion_history(
     except HTTPException as http_exc:
         raise http_exc
     except RuntimeError as rt_exc:
-        raise HTTPException(status_code=502, detail=str(rt_exc)) from rt_exc
+        logger.exception("Notion dependency failed")
+        raise ServiceUnavailableError("Notion service unavailable") from rt_exc
     except Exception as exc:  # pragma: no cover - unexpected runtime errors
-        raise HTTPException(status_code=500, detail=f"Unexpected error: {exc}") from exc
+        logger.exception("Notion history failed")
+        raise ServiceUnavailableError("Notion history failed") from exc

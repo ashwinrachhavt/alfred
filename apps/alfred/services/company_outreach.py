@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-import importlib
 import importlib.util
 import json
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Optional, TypedDict
 
-from docling.backend.docling_parse_v4_backend import DoclingParseV4DocumentBackend
-from docling.datamodel.base_models import InputFormat
-from docling.document_converter import DocumentConverter, FormatOption
-from docling.pipeline.standard_pdf_pipeline import PdfPipelineOptions, StandardPdfPipeline
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
@@ -104,19 +99,20 @@ def _load_resume_context() -> str:
     if importlib.util.find_spec("docling") is None:
         return ""
 
+    try:
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
+        from docling.document_converter import DocumentConverter, PdfFormatOption
+    except Exception:
+        return ""
+
     options = PdfPipelineOptions(
         do_ocr=False,
         do_table_structure=False,
         force_backend_text=True,
     )
     converter = DocumentConverter(
-        format_options={
-            InputFormat.PDF: FormatOption(
-                backend=DoclingParseV4DocumentBackend,
-                pipeline_cls=StandardPdfPipeline,
-                pipeline_options=options,
-            )
-        }
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)}
     )
     result = converter.convert(str(pdf_path))
     text = result.document.export_to_text().strip()

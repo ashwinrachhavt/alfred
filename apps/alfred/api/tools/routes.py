@@ -6,6 +6,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from alfred.core.exceptions import ServiceUnavailableError
 from alfred.services.mongo import MongoService
 from alfred.services.slack import SlackService
 
@@ -34,7 +35,7 @@ def slack_send(payload: SlackSendRequest) -> dict[str, Any]:
         return result
     except Exception as exc:
         logger.warning("Slack send failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise ServiceUnavailableError("Slack send failed") from exc
 
 
 class MongoQueryRequest(BaseModel):
@@ -56,7 +57,7 @@ def mongo_query(payload: MongoQueryRequest) -> dict[str, Any]:
         return {"collection": coll, "count": len(docs), "items": docs}
     except Exception as exc:
         logger.warning("Mongo query failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise ServiceUnavailableError("Mongo query failed") from exc
 
 
 @router.get("/status")

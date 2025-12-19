@@ -14,6 +14,8 @@ import socket
 
 import pytest
 
+os.environ.setdefault("APP_ENV", "test")
+
 
 @pytest.fixture(autouse=True)
 def _disable_network(monkeypatch: pytest.MonkeyPatch):

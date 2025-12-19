@@ -44,7 +44,7 @@ run-api:
 runapi: run-api
 
 run-worker:
-	$(RUN) celery -A alfred.celery_app.app worker -l INFO
+	$(RUN) celery -A alfred.celery_app.app worker -l INFO -Q default,llm,agent
 
 docker-up:
 	docker compose -f infra/docker-compose.yml up --build

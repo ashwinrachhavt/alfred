@@ -2,34 +2,21 @@
 
 from __future__ import annotations
 
-import importlib
 from logging.config import fileConfig
 
+import alfred.models  # noqa: F401 - ensure models are imported for SQLModel metadata
 from alembic import context
+from alfred.core.database import normalize_db_url
+from alfred.core.settings import settings
 from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
-
-_config_mod = importlib.import_module("alfred.core.settings")
-settings = getattr(_config_mod, "settings")
-
-
-def _with_psycopg(url: str) -> str:
-    """Force explicit psycopg driver for Postgres URLs (simple and reliable)."""
-    if url.startswith("postgres://"):
-        return "postgresql+psycopg://" + url[len("postgres://") :]
-    if url.startswith("postgresql://") and "+" not in url.split(":", 1)[0]:
-        return "postgresql+psycopg://" + url[len("postgresql://") :]
-    return url
-
-
-_models_mod = importlib.import_module("alfred.models")  # ensure models are imported
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", _with_psycopg(settings.database_url))
+config.set_main_option("sqlalchemy.url", normalize_db_url(settings.database_url))
 
 
 target_metadata = SQLModel.metadata
@@ -39,7 +26,7 @@ def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
 
     context.configure(
-        url=_with_psycopg(settings.database_url),
+        url=normalize_db_url(settings.database_url),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},

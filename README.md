@@ -96,6 +96,24 @@ Docker (full stack)
 docker compose -f infra/docker-compose.yml up --build
 ```
 
+## Celery (Background Tasks)
+
+Run a local worker (Redis required):
+```bash
+make run-worker
+```
+
+Enqueue a Mind Palace agent query:
+```bash
+curl -sS -X POST 'http://localhost:8000/api/mind-palace/agent/query?background=true' \
+  -H 'content-type: application/json' \
+  -d '{"question":"system design","history":[],"context":{}}'
+
+# response: {"task_id": "...", "status_url": "/tasks/..."}
+# then poll:
+# curl -sS http://localhost:8000/tasks/<task_id>
+```
+
 ## Environment & Imports
 
 - The project is an installable package (editable mode). Run `make install` and then use `uv run …` targets.

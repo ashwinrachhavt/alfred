@@ -69,19 +69,45 @@ class CompanyResearchService:
         *,
         search_results: int = 8,
         firecrawl_render_js: bool = False,
+        primary_search: WebConnector | None = None,
+        fallback_search: WebConnector | None = None,
+        firecrawl: FirecrawlClient | None = None,
+        mongo: MongoService | None = None,
     ) -> None:
         self.search_results = max(1, search_results)
-        self._primary_search = WebConnector(mode="searx", searx_k=self.search_results)
-        self._fallback_search = WebConnector(mode="multi", searx_k=self.search_results)
-        self._firecrawl = FirecrawlClient(
-            base_url=settings.firecrawl_base_url,
-            timeout=settings.firecrawl_timeout,
-        )
+        # Defer heavy init; allow DI for tests
+        self._primary_search = primary_search
+        self._fallback_search = fallback_search
+        self._firecrawl = firecrawl
         self._firecrawl_render_js = firecrawl_render_js
-        self._mongo = MongoService(default_collection=settings.company_research_collection)
+        self._mongo = mongo
         self._model_name = settings.company_research_model
         self._llm = None
         self._structured_llm = None
+
+    # Lazily construct dependencies
+    def _get_primary_search(self) -> WebConnector:
+        if self._primary_search is None:
+            self._primary_search = WebConnector(mode="searx", searx_k=self.search_results)
+        return self._primary_search
+
+    def _get_fallback_search(self) -> WebConnector:
+        if self._fallback_search is None:
+            self._fallback_search = WebConnector(mode="multi", searx_k=self.search_results)
+        return self._fallback_search
+
+    def _get_firecrawl(self) -> FirecrawlClient:
+        if self._firecrawl is None:
+            self._firecrawl = FirecrawlClient(
+                base_url=settings.firecrawl_base_url,
+                timeout=settings.firecrawl_timeout,
+            )
+        return self._firecrawl
+
+    def _get_mongo(self) -> MongoService:
+        if self._mongo is None:
+            self._mongo = MongoService(default_collection=settings.company_research_collection)
+        return self._mongo
 
     # ------------------------------------------------------------------
     # Public API
@@ -112,7 +138,7 @@ class CompanyResearchService:
         }
         payload["report"]["references"] = sanitized_refs
 
-        self._mongo.update_one({"company": company}, {"$set": payload}, upsert=True)
+        self._get_mongo().update_one({"company": company}, {"$set": payload}, upsert=True)
         stored = self._find_latest(company)
         return stored or payload
 
@@ -138,12 +164,12 @@ class CompanyResearchService:
         self._structured_llm = llm.with_structured_output(CompanyResearchReport)
 
     def _collect_sources(self, company: str) -> tuple[list[EnrichedSource], dict[str, Any]]:
-        primary = self._search(company, self._primary_search)
+        primary = self._search(company, self._get_primary_search())
         hits = primary.hits[: self.search_results]
         meta = {"provider": primary.provider, "hits": len(hits), "meta": primary.meta}
         if not hits and primary.meta and primary.meta.get("status") == "unconfigured":
             logger.info("SearxNG unavailable; falling back to multi-provider search")
-            fallback = self._search(company, self._fallback_search)
+            fallback = self._search(company, self._get_fallback_search())
             hits = fallback.hits[: self.search_results]
             meta = {"provider": fallback.provider, "hits": len(hits), "meta": fallback.meta}
         sources = [self._enrich_hit(hit, meta["provider"]) for hit in hits]
@@ -171,7 +197,7 @@ class CompanyResearchService:
         )
 
     def _fetch_markdown(self, url: str) -> tuple[str | None, str | None]:
-        response = self._firecrawl.scrape(url, render_js=self._firecrawl_render_js)
+        response = self._get_firecrawl().scrape(url, render_js=self._firecrawl_render_js)
         if response.success:
             text = response.markdown
             if not text and isinstance(response.data, dict):
@@ -222,7 +248,7 @@ class CompanyResearchService:
         return "\n\n---\n\n".join(parts)
 
     def _find_latest(self, company: str) -> dict[str, Any] | None:
-        record = self._mongo.find_one({"company": company})
+        record = self._get_mongo().find_one({"company": company})
         if not record:
             return None
         payload = dict(record)

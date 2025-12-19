@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
@@ -22,12 +23,19 @@ class Settings(BaseSettings):
     Loads from env with support for repo ".env" files. Avoids manual load_dotenv().
     """
 
-    # Load env vars from apps/alfred/.env first, then repo root .env
-    model_config = SettingsConfigDict(
-        env_file=[
+    _app_env = (os.getenv("APP_ENV") or "").strip().lower()
+    _env_files = (
+        []
+        if _app_env in {"test", "ci"}
+        else [
             str((Path(__file__).resolve().parents[1] / ".env")),  # apps/alfred/.env
             str((Path(__file__).resolve().parents[3] / ".env")),  # repo root .env
-        ],
+        ]
+    )
+
+    # Load env vars from apps/alfred/.env first, then repo root .env
+    model_config = SettingsConfigDict(
+        env_file=_env_files,
         case_sensitive=False,
         extra="ignore",
     )

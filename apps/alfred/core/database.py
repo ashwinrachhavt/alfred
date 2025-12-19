@@ -1,19 +1,21 @@
 """Database engine and session helpers (SQLModel-compatible)."""
 
-import logging
 from collections.abc import Generator
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session
 
+from alfred.core.exceptions import ConfigurationError
 from alfred.core.settings import settings
 
-logger = logging.getLogger(__name__)
 
+def normalize_db_url(url: str) -> str:
+    """Normalize database URL for SQLAlchemy.
 
-def _with_psycopg(url: str) -> str:
-    """Force explicit psycopg driver for Postgres URLs (simple and reliable)."""
+    - Force explicit psycopg driver for Postgres URLs
+    - Leave other schemes untouched
+    """
     if url.startswith("postgres://"):
         return "postgresql+psycopg://" + url[len("postgres://") :]
     if url.startswith("postgresql://") and "+" not in url.split(":", 1)[0]:
@@ -21,7 +23,7 @@ def _with_psycopg(url: str) -> str:
     return url
 
 
-DB_URL = _with_psycopg(settings.database_url)
+DB_URL = normalize_db_url(settings.database_url)
 
 try:
     engine = create_engine(
@@ -31,9 +33,9 @@ try:
     )
 except ModuleNotFoundError as exc:  # pragma: no cover - runtime dependency hint
     if settings.database_url.startswith("postgres"):
-        raise RuntimeError(
-            'PostgreSQL driver missing. Run: pip install "psycopg[binary]" \n'
-            "Or use SQLite locally: DATABASE_URL=sqlite:///apps/alfred/alfred.db"
+        raise ConfigurationError(
+            'PostgreSQL driver missing. Run: pip install "psycopg[binary]" '
+            "or use SQLite locally: DATABASE_URL=sqlite:///apps/alfred/alfred.db",
         ) from exc
     raise
 SessionLocal = sessionmaker(
@@ -54,4 +56,4 @@ def get_session() -> Generator[Session, None, None]:
         session.close()
 
 
-__all__ = ["engine", "get_session", "SessionLocal"]
+__all__ = ["engine", "get_session", "SessionLocal", "normalize_db_url"]
