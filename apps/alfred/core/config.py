@@ -188,6 +188,9 @@ class Settings(BaseSettings):
         default=None, alias="CLASSIFICATION_TAXONOMY_PATH"
     )
 
+    # Internal agents
+    internal_agent_token: Optional[str] = Field(default=None, alias="INTERNAL_AGENT_TOKEN")
+
 
 settings = Settings()
 
