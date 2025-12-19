@@ -7,7 +7,7 @@ from typing import Any, Optional
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 
-from alfred.core.config import settings
+from alfred.core.settings import settings
 
 DEFAULT_USER_ID = "default"
 

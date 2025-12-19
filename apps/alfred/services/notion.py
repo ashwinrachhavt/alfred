@@ -9,13 +9,14 @@ from pydantic import BaseModel, ConfigDict
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 
 from alfred.connectors.notion_history import NotionHistoryConnector
-from alfred.core.config import settings
+from alfred.core.settings import settings
 
 
 def _client() -> Client:
-    if not settings.notion_token:
+    token = settings.notion_token.get_secret_value() if settings.notion_token else None
+    if not token:
         raise HTTPException(500, "NOTION_TOKEN not configured")
-    return Client(auth=settings.notion_token)
+    return Client(auth=token)
 
 
 def _database_query(db_id: str, **payload: Any) -> dict:
@@ -253,7 +254,8 @@ async def fetch_page_history(
 ) -> List[Dict[str, Any]]:
     """Fetch page histories using the async connector for deep exports."""
 
-    notion_token = token or settings.notion_token
+    configured = settings.notion_token.get_secret_value() if settings.notion_token else None
+    notion_token = token or configured
     if not notion_token:
         raise HTTPException(500, "NOTION_TOKEN not configured")
 

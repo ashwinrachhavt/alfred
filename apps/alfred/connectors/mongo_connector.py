@@ -9,7 +9,7 @@ from pymongo.collection import Collection
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
-from alfred.core.config import settings
+from alfred.core.settings import settings
 
 
 class MongoConnector(ContextManager["MongoConnector"]):

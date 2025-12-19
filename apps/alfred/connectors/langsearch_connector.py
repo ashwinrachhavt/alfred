@@ -14,7 +14,7 @@ from requests.adapters import HTTPAdapter
 from tinydb import TinyDB
 from urllib3.util.retry import Retry
 
-from alfred.core.config import settings
+from alfred.core.settings import settings
 
 logger = logging.getLogger(__name__)
 

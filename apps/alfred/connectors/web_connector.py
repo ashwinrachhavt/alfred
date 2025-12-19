@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import itertools
 import json
 import logging
@@ -528,11 +529,6 @@ class WebConnector:
 
     def _search_multi(self, query: str, **kwargs: Any) -> SearchResponse:
         providers = self._collect_enabled()
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
 
         def call(p: Provider):
             c = self.clients[p]
@@ -542,14 +538,34 @@ class WebConnector:
                 return c.search(query, num_results=kwargs.get("num_results", 100))
             return c.search(query)
 
-        tasks = [loop.run_in_executor(None, call, p) for p in providers]
-        results: List[SearchResponse] = loop.run_until_complete(asyncio.gather(*tasks))
+        # Run provider calls concurrently using a thread pool to avoid
+        # interacting with any already-running asyncio event loop (e.g. FastAPI).
+        results: List[SearchResponse] = []
+        errors: dict[str, Any] = {}
+        if not providers:
+            return SearchResponse(provider="multi", query=query, hits=[], meta={"providers": []})
+        max_workers = min(8, len(providers)) or 1
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {executor.submit(call, p): p for p in providers}
+            for future in as_completed(future_map):
+                prov = future_map[future]
+                try:
+                    res = future.result()
+                    if isinstance(res, SearchResponse):
+                        results.append(res)
+                except Exception as exc:  # pragma: no cover - network/provider failures
+                    logging.warning("Web provider '%s' failed: %s", prov, exc)
+                    errors[prov] = str(exc)
         merged = _dedupe_by_url([h for r in results for h in r.hits])
         return SearchResponse(
             provider="multi",
             query=query,
             hits=merged,
-            meta={"providers": providers, "sizes": {r.provider: len(r.hits) for r in results}},
+            meta={
+                "providers": providers,
+                "sizes": {r.provider: len(r.hits) for r in results},
+                "errors": errors or None,
+            },
         )
 
     def search(self, query: str, *, pages: Optional[int] = None, **kwargs: Any) -> SearchResponse:

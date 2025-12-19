@@ -1,7 +1,7 @@
 """Minimal Slack service for sending messages.
 
 Wraps `slack_sdk.WebClient.chat_postMessage` and reads the token from
-`SLACK_API_KEY` via `alfred.core.config.settings` by default.
+`SLACK_API_KEY` via `alfred.core.settings.settings` by default.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from typing import Any, Optional
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
-from alfred.core.config import settings
+from alfred.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,10 @@ class SlackService:
     """Send messages to Slack channels or threads."""
 
     def __init__(self, token: Optional[str] = None) -> None:
-        self._token = token or settings.slack_api_key
+        configured = (
+            settings.slack_api_key.get_secret_value() if settings.slack_api_key else None
+        )
+        self._token = token or configured
         if not self._token:
             raise ValueError("Slack API key not configured. Set SLACK_API_KEY in the environment.")
         self._client = WebClient(token=self._token)

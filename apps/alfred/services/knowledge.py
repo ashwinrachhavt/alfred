@@ -14,6 +14,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 
 from alfred.core.llm_factory import get_embedding_model
+from alfred.core.settings import LLMProvider
 
 
 @dataclass
@@ -36,13 +37,11 @@ class KnowledgeService:
 
         if self.embedder is None:
             # Use existing embedding factory, fallback to Ollama if no OpenAI key
-            from alfred.core.llm_config import settings
-
             try:
                 self.embedder = get_embedding_model()
             except Exception:
                 # Fallback to Ollama embeddings
-                self.embedder = get_embedding_model(provider=settings.llm_provider.ollama)
+                self.embedder = get_embedding_model(provider=LLMProvider.ollama)
 
         # Create collection if it doesn't exist
         self._ensure_collection()

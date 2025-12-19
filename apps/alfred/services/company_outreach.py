@@ -5,11 +5,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Optional, TypedDict
 
-from docling.backend.docling_parse_v4_backend import DoclingParseV4DocumentBackend
-from docling.datamodel.base_models import InputFormat
-from docling.document_converter import DocumentConverter, FormatOption
-from docling.pipeline.standard_pdf_pipeline import PdfPipelineOptions, StandardPdfPipeline
-from dotenv import load_dotenv
+# from docling.backend.docling_parse_v4_backend import DoclingParseV4DocumentBackend
+# from docling.datamodel.base_models import InputFormat
+# from docling.document_converter import DocumentConverter, FormatOption
+# from docling.pipeline.standard_pdf_pipeline import PdfPipelineOptions, StandardPdfPipeline
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
@@ -19,7 +18,6 @@ from alfred.services.agentic_rag import create_retriever_tool, make_llm, make_re
 from alfred.services.company_researcher import CompanyResearchService
 from alfred.services.web_search import search_web
 
-load_dotenv()
 
 _company_research_service = CompanyResearchService()
 

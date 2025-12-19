@@ -3,9 +3,9 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Environment is loaded by Pydantic Settings (see alfred.core.config).
+# Environment is loaded by Pydantic Settings (see alfred.core.settings).
 from alfred.api import register_routes
-from alfred.core.config import settings
+from alfred.core.settings import settings
 from alfred.core.logging import setup_logging
 from alfred.services.doc_storage import DocStorageService
 

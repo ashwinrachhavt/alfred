@@ -6,7 +6,7 @@ from collections.abc import Generator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from alfred.core.config import settings
+from alfred.core.settings import settings
 from alfred.models import Base
 
 logger = logging.getLogger(__name__)

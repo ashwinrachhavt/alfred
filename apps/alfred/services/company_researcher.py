@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from alfred.connectors.firecrawl_connector import FirecrawlClient
 from alfred.connectors.web_connector import SearchHit, WebConnector
-from alfred.core.config import settings
+from alfred.core.settings import settings
 from alfred.prompts import load_prompt
 from alfred.services.mongo import MongoService
 

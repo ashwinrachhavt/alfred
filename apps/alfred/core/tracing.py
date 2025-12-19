@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 from typing import Any, Callable, Optional
-
-from .config import settings
+from alfred.core.settings import settings
 
 _client_cache: Any | None = None
 _observe_impl: Optional[Callable[..., Callable[..., Any]]] = None
@@ -39,7 +38,11 @@ def _init_client() -> Any | None:
     _observe_impl = _obs
     _client_cache = Langfuse(
         public_key=settings.langfuse_public_key,
-        secret_key=settings.langfuse_secret_key,
+        secret_key=(
+            settings.langfuse_secret_key.get_secret_value()
+            if settings.langfuse_secret_key
+            else None
+        ),
         host=settings.langfuse_host or None,
         debug=settings.langfuse_debug,
     )

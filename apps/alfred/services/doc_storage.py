@@ -33,7 +33,7 @@ from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
 
 from alfred.connectors.mongo_connector import MongoConnector
-from alfred.core.config import settings
+from alfred.core.settings import settings
 from alfred.schemas.documents import (
     DocChunkRecord,
     DocumentIngest,

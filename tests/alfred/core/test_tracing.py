@@ -1,5 +1,5 @@
 from alfred.core import tracing
-from alfred.core.config import settings
+from alfred.core.settings import settings
 
 
 def _reset_tracing_state(monkeypatch):

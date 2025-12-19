@@ -27,7 +27,6 @@ from alfred.services.chunking import ChunkingService
 from alfred.services.extraction_service import ExtractionService
 from alfred.services.mongo import MongoService
 from bson import ObjectId
-from dotenv import load_dotenv
 from pymongo.errors import DuplicateKeyError
 from tqdm.auto import tqdm
 
@@ -142,7 +141,6 @@ def _rechunk_doc(mongo: MongoService, doc: Dict[str, Any], *, text: str) -> int:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    load_dotenv()
     parser = argparse.ArgumentParser(description="End-to-end Mongo cleaning pipeline (notes_db)")
     parser.add_argument("--collection", default="documents")
     parser.add_argument("--batch-size", type=int, default=200)

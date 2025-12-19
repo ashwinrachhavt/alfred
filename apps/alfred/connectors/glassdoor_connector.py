@@ -12,7 +12,7 @@ from urllib.parse import urljoin
 import requests
 from pydantic import BaseModel
 
-from alfred.core.config import settings
+from alfred.core.settings import settings
 
 
 class GlassdoorResponse(BaseModel):

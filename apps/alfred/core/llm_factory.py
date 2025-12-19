@@ -8,7 +8,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from .llm_config import LLMProvider, LLMSettings, settings
+from .settings import LLMProvider, settings
 
 
 @lru_cache(maxsize=8)
@@ -17,19 +17,16 @@ def get_chat_model(
     model: Optional[str] = None,
     temperature: Optional[float] = None,
 ) -> BaseChatModel:
-    """Return a LangChain-compatible chat model for the chosen provider.
-
-    Cached to avoid reconnect / re-initialization overhead across agents.
-    """
-    cfg: LLMSettings = settings
+    cfg = settings
     provider = provider or cfg.llm_provider
-    temperature = temperature if temperature is not None else cfg.llm_temperature
+    model = model or cfg.llm_model
+    temperature = cfg.llm_temperature if temperature is None else temperature
 
     if provider == LLMProvider.openai:
         return ChatOpenAI(
-            model=model or cfg.llm_model,
+            model=model,
             temperature=temperature,
-            api_key=cfg.openai_api_key,
+            api_key=(cfg.openai_api_key.get_secret_value() if cfg.openai_api_key else None),
             base_url=cfg.openai_base_url,
             organization=cfg.openai_organization,
         )
@@ -49,14 +46,13 @@ def get_embedding_model(
     provider: Optional[LLMProvider] = None,
     model: Optional[str] = None,
 ) -> Embeddings:
-    """Return an Embeddings implementation for the chosen provider."""
-    cfg: LLMSettings = settings
+    cfg = settings
     provider = provider or cfg.llm_provider
 
     if provider == LLMProvider.openai:
         return OpenAIEmbeddings(
             model=model or "text-embedding-3-small",
-            api_key=cfg.openai_api_key,
+            api_key=(cfg.openai_api_key.get_secret_value() if cfg.openai_api_key else None),
             base_url=cfg.openai_base_url,
         )
 
@@ -67,3 +63,4 @@ def get_embedding_model(
         )
 
     raise ValueError(f"Unsupported provider: {provider}")
+

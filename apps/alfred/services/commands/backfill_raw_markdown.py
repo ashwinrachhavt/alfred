@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 import requests
 from alfred.connectors.firecrawl_connector import FirecrawlClient
-from alfred.core.config import settings
+from alfred.core.settings import settings
 from alfred.services.mongo import MongoService
 from bson import ObjectId
 from tqdm.auto import tqdm

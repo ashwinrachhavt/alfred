@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from alfred.services.company_outreach import generate_company_outreach
@@ -16,7 +17,8 @@ async def company_research(
     refresh: bool = Query(False, description="Force a new crawl + regeneration"),
 ):
     try:
-        return _research_service.generate_report(name, refresh=refresh)
+        # Offload blocking work to a threadpool to keep the event loop responsive.
+        return await run_in_threadpool(_research_service.generate_report, name, refresh=refresh)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

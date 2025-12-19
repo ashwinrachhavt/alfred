@@ -2,16 +2,11 @@ from __future__ import annotations
 
 import os
 from typing import Iterable, Optional, Type, TypeVar
-
-from dotenv import load_dotenv
 from ollama import chat as ollama_chat
 from openai import OpenAI
 from pydantic import BaseModel
 
-from alfred.core.llm_config import LLMProvider, settings
-
-# Ensure local .env is loaded for OPENAI_ and related envs
-load_dotenv()
+from alfred.core.settings import LLMProvider, settings
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -32,8 +27,11 @@ class LLMService:
     @property
     def openai_client(self) -> OpenAI:
         if self._openai_client is None:
+            api_key = (
+                self.cfg.openai_api_key.get_secret_value() if getattr(self.cfg, "openai_api_key", None) else None
+            ) or os.getenv("OPENAI_API_KEY")
             self._openai_client = OpenAI(
-                api_key=self.cfg.openai_api_key or os.getenv("OPENAI_API_KEY"),
+                api_key=api_key,
                 base_url=self.cfg.openai_base_url or os.getenv("OPENAI_BASE_URL"),
                 organization=self.cfg.openai_organization or os.getenv("OPENAI_ORG"),
             )

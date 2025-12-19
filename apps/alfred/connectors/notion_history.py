@@ -15,7 +15,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 from notion_client import AsyncClient
 from notion_client.errors import APIResponseError
 
-from alfred.core.config import settings
+from alfred.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,8 @@ class NotionHistoryConnector:
             token: Optional explicit Notion token. If omitted, uses settings.notion_token.
             page_size: Page size for search queries (clamped to 1–100).
         """
-        self._token = token or settings.notion_token
+        configured = settings.notion_token.get_secret_value() if settings.notion_token else None
+        self._token = token or configured
         if not self._token:
             raise RuntimeError("NOTION_TOKEN is not configured")
 

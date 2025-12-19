@@ -4,15 +4,14 @@ import logging
 from dataclasses import dataclass
 from typing import Any, List
 
-from dotenv import load_dotenv
 from llama_index.core import Document, Settings, VectorStoreIndex
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
 
 from alfred.services.doc_storage import DocStorageService
+from alfred.core.settings import settings
 
 logger = logging.getLogger(__name__)
-load_dotenv()
 
 
 @dataclass
@@ -23,9 +22,19 @@ class LlamaIndexService:
     _index: Any | None = None
 
     def _build_index(self, *, limit: int = 500) -> None:
-        load_dotenv()
-        Settings.llm = OpenAI(model="gpt-4o-mini")
-        Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small")
+        api_key = settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
+        Settings.llm = OpenAI(
+            model="gpt-4o-mini",
+            api_key=api_key,
+            base_url=settings.openai_base_url,
+            organization=settings.openai_organization,
+        )
+        Settings.embed_model = OpenAIEmbedding(
+            model="text-embedding-3-small",
+            api_key=api_key,
+            base_url=settings.openai_base_url,
+            organization=settings.openai_organization,
+        )
 
         listing = self.storage.list_documents(skip=0, limit=limit)
         docs: List[Document] = []

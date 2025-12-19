@@ -6,7 +6,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 from alfred.prompts import load_prompt
@@ -38,7 +37,6 @@ class ExtractionService:
         Use LangExtract (if available) with OpenAI provider to extract entities,
         relations, and topics. Falls back to OpenAI structured outputs.
         """
-        load_dotenv()
         text = (text or "").strip()
         out: Dict[str, Any] = {"entities": [], "relations": [], "topics": []}
         if not text:
@@ -162,7 +160,7 @@ class ExtractionService:
         - embedding: [float]
         Also includes convenience fields: tokens, hash, cleaned_text, raw_markdown.
         """
-        load_dotenv()
+        # env loaded via unified settings
 
         text = (raw_markdown or cleaned_text or "").strip()
         # Cap text to keep token usage reasonable
@@ -269,8 +267,14 @@ class ExtractionService:
         if include_embedding:
             try:
                 from openai import OpenAI  # type: ignore
+                from alfred.core.settings import settings
 
-                client = OpenAI()
+                api_key = settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
+                client = OpenAI(
+                    api_key=api_key,
+                    base_url=settings.openai_base_url,
+                    organization=settings.openai_organization,
+                )
                 resp = client.embeddings.create(model="text-embedding-3-small", input=text)
                 embedding = list(resp.data[0].embedding)
             except Exception as exc:  # pragma: no cover - network
@@ -323,7 +327,6 @@ class ExtractionService:
         Uses prompt templates in apps/alfred/prompts/classification and LangExtract with
         OpenAI provider for structured output. Falls back to LLMService.structured on error.
         """
-        load_dotenv()
         txt = (text or "").strip()[:8000]
         # Prepare prompt description
         instructions = load_prompt("classification", "instructions.md")

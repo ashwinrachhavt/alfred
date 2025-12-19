@@ -30,7 +30,6 @@ from typing import Any, Dict, List, Optional
 from alfred.prompts import load_prompt
 from alfred.services.extraction_service import ExtractionService
 from alfred.services.mongo import MongoService
-from dotenv import load_dotenv
 from tqdm.auto import tqdm
 
 
@@ -51,7 +50,6 @@ def _iter_docs(mongo: MongoService, collection: str, batch_size: int, filt: Dict
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    load_dotenv()
     parser = argparse.ArgumentParser(description="Backfill topics.classification for documents")
     parser.add_argument("--collection", default="documents")
     parser.add_argument("--batch-size", type=int, default=200)

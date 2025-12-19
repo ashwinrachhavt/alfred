@@ -8,7 +8,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-_config_mod = importlib.import_module("alfred.core.config")
+_config_mod = importlib.import_module("alfred.core.settings")
 settings = getattr(_config_mod, "settings")
 
 
