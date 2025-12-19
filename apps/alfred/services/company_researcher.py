@@ -80,16 +80,8 @@ class CompanyResearchService:
         self._firecrawl_render_js = firecrawl_render_js
         self._mongo = MongoService(default_collection=settings.company_research_collection)
         self._model_name = settings.company_research_model
-        self._llm = ChatOpenAI(
-            model=self._model_name,
-            temperature=0.15,
-            api_key=(
-                settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
-            ),
-            base_url=settings.openai_base_url,
-            organization=settings.openai_organization,
-        )
-        self._structured_llm = self._llm.with_structured_output(CompanyResearchReport)
+        self._llm = None
+        self._structured_llm = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -105,6 +97,7 @@ class CompanyResearchService:
                 return cached
 
         sources, search_meta = self._collect_sources(company)
+        self._ensure_llm()
         report = self._run_llm(company, sources)
         references = report.references or []
         references.extend([src.url for src in sources if src.url])
@@ -126,6 +119,24 @@ class CompanyResearchService:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+    def _ensure_llm(self) -> None:
+        if self._structured_llm is not None:
+            return
+        api_key = settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
+        if not api_key:
+            raise RuntimeError(
+                "OpenAI not configured: set OPENAI_API_KEY to enable company research"
+            )
+        llm = ChatOpenAI(
+            model=self._model_name,
+            temperature=0.15,
+            api_key=api_key,
+            base_url=settings.openai_base_url,
+            organization=settings.openai_organization,
+        )
+        self._llm = llm
+        self._structured_llm = llm.with_structured_output(CompanyResearchReport)
+
     def _collect_sources(self, company: str) -> tuple[list[EnrichedSource], dict[str, Any]]:
         primary = self._search(company, self._primary_search)
         hits = primary.hits[: self.search_results]

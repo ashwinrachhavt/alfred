@@ -7,10 +7,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Optional, TypedDict
 
-# from docling.backend.docling_parse_v4_backend import DoclingParseV4DocumentBackend
-# from docling.datamodel.base_models import InputFormat
-# from docling.document_converter import DocumentConverter, FormatOption
-# from docling.pipeline.standard_pdf_pipeline import PdfPipelineOptions, StandardPdfPipeline
+from docling.backend.docling_parse_v4_backend import DoclingParseV4DocumentBackend
+from docling.datamodel.base_models import InputFormat
+from docling.document_converter import DocumentConverter, FormatOption
+from docling.pipeline.standard_pdf_pipeline import PdfPipelineOptions, StandardPdfPipeline
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
@@ -20,7 +20,10 @@ from alfred.services.agentic_rag import create_retriever_tool, make_llm, make_re
 from alfred.services.company_researcher import CompanyResearchService
 from alfred.services.web_search import search_web
 
-_company_research_service = CompanyResearchService()
+
+@lru_cache(maxsize=1)
+def _get_company_research_service() -> CompanyResearchService:
+    return CompanyResearchService()
 
 
 def _summarize_company_report(doc: dict[str, Any]) -> str:
@@ -65,7 +68,7 @@ class CompanyResearchTool(BaseTool):
 
     def _run(self, company: str) -> str:  # type: ignore[override]
         try:
-            doc = _company_research_service.generate_report(company)
+            doc = _get_company_research_service().generate_report(company)
             return _summarize_company_report(doc)
         except Exception as exc:  # pragma: no cover - propagate friendly error
             return f"(error) company research failed: {exc}"
@@ -99,14 +102,6 @@ def _load_resume_context() -> str:
 
     # Use Docling if available; otherwise, skip resume context.
     if importlib.util.find_spec("docling") is None:
-        return ""
-
-    try:
-        from docling.backend.docling_parse_v4_backend import DoclingParseV4DocumentBackend
-        from docling.datamodel.base_models import InputFormat
-        from docling.document_converter import DocumentConverter, FormatOption
-        from docling.pipeline.standard_pdf_pipeline import PdfPipelineOptions, StandardPdfPipeline
-    except ImportError:
         return ""
 
     options = PdfPipelineOptions(

@@ -231,6 +231,22 @@ Notes
 
 ---
 
+## Provider Initialization & Startup Robustness
+
+To keep the API resilient and avoid import-time crashes:
+
+- Lazy-initialize heavy/optional dependencies. Do not construct network clients or LLMs at module import time. Prefer a cached accessor (e.g., `@lru_cache` or an `_ensure_*()` method) that builds on first use.
+- Only enable connectors when configured. For each provider (Tavily, Brave, Exa, You.com, Searx), check the corresponding `settings.*` field before constructing the client. Default to DDG when nothing else is configured.
+- Pass API keys explicitly to third-party wrappers that support it (e.g., `tavily_api_key=...`) instead of requiring environment variables.
+- Avoid import-time side effects in FastAPI routers and services. If a service is needed in multiple places, provide a small `get_service()` function with `@lru_cache` to construct it lazily.
+
+Example patterns used in this repo:
+- WebConnector builds only the configured clients; missing keys simply exclude a provider instead of raising.
+- CompanyResearchService defers ChatOpenAI instantiation until the first request via `_ensure_llm()`. If OpenAI is not configured, the endpoint returns a clear error but the app still starts.
+- Company outreach uses a cached `get_company_research_service()` instead of constructing the service at import time.
+
+---
+
 ## CI
 
 GitHub Actions runs on `push` and `pull_request` to `main` / `master`:
