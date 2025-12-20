@@ -74,16 +74,24 @@ class LinearConnector:
         if variables:
             payload["variables"] = variables
 
-        response = requests.post(self.api_url, headers=headers, json=payload)
+        response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)
 
-        if response.status_code == 200:
-            return response.json()
-        else:
-            raise Exception(
+        if response.status_code != 200:
+            raise RuntimeError(
                 f"Query failed with status code {response.status_code}: {response.text}"
             )
 
-    def get_all_issues(self, include_comments: bool = True) -> list[dict[str, Any]]:
+        data: dict[str, Any] = response.json()
+        if "errors" in data:
+            messages = "; ".join(
+                [err.get("message", "Unknown error") for err in data.get("errors", [])]
+            )
+            raise RuntimeError(f"GraphQL errors: {messages}")
+        return data
+
+    def get_all_issues(
+        self, include_comments: bool = True, limit: int = 100
+    ) -> list[dict[str, Any]]:
         """
         Fetch all issues from Linear.
 
@@ -115,9 +123,15 @@ class LinearConnector:
             }
             """
 
+        per_page = 100
+        requested_limit = max(1, limit)
+        all_issues: list[dict[str, Any]] = []
+        cursor: str | None = None
+        has_next_page = True
+
         query = f"""
-        query {{
-            issues {{
+        query Issues($after: String) {{
+            issues(first: {per_page}, after: $after) {{
                 nodes {{
                     id
                     identifier
@@ -142,20 +156,38 @@ class LinearConnector:
                     updatedAt
                     {comments_query}
                 }}
+                pageInfo {{
+                    hasNextPage
+                    endCursor
+                }}
             }}
         }}
         """
 
-        result = self.execute_graphql_query(query)
+        while has_next_page and len(all_issues) < requested_limit:
+            variables = {"after": cursor} if cursor else {}
+            result = self.execute_graphql_query(query, variables)
+            issues_data = (result.get("data") or {}).get("issues") or {}
+            nodes = issues_data.get("nodes") or []
+            if isinstance(nodes, list):
+                remaining = requested_limit - len(all_issues)
+                all_issues.extend(nodes[:remaining])
 
-        # Extract issues from the response
-        if "data" in result and "issues" in result["data"] and "nodes" in result["data"]["issues"]:
-            return result["data"]["issues"]["nodes"]
+            page_info = issues_data.get("pageInfo") or {}
+            has_next_page = bool(page_info.get("hasNextPage"))
+            cursor = page_info.get("endCursor") if has_next_page else None
 
-        return []
+            if not nodes:
+                break
+
+        return all_issues
 
     def get_issues_by_date_range(
-        self, start_date: str, end_date: str, include_comments: bool = True
+        self,
+        start_date: str,
+        end_date: str,
+        include_comments: bool = True,
+        limit: int = 100,
     ) -> tuple[list[dict[str, Any]], str | None]:
         """
         Fetch issues within a date range.
@@ -168,129 +200,114 @@ class LinearConnector:
         Returns:
             Tuple containing (issues list, error message or None)
         """
-        # Convert date strings to ISO format
         try:
-            # For Linear API: we need to use a more specific format for the filter
-            # Instead of DateTime, use a string in the filter for DateTimeOrDuration
-            comments_query = ""
-            if include_comments:
-                comments_query = """
-                comments {
-                    nodes {
-                        id
-                        body
-                        user {
-                            id
-                            name
-                            email
-                        }
-                        createdAt
-                        updatedAt
-                    }
-                }
-                """
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+            if start_dt > end_dt:
+                return [], "Invalid date range: start_date must be <= end_date."
+        except ValueError as exc:
+            return [], f"Invalid date format: {exc!s}. Please use YYYY-MM-DD."
 
-            # Query issues that were either created OR updated within the date range
-            # This ensures we catch both new issues and updated existing issues
-            query = f"""
-            query IssuesByDateRange($after: String) {{
-                issues(
-                    first: 100,
-                    after: $after,
-                    filter: {{
-                        or: [
-                            {{
-                                createdAt: {{
-                                    gte: "{start_date}T00:00:00Z"
-                                    lte: "{end_date}T23:59:59Z"
-                                }}
-                            }},
-                            {{
-                                updatedAt: {{
-                                    gte: "{start_date}T00:00:00Z"
-                                    lte: "{end_date}T23:59:59Z"
-                                }}
-                            }}
-                        ]
-                    }}
-                ) {{
-                    nodes {{
+        requested_limit = max(1, limit)
+        comments_query = ""
+        if include_comments:
+            comments_query = """
+            comments {
+                nodes {
+                    id
+                    body
+                    user {
                         id
-                        identifier
-                        title
-                        description
-                        state {{
-                            id
-                            name
-                            type
-                        }}
-                        assignee {{
-                            id
-                            name
-                            email
-                        }}
-                        creator {{
-                            id
-                            name
-                            email
-                        }}
-                        createdAt
-                        updatedAt
-                        {comments_query}
-                    }}
-                    pageInfo {{
-                        hasNextPage
-                        endCursor
-                    }}
-                }}
-            }}
+                        name
+                        email
+                    }
+                    createdAt
+                    updatedAt
+                }
+            }
             """
 
-            try:
-                all_issues = []
-                has_next_page = True
-                cursor = None
+        query = f"""
+        query IssuesByDateRange($after: String) {{
+            issues(
+                first: 100,
+                after: $after,
+                filter: {{
+                    or: [
+                        {{
+                            createdAt: {{
+                                gte: "{start_date}T00:00:00Z"
+                                lte: "{end_date}T23:59:59Z"
+                            }}
+                        }},
+                        {{
+                            updatedAt: {{
+                                gte: "{start_date}T00:00:00Z"
+                                lte: "{end_date}T23:59:59Z"
+                            }}
+                        }}
+                    ]
+                }}
+            ) {{
+                nodes {{
+                    id
+                    identifier
+                    title
+                    description
+                    state {{
+                        id
+                        name
+                        type
+                    }}
+                    assignee {{
+                        id
+                        name
+                        email
+                    }}
+                    creator {{
+                        id
+                        name
+                        email
+                    }}
+                    createdAt
+                    updatedAt
+                    {comments_query}
+                }}
+                pageInfo {{
+                    hasNextPage
+                    endCursor
+                }}
+            }}
+        }}
+        """
 
-                # Handle pagination to get all issues
-                while has_next_page:
-                    variables = {"after": cursor} if cursor else {}
-                    result = self.execute_graphql_query(query, variables)
+        try:
+            all_issues: list[dict[str, Any]] = []
+            has_next_page = True
+            cursor: str | None = None
 
-                    # Check for errors
-                    if "errors" in result:
-                        error_message = "; ".join(
-                            [error.get("message", "Unknown error") for error in result["errors"]]
-                        )
-                        return [], f"GraphQL errors: {error_message}"
+            while has_next_page and len(all_issues) < requested_limit:
+                variables = {"after": cursor} if cursor else {}
+                result = self.execute_graphql_query(query, variables)
+                issues_page = (result.get("data") or {}).get("issues") or {}
+                nodes = issues_page.get("nodes") or []
+                if isinstance(nodes, list):
+                    remaining = requested_limit - len(all_issues)
+                    all_issues.extend(nodes[:remaining])
 
-                    # Extract issues from the response
-                    if "data" in result and "issues" in result["data"]:
-                        issues_page = result["data"]["issues"]
+                page_info = issues_page.get("pageInfo") or {}
+                has_next_page = bool(page_info.get("hasNextPage"))
+                cursor = page_info.get("endCursor") if has_next_page else None
 
-                        # Add issues from this page
-                        if "nodes" in issues_page:
-                            all_issues.extend(issues_page["nodes"])
+                if not nodes:
+                    break
 
-                        # Check if there are more pages
-                        if "pageInfo" in issues_page:
-                            page_info = issues_page["pageInfo"]
-                            has_next_page = page_info.get("hasNextPage", False)
-                            cursor = page_info.get("endCursor") if has_next_page else None
-                        else:
-                            has_next_page = False
-                    else:
-                        has_next_page = False
+            if not all_issues:
+                return [], "No issues found in the specified date range."
 
-                if not all_issues:
-                    return [], "No issues found in the specified date range."
-
-                return all_issues, None
-
-            except Exception as e:
-                return [], f"Error fetching issues: {e!s}"
-
-        except ValueError as e:
-            return [], f"Invalid date format: {e!s}. Please use YYYY-MM-DD."
+            return all_issues, None
+        except Exception as exc:
+            return [], f"Error fetching issues: {exc!s}"
 
     def format_issue(self, issue: dict[str, Any]) -> dict[str, Any]:
         """

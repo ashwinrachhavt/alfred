@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from alfred.core.exceptions import ServiceUnavailableError
+from alfred.services.linear import LinearService
 from alfred.services.mongo import MongoService
 from alfred.services.slack import SlackService
 
@@ -75,8 +76,15 @@ def tools_status() -> dict[str, Any]:
     except Exception:
         mongo_ok = False
 
+    linear_ok = True
+    try:
+        LinearService()
+    except Exception:
+        linear_ok = False
+
     return {
         "slack": has_slack,
         "mongo": mongo_ok,
+        "linear": linear_ok,
         "tracing": False,
     }
