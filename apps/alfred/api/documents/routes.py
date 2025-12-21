@@ -7,6 +7,9 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from alfred.core.celery_client import get_celery_client
+from alfred.core.dependencies import get_doc_storage_service
+from alfred.core.settings import settings
 from alfred.schemas.documents import (
     DocumentIngest,
     NoteCreate,
@@ -18,11 +21,6 @@ from alfred.services.doc_storage import DocStorageService
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 logger = logging.getLogger(__name__)
-
-
-# Notes: Quick capture endpoints
-def get_doc_storage_service() -> DocStorageService:
-    return DocStorageService()
 
 
 @router.post(
@@ -84,6 +82,8 @@ class PageRequest(BaseModel):
 class PageResponse(BaseModel):
     id: str
     status: str
+    task_id: str | None = None
+    status_url: str | None = None
 
 
 @router.post("/page/extract", response_model=PageResponse)
@@ -101,9 +101,32 @@ def create_page(
             cleaned_text=cleaned_text,
             content_type="web",
         )
-        res = svc.ingest_document(ingest)
-        status_txt = "ready"
-        return PageResponse(id=res["id"], status=status_txt)
+        res = svc.ingest_document_basic(ingest)
+        if res.get("duplicate"):
+            return PageResponse(id=res["id"], status="duplicate")
+
+        needs_background = bool(
+            settings.enable_ingest_enrichment
+            or settings.enable_ingest_classification
+            or (settings.neo4j_uri and settings.neo4j_user and settings.neo4j_password)
+        )
+        if not needs_background:
+            return PageResponse(id=res["id"], status="ready")
+
+        try:
+            celery_client = get_celery_client()
+            async_result = celery_client.send_task(
+                "alfred.tasks.document_enrichment.enrich",
+                kwargs={"doc_id": res["id"]},
+            )
+            return PageResponse(
+                id=res["id"],
+                status="queued",
+                task_id=async_result.id,
+                status_url=f"/tasks/{async_result.id}",
+            )
+        except Exception:
+            return PageResponse(id=res["id"], status="ready")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # pragma: no cover - external IO

@@ -37,11 +37,7 @@ def render_web_search_markdown(query: str, max_results: int = 10) -> str:
         return result
     except Exception as exc:  # pragma: no cover - defensive path
         logger.warning("web search failed: %s", exc)
-        return (
-            "### Web Search\n\n"
-            f"⚠️ Unable to complete web search for: {query}.\n\n"
-            f"Error: {exc}"
-        )
+        return f"### Web Search\n\n⚠️ Unable to complete web search for: {query}.\n\nError: {exc}"
 
 
 def search_web(query: str, max_results: int = 10) -> str:

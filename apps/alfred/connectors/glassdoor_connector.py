@@ -11,6 +11,8 @@ from urllib.parse import urljoin
 import requests
 from pydantic import BaseModel
 
+from alfred.core.exceptions import ConfigurationError
+from alfred.core.rate_limit import web_rate_limiter
 from alfred.core.settings import settings
 
 
@@ -93,9 +95,18 @@ class GlassdoorClient:
         self.user_agent = user_agent
         self.default_domain = default_domain
 
+    @property
+    def is_configured(self) -> bool:
+        """Return True when an API key is configured."""
+        return bool((self.api_key or "").strip())
+
     # ---------------- core http ----------------
 
     def _headers(self) -> Dict[str, str]:
+        if not self.is_configured:
+            raise ConfigurationError(
+                "Glassdoor API key not configured. Set OPENWEB_NINJA_API_KEY (or OPENWEBNINJA_GLASSDOOR_API_KEY)."
+            )
         return {
             "x-api-key": self.api_key,
             "User-Agent": self.user_agent,
@@ -109,6 +120,8 @@ class GlassdoorClient:
         *,
         params: Optional[Dict[str, Any]] = None,
     ) -> GlassdoorResponse:
+        # Throttle paid API calls to avoid bursts.
+        web_rate_limiter.wait("glassdoor")
         url = urljoin(self.base_url + "/", endpoint.lstrip("/"))
         attempt = 0
         while True:
@@ -175,6 +188,47 @@ class GlassdoorClient:
         }
         return self.get("/company-search", params=params)
 
+    def company_overview(
+        self,
+        company_id: Union[int, str],
+        *,
+        domain: Optional[str] = None,
+    ) -> GlassdoorResponse:
+        """Fetch company overview metadata for a resolved company_id."""
+        params = {
+            "company_id": str(company_id),
+            "domain": domain or self.default_domain,
+        }
+        return self.get("/company-overview", params=params)
+
+    def company_reviews_page(
+        self,
+        company_id: Union[int, str],
+        *,
+        page: int = 1,
+        sort: str = "POPULAR",  # POPULAR | MOST_RECENT | OLDEST | HIGHEST_RATING | LOWEST_RATING | RELEVANCE
+        query: str | None = None,
+        language: str = "en",
+        employment_statuses: str | None = None,
+        only_current_employees: bool = False,
+        extended_rating_data: bool = False,
+        domain: Optional[str] = None,
+    ) -> GlassdoorResponse:
+        params: Dict[str, Any] = {
+            "company_id": str(company_id),
+            "page": str(page),
+            "sort": sort,
+            "language": language,
+            "only_current_employees": str(bool(only_current_employees)),
+            "extended_rating_data": bool(extended_rating_data),
+            "domain": domain or self.default_domain,
+        }
+        if query:
+            params["query"] = query
+        if employment_statuses:
+            params["employment_statuses"] = employment_statuses
+        return self.get("/company-reviews", params=params)
+
     def company_interviews_page(
         self,
         company_id: Union[int, str],
@@ -201,6 +255,72 @@ class GlassdoorClient:
         if received_offer_only is not None:
             params["received_offer_only"] = str(bool(received_offer_only))
         return self.get("/company-interviews", params=params)
+
+    def company_salaries(
+        self,
+        company_id: Union[int, str],
+        *,
+        job_title: str,
+        location: str | None = None,
+        location_type: str = "ANY",
+        years_of_experience: str = "ALL",
+        domain: Optional[str] = None,
+    ) -> GlassdoorResponse:
+        """Fetch salary aggregates for a company + job_title (Glassdoor)."""
+        params: Dict[str, Any] = {
+            "company_id": str(company_id),
+            "job_title": job_title,
+            "location_type": location_type,
+            "years_of_experience": years_of_experience,
+            "domain": domain or self.default_domain,
+        }
+        if location:
+            params["location"] = location
+        return self.get("/company-salaries", params=params)
+
+    def company_salaries_v2(
+        self,
+        company_id: Union[int, str],
+        *,
+        page: int = 1,
+        sort: str = "MOST_SALARIES",  # MOST_SALARIES | HIGHEST_SALARY | LOWEST_SALARY
+        location: str | None = None,
+        location_type: str = "ANY",
+        job_title: str | None = None,
+        domain: Optional[str] = None,
+    ) -> GlassdoorResponse:
+        """Fetch salary entries for a company (paged)."""
+        params: Dict[str, Any] = {
+            "company_id": str(company_id),
+            "page": str(page),
+            "sort": sort,
+            "location_type": location_type,
+            "domain": domain or self.default_domain,
+        }
+        if location:
+            params["location"] = location
+        if job_title:
+            params["job_title"] = job_title
+        return self.get("/company-salaries-v2", params=params)
+
+    def salary_estimation(
+        self,
+        *,
+        job_title: str,
+        location: str,
+        location_type: str = "ANY",
+        years_of_experience: str = "ALL",
+        domain: Optional[str] = None,
+    ) -> GlassdoorResponse:
+        """Estimate salary range for a job title + location (not company-specific)."""
+        params: Dict[str, Any] = {
+            "job_title": job_title,
+            "location": location,
+            "location_type": location_type,
+            "years_of_experience": years_of_experience,
+            "domain": domain or self.default_domain,
+        }
+        return self.get("/salary-estimation", params=params)
 
     # ---------------- high-level helpers ----------------
 
@@ -248,6 +368,127 @@ class GlassdoorClient:
             status_code=search.status_code,
         )
         return None, err
+
+    def get_company_reviews(
+        self,
+        company: Union[int, str],
+        *,
+        max_reviews: int = 50,
+        sort: str = "MOST_RECENT",
+        query: str | None = None,
+        language: str = "en",
+        employment_statuses: str | None = None,
+        only_current_employees: bool = False,
+        extended_rating_data: bool = False,
+        domain: Optional[str] = None,
+    ) -> GlassdoorResponse:
+        """Fetch up to `max_reviews` review entries with minimal requests.
+
+        The upstream API's payload shape may evolve; this helper is defensive and
+        returns partial results when later pages fail.
+        """
+        company_id, resolution = self.resolve_company_id(company, domain=domain)
+        if not company_id:
+            if resolution is not None:
+                return resolution
+            return GlassdoorResponse(success=False, error="Could not resolve company_id")
+
+        first = self.company_reviews_page(
+            company_id,
+            page=1,
+            sort=sort,
+            query=query,
+            language=language,
+            employment_statuses=employment_statuses,
+            only_current_employees=only_current_employees,
+            extended_rating_data=extended_rating_data,
+            domain=domain,
+        )
+        if not (first.success and first.data):
+            return first
+
+        data = first.data
+        reviews: List[Dict[str, Any]] = []
+        page_payload = data.get("reviews") or data.get("data") or []
+        if isinstance(page_payload, list):
+            reviews.extend(page_payload)
+
+        total_count = int(
+            data.get("filtered_review_count") or data.get("review_count") or len(reviews)
+        )
+        page_count = int(data.get("page_count") or math.ceil(max(total_count, 1) / 10))
+
+        need = max_reviews if max_reviews and max_reviews > 0 else total_count
+        pages_needed = min(page_count, math.ceil(need / 10))
+
+        for p in range(2, pages_needed + 1):
+            page = self.company_reviews_page(
+                company_id,
+                page=p,
+                sort=sort,
+                query=query,
+                language=language,
+                employment_statuses=employment_statuses,
+                only_current_employees=only_current_employees,
+                extended_rating_data=extended_rating_data,
+                domain=domain,
+            )
+            if not (page.success and page.data):
+                return GlassdoorResponse(
+                    success=True,
+                    data={
+                        "company_id": company_id,
+                        "reviews": reviews,
+                        "total_count": total_count,
+                        "page_count": page_count,
+                        "note": f"Stopped at page {p} due to: {page.error or page.status_code}",
+                    },
+                    status_code=page.status_code,
+                )
+            payload = page.data.get("reviews") or page.data.get("data") or []
+            if isinstance(payload, list):
+                reviews.extend(payload)
+            if len(reviews) >= need:
+                break
+
+        if need and len(reviews) > need:
+            reviews = reviews[:need]
+
+        return GlassdoorResponse(
+            success=True,
+            data={
+                "company_id": company_id,
+                "reviews": reviews,
+                "total_count": total_count,
+                "page_count": page_count,
+            },
+            status_code=200,
+        )
+
+    def get_company_salaries(
+        self,
+        company: Union[int, str],
+        *,
+        job_title: str,
+        location: str | None = None,
+        location_type: str = "ANY",
+        years_of_experience: str = "ALL",
+        domain: Optional[str] = None,
+    ) -> GlassdoorResponse:
+        """Convenience wrapper: resolve company_id and fetch company salary aggregates."""
+        company_id, resolution = self.resolve_company_id(company, domain=domain)
+        if not company_id:
+            if resolution is not None:
+                return resolution
+            return GlassdoorResponse(success=False, error="Could not resolve company_id")
+        return self.company_salaries(
+            company_id,
+            job_title=job_title,
+            location=location,
+            location_type=location_type,
+            years_of_experience=years_of_experience,
+            domain=domain,
+        )
 
     def get_company_interviews(
         self,

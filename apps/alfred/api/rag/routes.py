@@ -2,6 +2,7 @@ import logging
 import time
 
 from fastapi import APIRouter, Query
+from starlette.concurrency import run_in_threadpool
 
 from alfred.core.exceptions import ServiceUnavailableError
 from alfred.services.agentic_rag import answer_agentic, get_context_chunks
@@ -25,7 +26,7 @@ async def rag_answer(
     """
     try:
         t0 = time.perf_counter()
-        answer = answer_agentic(q, k=k, mode=mode)
+        answer = await run_in_threadpool(answer_agentic, q, k=k, mode=mode)
         latency_ms = int((time.perf_counter() - t0) * 1000)
     except Exception as exc:
         logger.exception("RAG answer failed")
@@ -34,7 +35,7 @@ async def rag_answer(
     resp = {"answer": answer, "latency_ms": latency_ms}
     if include_context:
         try:
-            resp["context"] = get_context_chunks(q, k=k)
+            resp["context"] = await run_in_threadpool(get_context_chunks, q, k=k)
         except Exception as exc:
             logger.warning("RAG context fetch failed: %s", exc)
             resp["context_error"] = "Failed to retrieve context"

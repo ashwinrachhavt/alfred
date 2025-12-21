@@ -1,65 +1,32 @@
-"""Pytest configuration for Alfred.
-
-Package is installed in editable mode (`pip install -e .` via `make install`),
-so `import alfred` should resolve without path hacks.
-
-This file also disables real network access during tests and clears provider
-API keys to avoid accidental HTTP calls.
-"""
-
 from __future__ import annotations
 
 import os
 import socket
+from typing import Any
 
 import pytest
 
-os.environ.setdefault("APP_ENV", "test")
+
+class NetworkBlockedError(RuntimeError):
+    pass
+
+
+def _blocked(*_args: Any, **_kwargs: Any) -> Any:
+    raise NetworkBlockedError(
+        "Network access is disabled during tests. "
+        "Mark the test with @pytest.mark.integration/@pytest.mark.network or set ALLOW_NETWORK=1."
+    )
 
 
 @pytest.fixture(autouse=True)
-def _disable_network(monkeypatch: pytest.MonkeyPatch):
-    """Disable outbound network calls during tests.
+def _disable_network(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
+    """Prevent accidental outbound network calls in unit tests."""
 
-    Blocks low-level socket usage to prevent accidental HTTP egress.
-    """
-
-    # Allow opt-out for explicit integration runs
-    allow = os.getenv("ALLOW_NETWORK", "").strip().lower()
-    if allow in {"1", "true", "yes"}:
+    if os.getenv("ALLOW_NETWORK") == "1":
         return
 
-    # Block socket.create_connection (used by many HTTP clients)
-    def _blocked_create_connection(*args, **kwargs):  # noqa: ANN001, ANN002
-        raise RuntimeError("Network access is disabled during tests")
+    if request.node.get_closest_marker("integration") or request.node.get_closest_marker("network"):
+        return
 
-    monkeypatch.setattr(socket, "create_connection", _blocked_create_connection)
-
-    # Harden: replace socket.socket.connect
-    orig_socket = socket.socket
-
-    class _GuardedSocket(orig_socket):  # type: ignore[misc]
-        def connect(self, *args, **kwargs):  # noqa: ANN001, ANN002
-            raise RuntimeError("Network access is disabled during tests")
-
-    monkeypatch.setattr(socket, "socket", _GuardedSocket)
-
-
-@pytest.fixture(autouse=True)
-def _clear_provider_env(monkeypatch: pytest.MonkeyPatch):
-    """Remove provider API keys/hosts so optional clients remain disabled."""
-
-    for key in (
-        "EXA_API_KEY",
-        "TAVILY_API_KEY",
-        "BRAVE_SEARCH_API_KEY",
-        "YDC_API_KEY",
-        "SEARXNG_HOST",
-        "SEARX_HOST",
-        "LANGSEARCH_API_KEY",
-        "OPENAI_API_KEY",
-    ):
-        monkeypatch.delenv(key, raising=False)
-
-    # Ensure tests don't attempt to enable Gmail integration
-    monkeypatch.setenv("ENABLE_GMAIL", "0")
+    monkeypatch.setattr(socket, "create_connection", _blocked)
+    monkeypatch.setattr(socket, "getaddrinfo", _blocked)

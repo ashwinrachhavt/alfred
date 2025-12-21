@@ -19,7 +19,14 @@ from pymongo import MongoClient
 def _connect_client() -> MongoClient | None:
     uri = os.getenv("MONGO_URI", "mongodb://localhost:27017")
     try:
-        client = MongoClient(uri, uuidRepresentation="standard")
+        # Keep this "is Mongo up?" probe fast when Mongo isn't running locally/CI.
+        client = MongoClient(
+            uri,
+            uuidRepresentation="standard",
+            serverSelectionTimeoutMS=200,
+            connectTimeoutMS=200,
+            socketTimeoutMS=200,
+        )
         # simple ping; skip test if not reachable
         client.admin.command("ping")
         return client

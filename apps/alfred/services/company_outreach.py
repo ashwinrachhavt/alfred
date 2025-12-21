@@ -10,15 +10,10 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 
+from alfred.core.dependencies import get_company_research_service
 from alfred.prompts import load_prompt
 from alfred.services.agentic_rag import create_retriever_tool, make_llm, make_retriever
-from alfred.services.company_researcher import CompanyResearchService
 from alfred.services.web_search import search_web
-
-
-@lru_cache(maxsize=1)
-def _get_company_research_service() -> CompanyResearchService:
-    return CompanyResearchService()
 
 
 def _summarize_company_report(doc: dict[str, Any]) -> str:
@@ -63,7 +58,7 @@ class CompanyResearchTool(BaseTool):
 
     def _run(self, company: str) -> str:  # type: ignore[override]
         try:
-            doc = _get_company_research_service().generate_report(company)
+            doc = get_company_research_service().generate_report(company)
             return _summarize_company_report(doc)
         except Exception as exc:  # pragma: no cover - propagate friendly error
             return f"(error) company research failed: {exc}"

@@ -32,8 +32,8 @@ def slack_send_message(channel: str, text: str, thread_ts: Optional[str] = None)
 Permalink: {link}\n"
             )
             return out
-        out = "### Slack\n\n" f"✅ Message sent to `{ch}`.  \n" f"Timestamp: `{ts}`"
+        out = f"### Slack\n\n✅ Message sent to `{ch}`.  \nTimestamp: `{ts}`"
         return out
     except Exception as exc:  # pragma: no cover - defensive path
         logger.warning("slack send failed: %s", exc)
-        return "### Slack\n\n" f"⚠️ Failed to send message to `{ch}`. Error: {exc}"
+        return f"### Slack\n\n⚠️ Failed to send message to `{ch}`. Error: {exc}"

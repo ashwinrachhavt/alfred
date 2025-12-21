@@ -15,6 +15,7 @@ from alfred.services.google_oauth import (
 )
 
 CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
+CALENDAR_TOKEN_NAMESPACE = "calendar"
 
 
 class ReminderInput(BaseModel):
@@ -43,17 +44,27 @@ def calendar_auth_url(state: str | None = Query(default=None)):
 
 @router.get("/oauth/callback")
 def calendar_oauth_callback(code: str, state: str | None = None):
-    exchange_code_for_tokens(user_id=None, code=code, state=state, scopes=CALENDAR_SCOPES)
+    exchange_code_for_tokens(
+        user_id=None,
+        code=code,
+        state=state,
+        scopes=CALENDAR_SCOPES,
+        namespace=CALENDAR_TOKEN_NAMESPACE,
+    )
     return {"ok": True}
 
 
 @router.get("/calendars")
 async def list_calendars():
-    creds = load_credentials()
+    creds = load_credentials(namespace=CALENDAR_TOKEN_NAMESPACE)
     if creds is None:
         raise HTTPException(404, "No credentials found; authorize via /api/calendar/auth_url")
     connector = GoogleCalendarConnector(
-        creds, user_id=None, on_credentials_refreshed=lambda c: persist_credentials(None, c)
+        creds,
+        user_id=None,
+        on_credentials_refreshed=lambda c: persist_credentials(
+            None, c, namespace=CALENDAR_TOKEN_NAMESPACE
+        ),
     )
     calendars, err = await connector.get_calendars()
     if err:
@@ -63,11 +74,15 @@ async def list_calendars():
 
 @router.get("/events")
 async def list_events(start_date: str, end_date: str, max_results: int = 2500):
-    creds = load_credentials()
+    creds = load_credentials(namespace=CALENDAR_TOKEN_NAMESPACE)
     if creds is None:
         raise HTTPException(404, "No credentials found; authorize via /api/calendar/auth_url")
     connector = GoogleCalendarConnector(
-        creds, user_id=None, on_credentials_refreshed=lambda c: persist_credentials(None, c)
+        creds,
+        user_id=None,
+        on_credentials_refreshed=lambda c: persist_credentials(
+            None, c, namespace=CALENDAR_TOKEN_NAMESPACE
+        ),
     )
     events, err = await connector.get_all_primary_calendar_events(
         start_date=start_date, end_date=end_date, max_results=max_results
@@ -79,12 +94,16 @@ async def list_events(start_date: str, end_date: str, max_results: int = 2500):
 
 @router.post("/events")
 async def create_event(payload: CalendarEventCreate) -> dict[str, Any]:
-    creds = load_credentials()
+    creds = load_credentials(namespace=CALENDAR_TOKEN_NAMESPACE)
     if creds is None:
         raise HTTPException(404, "No credentials found; authorize via /api/calendar/auth_url")
 
     connector = GoogleCalendarConnector(
-        creds, user_id=None, on_credentials_refreshed=lambda c: persist_credentials(None, c)
+        creds,
+        user_id=None,
+        on_credentials_refreshed=lambda c: persist_credentials(
+            None, c, namespace=CALENDAR_TOKEN_NAMESPACE
+        ),
     )
 
     try:

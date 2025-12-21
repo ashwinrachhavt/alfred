@@ -13,9 +13,12 @@ def register_routes(app: FastAPI) -> None:
     # Import routers only when registering to avoid heavy side effects during import.
     from alfred.api.calendar import router as calendar_router
     from alfred.api.company import router as company_router
+    from alfred.api.culture_fit import router as culture_fit_router
     from alfred.api.documents import router as documents_router
     from alfred.api.gmail import router as gmail_router
     from alfred.api.learning import router as learning_router
+    from alfred.api.interviews import router as interviews_router
+    from alfred.api.job_applications import router as job_applications_router
     from alfred.api.linear import router as linear_router
     from alfred.api.mind_palace_agent import router as mind_palace_agent_router
     from alfred.api.notion import router as notion_router
@@ -33,6 +36,9 @@ def register_routes(app: FastAPI) -> None:
         rag_router,
         notion_router,
         gmail_router,
+        job_applications_router,
+        interviews_router,
+        culture_fit_router,
         linear_router,
         calendar_router,
         company_router,
