@@ -96,6 +96,31 @@ Docker (full stack)
 docker compose -f infra/docker-compose.yml up --build
 ```
 
+## Personal Brand Builder
+
+Endpoints
+- `GET /ai` — auto-generated portfolio page (HTML)
+- `POST /api/brand/inventory` — build an experience inventory from resume/LinkedIn/GitHub text (JSON)
+- `POST /api/brand/stories` — generate 3 best-fit STAR stories from a job description (JSON)
+- `POST /api/brand/outreach` — draft LinkedIn + cold email outreach personalized to a company (JSON)
+
+Examples
+```bash
+curl -sS http://localhost:8000/ai
+
+curl -sS -X POST http://localhost:8000/api/brand/inventory \
+  -H 'content-type: application/json' \
+  -d '{"resume_text":"...","linkedin_text":"...","github_text":"...","projects_text":"..."}'
+
+curl -sS -X POST http://localhost:8000/api/brand/stories \
+  -H 'content-type: application/json' \
+  -d '{"job_description":"...","resume_text":"..."}'
+
+curl -sS -X POST http://localhost:8000/api/brand/outreach \
+  -H 'content-type: application/json' \
+  -d '{"company":"Acme","role":"AI Engineer","job_description":"...","resume_text":"...","recipient_name":"...","recipient_title":"..."}'
+```
+
 ## Celery (Background Tasks)
 
 Run a local worker (Redis required):
