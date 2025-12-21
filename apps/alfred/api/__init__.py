@@ -16,6 +16,7 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.culture_fit import router as culture_fit_router
     from alfred.api.documents import router as documents_router
     from alfred.api.gmail import router as gmail_router
+    from alfred.api.learning import router as learning_router
     from alfred.api.interviews import router as interviews_router
     from alfred.api.job_applications import router as job_applications_router
     from alfred.api.linear import router as linear_router
@@ -47,6 +48,7 @@ def register_routes(app: FastAPI) -> None:
         wikipedia_router,
         tools_router,
         quiz_router,
+        learning_router,
     ]
     for router in routers:
         app.include_router(router)
