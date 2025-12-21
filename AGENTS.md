@@ -17,7 +17,10 @@ For coding follow these guidelines -
 - Do not unnecessarily write needless comments
 - follow Test Driven Development where necessary or best needed you can go with other approaches otherwise.
 - Follow Trunk Based PRs and Tasks and Development.
-
+Some things to always keep in mind while coding 
+- Never make network calls in tests. This could be due to bad object oriented design.
+- Write clean imports
+- Clean Exception Handling with Clean Custom Exceptions defined globally
 
 For Product Guidelines - 
 - Focus on the most important goals and focus on finishing tasks.

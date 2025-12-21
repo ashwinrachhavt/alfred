@@ -1,4 +1,5 @@
 from alfred.api.linear import router as linear_router
+from alfred.api.linear import routes as linear_routes
 from alfred.services.linear import get_linear_service
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -29,6 +30,8 @@ def create_app() -> FastAPI:
 
 
 def test_linear_status_unconfigured_does_not_error():
+    # Ensure test is deterministic even if a dev shell has LINEAR_API_KEY set.
+    linear_routes.settings.linear_api_key = None
     client = TestClient(create_app())
     resp = client.get("/api/linear/status")
     assert resp.status_code == 200
