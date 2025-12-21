@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from alfred.schemas.interview_prep import LikelyQuestion, TechnicalTopic
+
 
 class ComponentCategory(str, Enum):
     load_balancer = "load_balancer"
@@ -57,6 +59,22 @@ class DiagramVersion(BaseModel):
     diagram: ExcalidrawData
 
 
+class DiagramExport(BaseModel):
+    id: str
+    format: str
+    created_at: datetime
+    storage_url: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SystemDesignArtifacts(BaseModel):
+    learning_topic_ids: List[int] = Field(default_factory=list)
+    learning_resource_ids: List[int] = Field(default_factory=list)
+    zettel_card_ids: List[int] = Field(default_factory=list)
+    interview_prep_id: Optional[str] = None
+    published_at: Optional[datetime] = None
+
+
 class SystemDesignSessionCreate(BaseModel):
     title: Optional[str] = None
     problem_statement: str
@@ -72,6 +90,8 @@ class SystemDesignSession(BaseModel):
     template_id: Optional[str] = None
     diagram: ExcalidrawData
     versions: List[DiagramVersion] = Field(default_factory=list)
+    exports: List[DiagramExport] = Field(default_factory=list)
+    artifacts: SystemDesignArtifacts = Field(default_factory=SystemDesignArtifacts)
     created_at: datetime
     updated_at: datetime
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -110,10 +130,18 @@ class DiagramQuestion(BaseModel):
     rationale: Optional[str] = None
 
 
+class DiagramQuestionSet(BaseModel):
+    items: List[DiagramQuestion] = Field(default_factory=list)
+
+
 class DiagramSuggestion(BaseModel):
     id: str
     text: str
     priority: str = "medium"
+
+
+class DiagramSuggestionSet(BaseModel):
+    items: List[DiagramSuggestion] = Field(default_factory=list)
 
 
 class DiagramEvaluation(BaseModel):
@@ -123,6 +151,57 @@ class DiagramEvaluation(BaseModel):
     communication: int = Field(ge=0, le=100, default=0)
     technical_depth: int = Field(ge=0, le=100, default=0)
     notes: List[str] = Field(default_factory=list)
+
+
+class SystemDesignKnowledgeTopic(BaseModel):
+    title: str
+    description: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+
+
+class SystemDesignZettelDraft(BaseModel):
+    title: str
+    summary: Optional[str] = None
+    content: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    topic: Optional[str] = None
+
+
+class SystemDesignInterviewPrepDraft(BaseModel):
+    likely_questions: List[LikelyQuestion] = Field(default_factory=list)
+    technical_topics: List[TechnicalTopic] = Field(default_factory=list)
+
+
+class SystemDesignKnowledgeDraft(BaseModel):
+    topics: List[SystemDesignKnowledgeTopic] = Field(default_factory=list)
+    zettels: List[SystemDesignZettelDraft] = Field(default_factory=list)
+    interview_prep: SystemDesignInterviewPrepDraft = Field(
+        default_factory=SystemDesignInterviewPrepDraft
+    )
+    notes: List[str] = Field(default_factory=list)
+
+
+class SystemDesignPublishRequest(BaseModel):
+    create_learning_topics: bool = True
+    create_zettels: bool = True
+    create_interview_prep_items: bool = False
+    learning_topic_id: Optional[int] = None
+    interview_prep_id: Optional[str] = None
+    topic_title: Optional[str] = None
+    topic_tags: List[str] = Field(default_factory=list)
+    zettel_tags: List[str] = Field(default_factory=list)
+
+
+class SystemDesignPublishResponse(BaseModel):
+    session: SystemDesignSession
+    artifacts: SystemDesignArtifacts
+    knowledge_draft: SystemDesignKnowledgeDraft
+
+
+class DiagramExportRequest(BaseModel):
+    format: str
+    storage_url: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class ScaleEstimateRequest(BaseModel):

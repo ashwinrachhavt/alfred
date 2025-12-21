@@ -196,6 +196,7 @@ def get_system_design_service() -> SystemDesignService:
     return SystemDesignService(
         database=get_mongo_database(),
         collection_name=settings.system_design_sessions_collection,
+        llm_service=get_llm_service(),
     )
 
 
