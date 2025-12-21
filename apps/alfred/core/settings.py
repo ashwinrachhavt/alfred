@@ -195,6 +195,10 @@ class Settings(BaseSettings):
         default="panel_interview_sessions",
         alias="PANEL_INTERVIEW_SESSIONS_COLLECTION",
     )
+    system_design_sessions_collection: str = Field(
+        default="system_design_sessions",
+        alias="SYSTEM_DESIGN_SESSIONS_COLLECTION",
+    )
 
     # Interview prep
     interview_prep_collection: str = Field(
