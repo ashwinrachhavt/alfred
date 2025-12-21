@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any
 
-from alfred.services.mongo import MongoService
+from alfred.core.dependencies import get_mongo_service
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ def query_mongo(collection: str, filter_json: str, limit: int = 20) -> str:
         n = 20
 
     try:
-        svc = MongoService(default_collection=coll)
+        svc = get_mongo_service().with_collection(coll)
         docs = svc.find_many(filt, limit=n)
         if not docs:
             return (

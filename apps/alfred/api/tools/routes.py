@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from alfred.core.dependencies import get_mongo_service
 from alfred.core.exceptions import ServiceUnavailableError
 from alfred.services.linear import LinearService
 from alfred.services.mongo import MongoService
@@ -46,14 +47,17 @@ class MongoQueryRequest(BaseModel):
 
 
 @router.post("/mongo/query")
-def mongo_query(payload: MongoQueryRequest) -> dict[str, Any]:
+def mongo_query(
+    payload: MongoQueryRequest,
+    mongo: MongoService = Depends(get_mongo_service),
+) -> dict[str, Any]:
     """Read-only query against Mongo via MongoService."""
     coll = payload.collection.strip()
     if not coll:
         raise HTTPException(status_code=422, detail="collection is required")
 
     try:
-        svc = MongoService(default_collection=coll)
+        svc = mongo.with_collection(coll)
         docs = svc.find_many(payload.filter or {}, limit=payload.limit)
         return {"collection": coll, "count": len(docs), "items": docs}
     except Exception as exc:
@@ -72,7 +76,7 @@ def tools_status() -> dict[str, Any]:
 
     mongo_ok = False
     try:
-        mongo_ok = MongoService().ping()
+        mongo_ok = get_mongo_service().ping()
     except Exception:
         mongo_ok = False
 

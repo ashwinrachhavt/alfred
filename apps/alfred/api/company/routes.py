@@ -1,37 +1,52 @@
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
+from alfred.core.celery_client import get_celery_client
+from alfred.core.dependencies import get_company_research_service
 from alfred.core.exceptions import ServiceUnavailableError
 from alfred.services.company_outreach import generate_company_outreach
-from alfred.services.company_researcher import CompanyResearchService
 
 router = APIRouter(prefix="/company", tags=["company"])
 logger = logging.getLogger(__name__)
 
 
-@lru_cache()
-def get_company_research_service() -> CompanyResearchService:
-    # Lazy, cached construction; allows test-time injection via cache clear/override
-    return CompanyResearchService()
-
-
 @router.get("/research")
 async def company_research(
+    response: Response,
     name: str = Query(..., description="Company name"),
     refresh: bool = Query(False, description="Force a new crawl + regeneration"),
+    background: bool = Query(False, description="Enqueue a background task instead of blocking"),
 ):
     if not name.strip():
         raise HTTPException(status_code=422, detail="name is required")
 
     try:
-        # Offload blocking work to a threadpool to keep the event loop responsive.
         service = get_company_research_service()
+
+        if background:
+            if not refresh:
+                cached = service.get_cached_report(name)
+                if cached:
+                    return cached
+
+            celery_client = get_celery_client()
+            async_result = celery_client.send_task(
+                "alfred.tasks.company_research.generate",
+                kwargs={"company": name, "refresh": refresh},
+            )
+            response.status_code = status.HTTP_202_ACCEPTED
+            return {
+                "task_id": async_result.id,
+                "status_url": f"/tasks/{async_result.id}",
+                "status": "queued",
+            }
+
+        # Offload blocking work to a threadpool to keep the event loop responsive.
         return await run_in_threadpool(service.generate_report, name, refresh=refresh)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

@@ -31,6 +31,10 @@ class ExtractionService:
     """
 
     api_key: Optional[str] = None
+    llm_service: LLMService | None = None
+
+    def _llm(self) -> LLMService:
+        return self.llm_service or LLMService()
 
     def extract_graph(self, *, text: str, metadata: Dict[str, Any] | None = None) -> Dict[str, Any]:
         """
@@ -119,7 +123,7 @@ class ExtractionService:
             relations: List[RelationModel] = Field(default_factory=list)
             topics: List[str] = Field(default_factory=list)
 
-        ls = LLMService()
+        ls = self._llm()
         prompt = (
             "Extract entities (name,type) and relations (from,to,type).\n"
             "Return compact JSON: {entities:[], relations:[], topics:[]} with snake_case.\n\n"
@@ -149,6 +153,7 @@ class ExtractionService:
         raw_markdown: Optional[str] = None,
         metadata: Dict[str, Any] | None = None,
         include_embedding: bool = True,
+        include_graph: bool = True,
     ) -> Dict[str, Any]:
         """
         Use OpenAI models to populate a broad enrichment payload:
@@ -230,7 +235,7 @@ class ExtractionService:
                 raise RuntimeError("langextract not available")
         except Exception as exc:
             logger.debug("LangExtract enrich failed: %s", exc)
-            ls = LLMService()
+            ls = self._llm()
             out = ls.structured(
                 [
                     {
@@ -248,36 +253,26 @@ class ExtractionService:
                 schema=EnrichOut,
             )
 
-        # ---------- 2) Entities/relations (graph extract) ----------
+        # ---------- 2) Entities/topics (optional graph extract) ----------
         entities: List[Dict[str, Any]] = []
-        try:
-            g = self.extract_graph(text=text, metadata=metadata or {})
-            entities = g.get("entities") or []
-            # merge topics if present
-            if (not out.topics_primary) and (g.get("topics")):
-                topics = g.get("topics") or []
-                if isinstance(topics, list) and topics:
-                    out.topics_primary = topics[0]
-                    out.topics_secondary = topics[1:]
-        except Exception as exc:
-            logger.debug("graph enrich failed: %s", exc)
+        if include_graph:
+            try:
+                g = self.extract_graph(text=text, metadata=metadata or {})
+                entities = g.get("entities") or []
+                # merge topics if present
+                if (not out.topics_primary) and (g.get("topics")):
+                    topics = g.get("topics") or []
+                    if isinstance(topics, list) and topics:
+                        out.topics_primary = topics[0]
+                        out.topics_secondary = topics[1:]
+            except Exception as exc:
+                logger.debug("graph enrich failed: %s", exc)
 
         # ---------- 3) Embedding ----------
         embedding: Optional[List[float]] = None
         if include_embedding:
             try:
-                from openai import OpenAI  # type: ignore
-
-                from alfred.core.settings import settings
-
-                api_key = (
-                    settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
-                )
-                client = OpenAI(
-                    api_key=api_key,
-                    base_url=settings.openai_base_url,
-                    organization=settings.openai_organization,
-                )
+                client = self._llm().openai_client
                 resp = client.embeddings.create(model="text-embedding-3-small", input=text)
                 embedding = list(resp.data[0].embedding)
             except Exception as exc:  # pragma: no cover - network
@@ -387,7 +382,7 @@ class ExtractionService:
             microtopics: Optional[List[str]] = None
             topic: TopicTitle
 
-        ls = LLMService()
+        ls = self._llm()
         res = ls.structured(
             [
                 {"role": "system", "content": "Return valid JSON only."},
