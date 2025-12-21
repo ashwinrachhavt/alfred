@@ -11,6 +11,7 @@ from fastapi import FastAPI
 def register_routes(app: FastAPI) -> None:
     """Attach all API routers (lazy imports)."""
     # Import routers only when registering to avoid heavy side effects during import.
+    from alfred.api.brand import router as brand_router
     from alfred.api.calendar import router as calendar_router
     from alfred.api.company import router as company_router
     from alfred.api.culture_fit import router as culture_fit_router
@@ -22,6 +23,7 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.linear import router as linear_router
     from alfred.api.mind_palace_agent import router as mind_palace_agent_router
     from alfred.api.notion import router as notion_router
+    from alfred.api.portfolio import router as portfolio_router
     from alfred.api.quiz import router as quiz_router
     from alfred.api.rag import router as rag_router
     from alfred.api.system import router as system_router
@@ -32,6 +34,7 @@ def register_routes(app: FastAPI) -> None:
 
     routers = [
         system_router,
+        portfolio_router,
         tasks_router,
         rag_router,
         notion_router,
@@ -48,6 +51,7 @@ def register_routes(app: FastAPI) -> None:
         wikipedia_router,
         tools_router,
         quiz_router,
+        brand_router,
         learning_router,
     ]
     for router in routers:
