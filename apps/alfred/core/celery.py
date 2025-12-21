@@ -13,10 +13,21 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
     process (enqueue/poll only) without importing task modules.
     """
 
+    task_modules = (
+        [
+            "alfred.tasks.mind_palace_agent",
+            "alfred.tasks.company_research",
+            "alfred.tasks.document_enrichment",
+        ]
+        if include_tasks
+        else []
+    )
+
     celery_app = Celery(
         "alfred",
         broker=settings.redis_url,
         backend=settings.redis_url,
+        include=task_modules,
     )
     celery_app.conf.update(
         accept_content=["json"],
@@ -35,10 +46,17 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
         ),
         task_routes={
             "alfred.tasks.mind_palace_agent.*": {"queue": "agent"},
+            "alfred.tasks.company_research.*": {"queue": "default"},
+            "alfred.tasks.document_enrichment.*": {"queue": "default"},
         },
     )
 
     if include_tasks:
         celery_app.autodiscover_tasks(["alfred"])
+        # Be explicit to avoid "Received unregistered task" when running workers from
+        # different entrypoints/working directories.
+        import alfred.tasks.company_research  # noqa: F401
+        import alfred.tasks.document_enrichment  # noqa: F401
+        import alfred.tasks.mind_palace_agent  # noqa: F401
 
     return celery_app

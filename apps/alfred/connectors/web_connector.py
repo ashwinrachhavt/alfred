@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, List, Literal, Optional, Sequence
 
+from alfred.core.rate_limit import web_rate_limiter
 from alfred.core.settings import settings
 
 Provider = Literal["brave", "ddg", "exa", "tavily", "you", "searx", "langsearch"]
@@ -130,6 +131,7 @@ class BraveClient:
         pages = max(1, min(pages, 10))
         all_hits: List[SearchHit] = []
         for offset in range(pages):
+            web_rate_limiter.wait("brave")
             self.tool.search_wrapper.search_kwargs.update({"offset": offset})
             res = self.tool.run(query)
             all_hits.extend(_normalize_list_result(res, "brave"))
@@ -199,6 +201,7 @@ class DDGClient:
         return False
 
     def _run_search(self, query: str, timelimit: Optional[str]) -> List[dict[str, Any]]:
+        web_rate_limiter.wait("ddg")
         results_iter = self._client.text(
             query,
             region=self._region,
@@ -285,6 +288,7 @@ class ExaClient:
         highlights: bool = True,
         **kwargs: Any,
     ) -> SearchResponse:
+        web_rate_limiter.wait("exa")
         if text_contents_options is None:
             text_contents_options = {"max_characters": 3000}
         payload = {
@@ -322,6 +326,7 @@ class TavilyClient:
         )
 
     def search(self, query: str, **kwargs: Any) -> SearchResponse:
+        web_rate_limiter.wait("tavily")
         res = self.tool.invoke({"query": query, **kwargs})
         hits = _normalize_list_result(res, "tavily")
         return SearchResponse(provider="tavily", query=query, hits=_dedupe_by_url(hits))
@@ -338,6 +343,7 @@ class YouClient:
         self.tool = YouSearchTool(api_wrapper=api_wrapper)
 
     def search(self, query: str) -> SearchResponse:
+        web_rate_limiter.wait("you")
         res = self.tool.invoke(query)
         hits = _normalize_list_result(res, "you")
         return SearchResponse(provider="you", query=query, hits=_dedupe_by_url(hits))
@@ -361,6 +367,7 @@ class SearxClient:
         categories: Optional[str] = None,
         time_range: Optional[str] = None,
     ) -> SearchResponse:
+        web_rate_limiter.wait("searx")
         # SearxSearchWrapper returns a list of result dicts
         res = self._wrapper.results(
             query,
@@ -430,6 +437,7 @@ class LangsearchClient:
         return []
 
     def search(self, query: str, *, count: int = 20) -> SearchResponse:
+        web_rate_limiter.wait("langsearch")
         # Best-effort API call shape; users can override base_url via env if needed
         url = f"{self._base_url}/search"
         headers = {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
@@ -539,7 +547,8 @@ class WebConnector:
         def call(p: Provider):
             c = self.clients[p]
             if p == "brave":
-                return c.search(query, pages=self._brave_pages_default)
+                # In multi-provider mode, pagination can explode request counts and trigger 429s.
+                return c.search(query, pages=1)
             if p == "exa":
                 return c.search(query, num_results=kwargs.get("num_results", 100))
             return c.search(query)
@@ -550,7 +559,8 @@ class WebConnector:
         errors: dict[str, Any] = {}
         if not providers:
             return SearchResponse(provider="multi", query=query, hits=[], meta={"providers": []})
-        max_workers = min(8, len(providers)) or 1
+        # Keep concurrency low to avoid bursting across providers.
+        max_workers = min(2, len(providers)) or 1
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_map = {executor.submit(call, p): p for p in providers}
             for future in as_completed(future_map):

@@ -32,3 +32,11 @@ For Product Design -
 - Be the master designer (minimalism preferred, and not preferred when not needed)
 
 
+
+Keep this in mind for tool use 
+- Use Sequential thinking MCP if you find a long task and you need to read code and devise a plan for executing
+- Use Context 7 MCP to check documentation related to a package, or library
+- Use Web Search to get Latest Facts whenever needed to clarify something maybe syntax or freshest data to be sure about making a decision
+- Serena MCP to manage coding context when needed
+- Playwright MCP also when needed. 
+- Notion MCP to get data from Notion related to Project if needing to make product related decisions
