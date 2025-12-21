@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Response, status
 from pydantic import BaseModel
 
 from alfred.core.celery_client import get_celery_client
+from alfred.core.dependencies import get_knowledge_agent_service
 from alfred.core.exceptions import ServiceUnavailableError
 from alfred.schemas import AgentQueryRequest, AgentResponse
 from alfred.services.agents.mind_palace_agent import KnowledgeAgentService
@@ -14,8 +15,9 @@ router = APIRouter(prefix="/api/mind-palace/agent", tags=["mind-palace"])
 logger = logging.getLogger(__name__)
 
 
+# Back-compat: tests override this dependency.
 def get_agent_service() -> KnowledgeAgentService:
-    return KnowledgeAgentService()
+    return get_knowledge_agent_service()
 
 
 class EnqueueMindPalaceTaskResponse(BaseModel):

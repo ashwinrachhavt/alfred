@@ -5,10 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Environment is loaded by Pydantic Settings (see alfred.core.settings).
 from alfred.api import register_routes
+from alfred.core.dependencies import get_doc_storage_service
 from alfred.core.exceptions import register_exception_handlers
 from alfred.core.logging import setup_logging
 from alfred.core.settings import settings
-from alfred.services.doc_storage import DocStorageService
 
 # Bytecode disabling is controlled via environment (Makefile/Docker) or settings.
 
@@ -38,7 +38,7 @@ def _ensure_indexes_on_startup() -> None:
     Best-effort: logs a warning on failure but does not block app startup.
     """
     try:
-        DocStorageService().ensure_indexes()
+        get_doc_storage_service().ensure_indexes()
         logging.getLogger(__name__).info("DocStorage indexes ensured")
     except Exception as exc:  # pragma: no cover - external dependency
         logging.getLogger(__name__).warning("Failed to ensure DocStorage indexes: %s", exc)

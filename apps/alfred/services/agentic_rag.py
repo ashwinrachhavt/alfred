@@ -2,18 +2,20 @@ from __future__ import annotations
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 from typing import Any, Iterable, List, Literal, Sequence, TypedDict
 
 from langchain_community.tools import DuckDuckGoSearchRun  # type: ignore
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_qdrant import QdrantVectorStore  # type: ignore
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient  # type: ignore
 
+from alfred.core.llm_factory import get_chat_model, get_embedding_model
 from alfred.core.settings import settings
 from alfred.prompts import load_prompt
 from alfred.services.web_search import search_web
@@ -64,18 +66,8 @@ def build_system_prompt(mode: str = "minimal") -> str:
 
 # ------------------------ HELPERS ------------------------
 def make_llm(temperature: float = 0.2):
-    try:
-        return ChatOpenAI(
-            model=CHAT_MODEL,
-            temperature=temperature,
-            api_key=(
-                settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
-            ),
-            base_url=settings.openai_base_url,
-            organization=settings.openai_organization,
-        )
-    except Exception:
-        return ChatOpenAI(model=FALLBACK_MODEL, temperature=temperature)
+    # Uses cached factory; keeps client creation process-scoped.
+    return get_chat_model(temperature=temperature)
 
 
 logger = logging.getLogger(__name__)
@@ -133,20 +125,34 @@ class _WebSearchTool(BaseTool):  # pragma: no cover - HTTP-backed search tool
         return self._run(query)
 
 
-def _build_qdrant_vector_store(embed: OpenAIEmbeddings):  # type: ignore[name-defined]
-    if not (QDRANT_URL):
+@lru_cache(maxsize=1)
+def _get_qdrant_client() -> QdrantClient | None:
+    if not QDRANT_URL:
         return None
-
     try:
         client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
         if hasattr(client, "collection_exists"):
             exists = client.collection_exists(collection_name=COLLECTION)
             if not exists:
                 raise RuntimeError(f"Qdrant collection '{COLLECTION}' not found")
-
-        return QdrantVectorStore(client=client, collection_name=COLLECTION, embedding=embed)
+        return client
     except Exception as exc:
         logger.warning("Qdrant unavailable; using no-op retriever (%s)", exc)
+        return None
+
+
+@lru_cache(maxsize=1)
+def _get_qdrant_vector_store():
+    if not ENABLE_QDRANT:
+        return None
+    client = _get_qdrant_client()
+    if client is None:
+        return None
+    embed = get_embedding_model(model=EMBED_MODEL)
+    try:
+        return QdrantVectorStore(client=client, collection_name=COLLECTION, embedding=embed)
+    except Exception as exc:
+        logger.warning("Qdrant vector store unavailable; using no-op retriever (%s)", exc)
         return None
 
 
@@ -154,12 +160,7 @@ def make_retriever(k: int = 4):
     if not ENABLE_QDRANT:
         return _NullRetriever()
 
-    embed = OpenAIEmbeddings(
-        model=EMBED_MODEL,
-        api_key=(settings.openai_api_key.get_secret_value() if settings.openai_api_key else None),
-        base_url=settings.openai_base_url,
-    )
-    vs = _build_qdrant_vector_store(embed)
+    vs = _get_qdrant_vector_store()
     if vs is None:
         return _NullRetriever()
 
@@ -306,6 +307,8 @@ def tools_node(state: AgentState, tools: list[BaseTool]):
 
     name_to_tool = {t.name: t for t in tools}
     out: list[ToolMessage] = []
+
+    work: list[tuple[BaseTool, Any, str]] = []
     for call in getattr(last, "tool_calls", []) or []:
         name = getattr(call, "name", None) or (call.get("name") if isinstance(call, dict) else None)
         args = (
@@ -318,6 +321,10 @@ def tools_node(state: AgentState, tools: list[BaseTool]):
         if tool is None:
             out.append(ToolMessage(content=f"(tool not found: {name})", tool_call_id=str(call_id)))
             continue
+        work.append((tool, args, str(call_id)))
+
+    def _invoke_one(item: tuple[BaseTool, Any, str]) -> ToolMessage:
+        tool, args, call_id = item
         try:
             result = tool.invoke(args)
         except Exception:
@@ -325,17 +332,25 @@ def tools_node(state: AgentState, tools: list[BaseTool]):
                 result = tool.run(args)
             except Exception as exc:
                 result = f"(error) {exc}"
-        out.append(ToolMessage(content=str(result), tool_call_id=str(call_id)))
+        return ToolMessage(content=str(result), tool_call_id=call_id)
+
+    if work:
+        max_workers = min(8, len(work))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            out.extend(list(executor.map(_invoke_one, work)))
 
     return {"messages": [*msgs, *out]}
 
 
 # ------------------------ GRAPH BUILD/EXEC ------------------------
+@lru_cache(maxsize=64)
 def build_agent_graph(k: int = 4, mode: str = "minimal"):
     workflow = StateGraph(AgentState)
 
+    tools = make_tools(k=k)
+
     workflow.add_node("generate_query_or_respond", lambda s: generate_query_or_respond(s, k=k))
-    workflow.add_node("tools", lambda s: tools_node(s, make_tools(k=k)))
+    workflow.add_node("tools", lambda s: tools_node(s, tools))
     workflow.add_node("rewrite_question", rewrite_question)
     workflow.add_node("generate_answer", lambda s: generate_answer(s, mode=mode))
 

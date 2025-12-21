@@ -122,7 +122,13 @@ class DocStorageService:
                 user=settings.neo4j_user,
                 password=settings.neo4j_password,
             )
-        if self.extraction_service is None:
+
+        needs_extraction = bool(
+            settings.enable_ingest_enrichment
+            or settings.enable_ingest_classification
+            or self.graph_service is not None
+        )
+        if self.extraction_service is None and needs_extraction:
             self.extraction_service = ExtractionService()
 
     # --------------- Health ---------------
@@ -215,6 +221,181 @@ class DocStorageService:
 
     # --------------- Documents ---------------
     def ingest_document(self, payload: DocumentIngest) -> Dict[str, Any]:
+        do_enrichment = bool(settings.enable_ingest_enrichment)
+        do_classification = bool(settings.enable_ingest_classification)
+        do_graph = bool(do_enrichment and self.graph_service)
+        return self._ingest_document(
+            payload,
+            do_enrichment=do_enrichment,
+            do_classification=do_classification,
+            do_graph=do_graph,
+        )
+
+    def ingest_document_basic(self, payload: DocumentIngest) -> Dict[str, Any]:
+        """Persist the document + chunks without running any LLM enrichment."""
+        return self._ingest_document(
+            payload, do_enrichment=False, do_classification=False, do_graph=False
+        )
+
+    def enrich_document(self, doc_id: str, *, force: bool = False) -> Dict[str, Any]:
+        """Apply enrichment/classification/graph extraction for an existing stored document."""
+        if not ObjectId.is_valid(doc_id):
+            raise ValueError("Invalid id")
+
+        oid = ObjectId(doc_id)
+        doc = self._documents.find_one({"_id": oid})
+        if not doc:
+            raise ValueError("Document not found")
+
+        if (not force) and doc.get("enrichment"):
+            return {"id": doc_id, "skipped": True}
+
+        if not self.extraction_service:
+            raise RuntimeError("Extraction service not configured")
+
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        cleaned_text = (doc.get("cleaned_text") or "").strip()
+        raw_markdown = doc.get("raw_markdown")
+        metadata = doc.get("metadata") or {}
+
+        include_graph_in_enrich = self.graph_service is None
+        enrich = self.extraction_service.extract_all(
+            cleaned_text=cleaned_text,
+            raw_markdown=raw_markdown,
+            metadata=metadata,
+            include_graph=include_graph_in_enrich,
+        )
+
+        summary_obj: Dict[str, Any] | None = None
+        topics_obj: Dict[str, Any] | None = None
+        entities_obj: Dict[str, Any] | None = None
+
+        if enrich.get("summary"):
+            s = enrich["summary"] or {}
+            short = s.get("short") or ""
+            long = s.get("long") or None
+            summary_obj = {"short": short, "long": long} if (short or long) else None
+
+        if enrich.get("topics"):
+            topics_obj = enrich.get("topics")
+
+        tags = enrich.get("tags") or []
+        if tags and not isinstance(tags, list):
+            tags = []
+
+        embedding_vec = enrich.get("embedding")
+
+        ents = enrich.get("entities") or []
+        if ents:
+            entities_obj = {"items": ents}
+
+        # Optional taxonomy classification (best-effort)
+        if settings.enable_ingest_classification:
+            try:
+                taxonomy_ctx = None
+                if settings.classification_taxonomy_path:
+                    try:
+                        with open(
+                            settings.classification_taxonomy_path, "r", encoding="utf-8"
+                        ) as fh:
+                            taxonomy_ctx = fh.read()
+                    except Exception:
+                        taxonomy_ctx = None
+                cls = self.extraction_service.classify_taxonomy(
+                    text=(raw_markdown or cleaned_text),
+                    taxonomy_context=taxonomy_ctx,
+                )
+                if cls:
+                    topics_obj = dict(topics_obj or (doc.get("topics") or {}) or {})
+                    topics_obj["classification"] = cls
+            except Exception:
+                pass
+
+        topics_extracted: list[str] | None = None
+        if self.graph_service:
+            try:
+                full_text = raw_markdown or cleaned_text
+                extraction = self.extraction_service.extract_graph(
+                    text=full_text, metadata=metadata
+                )
+                entities = extraction.get("entities") or []
+                relations = extraction.get("relations") or []
+                topics_extracted = extraction.get("topics") or []
+                if entities:
+                    entities_obj = {"items": entities}
+
+                doc_id_str = str(doc.get("_id"))
+                self.graph_service.upsert_document_node(
+                    doc_id=doc_id_str,
+                    title=doc.get("title"),
+                    source_url=doc.get("source_url"),
+                )
+                for ent in entities:
+                    name = ent.get("name")
+                    etype = ent.get("type") or ent.get("type_")
+                    if not name:
+                        continue
+                    self.graph_service.upsert_entity(name=name, type_=etype)
+                    self.graph_service.link_doc_to_entity(doc_id=doc_id_str, name=name)
+                for rel in relations:
+                    f = rel.get("from")
+                    t = rel.get("to")
+                    r = rel.get("type") or "RELATED_TO"
+                    if f and t:
+                        self.graph_service.link_entities(from_name=f, to_name=t, rel_type=r)
+            except Exception:
+                topics_extracted = None
+
+        metadata_enrichment = {
+            "summary": summary_obj or {},
+            "topics": topics_obj or {},
+            "tags": tags or [],
+        }
+        enrichment_block = None
+        try:
+            enrichment_block = normalize_enrichment(metadata_enrichment).model_dump()
+        except Exception:
+            enrichment_block = None
+
+        updates: Dict[str, Any] = {
+            "updated_at": now,
+            "processed_at": now,
+            "metadata.enrichment": metadata_enrichment,
+        }
+        if enrich.get("lang"):
+            updates["lang"] = enrich.get("lang")
+        if summary_obj is not None:
+            updates["summary"] = summary_obj
+        if topics_obj is not None:
+            updates["topics"] = topics_obj
+        if tags:
+            updates["tags"] = tags
+        if embedding_vec is not None:
+            updates["embedding"] = embedding_vec
+        if entities_obj is not None:
+            updates["entities"] = entities_obj
+        if enrichment_block is not None:
+            updates["enrichment"] = enrichment_block
+        if topics_extracted:
+            updates["topics.extracted"] = topics_extracted
+
+        self._documents.update_one({"_id": oid}, {"$set": updates})
+
+        return {
+            "id": doc_id,
+            "skipped": False,
+            "has_graph": bool(self.graph_service),
+            "topics_extracted": len(topics_extracted or []),
+        }
+
+    def _ingest_document(
+        self,
+        payload: DocumentIngest,
+        *,
+        do_enrichment: bool,
+        do_classification: bool,
+        do_graph: bool,
+    ) -> Dict[str, Any]:
         now = datetime.utcnow().replace(tzinfo=timezone.utc)
         captured_at = payload.captured_at or now
         if captured_at.tzinfo is None:
@@ -228,41 +409,45 @@ class DocStorageService:
         canonical = payload.canonical_url or payload.source_url
         domain = _domain_from_url(canonical)
 
-        # Enrichment via ExtractionService (OpenAI-backed): best-effort pre-persist
-        summary_obj: Optional[Dict[str, Any]] = None
-        topics_obj: Optional[Dict[str, Any]] = None
-        embedding_vec: Optional[List[float]] = None
-        entities_obj: Optional[Dict[str, Any]] = None
+        # Fast-path duplicates: avoid re-running enrichment/chunking for the same content.
+        existing = self._documents.find_one({"hash": content_hash}, {"_id": 1})
+        if existing:
+            return {
+                "id": str(existing["_id"]),
+                "duplicate": True,
+                "chunk_count": 0,
+                "chunk_ids": [],
+            }
 
-        if settings.enable_ingest_enrichment and self.extraction_service:
+        summary_obj: Dict[str, Any] | None = None
+        topics_obj: Dict[str, Any] | None = None
+        embedding_vec: List[float] | None = None
+        entities_obj: Dict[str, Any] | None = None
+
+        if do_enrichment and self.extraction_service:
             try:
                 enrich = self.extraction_service.extract_all(
                     cleaned_text=cleaned_text,
                     raw_markdown=payload.raw_markdown,
                     metadata=payload.metadata or {},
+                    include_graph=not do_graph,
                 )
-                # Map lang
                 if not payload.lang and enrich.get("lang"):
                     payload.lang = enrich.get("lang")
-                # Map summary
                 if enrich.get("summary"):
                     s = enrich["summary"] or {}
                     short = s.get("short") or ""
                     long = s.get("long") or None
                     summary_obj = {"short": short, "long": long} if (short or long) else None
-                # Map topics/tags
                 if enrich.get("topics") and not payload.topics:
                     topics_obj = enrich.get("topics")
                 if enrich.get("tags") and not payload.tags:
                     payload.tags = enrich.get("tags")
-                # Embedding
                 if enrich.get("embedding") is not None and not payload.embedding:
                     embedding_vec = enrich.get("embedding")
-                # Entities (store under a simple shape if present)
                 ents = enrich.get("entities") or []
                 if ents:
                     entities_obj = {"items": ents}
-                # Attach enrichment block into metadata for normalization downstream
                 payload.metadata = payload.metadata or {}
                 payload.metadata.setdefault(
                     "enrichment",
@@ -275,8 +460,7 @@ class DocStorageService:
             except Exception:
                 pass
 
-        # Optional taxonomy classification (best-effort)
-        if settings.enable_ingest_classification and self.extraction_service:
+        if do_classification and self.extraction_service:
             try:
                 taxonomy_ctx = None
                 if settings.classification_taxonomy_path:
@@ -288,20 +472,19 @@ class DocStorageService:
                     except Exception:
                         taxonomy_ctx = None
                 cls = self.extraction_service.classify_taxonomy(
-                    text=payload.raw_markdown or cleaned_text, taxonomy_context=taxonomy_ctx
+                    text=payload.raw_markdown or cleaned_text,
+                    taxonomy_context=taxonomy_ctx,
                 )
                 if cls:
                     if topics_obj is None:
                         topics_obj = payload.topics or {}
                         if not isinstance(topics_obj, dict):
                             topics_obj = {}
-                    # attach under topics.classification
                     topics_obj = dict(topics_obj or {})
                     topics_obj["classification"] = cls
             except Exception:
                 pass
 
-        # Optional enrichment block (normalized if present)
         enrichment_block = None
         try:
             if (payload.metadata or {}).get("enrichment"):
@@ -344,22 +527,24 @@ class DocStorageService:
             enrichment=enrichment_block,
         )
 
-        duplicate = False
         try:
             res = self._documents.insert_one(record.model_dump())
             doc_id = res.inserted_id
         except DuplicateKeyError:
-            duplicate = True
             existing = self._documents.find_one({"hash": content_hash}, {"_id": 1})
             if not existing:
                 raise ValueError("Duplicate content but missing record")
-            doc_id = existing["_id"]
+            return {
+                "id": str(existing["_id"]),
+                "duplicate": True,
+                "chunk_count": 0,
+                "chunk_ids": [],
+            }
 
         chunk_ids: List[str] = []
         try:
             chunk_payloads = payload.chunks
             if (not chunk_payloads) and (cleaned_text or (payload.raw_markdown or "").strip()):
-                # Prefer markdown source if provided to enable header-aware chunking
                 src_text = payload.raw_markdown or cleaned_text
                 chunk_payloads = _CHUNKING_SERVICE.chunk(
                     src_text,
@@ -394,13 +579,10 @@ class DocStorageService:
                     r = self._chunks.insert_many(chunk_docs)
                     chunk_ids = [str(i) for i in r.inserted_ids]
         except Exception:
-            # Non-fatal: proceed without chunks
             chunk_ids = []
 
-        # Optional: content graph extraction and topic hinting (best-effort)
-        # Decoupled from Neo4j so topics.extracted can be written even without a graph backend.
-        try:
-            if self.extraction_service:
+        if do_graph and self.extraction_service and self.graph_service:
+            try:
                 full_text = payload.raw_markdown or cleaned_text
                 extraction = self.extraction_service.extract_graph(
                     text=full_text,
@@ -411,39 +593,38 @@ class DocStorageService:
                 topics_from_extraction = extraction.get("topics") or []
                 doc_id_str = str(doc_id)
 
-                # Write topics.extracted regardless of graph availability
+                updates: Dict[str, Any] = {}
                 if topics_from_extraction:
-                    self._documents.update_one(
-                        {"_id": doc_id},
-                        {"$set": {"topics.extracted": topics_from_extraction}},
-                    )
+                    updates["topics.extracted"] = topics_from_extraction
+                if entities:
+                    updates["entities"] = {"items": entities}
+                if updates:
+                    self._documents.update_one({"_id": doc_id}, {"$set": updates})
 
-                # If a graph service is configured, upsert nodes/edges
-                if self.graph_service:
-                    self.graph_service.upsert_document_node(
-                        doc_id=doc_id_str,
-                        title=payload.title,
-                        source_url=payload.source_url,
-                    )
-                    for ent in entities:
-                        name = ent.get("name")
-                        etype = ent.get("type") or ent.get("type_")
-                        if not name:
-                            continue
-                        self.graph_service.upsert_entity(name=name, type_=etype)
-                        self.graph_service.link_doc_to_entity(doc_id=doc_id_str, name=name)
-                    for rel in relations:
-                        f = rel.get("from")
-                        t = rel.get("to")
-                        r = rel.get("type") or "RELATED_TO"
-                        if f and t:
-                            self.graph_service.link_entities(from_name=f, to_name=t, rel_type=r)
-        except Exception:
-            pass
+                self.graph_service.upsert_document_node(
+                    doc_id=doc_id_str,
+                    title=payload.title,
+                    source_url=payload.source_url,
+                )
+                for ent in entities:
+                    name = ent.get("name")
+                    etype = ent.get("type") or ent.get("type_")
+                    if not name:
+                        continue
+                    self.graph_service.upsert_entity(name=name, type_=etype)
+                    self.graph_service.link_doc_to_entity(doc_id=doc_id_str, name=name)
+                for rel in relations:
+                    f = rel.get("from")
+                    t = rel.get("to")
+                    r = rel.get("type") or "RELATED_TO"
+                    if f and t:
+                        self.graph_service.link_entities(from_name=f, to_name=t, rel_type=r)
+            except Exception:
+                pass
 
         return {
             "id": str(doc_id),
-            "duplicate": duplicate,
+            "duplicate": False,
             "chunk_count": len(chunk_ids),
             "chunk_ids": chunk_ids,
         }

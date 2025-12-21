@@ -6,7 +6,7 @@ from typing import Any
 
 from celery import shared_task
 
-from alfred.services.agents.mind_palace_agent import KnowledgeAgentService
+from alfred.core.dependencies import get_knowledge_agent_service
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ def mind_palace_agent_query_task(
     """Run the Mind Palace agent query in a background worker."""
 
     logger.info("Running mind-palace agent task")
-    svc = KnowledgeAgentService()
+    svc = get_knowledge_agent_service()
 
     async def _run() -> Any:
         return await svc.ask(question=question, history=history or [], context=context or {})

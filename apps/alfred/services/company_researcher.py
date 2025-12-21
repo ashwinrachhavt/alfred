@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, List, cast
@@ -112,13 +113,19 @@ class CompanyResearchService:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+    def get_cached_report(self, company: str) -> dict[str, Any] | None:
+        company = (company or "").strip()
+        if not company:
+            return None
+        return self._find_latest(company)
+
     def generate_report(self, company: str, *, refresh: bool = False) -> dict[str, Any]:
         company = company.strip()
         if not company:
             raise ValueError("Company name is required")
 
         if not refresh:
-            cached = self._find_latest(company)
+            cached = self.get_cached_report(company)
             if cached:
                 return cached
 
@@ -172,7 +179,19 @@ class CompanyResearchService:
             fallback = self._search(company, self._get_fallback_search())
             hits = fallback.hits[: self.search_results]
             meta = {"provider": fallback.provider, "hits": len(hits), "meta": fallback.meta}
-        sources = [self._enrich_hit(hit, meta["provider"]) for hit in hits]
+
+        provider = meta.get("provider")
+        if not hits:
+            return [], meta
+
+        # Firecrawl requests are network-bound; parallelize for significant speedups.
+        max_workers = min(8, len(hits))
+
+        def _enrich(hit: SearchHit) -> EnrichedSource:
+            return self._enrich_hit(hit, provider)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            sources = list(executor.map(_enrich, hits))
         return sources, meta
 
     def _search(self, company: str, connector: WebConnector):
