@@ -156,4 +156,3 @@ class RetentionMetric(BaseModel):
     retention_rate_30d: float = Field(ge=0.0, le=1.0)
     sample_size: int = Field(ge=0)
     as_of: datetime
-

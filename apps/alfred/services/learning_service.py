@@ -7,6 +7,7 @@ from typing import Iterable
 from sqlalchemy import func
 from sqlmodel import Session, select
 
+from alfred.core.settings import settings
 from alfred.models.learning import (
     LearningEntity,
     LearningEntityRelation,
@@ -17,7 +18,6 @@ from alfred.models.learning import (
     LearningReview,
     LearningTopic,
 )
-from alfred.core.settings import settings
 from alfred.services.doc_storage import DocStorageService
 from alfred.services.extraction_service import ExtractionService
 from alfred.services.graph_service import GraphService
@@ -84,7 +84,9 @@ class LearningService:
         return topic
 
     def list_topics(self) -> list[LearningTopic]:
-        return list(self.session.exec(select(LearningTopic).order_by(LearningTopic.updated_at.desc())))
+        return list(
+            self.session.exec(select(LearningTopic).order_by(LearningTopic.updated_at.desc()))
+        )
 
     def get_topic(self, topic_id: int) -> LearningTopic | None:
         return self.session.get(LearningTopic, topic_id)
@@ -163,8 +165,10 @@ class LearningService:
         return res
 
     def list_resources(self, *, topic_id: int) -> list[LearningResource]:
-        stmt = select(LearningResource).where(LearningResource.topic_id == topic_id).order_by(
-            LearningResource.added_at.desc()
+        stmt = (
+            select(LearningResource)
+            .where(LearningResource.topic_id == topic_id)
+            .order_by(LearningResource.added_at.desc())
         )
         return list(self.session.exec(stmt))
 
@@ -174,7 +178,9 @@ class LearningService:
     # -----------------
     # Reviews (spaced repetition)
     # -----------------
-    def list_due_reviews(self, *, now: datetime | None = None, limit: int = 50) -> list[LearningReview]:
+    def list_due_reviews(
+        self, *, now: datetime | None = None, limit: int = 50
+    ) -> list[LearningReview]:
         now = now or _utcnow()
         stmt = (
             select(LearningReview)
@@ -300,14 +306,18 @@ class LearningService:
         self.session.refresh(quiz)
         return quiz
 
-    def submit_quiz(self, *, quiz: LearningQuiz, known: list[bool], responses: list[dict] | None) -> LearningQuizAttempt:
+    def submit_quiz(
+        self, *, quiz: LearningQuiz, known: list[bool], responses: list[dict] | None
+    ) -> LearningQuizAttempt:
         if not known:
             raise ValueError("known cannot be empty")
         expected = len(quiz.items or [])
         if expected and len(known) != expected:
             raise ValueError(f"known length must match quiz items ({expected})")
         score = float(sum(1 for k in known if k) / max(1, len(known)))
-        attempt = LearningQuizAttempt(quiz_id=quiz.id or 0, known=known, responses=responses, score=score)
+        attempt = LearningQuizAttempt(
+            quiz_id=quiz.id or 0, known=known, responses=responses, score=score
+        )
         self.session.add(attempt)
         now = _utcnow()
         topic = self.session.get(LearningTopic, quiz.topic_id)
@@ -336,7 +346,10 @@ class LearningService:
 
         # Best-effort: try LLM structured output; fall back to deterministic prompts.
         try:
-            if not (getattr(settings, "openai_api_key", None) or getattr(settings, "openai_base_url", None)):
+            if not (
+                getattr(settings, "openai_api_key", None)
+                or getattr(settings, "openai_base_url", None)
+            ):
                 raise RuntimeError("OpenAI not configured")
             from pydantic import BaseModel, Field
 
@@ -350,8 +363,7 @@ class LearningService:
             prompt = (
                 f"Generate {n} spaced-repetition quiz questions for the topic: {topic_name}.\n"
                 "Use the provided study text as ground truth. "
-                "Return short answers (1-3 sentences) suitable for self-check.\n\n"
-                + text[:8000]
+                "Return short answers (1-3 sentences) suitable for self-check.\n\n" + text[:8000]
             )
             res = LLMService().structured(
                 [
@@ -438,14 +450,18 @@ class LearningService:
 
         if not ObjectId.is_valid(resource.document_id):
             raise ValueError("Invalid document_id")
-        doc = svc.database.get_collection("documents").find_one({"_id": ObjectId(resource.document_id)})
+        doc = svc.database.get_collection("documents").find_one(
+            {"_id": ObjectId(resource.document_id)}
+        )
         if not doc:
             raise ValueError("Document not found")
         text = (doc.get("cleaned_text") or "").strip()
         if not text:
             raise ValueError("Document has no cleaned_text")
 
-        graph = ExtractionService().extract_graph(text=text, metadata={"doc_id": resource.document_id})
+        graph = ExtractionService().extract_graph(
+            text=text, metadata={"doc_id": resource.document_id}
+        )
         entities = graph.get("entities") or []
         relations = graph.get("relations") or []
 
@@ -472,7 +488,9 @@ class LearningService:
                         source_url=resource.source_url,
                     )
                     if topic:
-                        gs.link_topic_to_document(topic_id=str(topic.id), doc_id=str(resource.document_id))
+                        gs.link_topic_to_document(
+                            topic_id=str(topic.id), doc_id=str(resource.document_id)
+                        )
                 for ent in entities:
                     name = (ent.get("name") or "").strip()
                     if not name:
@@ -501,8 +519,10 @@ class LearningService:
             name = (ent.get("name") or "").strip()
             if not name:
                 continue
-            type_ = (ent.get("type") or None)
-            existing = self.session.exec(select(LearningEntity).where(LearningEntity.name == name)).first()
+            type_ = ent.get("type") or None
+            existing = self.session.exec(
+                select(LearningEntity).where(LearningEntity.name == name)
+            ).first()
             if existing:
                 if type_ and not existing.type:
                     existing.type = str(type_)
@@ -538,8 +558,12 @@ class LearningService:
             to_name = (rel.get("to") or "").strip()
             if not from_name or not to_name:
                 continue
-            from_ent = self.session.exec(select(LearningEntity).where(LearningEntity.name == from_name)).first()
-            to_ent = self.session.exec(select(LearningEntity).where(LearningEntity.name == to_name)).first()
+            from_ent = self.session.exec(
+                select(LearningEntity).where(LearningEntity.name == from_name)
+            ).first()
+            to_ent = self.session.exec(
+                select(LearningEntity).where(LearningEntity.name == to_name)
+            ).first()
             if not from_ent or not to_ent:
                 continue
             self.session.add(
@@ -563,7 +587,14 @@ class LearningService:
 
         topic_nodes = []
         for t in topics:
-            topic_nodes.append({"id": f"topic:{t.id}", "label": t.name, "type": "topic", "meta": {"progress": t.progress}})
+            topic_nodes.append(
+                {
+                    "id": f"topic:{t.id}",
+                    "label": t.name,
+                    "type": "topic",
+                    "meta": {"progress": t.progress},
+                }
+            )
         nodes.extend(topic_nodes)
 
         # topic -> resource -> entity
@@ -591,7 +622,9 @@ class LearningService:
             mention_counts[eid] = mention_counts.get(eid, 0) + 1
         allowed = {
             eid
-            for eid, _ in sorted(mention_counts.items(), key=lambda kv: kv[1], reverse=True)[:max_entities]
+            for eid, _ in sorted(mention_counts.items(), key=lambda kv: kv[1], reverse=True)[
+                :max_entities
+            ]
         }
 
         # Aggregate topic->entity weights and compute topic-topic links via shared entities
@@ -727,7 +760,11 @@ class LearningService:
     def retention_metric_30d(self, *, now: datetime | None = None) -> dict:
         now = now or _utcnow()
         # Stage 3 reviews approximate 30-day recall checks.
-        stmt = select(LearningReview).where(LearningReview.stage == 3).where(LearningReview.completed_at.is_not(None))
+        stmt = (
+            select(LearningReview)
+            .where(LearningReview.stage == 3)
+            .where(LearningReview.completed_at.is_not(None))
+        )
         reviews = list(self.session.exec(stmt))
         scores = [float(r.score) for r in reviews if r.score is not None]
         if not scores:

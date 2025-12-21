@@ -10,6 +10,15 @@ from .documents import (
     NotesListResponse,
 )
 from .mind_palace_agent import AgentQueryRequest, AgentResponse, ChatMessage
+from .zettel import (
+    CompleteReviewRequest,
+    GraphSummary,
+    ZettelCardCreate,
+    ZettelCardOut,
+    ZettelLinkCreate,
+    ZettelLinkOut,
+    ZettelReviewOut,
+)
 
 __all__ = [
     # Documents
@@ -24,4 +33,12 @@ __all__ = [
     "ChatMessage",
     "AgentQueryRequest",
     "AgentResponse",
+    # Zettels
+    "ZettelCardCreate",
+    "ZettelCardOut",
+    "ZettelLinkCreate",
+    "ZettelLinkOut",
+    "ZettelReviewOut",
+    "CompleteReviewRequest",
+    "GraphSummary",
 ]

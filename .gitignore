@@ -28,3 +28,10 @@ apps/alfred.egg-info/
 mlruns
 
 dump.rdb
+
+# Local tooling/workspace artifacts
+.tmp/
+.pytest_cache/
+.ruff_cache/
+.uv-cache/
+.venv/

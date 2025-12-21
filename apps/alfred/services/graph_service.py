@@ -117,7 +117,9 @@ if _NEO4J_AVAILABLE:
             LIMIT $limit
             """
             rows = self._run(query, {"topic_id": topic_id, "limit": int(limit)})
-            nodes: list[dict[str, Any]] = [{"id": f"topic:{topic_id}", "label": f"Topic {topic_id}", "type": "topic"}]
+            nodes: list[dict[str, Any]] = [
+                {"id": f"topic:{topic_id}", "label": f"Topic {topic_id}", "type": "topic"}
+            ]
             edges: list[dict[str, Any]] = []
             node_ids = {nodes[0]["id"]}
             for r in rows:
@@ -134,7 +136,9 @@ if _NEO4J_AVAILABLE:
                             }
                         )
                         node_ids.add(did)
-                    edges.append({"source": f"topic:{topic_id}", "target": did, "type": "HAS_RESOURCE"})
+                    edges.append(
+                        {"source": f"topic:{topic_id}", "target": did, "type": "HAS_RESOURCE"}
+                    )
                 entity_name = r.get("entity_name")
                 if entity_name:
                     eid = f"entity:{entity_name}"
@@ -190,7 +194,9 @@ else:
         ) -> None:
             return
 
-        def link_topic_to_entity(self, *, topic_id: str, name: str, rel_type: str = "COVERS") -> None:
+        def link_topic_to_entity(
+            self, *, topic_id: str, name: str, rel_type: str = "COVERS"
+        ) -> None:
             return
 
         def fetch_topic_subgraph(self, *, topic_id: str, limit: int = 200) -> dict[str, Any]:

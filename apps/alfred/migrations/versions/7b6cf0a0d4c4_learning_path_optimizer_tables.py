@@ -51,7 +51,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["topic_id"], ["learning_topics.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_learning_resources_topic_id", "learning_resources", ["topic_id"], unique=False)
+    op.create_index(
+        "ix_learning_resources_topic_id", "learning_resources", ["topic_id"], unique=False
+    )
 
     op.create_table(
         "learning_quizzes",
@@ -66,7 +68,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_learning_quizzes_topic_id", "learning_quizzes", ["topic_id"], unique=False)
-    op.create_index("ix_learning_quizzes_resource_id", "learning_quizzes", ["resource_id"], unique=False)
+    op.create_index(
+        "ix_learning_quizzes_resource_id", "learning_quizzes", ["resource_id"], unique=False
+    )
 
     op.create_table(
         "learning_quiz_attempts",
@@ -184,8 +188,12 @@ def downgrade() -> None:
     op.drop_index("ix_learning_entity_relations_from", table_name="learning_entity_relations")
     op.drop_table("learning_entity_relations")
     op.drop_index("ix_learning_resource_entities_unique", table_name="learning_resource_entities")
-    op.drop_index("ix_learning_resource_entities_entity_id", table_name="learning_resource_entities")
-    op.drop_index("ix_learning_resource_entities_resource_id", table_name="learning_resource_entities")
+    op.drop_index(
+        "ix_learning_resource_entities_entity_id", table_name="learning_resource_entities"
+    )
+    op.drop_index(
+        "ix_learning_resource_entities_resource_id", table_name="learning_resource_entities"
+    )
     op.drop_table("learning_resource_entities")
     op.drop_index("ix_learning_entities_name", table_name="learning_entities")
     op.drop_table("learning_entities")
@@ -202,4 +210,3 @@ def downgrade() -> None:
     op.drop_table("learning_resources")
     op.drop_index("ix_learning_topics_name", table_name="learning_topics")
     op.drop_table("learning_topics")
-

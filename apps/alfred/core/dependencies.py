@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from alfred.services.job_applications import JobApplicationService
     from alfred.services.llm_service import LLMService
     from alfred.services.mongo import MongoService
+    from alfred.services.panel_interview_simulator import PanelInterviewService
 
 
 @lru_cache(maxsize=1)
@@ -173,6 +174,17 @@ def get_company_interviews_service() -> CompanyInterviewsService:
     return CompanyInterviewsService(
         database=get_mongo_database(),
         collection_name=settings.company_interviews_collection,
+    )
+
+
+@lru_cache(maxsize=1)
+def get_panel_interview_service() -> PanelInterviewService:
+    from alfred.services.panel_interview_simulator import PanelInterviewService
+
+    return PanelInterviewService(
+        database=get_mongo_database(),
+        collection_name=settings.panel_interview_sessions_collection,
+        company_interviews_service=get_company_interviews_service(),
     )
 
 

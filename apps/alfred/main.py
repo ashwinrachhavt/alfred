@@ -12,6 +12,7 @@ from alfred.core.dependencies import (
     get_doc_storage_service,
     get_interview_prep_service,
     get_job_application_service,
+    get_panel_interview_service,
 )
 from alfred.core.exceptions import register_exception_handlers
 from alfred.core.logging import setup_logging
@@ -67,6 +68,12 @@ def _ensure_indexes_on_startup() -> None:
         logging.getLogger(__name__).info("CompanyInterviews indexes ensured")
     except Exception as exc:  # pragma: no cover - external dependency
         logging.getLogger(__name__).warning("Failed to ensure CompanyInterviews indexes: %s", exc)
+
+    try:
+        get_panel_interview_service().ensure_indexes()
+        logging.getLogger(__name__).info("PanelInterview indexes ensured")
+    except Exception as exc:  # pragma: no cover - external dependency
+        logging.getLogger(__name__).warning("Failed to ensure PanelInterview indexes: %s", exc)
 
     try:
         get_job_application_service().ensure_indexes()

@@ -25,8 +25,12 @@ class LearningTopic(Model, table=True):
     tags: list[str] | None = Field(default=None, sa_column=Column(JSON, nullable=True))
 
     interview_at: datetime | None = Field(default=None, sa_column=Column(DateTime, nullable=True))
-    first_learned_at: datetime | None = Field(default=None, sa_column=Column(DateTime, nullable=True))
-    last_studied_at: datetime | None = Field(default=None, sa_column=Column(DateTime, nullable=True))
+    first_learned_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+    last_studied_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
 
 
 class LearningResource(Model, table=True):
@@ -55,7 +59,9 @@ class LearningQuiz(Model, table=True):
         Index("ix_learning_quizzes_resource_id", "resource_id"),
     )
 
-    topic_id: int = Field(sa_column=Column(Integer, ForeignKey("learning_topics.id"), nullable=False))
+    topic_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("learning_topics.id"), nullable=False)
+    )
     resource_id: int | None = Field(
         default=None, sa_column=Column(Integer, ForeignKey("learning_resources.id"), nullable=True)
     )
@@ -67,7 +73,9 @@ class LearningQuizAttempt(Model, table=True):
     __tablename__ = "learning_quiz_attempts"
     __table_args__ = (Index("ix_learning_quiz_attempts_quiz_id", "quiz_id"),)
 
-    quiz_id: int = Field(sa_column=Column(Integer, ForeignKey("learning_quizzes.id"), nullable=False))
+    quiz_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("learning_quizzes.id"), nullable=False)
+    )
 
     known: list[bool] = Field(sa_column=Column(JSON, nullable=False))
     responses: list[dict] | None = Field(default=None, sa_column=Column(JSON, nullable=True))
@@ -85,7 +93,9 @@ class LearningReview(Model, table=True):
         Index("ix_learning_reviews_open_due", "completed_at", "due_at"),
     )
 
-    topic_id: int = Field(sa_column=Column(Integer, ForeignKey("learning_topics.id"), nullable=False))
+    topic_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("learning_topics.id"), nullable=False)
+    )
     stage: int = Field(sa_column=Column(Integer, nullable=False))  # 1, 2, 3 (days: 1, 7, 30)
     iteration: int = Field(default=1, sa_column=Column(Integer, nullable=False))
 
@@ -94,7 +104,8 @@ class LearningReview(Model, table=True):
     score: float | None = Field(default=None, sa_column=Column(Float, nullable=True))
 
     attempt_id: int | None = Field(
-        default=None, sa_column=Column(Integer, ForeignKey("learning_quiz_attempts.id"), nullable=True)
+        default=None,
+        sa_column=Column(Integer, ForeignKey("learning_quiz_attempts.id"), nullable=True),
     )
 
 
@@ -117,7 +128,9 @@ class LearningResourceEntity(Model, table=True):
     resource_id: int = Field(
         sa_column=Column(Integer, ForeignKey("learning_resources.id"), nullable=False)
     )
-    entity_id: int = Field(sa_column=Column(Integer, ForeignKey("learning_entities.id"), nullable=False))
+    entity_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("learning_entities.id"), nullable=False)
+    )
 
 
 class LearningEntityRelation(Model, table=True):
@@ -133,6 +146,7 @@ class LearningEntityRelation(Model, table=True):
     from_entity_id: int = Field(
         sa_column=Column(Integer, ForeignKey("learning_entities.id"), nullable=False)
     )
-    to_entity_id: int = Field(sa_column=Column(Integer, ForeignKey("learning_entities.id"), nullable=False))
+    to_entity_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("learning_entities.id"), nullable=False)
+    )
     type: str = Field(default="RELATED_TO", sa_column=Column(String(64), nullable=False))
-

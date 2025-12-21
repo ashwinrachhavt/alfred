@@ -131,12 +131,14 @@ class KnowledgeService:
         query_embedding = self.embedder.embed_query(query)
 
         # Search in Qdrant
-        results = self.client.search(
+        response = self.client.query_points(
             collection_name=self.collection_name,
-            query_vector=query_embedding,
+            query=query_embedding,
             limit=limit,
             score_threshold=score_threshold,
+            with_payload=True,
         )
+        results = response.points
 
         # Format results
         matches = []

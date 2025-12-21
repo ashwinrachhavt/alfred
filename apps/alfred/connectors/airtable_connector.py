@@ -4,6 +4,7 @@ Airtable connector for fetching records from Airtable bases.
 
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -19,6 +20,8 @@ class AirtableConnector:
     """
     Connector for interacting with Airtable API using OAuth 2.0 credentials.
     """
+
+    _DATE_ONLY_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
     def __init__(self, credentials: AirtableAuthCredentialsBase):
         """
@@ -266,6 +269,39 @@ class AirtableConnector:
 
         return all_records, None
 
+    @classmethod
+    def _build_date_range_filter_by_formula(
+        cls, *, date_field: str, start_date: str, end_date: str
+    ) -> str:
+        """
+        Build an Airtable `filterByFormula` expression for a half-open date range.
+
+        The returned formula includes records where:
+        - {date_field} is on/after `start_date` (inclusive)
+        - {date_field} is before `end_date` (exclusive)
+
+        This matches common pagination-safe date range semantics and avoids ambiguous inclusive end
+        boundaries (users can pass the next day as `end_date` when they want inclusive behavior).
+
+        Args:
+            date_field: Name of the Airtable date field.
+            start_date: Inclusive start in `YYYY-MM-DD`.
+            end_date: Exclusive end in `YYYY-MM-DD`.
+
+        Returns:
+            Airtable formula string suitable for `filterByFormula`.
+        """
+        # Airtable formulas reference fields as `{Field Name}`.
+        field_ref = f"{{{date_field}}}"
+
+        # Airtable's filterByFormula uses Airtable formula functions. `DATETIME_PARSE` requires
+        # an explicit format string for predictable parsing.
+        start_expr = f'DATETIME_PARSE("{start_date}", "YYYY-MM-DD")'
+        end_expr = f'DATETIME_PARSE("{end_date}", "YYYY-MM-DD")'
+
+        # Inclusive start via NOT(IS_BEFORE(...)); exclusive end via IS_BEFORE(...).
+        return f"AND(NOT(IS_BEFORE({field_ref}, {start_expr})), IS_BEFORE({field_ref}, {end_expr}))"
+
     def get_records_by_date_range(
         self,
         base_id: str,
@@ -290,6 +326,14 @@ class AirtableConnector:
             Tuple of (records, error_message)
         """
         try:
+            if not self._DATE_ONLY_PATTERN.match(start_date) or not self._DATE_ONLY_PATTERN.match(
+                end_date
+            ):
+                return (
+                    [],
+                    "start_date and end_date must be in YYYY-MM-DD format",
+                )
+
             # Parse and validate dates
             start_dt = isoparse(start_date)
             end_dt = isoparse(end_date)
@@ -300,12 +344,17 @@ class AirtableConnector:
                     f"start_date ({start_date}) must be before end_date ({end_date})",
                 )
 
-            # TODO: Investigate how to properly use Airtable filter formulas for date ranges
+            filter_by_formula = self._build_date_range_filter_by_formula(
+                date_field=date_field,
+                start_date=start_date,
+                end_date=end_date,
+            )
 
             return self.get_all_records(
                 base_id=base_id,
                 table_id=table_id,
                 max_records=max_records,
+                filter_by_formula=filter_by_formula,
             )
 
         except Exception as e:

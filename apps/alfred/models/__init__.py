@@ -16,6 +16,7 @@ from alfred.models.learning import (
 from alfred.models.mongo import MongoSyncLog
 from alfred.models.research import ResearchRun
 from alfred.models.system import SystemSetting
+from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview
 
 __all__ = [
     "Model",
@@ -31,6 +32,9 @@ __all__ = [
     "LearningEntity",
     "LearningResourceEntity",
     "LearningEntityRelation",
+    "ZettelCard",
+    "ZettelLink",
+    "ZettelReview",
     "SQLModel",
     "Field",
 ]

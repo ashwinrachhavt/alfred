@@ -191,6 +191,10 @@ class Settings(BaseSettings):
         default="company_interview_experiences",
         alias="COMPANY_INTERVIEWS_COLLECTION",
     )
+    panel_interview_sessions_collection: str = Field(
+        default="panel_interview_sessions",
+        alias="PANEL_INTERVIEW_SESSIONS_COLLECTION",
+    )
 
     # Interview prep
     interview_prep_collection: str = Field(

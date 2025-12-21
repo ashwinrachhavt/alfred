@@ -3,8 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from bson import ObjectId
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from alfred.schemas.object_id import _ObjectIdOrStr
 
 
 # -----------------
@@ -124,27 +125,6 @@ __all__ = [
     "DocumentIngestChunk",
     "DocumentIngest",
 ]
-
-
-# -----------------
-# Canonical Mongo Records
-# -----------------
-
-
-class _ObjectIdOrStr(ObjectId):
-    @classmethod
-    def __get_validators__(cls):  # type: ignore[override]
-        yield cls.validate
-
-    @classmethod
-    def validate(cls, v: Any) -> ObjectId:  # noqa: D401
-        if v is None:
-            return v
-        if isinstance(v, ObjectId):
-            return v
-        if isinstance(v, str) and ObjectId.is_valid(v):
-            return ObjectId(v)
-        raise TypeError("Not a valid ObjectId or str ObjectId")
 
 
 class DocumentRecord(BaseModel):

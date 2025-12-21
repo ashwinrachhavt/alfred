@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
-from alfred.core.exceptions import register_exception_handlers
 from alfred.api.brand import router as brand_router
 from alfred.api.portfolio import router as portfolio_router
+from alfred.core.exceptions import register_exception_handlers
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 def make_client() -> TestClient:

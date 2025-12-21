@@ -9,7 +9,11 @@ from pydantic import BaseModel, Field
 
 from alfred.connectors.google_gmail_connector import GoogleGmailConnector
 from alfred.core.celery_client import get_celery_client
-from alfred.core.dependencies import get_interview_prep_service, get_job_application_service
+from alfred.core.dependencies import (
+    get_interview_prep_service,
+    get_job_application_service,
+    get_panel_interview_service,
+)
 from alfred.schemas.interview_prep import (
     InterviewChecklist,
     InterviewFeedback,
@@ -20,6 +24,13 @@ from alfred.schemas.interview_prep import (
     QuizAttempt,
 )
 from alfred.schemas.job_applications import JobApplicationStatus, JobApplicationUpdate
+from alfred.schemas.panel_interview import (
+    PanelFeedback,
+    PanelSession,
+    PanelSessionCreate,
+    PanelTurnRequest,
+    PanelTurnResponse,
+)
 from alfred.services.gmail import GmailService
 from alfred.services.google_oauth import load_credentials, persist_credentials
 from alfred.services.interview_checklist import InterviewChecklistService
@@ -28,6 +39,7 @@ from alfred.services.interview_prep import InterviewPrepService
 from alfred.services.interview_prep_generator import InterviewPrepDocGenerator
 from alfred.services.interview_prep_renderer import InterviewPrepRenderer
 from alfred.services.interview_quiz_generator import InterviewQuizGenerator
+from alfred.services.panel_interview_simulator import PanelInterviewService
 
 router = APIRouter(prefix="/api/interviews", tags=["interviews"])
 
@@ -55,6 +67,10 @@ def get_gmail_connector_maybe() -> GoogleGmailConnector | None:
     )
 
 
+def get_panel_simulator() -> PanelInterviewService:
+    return get_panel_interview_service()
+
+
 class InterviewDetectRequest(BaseModel):
     """Detect (or directly supply) interview details and create a prep record."""
 
@@ -73,6 +89,55 @@ class InterviewDetectResponse(BaseModel):
     interview_prep_id: str
     detected: dict[str, Any]
     task_id: str | None = None
+
+
+@router.post("/panel/session", response_model=PanelSession)
+async def create_panel_session(
+    payload: PanelSessionCreate,
+    svc: PanelInterviewService = Depends(get_panel_simulator),
+) -> PanelSession:
+    return svc.create_session(payload)
+
+
+@router.get("/panel/session/{session_id}", response_model=PanelSession)
+async def get_panel_session(
+    session_id: str,
+    svc: PanelInterviewService = Depends(get_panel_simulator),
+) -> PanelSession:
+    return svc.get_session(session_id)
+
+
+@router.post("/panel/session/{session_id}/turn", response_model=PanelTurnResponse)
+async def panel_turn(
+    session_id: str,
+    payload: PanelTurnRequest,
+    svc: PanelInterviewService = Depends(get_panel_simulator),
+) -> PanelTurnResponse:
+    return svc.submit_turn(session_id, payload)
+
+
+@router.post("/panel/session/{session_id}/pause", response_model=PanelSession)
+async def pause_panel_session(
+    session_id: str,
+    svc: PanelInterviewService = Depends(get_panel_simulator),
+) -> PanelSession:
+    return svc.pause(session_id)
+
+
+@router.post("/panel/session/{session_id}/resume", response_model=PanelSession)
+async def resume_panel_session(
+    session_id: str,
+    svc: PanelInterviewService = Depends(get_panel_simulator),
+) -> PanelSession:
+    return svc.resume(session_id)
+
+
+@router.get("/panel/session/{session_id}/feedback", response_model=PanelFeedback)
+async def panel_feedback(
+    session_id: str,
+    svc: PanelInterviewService = Depends(get_panel_simulator),
+) -> PanelFeedback:
+    return svc.feedback(session_id)
 
 
 @router.post("/detect", response_model=InterviewDetectResponse)

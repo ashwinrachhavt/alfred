@@ -3,14 +3,14 @@ Google Gmail Connector Module | Google OAuth Credentials | Gmail API
 """
 
 import base64
-import inspect
 import re
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Optional
 
-from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+
+from alfred.connectors.google_oauth_session import GoogleOAuthSession
 
 
 class GoogleGmailConnector:
@@ -28,48 +28,22 @@ class GoogleGmailConnector:
         self._credentials = credentials
         self._user_id = user_id
         self._on_refresh = on_credentials_refreshed
+        self._oauth_session = GoogleOAuthSession(
+            credentials, on_credentials_refreshed=on_credentials_refreshed
+        )
         self.service = None
 
     async def _get_credentials(
         self,
     ) -> Credentials:
         """Get valid Google OAuth credentials."""
-        if not all(
-            [
-                self._credentials.client_id,
-                self._credentials.client_secret,
-                self._credentials.refresh_token,
-            ]
-        ):
-            raise ValueError(
-                "Google OAuth credentials (client_id, client_secret, refresh_token) must be set"
-            )
-
-        if self._credentials and not self._credentials.expired:
+        try:
+            self._credentials = await self._oauth_session.get_credentials()
             return self._credentials
-
-        # Create credentials from refresh token
-        self._credentials = Credentials(
-            token=self._credentials.token,
-            refresh_token=self._credentials.refresh_token,
-            token_uri=self._credentials.token_uri,
-            client_id=self._credentials.client_id,
-            client_secret=self._credentials.client_secret,
-            scopes=self._credentials.scopes,
-            expiry=self._credentials.expiry,
-        )
-
-        if self._credentials.expired or not getattr(self._credentials, "valid", False):
-            try:
-                self._credentials.refresh(Request())
-                if self._on_refresh is not None:
-                    result = self._on_refresh(self._credentials)
-                    if inspect.isawaitable(result):
-                        await result  # type: ignore[func-returns-value]
-            except Exception as e:
-                raise Exception(f"Failed to refresh Google OAuth credentials: {e!s}") from e
-
-        return self._credentials
+        except ValueError:
+            raise
+        except Exception as exc:
+            raise RuntimeError(f"Failed to refresh Google OAuth credentials: {exc!s}") from exc
 
     async def _get_service(self):
         """Get the Gmail service instance using credentials."""
@@ -80,8 +54,8 @@ class GoogleGmailConnector:
             credentials = await self._get_credentials()
             self.service = build("gmail", "v1", credentials=credentials)
             return self.service
-        except Exception as e:
-            raise Exception(f"Failed to create Gmail service: {e!s}") from e
+        except Exception as exc:
+            raise RuntimeError(f"Failed to create Gmail service: {exc!s}") from exc
 
     async def get_user_profile(self) -> tuple[dict[str, Any], str | None]:
         """Fetch user's Gmail profile information."""

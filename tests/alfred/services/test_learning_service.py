@@ -3,11 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
-from sqlmodel import Session, SQLModel, select
-
 from alfred.models.learning import LearningReview
 from alfred.services.learning_service import LearningService
+from sqlalchemy import create_engine
+from sqlmodel import Session, SQLModel, select
 
 
 @pytest.fixture()
@@ -84,4 +83,3 @@ def test_planner_prioritizes_due_reviews(db_session: Session) -> None:
     assert items
     assert items[0]["topic_id"] == topic.id
     assert items[0]["review_id"] is not None
-

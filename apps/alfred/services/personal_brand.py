@@ -20,7 +20,6 @@ from alfred.services.agentic_rag import get_context_chunks
 from alfred.services.company_researcher import CompanyResearchService
 from alfred.services.llm_service import LLMService
 
-
 _SYSTEM = load_prompt("personal_brand", "system.md")
 _INVENTORY = load_prompt("personal_brand", "inventory.md")
 _STORIES = load_prompt("personal_brand", "stories.md")
@@ -60,7 +59,9 @@ def build_experience_inventory(payload: InventoryRequest) -> ExperienceInventory
         f"=== Projects ===\n{payload.projects_text}" if payload.projects_text.strip() else "",
         f"=== Extra Context ===\n{payload.extra_context}" if payload.extra_context.strip() else "",
     )
-    retrieved = "" if provided else _kb_context("resume projects impact skills technologies", k=payload.k)
+    retrieved = (
+        "" if provided else _kb_context("resume projects impact skills technologies", k=payload.k)
+    )
     context = _join_nonempty(provided, retrieved)
 
     if not context:
@@ -96,7 +97,9 @@ def generate_star_stories(payload: StoriesRequest) -> StoriesResponse:
         )
     )
 
-    if not inv.experiences and not (payload.resume_text or payload.linkedin_text or payload.github_text):
+    if not inv.experiences and not (
+        payload.resume_text or payload.linkedin_text or payload.github_text
+    ):
         raise ValueError(
             "No profile context found. Provide resume/linkedin/github text or ingest your profile into the KB."
         )
@@ -211,7 +214,9 @@ def generate_outreach(payload: OutreachRequest) -> OutreachResponse:
         recipient_line,
         f"Channel: {payload.channel}",
         f"=== Company Research Summary ===\n{company_report}" if company_report else "",
-        f"=== Job Description ===\n{payload.job_description.strip()}" if payload.job_description else "",
+        f"=== Job Description ===\n{payload.job_description.strip()}"
+        if payload.job_description
+        else "",
         f"=== Best-Fit Stories JSON ===\n{StoriesResponse(stories=stories).model_dump_json()}",
         f"=== Inventory JSON ===\n{inv.model_dump_json()}",
         f"=== Additional KB Context ===\n{kb_company}" if kb_company else "",
@@ -230,9 +235,7 @@ def generate_outreach(payload: OutreachRequest) -> OutreachResponse:
     linkedin_message = (resp.linkedin_message or "").strip()
     if len(linkedin_message) > 300:
         linkedin_message = linkedin_message[:297].rstrip() + "..."
-    return resp.model_copy(
-        update={"sources": merged_sources, "linkedin_message": linkedin_message}
-    )
+    return resp.model_copy(update={"sources": merged_sources, "linkedin_message": linkedin_message})
 
 
 def generate_portfolio_model(inv: ExperienceInventory) -> PortfolioModel:
@@ -245,7 +248,9 @@ def generate_portfolio_model(inv: ExperienceInventory) -> PortfolioModel:
     )
 
 
-def render_portfolio_html(model: PortfolioModel, *, inventory: ExperienceInventory | None = None) -> str:
+def render_portfolio_html(
+    model: PortfolioModel, *, inventory: ExperienceInventory | None = None
+) -> str:
     title = html.escape(model.title)
     tagline = html.escape(model.tagline)
     about = html.escape(model.about)
@@ -256,11 +261,7 @@ def render_portfolio_html(model: PortfolioModel, *, inventory: ExperienceInvento
 
     inv_block = ""
     if inventory and inventory.highlights:
-        inv_block = (
-            "<section><h2>Highlights</h2>"
-            + _ul(inventory.highlights)
-            + "</section>"
-        )
+        inv_block = "<section><h2>Highlights</h2>" + _ul(inventory.highlights) + "</section>"
 
     generated_at = time.strftime("%Y-%m-%d %H:%M:%S")
     return f"""<!doctype html>

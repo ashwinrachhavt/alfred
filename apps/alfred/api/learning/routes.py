@@ -27,8 +27,8 @@ from alfred.schemas.learning import (
     TopicOut,
     TopicUpdate,
 )
-from alfred.services.learning_service import LearningService
 from alfred.services.graph_service import GraphService
+from alfred.services.learning_service import LearningService
 
 router = APIRouter(prefix="/api/learning", tags=["learning"])
 
@@ -172,7 +172,9 @@ def delete_topic(topic_id: int, session: Session = Depends(get_db_session)) -> N
     svc.delete_topic(topic)
 
 
-@router.post("/topics/{topic_id}/resources", response_model=ResourceOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/topics/{topic_id}/resources", response_model=ResourceOut, status_code=status.HTTP_201_CREATED
+)
 def add_resource(
     topic_id: int,
     payload: ResourceCreate,
@@ -262,7 +264,9 @@ def complete_review(
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
     try:
-        updated = svc.complete_review(review=review, score=payload.score, attempt_id=payload.attempt_id)
+        updated = svc.complete_review(
+            review=review, score=payload.score, attempt_id=payload.attempt_id
+        )
         return _review_out(updated)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -293,7 +297,9 @@ def graph(
             raise HTTPException(status_code=400, detail="topic_id is required for backend=neo4j")
         if not (settings.neo4j_uri and settings.neo4j_user and settings.neo4j_password):
             raise HTTPException(status_code=400, detail="Neo4j is not configured")
-        gs = GraphService(uri=settings.neo4j_uri, user=settings.neo4j_user, password=settings.neo4j_password)
+        gs = GraphService(
+            uri=settings.neo4j_uri, user=settings.neo4j_user, password=settings.neo4j_password
+        )
         try:
             data = gs.fetch_topic_subgraph(topic_id=str(topic_id), limit=400)
         finally:
@@ -331,6 +337,8 @@ def retention(session: Session = Depends(get_db_session)) -> RetentionMetric:
 
 
 @router.get("/gaps")
-def gaps(session: Session = Depends(get_db_session), limit: int = 20, min_mentions: int = 3) -> dict:
+def gaps(
+    session: Session = Depends(get_db_session), limit: int = 20, min_mentions: int = 3
+) -> dict:
     svc = LearningService(session)
     return {"items": svc.gap_suggestions(limit=limit, min_mentions=min_mentions)}

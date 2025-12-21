@@ -4,8 +4,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Optional
 
-from bson import ObjectId
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from alfred.schemas.object_id import _ObjectIdOrStr
 
 
 class JobApplicationStatus(str, Enum):
@@ -14,22 +15,6 @@ class JobApplicationStatus(str, Enum):
     offer = "Offer"
     rejected = "Rejected"
     withdrawn = "Withdrawn"
-
-
-class _ObjectIdOrStr(ObjectId):
-    @classmethod
-    def __get_validators__(cls):  # type: ignore[override]
-        yield cls.validate
-
-    @classmethod
-    def validate(cls, v: Any, _info: Any = None) -> ObjectId:  # noqa: D401
-        if v is None:
-            return v
-        if isinstance(v, ObjectId):
-            return v
-        if isinstance(v, str) and ObjectId.is_valid(v):
-            return ObjectId(v)
-        raise TypeError("Not a valid ObjectId or str ObjectId")
 
 
 class JobApplicationRecord(BaseModel):

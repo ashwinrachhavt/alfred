@@ -4,7 +4,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
 ExperienceKind = Literal["job", "project", "publication", "talk", "article", "other"]
 
 
