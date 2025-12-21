@@ -5,7 +5,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Environment is loaded by Pydantic Settings (see alfred.core.settings).
 from alfred.api import register_routes
-from alfred.core.dependencies import get_doc_storage_service
+from alfred.core.dependencies import (
+    get_company_insights_service,
+    get_company_interviews_service,
+    get_culture_fit_profile_service,
+    get_doc_storage_service,
+    get_interview_prep_service,
+    get_job_application_service,
+)
 from alfred.core.exceptions import register_exception_handlers
 from alfred.core.logging import setup_logging
 from alfred.core.settings import settings
@@ -42,3 +49,33 @@ def _ensure_indexes_on_startup() -> None:
         logging.getLogger(__name__).info("DocStorage indexes ensured")
     except Exception as exc:  # pragma: no cover - external dependency
         logging.getLogger(__name__).warning("Failed to ensure DocStorage indexes: %s", exc)
+
+    try:
+        get_interview_prep_service().ensure_indexes()
+        logging.getLogger(__name__).info("InterviewPrep indexes ensured")
+    except Exception as exc:  # pragma: no cover - external dependency
+        logging.getLogger(__name__).warning("Failed to ensure InterviewPrep indexes: %s", exc)
+
+    try:
+        get_company_insights_service().ensure_indexes()
+        logging.getLogger(__name__).info("CompanyInsights indexes ensured")
+    except Exception as exc:  # pragma: no cover - external dependency
+        logging.getLogger(__name__).warning("Failed to ensure CompanyInsights indexes: %s", exc)
+
+    try:
+        get_company_interviews_service().ensure_indexes()
+        logging.getLogger(__name__).info("CompanyInterviews indexes ensured")
+    except Exception as exc:  # pragma: no cover - external dependency
+        logging.getLogger(__name__).warning("Failed to ensure CompanyInterviews indexes: %s", exc)
+
+    try:
+        get_job_application_service().ensure_indexes()
+        logging.getLogger(__name__).info("JobApplication indexes ensured")
+    except Exception as exc:  # pragma: no cover - external dependency
+        logging.getLogger(__name__).warning("Failed to ensure JobApplication indexes: %s", exc)
+
+    try:
+        get_culture_fit_profile_service().ensure_indexes()
+        logging.getLogger(__name__).info("CultureFitProfile indexes ensured")
+    except Exception as exc:  # pragma: no cover - external dependency
+        logging.getLogger(__name__).warning("Failed to ensure CultureFitProfile indexes: %s", exc)

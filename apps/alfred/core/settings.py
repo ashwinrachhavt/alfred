@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     gcp_pubsub_topic: Optional[str] = Field(default=None, alias="GCP_PUBSUB_TOPIC")
     token_store_dir: str = Field(default=".alfred_data/tokens", alias="TOKEN_STORE_DIR")
     enable_gmail: bool = Field(default=False, alias="ENABLE_GMAIL")
+    enable_gmail_interview_poll: bool = Field(
+        default=False,
+        alias="ENABLE_GMAIL_INTERVIEW_POLL",
+    )
 
     gmail_push_oidc_audience: Optional[str] = Field(default=None, alias="GMAIL_PUSH_OIDC_AUDIENCE")
 
@@ -171,6 +175,49 @@ class Settings(BaseSettings):
     company_research_collection: str = Field(
         default="company_research_reports",
         alias="COMPANY_RESEARCH_COLLECTION",
+    )
+    company_insights_collection: str = Field(
+        default="company_culture_insights",
+        alias="COMPANY_INSIGHTS_COLLECTION",
+    )
+    company_insights_cache_ttl_hours: int = Field(
+        default=24 * 14,
+        alias="COMPANY_INSIGHTS_CACHE_TTL_HOURS",
+        ge=0,
+        le=24 * 365,
+        description="0 disables freshness checks (always return cached unless refresh=true).",
+    )
+    company_interviews_collection: str = Field(
+        default="company_interview_experiences",
+        alias="COMPANY_INTERVIEWS_COLLECTION",
+    )
+
+    # Interview prep
+    interview_prep_collection: str = Field(
+        default="interview_preps",
+        alias="INTERVIEW_PREP_COLLECTION",
+    )
+
+    # Culture fit
+    culture_fit_profiles_collection: str = Field(
+        default="culture_fit_profiles",
+        alias="CULTURE_FIT_PROFILES_COLLECTION",
+    )
+    job_applications_collection: str = Field(
+        default="job_applications",
+        alias="JOB_APPLICATIONS_COLLECTION",
+    )
+    enable_interview_reminders: bool = Field(
+        default=False,
+        alias="ENABLE_INTERVIEW_REMINDERS",
+    )
+    enable_interview_calendar_events: bool = Field(
+        default=False,
+        alias="ENABLE_INTERVIEW_CALENDAR_EVENTS",
+    )
+    interview_notifications_slack_channel: str | None = Field(
+        default=None,
+        alias="INTERVIEW_NOTIFICATIONS_SLACK_CHANNEL",
     )
 
     # Text cleaning

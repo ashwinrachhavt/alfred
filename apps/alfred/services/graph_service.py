@@ -77,6 +77,73 @@ if _NEO4J_AVAILABLE:
             ON CREATE SET r.created_at = timestamp()
             """
             self._run(query, {"from": from_name, "to": to_name})
+
+        def upsert_topic_node(self, *, topic_id: str, name: Optional[str] = None) -> None:
+            query = """
+            MERGE (t:Topic {topic_id: $topic_id})
+            SET t.name = coalesce($name, t.name),
+                t.updated_at = timestamp()
+            """
+            self._run(query, {"topic_id": topic_id, "name": name})
+
+        def link_topic_to_document(
+            self, *, topic_id: str, doc_id: str, rel_type: str = "HAS_RESOURCE"
+        ) -> None:
+            query = f"""
+            MATCH (t:Topic {{topic_id: $topic_id}})
+            MATCH (d:Document {{doc_id: $doc_id}})
+            MERGE (t)-[r:{rel_type}]->(d)
+            ON CREATE SET r.created_at = timestamp()
+            """
+            self._run(query, {"topic_id": topic_id, "doc_id": doc_id})
+
+        def link_topic_to_entity(
+            self, *, topic_id: str, name: str, rel_type: str = "COVERS"
+        ) -> None:
+            query = f"""
+            MATCH (t:Topic {{topic_id: $topic_id}})
+            MATCH (e:Entity {{name: $name}})
+            MERGE (t)-[r:{rel_type}]->(e)
+            ON CREATE SET r.created_at = timestamp()
+            """
+            self._run(query, {"topic_id": topic_id, "name": name})
+
+        def fetch_topic_subgraph(self, *, topic_id: str, limit: int = 200) -> dict[str, Any]:
+            query = """
+            MATCH (t:Topic {topic_id: $topic_id})
+            OPTIONAL MATCH (t)-[:HAS_RESOURCE]->(d:Document)
+            OPTIONAL MATCH (d)-[:MENTIONS]->(e:Entity)
+            RETURN d.doc_id AS doc_id, d.title AS doc_title, d.source_url AS source_url, e.name AS entity_name
+            LIMIT $limit
+            """
+            rows = self._run(query, {"topic_id": topic_id, "limit": int(limit)})
+            nodes: list[dict[str, Any]] = [{"id": f"topic:{topic_id}", "label": f"Topic {topic_id}", "type": "topic"}]
+            edges: list[dict[str, Any]] = []
+            node_ids = {nodes[0]["id"]}
+            for r in rows:
+                doc_id = r.get("doc_id")
+                if doc_id:
+                    did = f"doc:{doc_id}"
+                    if did not in node_ids:
+                        nodes.append(
+                            {
+                                "id": did,
+                                "label": r.get("doc_title") or doc_id,
+                                "type": "document",
+                                "meta": {"source_url": r.get("source_url")},
+                            }
+                        )
+                        node_ids.add(did)
+                    edges.append({"source": f"topic:{topic_id}", "target": did, "type": "HAS_RESOURCE"})
+                entity_name = r.get("entity_name")
+                if entity_name:
+                    eid = f"entity:{entity_name}"
+                    if eid not in node_ids:
+                        nodes.append({"id": eid, "label": entity_name, "type": "entity"})
+                        node_ids.add(eid)
+                    if doc_id:
+                        edges.append({"source": f"doc:{doc_id}", "target": eid, "type": "MENTIONS"})
+            return {"nodes": nodes, "edges": edges}
 else:
 
     @dataclass
@@ -114,3 +181,17 @@ else:
             self, *, from_name: str, to_name: str, rel_type: str = "RELATED_TO"
         ) -> None:
             return
+
+        def upsert_topic_node(self, *, topic_id: str, name: Optional[str] = None) -> None:
+            return
+
+        def link_topic_to_document(
+            self, *, topic_id: str, doc_id: str, rel_type: str = "HAS_RESOURCE"
+        ) -> None:
+            return
+
+        def link_topic_to_entity(self, *, topic_id: str, name: str, rel_type: str = "COVERS") -> None:
+            return
+
+        def fetch_topic_subgraph(self, *, topic_id: str, limit: int = 200) -> dict[str, Any]:
+            return {"nodes": [], "edges": []}

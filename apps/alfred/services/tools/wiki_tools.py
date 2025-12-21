@@ -31,9 +31,7 @@ def render_wiki_lookup_markdown(query: str, top_k: int = 3) -> str:
     except Exception as exc:  # pragma: no cover - defensive path
         logger.warning("wikipedia lookup failed: %s", exc)
         return (
-            "### Wikipedia\n\n"
-            f"⚠️ Unable to retrieve Wikipedia results for: {query}.\n\n"
-            f"Error: {exc}"
+            f"### Wikipedia\n\n⚠️ Unable to retrieve Wikipedia results for: {query}.\n\nError: {exc}"
         )
 
 
