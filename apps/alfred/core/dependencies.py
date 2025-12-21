@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from alfred.services.llm_service import LLMService
     from alfred.services.mongo import MongoService
     from alfred.services.panel_interview_simulator import PanelInterviewService
+    from alfred.services.system_design import SystemDesignService
 
 
 @lru_cache(maxsize=1)
@@ -185,6 +186,17 @@ def get_panel_interview_service() -> PanelInterviewService:
         database=get_mongo_database(),
         collection_name=settings.panel_interview_sessions_collection,
         company_interviews_service=get_company_interviews_service(),
+    )
+
+
+@lru_cache(maxsize=1)
+def get_system_design_service() -> SystemDesignService:
+    from alfred.services.system_design import SystemDesignService
+
+    return SystemDesignService(
+        database=get_mongo_database(),
+        collection_name=settings.system_design_sessions_collection,
+        llm_service=get_llm_service(),
     )
 
 

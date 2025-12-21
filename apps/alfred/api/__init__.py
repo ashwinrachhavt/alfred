@@ -27,6 +27,7 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.quiz import router as quiz_router
     from alfred.api.rag import router as rag_router
     from alfred.api.system import router as system_router
+    from alfred.api.system_design import router as system_design_router
     from alfred.api.tasks import router as tasks_router
     from alfred.api.tools import router as tools_router
     from alfred.api.web import router as web_router
@@ -35,6 +36,7 @@ def register_routes(app: FastAPI) -> None:
 
     routers = [
         system_router,
+        system_design_router,
         portfolio_router,
         tasks_router,
         rag_router,
