@@ -13,6 +13,7 @@ from alfred.services.google_oauth import (
 )
 
 router = APIRouter(prefix="/api/gmail", tags=["gmail"])
+GMAIL_TOKEN_NAMESPACE = "gmail"
 
 
 def _truthy(val: str | None) -> bool:
@@ -50,17 +51,26 @@ def gmail_auth_url(state: str | None = Query(default=None)):
 
 @router.get("/oauth/callback")
 def gmail_oauth_callback(code: str, state: str | None = None):
-    exchange_code_for_tokens(user_id=None, code=code, state=state)
+    exchange_code_for_tokens(
+        user_id=None,
+        code=code,
+        state=state,
+        namespace=GMAIL_TOKEN_NAMESPACE,
+    )
     return {"ok": True}
 
 
 @router.get("/profile")
 async def gmail_profile():
-    creds = load_credentials()
+    creds = load_credentials(namespace=GMAIL_TOKEN_NAMESPACE)
     if creds is None:
         raise HTTPException(404, "No credentials found; authorize via /api/gmail/auth_url")
     connector = GoogleGmailConnector(
-        creds, user_id=None, on_credentials_refreshed=lambda c: persist_credentials(None, c)
+        creds,
+        user_id=None,
+        on_credentials_refreshed=lambda c: persist_credentials(
+            None, c, namespace=GMAIL_TOKEN_NAMESPACE
+        ),
     )
     profile, err = await connector.get_user_profile()
     if err:

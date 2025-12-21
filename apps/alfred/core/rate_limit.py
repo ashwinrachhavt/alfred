@@ -30,6 +30,11 @@ DEFAULT_POLICIES: dict[str, RateLimitPolicy] = {
     "langsearch": RateLimitPolicy(max_per_minute=60, min_interval_s=1.0),
     # Self-hosted SearxNG typically can handle more; keep a mild throttle.
     "searx": RateLimitPolicy(max_per_minute=120, min_interval_s=0.25),
+    # Public sites that may gate content; keep conservative.
+    "blind": RateLimitPolicy(max_per_minute=30, min_interval_s=1.0),
+    "levels": RateLimitPolicy(max_per_minute=60, min_interval_s=0.5),
+    # Paid OpenWeb Ninja Glassdoor API: avoid bursts.
+    "glassdoor": RateLimitPolicy(max_per_minute=120, min_interval_s=0.25),
 }
 
 
@@ -48,7 +53,9 @@ class WebRateLimiter:
         self._minute_count: dict[str, int] = {}
 
     def policy_for(self, provider: str) -> RateLimitPolicy:
-        return DEFAULT_POLICIES.get(provider, RateLimitPolicy(max_per_minute=60, min_interval_s=1.0))
+        return DEFAULT_POLICIES.get(
+            provider, RateLimitPolicy(max_per_minute=60, min_interval_s=1.0)
+        )
 
     def wait(self, provider: str, *, policy: RateLimitPolicy | None = None) -> None:
         policy = policy or self.policy_for(provider)
@@ -127,4 +134,3 @@ class WebRateLimiter:
 
 
 web_rate_limiter = WebRateLimiter()
-

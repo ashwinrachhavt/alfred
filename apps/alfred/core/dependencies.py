@@ -19,10 +19,15 @@ if TYPE_CHECKING:
     from alfred.connectors.mongo_connector import MongoConnector
     from alfred.connectors.web_connector import WebConnector
     from alfred.services.agents.mind_palace_agent import KnowledgeAgentService
+    from alfred.services.company_insights import CompanyInsightsService
+    from alfred.services.company_interviews import CompanyInterviewsService
     from alfred.services.company_researcher import CompanyResearchService
+    from alfred.services.culture_fit_profiles import CultureFitProfileService
     from alfred.services.doc_storage import DocStorageService
     from alfred.services.extraction_service import ExtractionService
     from alfred.services.graph_service import GraphService
+    from alfred.services.interview_prep import InterviewPrepService
+    from alfred.services.job_applications import JobApplicationService
     from alfred.services.llm_service import LLMService
     from alfred.services.mongo import MongoService
 
@@ -95,6 +100,27 @@ def get_doc_storage_service() -> DocStorageService:
 
 
 @lru_cache(maxsize=1)
+def get_interview_prep_service() -> InterviewPrepService:
+    from alfred.services.interview_prep import InterviewPrepService
+
+    return InterviewPrepService(database=get_mongo_database())
+
+
+@lru_cache(maxsize=1)
+def get_job_application_service() -> JobApplicationService:
+    from alfred.services.job_applications import JobApplicationService
+
+    return JobApplicationService(database=get_mongo_database())
+
+
+@lru_cache(maxsize=1)
+def get_culture_fit_profile_service() -> CultureFitProfileService:
+    from alfred.services.culture_fit_profiles import CultureFitProfileService
+
+    return CultureFitProfileService(database=get_mongo_database())
+
+
+@lru_cache(maxsize=1)
 def get_firecrawl_client() -> FirecrawlClient:
     from alfred.connectors.firecrawl_connector import FirecrawlClient
 
@@ -126,6 +152,27 @@ def get_company_research_service() -> CompanyResearchService:
         fallback_search=get_fallback_web_search_connector(),
         firecrawl=get_firecrawl_client(),
         mongo=mongo,
+    )
+
+
+@lru_cache(maxsize=1)
+def get_company_insights_service() -> CompanyInsightsService:
+    from alfred.services.company_insights import CompanyInsightsService
+
+    return CompanyInsightsService(
+        database=get_mongo_database(),
+        collection_name=settings.company_insights_collection,
+        cache_ttl_hours=settings.company_insights_cache_ttl_hours,
+    )
+
+
+@lru_cache(maxsize=1)
+def get_company_interviews_service() -> CompanyInterviewsService:
+    from alfred.services.company_interviews import CompanyInterviewsService
+
+    return CompanyInterviewsService(
+        database=get_mongo_database(),
+        collection_name=settings.company_interviews_collection,
     )
 
 

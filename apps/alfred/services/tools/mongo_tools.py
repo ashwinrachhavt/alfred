@@ -47,10 +47,10 @@ def query_mongo(collection: str, filter_json: str, limit: int = 20) -> str:
         # Serialize using default=str to handle ObjectId, datetime, etc.
         as_json = json.dumps(docs, ensure_ascii=False, indent=2, default=str)
         header = f"### Mongo Query — collection `{coll}`\n\n"
-        meta = f"Filter: `{json.dumps(filt, ensure_ascii=False)}`\n" f"Limit: {n}\n\n"
+        meta = f"Filter: `{json.dumps(filt, ensure_ascii=False)}`\nLimit: {n}\n\n"
         body = f"```json\n{as_json}\n```"
         out = header + meta + body
         return out
     except Exception as exc:  # pragma: no cover - defensive path
         logger.warning("mongo query failed: %s", exc)
-        return f"### Mongo Query — collection `{coll}`\n\n" f"⚠️ Query failed. Error: {exc}"
+        return f"### Mongo Query — collection `{coll}`\n\n⚠️ Query failed. Error: {exc}"
