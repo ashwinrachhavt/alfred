@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
@@ -163,13 +163,18 @@ def update_topic(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.delete("/topics/{topic_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_topic(topic_id: int, session: Session = Depends(get_db_session)) -> None:
+@router.delete(
+    "/topics/{topic_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+)
+def delete_topic(topic_id: int, session: Session = Depends(get_db_session)) -> Response:
     svc = LearningService(session)
     topic = svc.get_topic(topic_id)
     if not topic:
         raise HTTPException(status_code=404, detail="Topic not found")
     svc.delete_topic(topic)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

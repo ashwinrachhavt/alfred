@@ -78,3 +78,22 @@ class CompleteReviewRequest(BaseModel):
 class GraphSummary(BaseModel):
     nodes: list[dict]
     edges: list[dict]
+
+
+class LinkQuality(BaseModel):
+    semantic_score: float
+    tag_overlap: float
+    topic_match: bool
+    citation_overlap: int
+    temporal_proximity_days: float | None = None
+    composite_score: float
+    confidence: str
+
+
+class LinkSuggestion(BaseModel):
+    to_card_id: int
+    to_title: str
+    to_topic: str | None = None
+    to_tags: list[str] | None = None
+    reason: str
+    scores: LinkQuality

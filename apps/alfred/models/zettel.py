@@ -51,6 +51,7 @@ class ZettelCard(Model, table=True):
     status: str = Field(default="active", sa_column=Column(String(32), nullable=False))
     importance: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     confidence: float = Field(default=0.0, sa_column=Column(Float, nullable=False))
+    embedding: list[float] | None = Field(default=None, sa_column=Column(JSON, nullable=True))
 
 
 class ZettelLink(Model, table=True):

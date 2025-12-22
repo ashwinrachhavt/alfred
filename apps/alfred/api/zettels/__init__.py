@@ -1,1 +1,5 @@
-# Namespace package for Zettelkasten endpoints.
+"""Zettelkasten API routes package."""
+
+from .routes import router
+
+__all__ = ["router"]
