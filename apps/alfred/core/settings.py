@@ -159,8 +159,13 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = Field(
-        default=f"sqlite:///{DEFAULT_DB_PATH}",
+        default="postgresql+psycopg://localhost:5432/alfred",
         alias="DATABASE_URL",
+    )
+    doc_storage_backend: str = Field(
+        default="postgres",
+        alias="DOC_STORAGE_BACKEND",
+        description="Choose storage backend for documents/notes: 'postgres' (default) or 'mongo'.",
     )
 
     # MongoDB
@@ -300,6 +305,26 @@ class Settings(BaseSettings):
     )
     # Scripts / utilities
     recursive_depth: int = Field(default=0, alias="RECURSIVE_DEPTH")
+
+    # Outreach discovery
+    apollo_api_key: str | None = Field(default=None, alias="APOLLO_API_KEY")
+    hunter_api_key: str | None = Field(default=None, alias="HUNTER_API_KEY")
+    hunter_timeout_seconds: int = Field(default=15, alias="HUNTER_TIMEOUT_SECONDS", ge=3, le=60)
+    hunter_verify_top_n: int = Field(default=0, alias="HUNTER_VERIFY_TOP_N", ge=0, le=20)
+    snov_client_id: str | None = Field(default=None, alias="SNOV_CLIENT_ID")
+    snov_client_secret: str | None = Field(default=None, alias="SNOV_CLIENT_SECRET")
+    outreach_cache_path: str = Field(
+        default=".alfred_data/outreach_cache.json", alias="OUTREACH_CACHE_PATH"
+    )
+    outreach_cache_ttl_hours: int = Field(
+        default=24, alias="OUTREACH_CACHE_TTL_HOURS", ge=1, le=24 * 14
+    )
+    outreach_contacts_csv: str = Field(
+        default=".alfred_data/outreach_contacts.csv", alias="OUTREACH_CONTACTS_CSV"
+    )
+    outreach_runs_csv: str = Field(
+        default=".alfred_data/outreach_runs.csv", alias="OUTREACH_RUNS_CSV"
+    )
 
 
 @lru_cache()

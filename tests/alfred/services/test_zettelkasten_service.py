@@ -5,7 +5,14 @@ from datetime import datetime, timedelta
 from alfred.models.zettel import ZettelReview
 from alfred.services.zettelkasten_service import ZettelkastenService
 from sqlalchemy import create_engine
-from sqlmodel import Session, SQLModel, select
+from sqlmodel import Session, SQLModel
+
+try:  # avoid ImportError when sqlmodel.select is unavailable in minimal envs
+    from sqlmodel import select  # type: ignore
+except Exception:  # pragma: no cover - fallback for stripped sqlmodel
+
+    def select(*_args, **_kwargs):  # type: ignore
+        raise ImportError("sqlmodel.select not available in test environment")
 
 
 def _session() -> Session:

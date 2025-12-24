@@ -6,7 +6,14 @@ import pytest
 from alfred.models.learning import LearningReview
 from alfred.services.learning_service import LearningService
 from sqlalchemy import create_engine
-from sqlmodel import Session, SQLModel, select
+from sqlmodel import Session, SQLModel
+
+try:  # avoid ImportError when sqlmodel.select is unavailable in minimal envs
+    from sqlmodel import select  # type: ignore
+except Exception:  # pragma: no cover - fallback for stripped sqlmodel
+
+    def select(*_args, **_kwargs):  # type: ignore
+        raise ImportError("sqlmodel.select not available in test environment")
 
 
 @pytest.fixture()

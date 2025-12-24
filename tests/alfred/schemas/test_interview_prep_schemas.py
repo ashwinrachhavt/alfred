@@ -1,28 +1,28 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 
 import pytest
 from alfred.schemas.interview_prep import InterviewPrepCreate, InterviewPrepRecord
-from bson import ObjectId
 
 
 def test_interview_prep_create_valid():
     payload = InterviewPrepCreate(
-        job_application_id=str(ObjectId()),
+        job_application_id=str(uuid.uuid4()),
         company="OpenAI",
         role="AI Engineer",
         interview_date=datetime(2026, 1, 5, tzinfo=timezone.utc),
         interview_type="phone",
     )
     assert payload.company == "OpenAI"
-    assert ObjectId.is_valid(str(payload.job_application_id))
+    uuid.UUID(str(payload.job_application_id))
 
 
 def test_interview_prep_record_validation_allows_extra_id():
     record = {
-        "_id": ObjectId(),
-        "job_application_id": ObjectId(),
+        "_id": str(uuid.uuid4()),
+        "job_application_id": str(uuid.uuid4()),
         "company": "ExampleCo",
         "role": "Backend Engineer",
         "generated_at": datetime.now(tz=timezone.utc),

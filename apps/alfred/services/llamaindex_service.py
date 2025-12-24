@@ -9,7 +9,7 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
 
 from alfred.core.settings import settings
-from alfred.services.doc_storage import DocStorageService
+from alfred.services.doc_storage_pg import DocStorageService
 
 logger = logging.getLogger(__name__)
 

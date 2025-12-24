@@ -4,16 +4,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from bson import ObjectId
-from pymongo.collection import Collection
-from pymongo.database import Database
-
 from alfred.core.settings import settings
 from alfred.schemas.culture_fit import (
     CultureFitProfileRecord,
     CultureFitProfileUpsert,
     UserValuesProfile,
 )
+from alfred.services.mongo import MongoService
 
 
 def _utcnow() -> datetime:
@@ -22,17 +19,12 @@ def _utcnow() -> datetime:
 
 @dataclass
 class CultureFitProfileService:
-    """Mongo-backed storage for user culture-fit preference profiles."""
+    """Postgres-backed storage for user culture-fit preference profiles."""
 
-    database: Database | None = None
     collection_name: str = settings.culture_fit_profiles_collection
 
     def __post_init__(self) -> None:
-        if self.database is None:
-            from alfred.connectors.mongo_connector import MongoConnector
-
-            self.database = MongoConnector().database
-        self._collection: Collection = self.database.get_collection(self.collection_name)
+        self._collection = MongoService(default_collection=self.collection_name)
 
     # -----------------
     # Indexes
@@ -63,10 +55,10 @@ class CultureFitProfileService:
             "profile": profile.model_dump(mode="json"),
             "updated_at": now,
         }
-        existing = self._collection.find_one({"user_id": user_id}, projection={"_id": 1})
+        existing = self._collection.find_one({"user_id": user_id})
         if existing:
             self._collection.update_one({"user_id": user_id}, {"$set": update})
-            return str(existing["_id"])
+            return str(existing.get("_id") or user_id)
 
         doc = dict(update)
         doc["created_at"] = now
@@ -87,8 +79,6 @@ class CultureFitProfileService:
         out = dict(doc)
         if "_id" in out:
             out["id"] = str(out.pop("_id"))
-        if isinstance(out.get("user_id"), ObjectId):
-            out["user_id"] = str(out["user_id"])
         return out
 
 

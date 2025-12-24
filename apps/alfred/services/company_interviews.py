@@ -6,14 +6,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from pymongo import UpdateOne
-from pymongo.collection import Collection
-from pymongo.database import Database
+from sqlalchemy import select
+from sqlmodel import Session
 
-from alfred.core.exceptions import ConfigurationError, ServiceUnavailableError
+from alfred.core.database import SessionLocal
+from alfred.core.exceptions import ConfigurationError
 from alfred.core.settings import settings
+from alfred.models.company import CompanyInterviewRow
 from alfred.schemas.company_interviews import (
-    CompanyInterviewExperience,
     InterviewProvider,
     InterviewSyncSummary,
 )
@@ -57,29 +57,15 @@ def _source_id(
 
 @dataclass
 class CompanyInterviewsService:
-    """Interview-focused collector + storage layer.
+    """Collects and stores interview experiences in Postgres."""
 
-    Stores each interview experience as an individual Mongo document so we can:
-    - Incrementally sync new experiences
-    - Query/paginate by role/location/date/provider
-    - Run downstream red-flag/culture-fit analyses efficiently
-
-    Provider strategies:
-    - Glassdoor: OpenWeb Ninja paid API (best fidelity, supports pagination).
-    - Blind: public-only via web search + Firecrawl (best-effort, may be gated).
-    """
-
-    database: Database | None = None
-    collection_name: str = settings.company_interviews_collection
     glassdoor_service: Any | None = None
     blind_service: Any | None = None
+    session: Session | None = None
 
     def __post_init__(self) -> None:
-        if self.database is None:
-            from alfred.connectors.mongo_connector import MongoConnector
-
-            self.database = MongoConnector().database
-        self._collection: Collection = self.database.get_collection(self.collection_name)
+        if self.session is None:
+            self.session = SessionLocal()
 
         if self.glassdoor_service is None:
             from alfred.services.glassdoor_service import GlassdoorService
@@ -98,63 +84,15 @@ class CompanyInterviewsService:
             )
             self.blind_service = BlindService(web=web, firecrawl=firecrawl, max_hits=10)
 
-    # -----------------
-    # Indexes
-    # -----------------
     def ensure_indexes(self) -> None:
-        """Create best-effort indexes for interview experience queries."""
-        try:
-            self._collection.create_index([("company", 1)], name="company")
-            self._collection.create_index([("provider", 1)], name="provider")
-            self._collection.create_index(
-                [("company", 1), ("provider", 1)], name="company_provider"
-            )
-            self._collection.create_index([("company", 1), ("role", 1)], name="company_role")
-            self._collection.create_index(
-                [("company", 1), ("updated_at", -1)], name="company_updated_desc"
-            )
-            self._collection.create_index([("source_id", 1)], name="source_id_unique", unique=True)
-        except Exception:
-            pass
+        return
 
-    # -----------------
-    # Read API
-    # -----------------
-    def list_interviews(
-        self,
-        *,
-        company: str,
-        provider: InterviewProvider | None = None,
-        role: str | None = None,
-        limit: int = 50,
-        skip: int = 0,
-    ) -> list[dict[str, Any]]:
-        filt: dict[str, Any] = {"company": company}
-        if provider is not None:
-            filt["provider"] = provider.value
-        if role and role.strip():
-            filt["role"] = role.strip()
-
-        cursor = (
-            self._collection.find(filt, {"raw": 0})
-            .sort([("updated_at", -1)])
-            .skip(max(0, int(skip)))
-            .limit(max(1, min(int(limit), 500)))
-        )
-        return list(cursor)
-
-    # -----------------
-    # Sync / ingest
-    # -----------------
     def sync_company_interviews(
         self,
         company: str,
         *,
-        providers: Iterable[InterviewProvider] = (
-            InterviewProvider.glassdoor,
-            InterviewProvider.blind,
-        ),
-        refresh: bool = False,
+        providers: Iterable[InterviewProvider],
+        refresh: bool,
         max_items_per_provider: int = 0,
     ) -> InterviewSyncSummary:
         company = (company or "").strip()
@@ -162,7 +100,7 @@ class CompanyInterviewsService:
             raise ValueError("company is required")
 
         summary = InterviewSyncSummary(company=company, providers=list(providers))
-        ops: list[UpdateOne] = []
+        ops: list[dict[str, Any]] = []
         now = _utcnow()
 
         for provider in providers:
@@ -181,17 +119,59 @@ class CompanyInterviewsService:
             summary.warnings.append("No interview experiences found.")
             return summary
 
-        try:
-            res = self._collection.bulk_write(ops, ordered=False)
-            summary.inserted = int(getattr(res, "upserted_count", 0) or 0)
-            summary.updated = int(getattr(res, "modified_count", 0) or 0)
-            summary.total_seen = len(ops)
-            return summary
-        except Exception as exc:
-            raise ServiceUnavailableError(
-                f"Failed to persist interview experiences: {exc}"
-            ) from exc
+        inserted = 0
+        updated = 0
+        with self.session as s:
+            for op in ops:
+                filt = op["filter"]
+                data = op["data"]
+                sid = filt["source_id"]
+                row = s.exec(
+                    select(CompanyInterviewRow).where(CompanyInterviewRow.source_id == sid)
+                ).first()
+                if row is None:
+                    s.add(data)
+                    inserted += 1
+                else:
+                    for attr, val in data.__dict__.items():
+                        if attr in {"id", "created_at"}:
+                            continue
+                        setattr(row, attr, val)
+                    updated += 1
+            s.commit()
 
+        summary.inserted = inserted
+        summary.updated = updated
+        summary.total_seen = len(ops)
+        return summary
+
+    def list_interviews(
+        self,
+        *,
+        company: str,
+        provider: InterviewProvider | None = None,
+        role: str | None = None,
+        limit: int = 50,
+        skip: int = 0,
+    ) -> list[dict[str, Any]]:
+        company = (company or "").strip()
+        if not company:
+            raise ValueError("company is required")
+
+        with self.session as s:
+            stmt = select(CompanyInterviewRow).where(CompanyInterviewRow.company == company)
+            if provider:
+                stmt = stmt.where(CompanyInterviewRow.provider == provider.value)
+            if role:
+                stmt = stmt.where(CompanyInterviewRow.role == role)
+            stmt = stmt.order_by(CompanyInterviewRow.updated_at.desc())
+            stmt = stmt.offset(int(max(0, skip))).limit(int(max(1, min(limit, 500))))
+            rows = s.exec(stmt).all()
+            return [self._serialize_row(r) for r in rows]
+
+    # -----------------
+    # Providers
+    # -----------------
     def _collect_glassdoor(
         self,
         company: str,
@@ -199,7 +179,7 @@ class CompanyInterviewsService:
         now: datetime,
         refresh: bool,
         max_items: int,
-    ) -> list[UpdateOne]:
+    ) -> list[dict[str, Any]]:
         try:
             # max_items=0 -> fetch all available from the paid API (may be large).
             max_interviews = int(max_items) if int(max_items) > 0 else 0
@@ -213,16 +193,16 @@ class CompanyInterviewsService:
             logger.info("Glassdoor interview fetch failed: %s", exc)
             return []
 
-        ops: list[UpdateOne] = []
+        ops: list[dict[str, Any]] = []
         for i, raw_upstream in items:
             raw = {"normalized": i.model_dump(mode="json"), "upstream": raw_upstream}
             source_url = i.source_url
             sid = _source_id(
                 InterviewProvider.glassdoor, source_url=source_url, company=company, raw=raw
             )
-            doc = CompanyInterviewExperience(
+            data = CompanyInterviewRow(
                 company=company,
-                provider=InterviewProvider.glassdoor,
+                provider=InterviewProvider.glassdoor.value,
                 source_id=sid,
                 source_url=source_url,
                 source_title=None,
@@ -234,17 +214,25 @@ class CompanyInterviewsService:
                 process_summary=i.process_summary,
                 questions=i.questions,
                 raw=raw,
-            ).model_dump(mode="json")
-            doc["provider"] = InterviewProvider.glassdoor.value
-            doc["last_seen_at"] = now
-            doc["updated_at"] = now
-
-            update = {"$set": doc, "$setOnInsert": {"created_at": now, "ingested_at": now}}
-            ops.append(UpdateOne({"source_id": sid}, update, upsert=True))
+                created_at=now,
+                updated_at=now,
+            )
+            ops.append(
+                {
+                    "filter": {
+                        "source_id": sid,
+                        "company": company,
+                        "provider": InterviewProvider.glassdoor.value,
+                    },
+                    "data": data,
+                }
+            )
 
         return ops
 
-    def _collect_blind(self, company: str, *, now: datetime, max_items: int) -> list[UpdateOne]:
+    def _collect_blind(
+        self, company: str, *, now: datetime, max_items: int
+    ) -> list[dict[str, Any]]:
         try:
             interviews, sources = self.blind_service.search_interview_posts_sync(company)
         except Exception as exc:
@@ -254,7 +242,7 @@ class CompanyInterviewsService:
         if max_items and max_items > 0:
             interviews = interviews[: int(max_items)]
 
-        ops: list[UpdateOne] = []
+        ops: list[dict[str, Any]] = []
         title_by_url: dict[str, str] = {
             (s.url or ""): (s.title or "") for s in sources if getattr(s, "url", None)
         }
@@ -264,9 +252,9 @@ class CompanyInterviewsService:
             sid = _source_id(
                 InterviewProvider.blind, source_url=source_url, company=company, raw=raw
             )
-            doc = CompanyInterviewExperience(
+            data = CompanyInterviewRow(
                 company=company,
-                provider=InterviewProvider.blind,
+                provider=InterviewProvider.blind.value,
                 source_id=sid,
                 source_url=source_url,
                 source_title=title_by_url.get(source_url or "") or None,
@@ -278,12 +266,42 @@ class CompanyInterviewsService:
                 process_summary=i.process_summary,
                 questions=i.questions,
                 raw=raw,
-            ).model_dump(mode="json")
-            doc["provider"] = InterviewProvider.blind.value
-            doc["last_seen_at"] = now
-            doc["updated_at"] = now
-
-            update = {"$set": doc, "$setOnInsert": {"created_at": now, "ingested_at": now}}
-            ops.append(UpdateOne({"source_id": sid}, update, upsert=True))
+                created_at=now,
+                updated_at=now,
+            )
+            ops.append(
+                {
+                    "filter": {
+                        "source_id": sid,
+                        "company": company,
+                        "provider": InterviewProvider.blind.value,
+                    },
+                    "data": data,
+                }
+            )
 
         return ops
+
+    # -----------------
+    # Helpers
+    # -----------------
+    def _serialize_row(self, row: CompanyInterviewRow) -> dict[str, Any]:
+        return {
+            "id": str(row.id),
+            "company": row.company,
+            "provider": row.provider,
+            "source_id": row.source_id,
+            "source_url": row.source_url,
+            "source_title": row.source_title,
+            "role": row.role,
+            "location": row.location,
+            "interview_date": row.interview_date,
+            "difficulty": row.difficulty,
+            "outcome": row.outcome,
+            "process_summary": row.process_summary,
+            "questions": row.questions,
+            "updated_at": row.updated_at,
+        }
+
+
+__all__ = ["CompanyInterviewsService"]

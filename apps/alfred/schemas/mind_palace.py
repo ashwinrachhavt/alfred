@@ -5,8 +5,6 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from alfred.schemas.object_id import _ObjectIdOrStr
-
 
 # -----------------
 # Notes
@@ -152,8 +150,8 @@ class DocumentRecord(BaseModel):
     processed_at: datetime
     created_at: datetime
     updated_at: datetime
-    session_id: Optional[_ObjectIdOrStr] = None
-    agent_run_id: Optional[str | _ObjectIdOrStr] = None
+    session_id: Optional[str] = None
+    agent_run_id: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("captured_hour")
@@ -167,7 +165,7 @@ class DocumentRecord(BaseModel):
 class DocChunkRecord(BaseModel):
     model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
-    doc_id: _ObjectIdOrStr
+    doc_id: str
     idx: int
     text: str
     tokens: int
@@ -201,8 +199,8 @@ class NoteRecord(BaseModel):
 class MindPalaceDocumentRecord(BaseModel):
     model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
-    doc_id: _ObjectIdOrStr
-    chunk_ids: List[_ObjectIdOrStr] = Field(default_factory=list)
+    doc_id: str
+    chunk_ids: List[str] = Field(default_factory=list)
     title: Optional[str] = None
     summary: Optional[Dict[str, Any]] = None
     tags: List[str] = Field(default_factory=list)

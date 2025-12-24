@@ -15,6 +15,7 @@ from alfred.core.dependencies import (
 from alfred.core.exceptions import ServiceUnavailableError
 from alfred.schemas.company_interviews import InterviewProvider
 from alfred.services.company_outreach import generate_company_outreach
+from alfred.services.contact_discovery import discover_contacts
 
 router = APIRouter(prefix="/company", tags=["company"])
 logger = logging.getLogger(__name__)
@@ -199,6 +200,26 @@ async def company_outreach(
     except Exception as exc:
         logger.exception("Company outreach failed")
         raise ServiceUnavailableError("Company outreach failed") from exc
+
+
+@router.get("/contacts")
+async def company_contacts(
+    name: str = Query(..., description="Company name"),
+    role: str | None = Query(None, description="Optional role/title filter, e.g. 'engineering'"),
+    limit: int = Query(20, ge=1, le=50, description="Max contacts to return"),
+):
+    if not name.strip():
+        raise HTTPException(status_code=422, detail="name is required")
+
+    try:
+        contacts = discover_contacts(name, limit=limit)
+        if role:
+            role_l = role.lower()
+            contacts = [c for c in contacts if role_l in (c.get("title") or "").lower()]
+        return {"company": name, "role": role, "limit": limit, "items": contacts}
+    except Exception as exc:
+        logger.exception("Company contacts lookup failed")
+        raise ServiceUnavailableError("Company contacts lookup failed") from exc
 
 
 class OutreachRequest(BaseModel):

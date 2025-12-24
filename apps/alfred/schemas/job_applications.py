@@ -6,8 +6,6 @@ from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from alfred.schemas.object_id import _ObjectIdOrStr
-
 
 class JobApplicationStatus(str, Enum):
     applied = "Applied"
@@ -68,5 +66,4 @@ __all__ = [
     "JobApplicationRecord",
     "JobApplicationStatus",
     "JobApplicationUpdate",
-    "_ObjectIdOrStr",
 ]

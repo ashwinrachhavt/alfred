@@ -182,13 +182,13 @@ Tip
 
 ## Database & Migrations
 
-- Configure `DATABASE_URL` in `alfred/.env` (defaults to a local SQLite file).
-- Run migrations locally: `uv run alembic -c alembic.ini upgrade head`.
-- Create a new migration: `uv run alembic -c alembic.ini revision --autogenerate -m "<description>"`.
-- If you point `DATABASE_URL` at Postgres, install a driver such as `psycopg[binary]` in your environment.
-- Base models live in `alfred/models/`; extend `Model` (SQLModel) for timestamped tables with an auto primary key, and declare fields using `sqlmodel.Field(...)` (with `sa_column=Column(...)` for DB-specific types/defaults).
-- Mongo access lives in `alfred/services/mongo.py`; configure `MONGO_URI`, `MONGO_DATABASE`, and `MONGO_APP_NAME` (defaults connect to `mongodb://localhost:27017/alfred`).
-- Company research runs persist their structured reports into Mongo (collection defaults to `company_research_reports`). Use `/company/research?refresh=true` to force a fresh crawl + regeneration.
+- Configure `DATABASE_URL` (defaults to local SQLite). For Postgres: `postgresql+psycopg://postgres:<pwd>@127.0.0.1:5432/alfred`.
+- Run migrations: `PYTHONPATH=apps DATABASE_URL=... uv run alembic -c alembic.ini upgrade head` (or `make alembic-upgrade`).
+- Auto-generate migrations from model changes: `DATABASE_URL=... ./scripts/alembic_autogen.sh "describe change"` (or `make alembic-autogen msg="describe change"`).
+- Dependencies: `psycopg[binary]` (Postgres driver) + `sqlmodel` already in the env; install if missing.
+- Base models live in `alfred/models/`; extend `Model` (SQLModel) for timestamped tables with auto PKs. Use `sqlmodel.Field(...)` for columns, `sa_column=...` for DB-specific defaults.
+- Mongo access lives in `alfred/services/mongo.py`; configure `MONGO_URI`, `MONGO_DATABASE`, `MONGO_APP_NAME` (default `mongodb://localhost:27017/alfred`).
+- Company research reports are stored in Mongo (`COMPANY_RESEARCH_COLLECTION`). Use `/company/research?refresh=true` to bypass cache.
 
 ## Mind Palace: Document Storage
 
@@ -275,6 +275,25 @@ Query params
 
 Response
 - Structured JSON including `summary`, `positioning`, `suggested_topics`, `outreach_email`, `follow_up`, and `sources` combining resume/profile knowledge with live company research.
+
+> Dev note: when `APP_ENV=test|ci`, or `ALFRED_OUTREACH_STUB=1`, or no LLM keys are configured, this endpoint returns a deterministic offline stub payload so tests stay hermetic and do not call external models.
+
+> Contacts: if `APOLLO_API_KEY`, `HUNTER_API_KEY`, and/or `SNOV_CLIENT_ID`+`SNOV_CLIENT_SECRET` are set, the endpoint will include a `contacts[]` list (name, title, email, confidence, source) aggregated and cached at `OUTREACH_CACHE_PATH` (default `.alfred_data/outreach_cache.json`, TTL `OUTREACH_CACHE_TTL_HOURS`, default 24h).
+
+> Logging: each outreach call logs rows to `OUTREACH_RUNS_CSV` and `OUTREACH_CONTACTS_CSV` (defaults `.alfred_data/outreach_runs.csv` and `.alfred_data/outreach_contacts.csv`) to avoid repeat API calls and keep a lightweight offline ledger of discovered emails.
+
+### `GET /company/contacts`
+
+Query params
+- `name` (required): company name
+- `role` (optional): filter returned contacts by title substring
+- `limit` (optional, default 20, max 50)
+
+Response
+- `items`: list of contacts with `name`, `title`, `email`, `confidence`, `source`
+
+Behavior
+- Uses cached + provider-backed discovery (Apollo/Hunter/Snov) and logs runs to Postgres.
 
 ### `POST /company/outreach`
 

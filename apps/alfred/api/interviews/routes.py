@@ -3,14 +3,15 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from alfred.connectors.google_gmail_connector import GoogleGmailConnector
 from alfred.core.celery_client import get_celery_client
 from alfred.core.dependencies import (
     get_interview_prep_service,
+    get_interview_questions_service,
     get_job_application_service,
     get_panel_interview_service,
 )
@@ -19,10 +20,9 @@ from alfred.schemas.interview_prep import (
     InterviewFeedback,
     InterviewPrepCreate,
     InterviewPrepUpdate,
-    InterviewQuiz,
     PrepDoc,
-    QuizAttempt,
 )
+from alfred.schemas.interview_questions import InterviewQuestionsReport
 from alfred.schemas.job_applications import JobApplicationStatus, JobApplicationUpdate
 from alfred.schemas.panel_interview import (
     PanelFeedback,
@@ -38,7 +38,6 @@ from alfred.services.interview_detection import InterviewDetectionService
 from alfred.services.interview_prep import InterviewPrepService
 from alfred.services.interview_prep_generator import InterviewPrepDocGenerator
 from alfred.services.interview_prep_renderer import InterviewPrepRenderer
-from alfred.services.interview_quiz_generator import InterviewQuizGenerator
 from alfred.services.panel_interview_simulator import PanelInterviewService
 
 router = APIRouter(prefix="/api/interviews", tags=["interviews"])
@@ -50,10 +49,6 @@ def _utcnow() -> datetime:
 
 def get_prep_doc_generator() -> InterviewPrepDocGenerator:
     return InterviewPrepDocGenerator()
-
-
-def get_quiz_generator() -> InterviewQuizGenerator:
-    return InterviewQuizGenerator()
 
 
 def get_gmail_connector_maybe() -> GoogleGmailConnector | None:
@@ -140,6 +135,35 @@ async def panel_feedback(
     return svc.feedback(session_id)
 
 
+@router.get("/questions", response_model=InterviewQuestionsReport)
+async def interview_questions_report(
+    company: str = Query(..., description="Company name to search for"),
+    role: str = Query(
+        "Software Engineer",
+        description="Role to bias queries (e.g., AI Engineer, Backend Engineer)",
+    ),
+    max_sources: int = Query(12, ge=1, le=30, description="How many sources to scrape"),
+    max_questions: int = Query(60, ge=1, le=200, description="Maximum questions to return"),
+    use_firecrawl_search: bool = Query(
+        True, description="Also use Firecrawl /search alongside Searx/DDG"
+    ),
+    svc=Depends(get_interview_questions_service),
+) -> InterviewQuestionsReport:
+    try:
+        return await run_in_threadpool(
+            svc.generate_report,
+            company,
+            role=role,
+            max_sources=max_sources,
+            max_questions=max_questions,
+            use_firecrawl_search=use_firecrawl_search,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - network/provider errors
+        raise HTTPException(status_code=500, detail=f"Failed to generate questions: {exc}") from exc
+
+
 @router.post("/detect", response_model=InterviewDetectResponse)
 async def detect_interview(
     payload: InterviewDetectRequest,
@@ -190,18 +214,10 @@ async def detect_interview(
             detail="company and role are required (or provide email_text/gmail_message_id with extractable details)",
         )
 
-    job_app_id: str | None = None
-    raw_job_app_id = (payload.job_application_id or "").strip() or None
-    if raw_job_app_id and ObjectId.is_valid(raw_job_app_id):
-        job_app_id = raw_job_app_id
-
     source: dict[str, Any] = {}
-    raw_job_app_id = (payload.job_application_id or "").strip() or None
-    job_app_id: str | None = None
-    if raw_job_app_id and ObjectId.is_valid(raw_job_app_id):
-        job_app_id = raw_job_app_id
-    if raw_job_app_id and not job_app_id:
-        source["job_application_id_raw"] = raw_job_app_id
+    job_app_id = (payload.job_application_id or "").strip() or None
+    if job_app_id:
+        source["job_application_id_raw"] = job_app_id
     if payload.gmail_message_id:
         source["gmail_message_id"] = payload.gmail_message_id
     if subject:
@@ -366,96 +382,6 @@ def get_checklist(
     return checklist
 
 
-class GenerateQuizRequest(BaseModel):
-    num_questions: int = Field(default=12, ge=5, le=25)
-
-
-@router.post("/{interview_id}/quiz", response_model=InterviewQuiz)
-def generate_quiz(
-    interview_id: str,
-    payload: GenerateQuizRequest,
-    svc: InterviewPrepService = Depends(get_interview_prep_service),
-    gen: InterviewQuizGenerator = Depends(get_quiz_generator),
-) -> InterviewQuiz:
-    record = svc.get(interview_id)
-    if record is None:
-        raise HTTPException(status_code=404, detail="Interview prep record not found")
-
-    company = str(record.get("company") or "").strip()
-    role = str(record.get("role") or "").strip()
-    prep_doc = PrepDoc.model_validate(record.get("prep_doc") or {})
-
-    quiz = gen.generate_quiz(
-        company=company,
-        role=role,
-        prep_doc=prep_doc,
-        num_questions=payload.num_questions,
-    )
-    svc.update(interview_id, InterviewPrepUpdate(quiz=quiz))
-    return quiz
-
-
-def _normalize_answer(text: str) -> str:
-    import re
-
-    t = (text or "").lower().strip()
-    t = re.sub(r"[\s]+", " ", t)
-    t = re.sub(r"[^\w\s]+", "", t)
-    return t.strip()
-
-
-class QuizAttemptRequest(BaseModel):
-    """Submit answers for a generated quiz attempt.
-
-    `answers` is a mapping of question index -> user's answer.
-    """
-
-    answers: dict[int, str] = Field(default_factory=dict)
-
-
-@router.post("/{interview_id}/quiz/attempt")
-def submit_quiz_attempt(
-    interview_id: str,
-    payload: QuizAttemptRequest,
-    svc: InterviewPrepService = Depends(get_interview_prep_service),
-) -> dict[str, Any]:
-    record = svc.get(interview_id)
-    if record is None:
-        raise HTTPException(status_code=404, detail="Interview prep record not found")
-
-    quiz = InterviewQuiz.model_validate(record.get("quiz") or {})
-    if not quiz.questions:
-        raise HTTPException(status_code=422, detail="No quiz questions found for this interview")
-
-    total_gradable = 0
-    correct = 0
-    graded: dict[int, bool | None] = {}
-    for idx, q in enumerate(quiz.questions):
-        user_ans = payload.answers.get(idx)
-        if user_ans is None:
-            continue
-        if not q.answer:
-            graded[idx] = None
-            continue
-        total_gradable += 1
-        ok = _normalize_answer(user_ans) == _normalize_answer(q.answer)
-        graded[idx] = ok
-        if ok:
-            correct += 1
-
-    score = (correct / total_gradable) if total_gradable > 0 else 0.0
-    attempt = QuizAttempt(
-        taken_at=_utcnow(),
-        score=score,
-        answers={"by_index": payload.answers, "graded": graded},
-    )
-    quiz.attempts.append(attempt)
-    quiz.score = score
-
-    svc.update(interview_id, InterviewPrepUpdate(quiz=quiz))
-    return {"ok": True, "score": score, "gradable": total_gradable, "correct": correct}
-
-
 class FeedbackRequest(BaseModel):
     performance_rating: Optional[int] = Field(default=None, ge=1, le=10)
     confidence_rating: Optional[int] = Field(default=None, ge=1, le=10)
@@ -600,4 +526,4 @@ def interview_stats(
     }
 
 
-__all__ = ["router", "get_gmail_connector_maybe", "get_prep_doc_generator", "get_quiz_generator"]
+__all__ = ["router", "get_gmail_connector_maybe", "get_prep_doc_generator"]

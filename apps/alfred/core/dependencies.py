@@ -23,10 +23,11 @@ if TYPE_CHECKING:
     from alfred.services.company_interviews import CompanyInterviewsService
     from alfred.services.company_researcher import CompanyResearchService
     from alfred.services.culture_fit_profiles import CultureFitProfileService
-    from alfred.services.doc_storage import DocStorageService
+    from alfred.services.doc_storage_pg import DocStorageService
     from alfred.services.extraction_service import ExtractionService
     from alfred.services.graph_service import GraphService
     from alfred.services.interview_prep import InterviewPrepService
+    from alfred.services.interview_questions import InterviewQuestionsService
     from alfred.services.job_applications import JobApplicationService
     from alfred.services.llm_service import LLMService
     from alfred.services.mongo import MongoService
@@ -92,10 +93,20 @@ def get_extraction_service() -> ExtractionService | None:
 
 @lru_cache(maxsize=1)
 def get_doc_storage_service() -> DocStorageService:
-    from alfred.services.doc_storage import DocStorageService
+    # Prefer Postgres backend; fall back to Mongo if explicitly requested.
+    if settings.doc_storage_backend.lower() == "mongo":
+        from alfred.services.doc_storage import DocStorageService as MongoDocStorageService
 
-    return DocStorageService(
-        database=get_mongo_database(),
+        return MongoDocStorageService(
+            database=get_mongo_database(),
+            graph_service=get_graph_service(),
+            extraction_service=get_extraction_service(),
+        )
+
+    from alfred.services.doc_storage_pg import DocStorageService as PgDocStorageService
+
+    return PgDocStorageService(
+        session=None,
         graph_service=get_graph_service(),
         extraction_service=get_extraction_service(),
     )
@@ -162,7 +173,6 @@ def get_company_insights_service() -> CompanyInsightsService:
     from alfred.services.company_insights import CompanyInsightsService
 
     return CompanyInsightsService(
-        database=get_mongo_database(),
         collection_name=settings.company_insights_collection,
         cache_ttl_hours=settings.company_insights_cache_ttl_hours,
     )
@@ -172,9 +182,17 @@ def get_company_insights_service() -> CompanyInsightsService:
 def get_company_interviews_service() -> CompanyInterviewsService:
     from alfred.services.company_interviews import CompanyInterviewsService
 
-    return CompanyInterviewsService(
-        database=get_mongo_database(),
-        collection_name=settings.company_interviews_collection,
+    return CompanyInterviewsService()
+
+
+@lru_cache(maxsize=1)
+def get_interview_questions_service() -> InterviewQuestionsService:
+    from alfred.services.interview_questions import InterviewQuestionsService
+
+    return InterviewQuestionsService(
+        primary_search=get_primary_web_search_connector(),
+        fallback_search=get_fallback_web_search_connector(),
+        firecrawl=get_firecrawl_client(),
     )
 
 
@@ -183,7 +201,6 @@ def get_panel_interview_service() -> PanelInterviewService:
     from alfred.services.panel_interview_simulator import PanelInterviewService
 
     return PanelInterviewService(
-        database=get_mongo_database(),
         collection_name=settings.panel_interview_sessions_collection,
         company_interviews_service=get_company_interviews_service(),
     )

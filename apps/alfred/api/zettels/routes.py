@@ -15,8 +15,8 @@ from alfred.schemas.zettel import (
     ZettelLinkOut,
     ZettelReviewOut,
 )
-from alfred.services.zettelkasten_service import ZettelkastenService
 from alfred.services.zettel_embedding_service import ZettelEmbeddingService
+from alfred.services.zettelkasten_service import ZettelkastenService
 
 router = APIRouter(prefix="/api/zettels", tags=["zettels"])
 
