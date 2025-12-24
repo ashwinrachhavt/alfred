@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from alfred.core.settings import settings
+from alfred.core.utils import utcnow as _utcnow
 from alfred.schemas.system_design import (
     AutosaveRequest,
     ComponentDefinition,
@@ -30,10 +30,6 @@ from alfred.services.datastore import DataStoreService
 from alfred.services.llm_service import LLMService
 from alfred.services.system_design_heuristics import component_library, template_library
 from alfred.services.system_design_interviewer import SystemDesignInterviewer
-
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _new_id() -> str:

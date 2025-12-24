@@ -19,6 +19,7 @@ from alfred.connectors.web_connector import SearchHit, WebConnector
 from alfred.core.database import SessionLocal
 from alfred.core.exceptions import ConfigurationError
 from alfred.core.settings import settings
+from alfred.core.utils import utcnow as _utcnow
 from alfred.models.company import CompanyInterviewRow
 from alfred.prompts import load_prompt
 from alfred.schemas.company_insights import (
@@ -106,7 +107,9 @@ class CompanyResearchService:
     # Lazily construct dependencies
     def _get_primary_search(self) -> WebConnector:
         if self._primary_search is None:
-            self._primary_search = WebConnector(mode="searx", searx_k=self.search_results)
+            # Prefer self-hosted SearxNG when configured; otherwise fall back to multi-provider search.
+            mode = "searx" if (settings.searxng_host or settings.searx_host) else "multi"
+            self._primary_search = WebConnector(mode=mode, searx_k=self.search_results)
         return self._primary_search
 
     def _get_fallback_search(self) -> WebConnector:
@@ -292,10 +295,6 @@ class CompanyResearchService:
         if record_id is not None:
             payload["id"] = str(record_id)
         return payload
-
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _iso(dt: datetime) -> str:

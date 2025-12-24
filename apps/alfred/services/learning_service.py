@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Iterable
 
 from sqlalchemy import func
 from sqlmodel import Session, select
 
 from alfred.core.settings import settings
+from alfred.core.utils import STAGE_TO_DELTA, clamp_int
+from alfred.core.utils import utcnow_naive as _utcnow
 from alfred.models.learning import (
     LearningEntity,
     LearningEntityRelation,
@@ -22,21 +24,6 @@ from alfred.services.doc_storage_pg import DocStorageService
 from alfred.services.extraction_service import ExtractionService
 from alfred.services.graph_service import GraphService
 from alfred.services.llm_service import LLMService
-
-
-def _utcnow() -> datetime:
-    return datetime.utcnow()
-
-
-_STAGE_TO_DELTA: dict[int, timedelta] = {
-    1: timedelta(days=1),
-    2: timedelta(days=7),
-    3: timedelta(days=30),
-}
-
-
-def _clamp_int(val: int, *, lo: int, hi: int) -> int:
-    return max(lo, min(hi, int(val)))
 
 
 @dataclass
@@ -101,7 +88,7 @@ class LearningService:
         if "status" in fields and fields["status"] is not None:
             topic.status = str(fields["status"])
         if "progress" in fields and fields["progress"] is not None:
-            topic.progress = _clamp_int(int(fields["progress"]), lo=0, hi=100)
+            topic.progress = clamp_int(int(fields["progress"]), lo=0, hi=100)
         if "interview_at" in fields:
             topic.interview_at = fields["interview_at"]
         topic.updated_at = _utcnow()
@@ -203,7 +190,7 @@ class LearningService:
             return existing
 
         # Start at stage 1, due in 1 day
-        due_at = _utcnow() + _STAGE_TO_DELTA[1]
+        due_at = _utcnow() + STAGE_TO_DELTA[1]
         review = LearningReview(topic_id=topic_id, stage=1, iteration=1, due_at=due_at)
         self.session.add(review)
         self.session.commit()
@@ -233,11 +220,11 @@ class LearningService:
             if int(review.stage) >= 3:
                 next_stage = 3
                 next_iteration = int(review.iteration) + 1
-            due_at = now + _STAGE_TO_DELTA[next_stage]
+            due_at = now + STAGE_TO_DELTA[next_stage]
         else:
             next_stage = int(review.stage)
             next_iteration = int(review.iteration)
-            due_at = now + _STAGE_TO_DELTA[1]
+            due_at = now + STAGE_TO_DELTA[1]
 
         self.session.add(
             LearningReview(
@@ -262,7 +249,7 @@ class LearningService:
         resource_id: int | None = None,
         source_text: str | None = None,
     ) -> LearningQuiz:
-        question_count = _clamp_int(question_count, lo=1, hi=25)
+        question_count = clamp_int(question_count, lo=1, hi=25)
 
         text = (source_text or "").strip()
         chosen_resource: LearningResource | None = None
@@ -674,7 +661,7 @@ class LearningService:
         now: datetime | None = None,
     ) -> list[dict]:
         now = now or _utcnow()
-        remaining = _clamp_int(minutes_available, lo=5, hi=24 * 60)
+        remaining = clamp_int(minutes_available, lo=5, hi=24 * 60)
         items: list[dict] = []
 
         # 1) Due reviews first

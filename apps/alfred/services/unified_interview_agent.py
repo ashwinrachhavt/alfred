@@ -3,21 +3,55 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, Protocol, TypedDict
 
 from fastapi.concurrency import run_in_threadpool
 from langgraph.graph import END, START, StateGraph
 
 from alfred.core.settings import LLMProvider, settings
 from alfred.schemas.interview_questions import InterviewQuestionsReport, QuestionItem
-from alfred.schemas.panel_interview import PanelConfig, PanelSessionCreate, PanelTurnRequest
+from alfred.schemas.panel_interview import (
+    PanelConfig,
+    PanelSession,
+    PanelSessionCreate,
+    PanelTurnRequest,
+    PanelTurnResponse,
+)
 from alfred.schemas.unified_interview import (
     UnifiedInterviewOperation,
     UnifiedInterviewRequest,
     UnifiedInterviewResponse,
     UnifiedQuestion,
 )
-from alfred.services.company_researcher import CompanyResearchService
+
+
+class InterviewQuestionsServiceProtocol(Protocol):
+    """Dependency-inversion interface for collecting interview questions."""
+
+    def generate_report(
+        self,
+        company: str,
+        *,
+        role: str | None = None,
+        max_sources: int = 12,
+        max_questions: int = 60,
+        use_firecrawl_search: bool = True,
+    ) -> InterviewQuestionsReport: ...
+
+
+class CompanyResearchServiceProtocol(Protocol):
+    """Dependency-inversion interface for generating company research reports."""
+
+    def generate_report(self, company: str, *, refresh: bool = False) -> dict[str, Any]: ...
+
+
+class PanelInterviewServiceProtocol(Protocol):
+    """Dependency-inversion interface for running panel interview practice sessions."""
+
+    def create_session(self, payload: PanelSessionCreate) -> PanelSession: ...
+
+    def submit_turn(self, session_id: str, payload: PanelTurnRequest) -> PanelTurnResponse: ...
+
 
 logger = logging.getLogger(__name__)
 
@@ -246,9 +280,9 @@ def _compile_report_markdown(
 class UnifiedInterviewAgent:
     """Orchestrates interview question collection, deep research, and practice sessions."""
 
-    questions_service: InterviewQuestionsService
-    company_research_service: CompanyResearchService
-    panel_service: Any
+    questions_service: InterviewQuestionsServiceProtocol
+    company_research_service: CompanyResearchServiceProtocol
+    panel_service: PanelInterviewServiceProtocol | None = None
 
     def __post_init__(self) -> None:
         self._graph = self._build_graph()
@@ -444,6 +478,13 @@ class UnifiedInterviewAgent:
         return {"research_report": report}
 
     async def _practice_session_node(self, state: InterviewAgentState) -> dict[str, Any]:
+        if self.panel_service is None:
+            return {
+                "errors": _append_error(
+                    state, "Panel interview service is not configured for practice sessions."
+                )
+            }
+
         try:
             session_id = state.get("session_id")
             if not session_id:

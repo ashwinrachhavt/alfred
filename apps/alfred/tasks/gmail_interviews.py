@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
 from typing import Any
 
 from celery import shared_task
@@ -17,10 +16,6 @@ from alfred.services.google_oauth import load_credentials, persist_credentials
 from alfred.services.interview_detection import InterviewDetectionService
 
 logger = logging.getLogger(__name__)
-
-
-def _utcnow() -> datetime:
-    return datetime.utcnow().replace(tzinfo=timezone.utc)
 
 
 def _get_gmail_connector() -> GoogleGmailConnector | None:

@@ -121,7 +121,8 @@ def get_firecrawl_client() -> FirecrawlClient:
 def get_primary_web_search_connector() -> WebConnector:
     from alfred.connectors.web_connector import WebConnector
 
-    return WebConnector(mode="searx", searx_k=8)
+    mode = "searx" if (settings.searxng_host or settings.searx_host) else "multi"
+    return WebConnector(mode=mode, searx_k=8)
 
 
 @lru_cache(maxsize=1)

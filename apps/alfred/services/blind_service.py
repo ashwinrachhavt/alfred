@@ -12,8 +12,7 @@ from alfred.schemas.company_insights import (
     SourceInfo,
     SourceProvider,
 )
-
-_QUESTION_LINE = re.compile(r"^.{0,180}\\?$")
+from alfred.services.utils import extract_questions_qmark_only
 
 
 def _excerpt(markdown: str | None, *, max_chars: int = 500) -> str | None:
@@ -23,32 +22,6 @@ def _excerpt(markdown: str | None, *, max_chars: int = 500) -> str | None:
     if not text:
         return None
     return text[:max_chars] + ("…" if len(text) > max_chars else "")
-
-
-def _extract_questions(markdown: str | None, *, max_questions: int = 12) -> list[str]:
-    if not markdown:
-        return []
-    lines = [ln.strip(" \t-*•").strip() for ln in markdown.splitlines()]
-    q: list[str] = []
-    for ln in lines:
-        if not ln or "http" in ln.lower():
-            continue
-        if "?" not in ln:
-            continue
-        if not _QUESTION_LINE.match(ln):
-            continue
-        q.append(ln)
-        if len(q) >= max_questions:
-            break
-    # de-dupe preserving order
-    seen: set[str] = set()
-    out: list[str] = []
-    for item in q:
-        if item in seen:
-            continue
-        seen.add(item)
-        out.append(item)
-    return out
 
 
 @dataclass
@@ -146,7 +119,7 @@ class BlindService:
                     difficulty=None,
                     outcome=None,
                     process_summary=_excerpt(markdown) or hit.snippet,
-                    questions=_extract_questions(markdown),
+                    questions=extract_questions_qmark_only(markdown),
                 )
             )
         return interviews, sources

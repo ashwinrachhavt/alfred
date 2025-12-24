@@ -436,12 +436,24 @@ class LangsearchClient:
                     ]
         return []
 
-    def search(self, query: str, *, count: int = 20) -> SearchResponse:
+    def search(
+        self,
+        query: str,
+        *,
+        count: int = 10,
+        summary: bool | None = None,
+        freshness: str | None = None,
+    ) -> SearchResponse:
         web_rate_limiter.wait("langsearch")
-        # Best-effort API call shape; users can override base_url via env if needed
-        url = f"{self._base_url}/search"
+        # LangSearch Web Search API endpoint is the base URL itself, e.g.
+        # https://api.langsearch.com/v1/web-search
+        url = self._base_url
         headers = {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
-        payload = {"q": query, "count": max(1, min(count, 50))}
+        payload: dict[str, Any] = {"query": query, "count": max(1, min(count, 10))}
+        if summary is not None:
+            payload["summary"] = bool(summary)
+        if freshness:
+            payload["freshness"] = freshness
         try:
             with self._httpx.Client(timeout=10.0) as client:
                 resp = client.post(url, json=payload, headers=headers)
@@ -521,14 +533,25 @@ class WebConnector:
             logging.warning("DDG client disabled: %s", exc)
         # SearxNG client (enabled when SEARXNG_HOST/SEARX_HOST is set and langchain-community is present)
         try:
-            if settings.searxng_host or settings.searx_host:
-                self.clients["searx"] = SearxClient(k=searx_k)
+            searx_host = (
+                _env("SEARXNG_HOST")
+                or _env("SEARX_HOST")
+                or settings.searxng_host
+                or settings.searx_host
+            )
+            if searx_host:
+                self.clients["searx"] = SearxClient(host=searx_host, k=searx_k)
         except Exception as exc:
             logging.warning("Searx client not available: %s", exc)
         # Langsearch client (enabled when LANGSEARCH_API_KEY present)
         try:
-            if settings.langsearch_api_key:
-                self.clients["langsearch"] = LangsearchClient()
+            langsearch_key = _env("LANGSEARCH_API_KEY") or settings.langsearch_api_key
+            if langsearch_key:
+                base_url = _env("LANGSEARCH_BASE_URL") or settings.langsearch_base_url
+                self.clients["langsearch"] = LangsearchClient(
+                    api_key=langsearch_key,
+                    base_url=base_url,
+                )
         except Exception as exc:
             logging.warning(f"Langsearch client not available: {exc}")
 

@@ -8,8 +8,8 @@ from celery import shared_task
 
 from alfred.core.dependencies import get_interview_prep_service
 from alfred.core.settings import settings
+from alfred.core.utils import utcnow as _utcnow
 from alfred.schemas.interview_prep import InterviewPrepUpdate, InterviewReminders
-from alfred.services.interview_calendar import InterviewCalendarService
 from alfred.services.interview_prep import (
     InterviewChecklistService,
     InterviewPrepDocGenerator,
@@ -18,10 +18,6 @@ from alfred.services.interview_prep import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _utcnow() -> datetime:
-    return datetime.utcnow().replace(tzinfo=timezone.utc)
 
 
 def _send_slack(text: str) -> None:
@@ -91,21 +87,15 @@ def generate_interview_prep_task(*, interview_id: str, force: bool = False) -> d
         and not record.get("calendar_event")
     ):
         try:
-            meeting_link = None
             source = record.get("source")
             if isinstance(source, dict):
                 detected = source.get("detected")
                 if isinstance(detected, dict):
                     links = detected.get("meeting_links") or []
                     if isinstance(links, list) and links:
-                        meeting_link = str(links[0])
+                        str(links[0])
 
-            cal = InterviewCalendarService().create_interview_event(
-                company=company,
-                role=role,
-                start=interview_date,
-                meeting_link=meeting_link,
-            )
+            cal = None
             if cal is not None:
                 svc.update(interview_id, InterviewPrepUpdate(calendar_event=cal))
         except Exception:

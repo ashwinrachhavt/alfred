@@ -7,16 +7,14 @@ columns and indexes optimised for Postgres.
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 from sqlmodel import Field, SQLModel
 
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+from alfred.core.utils import utcnow as _utcnow
 
 
 class NoteRow(SQLModel, table=True):

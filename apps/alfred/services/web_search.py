@@ -5,7 +5,7 @@ from alfred.core.tracing import lf_update_span, observe
 @observe(name="web_search", as_type="tool")
 def search_web(
     q: str,
-    mode: str = "auto",
+    mode: str = "searx",
     *,
     brave_pages: int = 10,
     ddg_max_results: int = 50,

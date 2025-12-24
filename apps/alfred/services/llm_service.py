@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 from typing import Iterable, Optional, Type, TypeVar
 
-from openai import OpenAI
+from openai import AsyncOpenAI, OpenAI
 from pydantic import BaseModel
 
 from alfred.core.settings import LLMProvider, settings
@@ -27,9 +27,15 @@ class LLMService:
     - Chat, streaming, structured outputs (OpenAI).
     """
 
-    def __init__(self, *, openai_client: Optional[OpenAI] = None) -> None:
+    def __init__(
+        self,
+        *,
+        openai_client: Optional[OpenAI] = None,
+        openai_async_client: Optional[AsyncOpenAI] = None,
+    ) -> None:
         self.cfg = settings
         self._openai_client: Optional[OpenAI] = openai_client
+        self._openai_async_client: Optional[AsyncOpenAI] = openai_async_client
 
     # ---------- internal helpers ----------
 
@@ -47,6 +53,21 @@ class LLMService:
                 kwargs["organization"] = self.cfg.openai_organization
             self._openai_client = OpenAI(**kwargs)
         return self._openai_client
+
+    @property
+    def openai_async_client(self) -> AsyncOpenAI:
+        if self._openai_async_client is None:
+            kwargs: dict[str, object] = {}
+            if getattr(self.cfg, "openai_api_key", None):
+                val = self.cfg.openai_api_key.get_secret_value()  # type: ignore[union-attr]
+                if val:
+                    kwargs["api_key"] = val
+            if getattr(self.cfg, "openai_base_url", None):
+                kwargs["base_url"] = self.cfg.openai_base_url
+            if getattr(self.cfg, "openai_organization", None):
+                kwargs["organization"] = self.cfg.openai_organization
+            self._openai_async_client = AsyncOpenAI(**kwargs)
+        return self._openai_async_client
 
     # ---------- Chat (simple text) ----------
 
@@ -84,6 +105,40 @@ class LLMService:
                 stream=False,
             )
             return resp["message"]["content"]
+
+        raise ValueError(f"Unsupported provider: {provider}")
+
+    async def chat_async(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        provider: Optional[LLMProvider] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+    ) -> str:
+        """Async non-streaming text response."""
+        provider = provider or self.cfg.llm_provider
+        model = model or self.cfg.llm_model
+        temperature = temperature if temperature is not None else self.cfg.llm_temperature
+
+        if provider == LLMProvider.openai:
+            resp = await self.openai_async_client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+            )
+            return resp.choices[0].message.content or ""
+
+        if provider == LLMProvider.ollama:
+            import asyncio
+
+            return await asyncio.to_thread(
+                self.chat,
+                messages,
+                provider=provider,
+                model=model,
+                temperature=temperature,
+            )
 
         raise ValueError(f"Unsupported provider: {provider}")
 
@@ -232,6 +287,106 @@ class LLMService:
                 json_schema["required"] = list(json_schema["properties"].keys())
 
         resp = client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema.__name__,
+                    "schema": json_schema,
+                    "strict": True,
+                },
+            },
+        )
+        raw = resp.choices[0].message.content
+        return schema.model_validate_json(raw or "{}")
+
+    async def structured_async(
+        self,
+        messages: list[dict[str, str]],
+        schema: Type[T],
+        *,
+        model: Optional[str] = None,
+    ) -> T:
+        """Async structured output (OpenAI only; Ollama runs in a thread)."""
+        provider = self.cfg.llm_provider
+        if provider == LLMProvider.ollama:
+            import asyncio
+
+            return await asyncio.to_thread(self.structured, messages, schema, model=model)
+
+        client = self.openai_async_client
+        model_name = model or self.cfg.llm_model
+
+        json_schema = schema.model_json_schema()
+
+        def _deref(obj: object, defs: dict[str, object]) -> object:
+            if isinstance(obj, dict):
+                if "$ref" in obj:
+                    ref = obj["$ref"]
+                    if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                        name = ref.split("/")[-1]
+                        target = defs.get(name, {})
+                        return _deref(target, defs)
+                out: dict[str, object] = {}
+                for k, v in obj.items():
+                    out[k] = _deref(v, defs)
+                return out
+            if isinstance(obj, list):
+                return [_deref(x, defs) for x in obj]
+            return obj
+
+        if isinstance(json_schema, dict):
+            defs = {}
+            for key in ("$defs", "definitions"):
+                if isinstance(json_schema.get(key), dict):
+                    defs = json_schema[key]  # type: ignore[assignment]
+                    break
+            if defs:
+                json_schema = _deref(json_schema, defs)  # type: ignore[assignment]
+                json_schema.pop("$defs", None)
+                json_schema.pop("definitions", None)
+
+        def _strictify(obj: object) -> None:
+            if isinstance(obj, dict):
+                t = obj.get("type")
+                if t == "object":
+                    obj.setdefault("type", "object")
+                    obj["additionalProperties"] = False
+                    props = obj.get("properties")
+                    if isinstance(props, dict):
+                        obj["required"] = list(props.keys())
+                        for v in props.values():
+                            _strictify(v)
+                for key in ("items", "allOf", "anyOf", "oneOf", "$defs", "definitions"):
+                    if key in obj:
+                        val = obj[key]
+                        if isinstance(val, list):
+                            for it in val:
+                                _strictify(it)
+                        elif isinstance(val, dict):
+                            _strictify(val)
+
+        try:
+            _strictify(json_schema)
+        except Exception:
+            pass
+
+        if isinstance(json_schema, dict):
+            if json_schema.get("type") != "object":
+                props = (
+                    json_schema.get("properties")
+                    if isinstance(json_schema.get("properties"), dict)
+                    else {}
+                )
+                json_schema["type"] = "object"
+                if not props:
+                    json_schema.setdefault("properties", {})
+            json_schema["additionalProperties"] = False
+            if not json_schema.get("required") and isinstance(json_schema.get("properties"), dict):
+                json_schema["required"] = list(json_schema["properties"].keys())
+
+        resp = await client.chat.completions.create(
             model=model_name,
             messages=messages,
             response_format={

@@ -64,3 +64,10 @@ def test_webconnector_unconfigured_provider(monkeypatch):
     assert resp.provider == "exa"
     assert resp.hits == []
     assert resp.meta and resp.meta.get("status") == "unconfigured"
+
+
+def test_webconnector_searx_enabled_when_env_set(monkeypatch):
+    # Ensure the Searx client wiring relies on env at runtime (not only settings load time).
+    monkeypatch.setenv("SEARXNG_HOST", "http://127.0.0.1:8080")
+    conn = WebConnector(mode="searx", searx_k=3)
+    assert "searx" in conn.clients

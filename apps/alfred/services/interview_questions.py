@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -12,87 +11,7 @@ from alfred.schemas.interview_questions import (
     QuestionItem,
     QuestionSource,
 )
-
-_WS_RE = re.compile(r"\s+")
-_BULLET_PREFIX_RE = re.compile(r"^\s*(?:[-*•]+|\d+[.)])\s*")
-
-
-def _clean_line(line: str) -> str:
-    cleaned = _BULLET_PREFIX_RE.sub("", line.strip())
-    cleaned = cleaned.strip(" \t-–—•*")
-    cleaned = _WS_RE.sub(" ", cleaned).strip()
-    return cleaned
-
-
-def _looks_like_question(text: str) -> bool:
-    s = (text or "").strip()
-    if not s:
-        return False
-    if "?" in s:
-        return True
-
-    lower = s.lower()
-    starters = (
-        "how ",
-        "what ",
-        "why ",
-        "when ",
-        "where ",
-        "which ",
-        "who ",
-        "explain ",
-        "describe ",
-        "tell me ",
-        "walk me ",
-        "talk me ",
-        "give an example",
-        "can you ",
-        "could you ",
-        "would you ",
-        "design ",
-        "implement ",
-        "compare ",
-        "define ",
-    )
-    return lower.startswith(starters)
-
-
-def _normalize_question(text: str) -> str:
-    s = _WS_RE.sub(" ", (text or "").strip()).strip()
-    # Normalize trailing punctuation.
-    while s.endswith((".", "!", ":")):
-        s = s[:-1].rstrip()
-    if not s.endswith("?"):
-        s += "?"
-    return s
-
-
-def _extract_questions(text: str | None, *, max_questions: int = 12) -> list[str]:
-    if not text:
-        return []
-
-    out: list[str] = []
-    seen: set[str] = set()
-    for raw in text.splitlines():
-        line = _clean_line(raw)
-        if not line:
-            continue
-        if "http" in line.lower():
-            continue
-        if len(line) > 220:
-            continue
-        if not _looks_like_question(line):
-            continue
-
-        q = _normalize_question(line)
-        key = q.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(q)
-        if len(out) >= max(1, int(max_questions)):
-            break
-    return out
+from alfred.services.utils import extract_questions_heuristic, normalize_question
 
 
 def _categorize(question: str) -> list[str]:
@@ -274,7 +193,7 @@ class InterviewQuestionsService:
                         continue
                     urls.append(url)
                     content = item.get("content")
-                    extracted = _extract_questions(
+                    extracted = extract_questions_heuristic(
                         content if isinstance(content, str) else None, max_questions=8
                     )
                     sources.append(
@@ -302,7 +221,7 @@ class InterviewQuestionsService:
         by_url: dict[str, QuestionSource] = {s.url: s for s in sources if s.url}
         for url in urls:
             markdown, error = _scrape(url)
-            qs = _extract_questions(markdown, max_questions=16)
+            qs = extract_questions_heuristic(markdown, max_questions=16)
             existing = by_url.get(url)
             if existing is None:
                 sources.append(
@@ -316,7 +235,7 @@ class InterviewQuestionsService:
         items: dict[str, QuestionItem] = {}
         for src in sources:
             for q in src.questions:
-                norm = _normalize_question(q)
+                norm = normalize_question(q)
                 key = norm.lower()
                 entry = items.get(key)
                 if entry is None:

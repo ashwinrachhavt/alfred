@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping, Protocol
 
 from alfred.core.settings import settings
+from alfred.core.utils import utcnow as _utcnow
 from alfred.prompts import load_prompt
 from alfred.schemas.interview_prep import (
     InterviewChecklist,
@@ -28,10 +29,6 @@ class _LLM(Protocol):
 
 
 _JSON_BLOCK_RE = re.compile(r"\{.*\}", flags=re.DOTALL)
-
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _coerce_json_object(text: str) -> str:

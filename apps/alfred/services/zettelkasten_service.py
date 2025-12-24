@@ -8,26 +8,13 @@ document storage services without hard coupling.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sqlmodel import Session, select
 
+from alfred.core.utils import STAGE_TO_DELTA, clamp_int
+from alfred.core.utils import utcnow_naive as _utcnow
 from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview
-
-
-def _utcnow() -> datetime:
-    return datetime.utcnow()
-
-
-_STAGE_TO_DELTA: dict[int, timedelta] = {
-    1: timedelta(days=1),
-    2: timedelta(days=7),
-    3: timedelta(days=30),
-}
-
-
-def _clamp_int(val: int, *, lo: int, hi: int) -> int:
-    return max(lo, min(hi, int(val)))
 
 
 @dataclass
@@ -61,7 +48,7 @@ class ZettelkastenService:
             topic=topic.strip() if topic else None,
             source_url=source_url.strip() if source_url else None,
             document_id=document_id.strip() if document_id else None,
-            importance=_clamp_int(int(importance), lo=0, hi=10),
+            importance=clamp_int(int(importance), lo=0, hi=10),
             confidence=max(0.0, min(1.0, float(confidence))),
             status=status,
         )
@@ -117,7 +104,7 @@ class ZettelkastenService:
         if "status" in fields and fields["status"]:
             card.status = str(fields["status"])
         if "importance" in fields and fields["importance"] is not None:
-            card.importance = _clamp_int(int(fields["importance"]), lo=0, hi=10)
+            card.importance = clamp_int(int(fields["importance"]), lo=0, hi=10)
         if "confidence" in fields and fields["confidence"] is not None:
             card.confidence = max(0.0, min(1.0, float(fields["confidence"])))
         card.updated_at = _utcnow()
@@ -215,7 +202,7 @@ class ZettelkastenService:
         if existing:
             return existing
 
-        due_at = _utcnow() + _STAGE_TO_DELTA[1]
+        due_at = _utcnow() + STAGE_TO_DELTA[1]
         review = ZettelReview(card_id=card_id, stage=1, iteration=1, due_at=due_at)
         self.session.add(review)
         self.session.commit()
@@ -242,11 +229,11 @@ class ZettelkastenService:
             if int(review.stage) >= 3:
                 next_stage = 3
                 next_iteration = int(review.iteration) + 1
-            due_at = now + _STAGE_TO_DELTA[next_stage]
+            due_at = now + STAGE_TO_DELTA[next_stage]
         else:
             next_stage = int(review.stage)
             next_iteration = int(review.iteration)
-            due_at = now + _STAGE_TO_DELTA[1]
+            due_at = now + STAGE_TO_DELTA[1]
 
         self.session.add(
             ZettelReview(

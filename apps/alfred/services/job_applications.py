@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from alfred.core.settings import settings
+from alfred.core.utils import utcnow as _utcnow
 from alfred.schemas.job_applications import (
     JobApplicationCreate,
     JobApplicationRecord,
@@ -12,10 +12,6 @@ from alfred.schemas.job_applications import (
     JobApplicationUpdate,
 )
 from alfred.services.datastore import DataStoreService
-
-
-def _utcnow() -> datetime:
-    return datetime.utcnow().replace(tzinfo=timezone.utc)
 
 
 @dataclass

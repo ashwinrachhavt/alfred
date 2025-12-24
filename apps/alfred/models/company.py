@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 from sqlmodel import Field, SQLModel
 
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+from alfred.core.utils import utcnow as _utcnow
 
 
 class CompanyInterviewRow(SQLModel, table=True):

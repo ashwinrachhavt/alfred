@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from alfred.core.settings import settings
 from alfred.services.web_search import search_web as _service_search_web
 
 logger = logging.getLogger(__name__)
@@ -14,9 +15,10 @@ def render_web_search_markdown(query: str, max_results: int = 10) -> str:
     rate limits. Set `SEARXNG_HOST` (or `SEARX_HOST`) in env to enable.
     """
     try:
-        # Prefer SearxNG by default for tools/agents
+        # Prefer SearxNG when configured; otherwise use multi-provider mode.
         k = max(1, int(max_results))
-        payload = _service_search_web(q=query, mode="searx", searx_k=k)
+        mode = "searx" if (settings.searxng_host or settings.searx_host) else "multi"
+        payload = _service_search_web(q=query, mode=mode, searx_k=k)
         hits = payload.get("hits", [])[: max(0, int(max_results))]
         provider = payload.get("provider", "web")
 
