@@ -10,10 +10,12 @@ from alfred.core.dependencies import get_interview_prep_service
 from alfred.core.settings import settings
 from alfred.schemas.interview_prep import InterviewPrepUpdate, InterviewReminders
 from alfred.services.interview_calendar import InterviewCalendarService
-from alfred.services.interview_checklist import InterviewChecklistService
-from alfred.services.interview_prep_generator import InterviewPrepDocGenerator
-from alfred.services.interview_prep_renderer import InterviewPrepRenderer
-from alfred.services.interview_quiz_generator import InterviewQuizGenerator
+from alfred.services.interview_prep import (
+    InterviewChecklistService,
+    InterviewPrepDocGenerator,
+    InterviewPrepRenderer,
+    InterviewQuizGenerator,
+)
 
 logger = logging.getLogger(__name__)
 

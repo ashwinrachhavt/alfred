@@ -7,7 +7,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "apps"))
 
-from alfred.services.contact_discovery import ContactDiscoveryService, settings  # noqa: E402
+from alfred.core.settings import settings  # noqa: E402
+from alfred.services.company_outreach import ContactDiscoveryService  # noqa: E402
 
 
 class _FakeResponse:
@@ -37,8 +38,9 @@ def test_hunter_search_parses_confidence_and_name(monkeypatch, service):
 
     def fake_get(url, params=None, timeout=None):
         called["urls"].append(url)
-        assert "email-verifier" not in url  # verify_top_n = 0 so no verifier calls
         assert params["api_key"] == "hunter-key"
+        if url.endswith("email-count"):
+            return _FakeResponse(200, {"data": {"total": 1}})
         return _FakeResponse(
             200,
             {
@@ -61,7 +63,10 @@ def test_hunter_search_parses_confidence_and_name(monkeypatch, service):
 
     people = service._hunter_search(company="Acme", domain="acme.com", limit=1)
 
-    assert called["urls"] == ["https://api.hunter.io/v2/domain-search"]
+    assert called["urls"] == [
+        "https://api.hunter.io/v2/email-count",
+        "https://api.hunter.io/v2/domain-search",
+    ]
     assert len(people) == 1
     contact = people[0]
     assert contact.name == "Alex Doe"
@@ -81,6 +86,8 @@ def test_hunter_search_runs_verifier_for_top_n(monkeypatch):
 
     def fake_get(url, params=None, timeout=None):
         calls.append(url)
+        if url.endswith("email-count"):
+            return _FakeResponse(200, {"data": {"total": 1}})
         if url.endswith("domain-search"):
             return _FakeResponse(
                 200,
@@ -105,6 +112,7 @@ def test_hunter_search_runs_verifier_for_top_n(monkeypatch):
     people = svc._hunter_search(company="Beta", domain="beta.com", limit=1)
 
     assert calls == [
+        "https://api.hunter.io/v2/email-count",
         "https://api.hunter.io/v2/domain-search",
         "https://api.hunter.io/v2/email-verifier",
     ]
@@ -112,7 +120,7 @@ def test_hunter_search_runs_verifier_for_top_n(monkeypatch):
     assert people[0].confidence > 0.9  # boosted after verifier
 
 
-def test_apollo_search_uses_mixed_people_search(monkeypatch: pytest.MonkeyPatch, service):
+def test_apollo_search_uses_api_search(monkeypatch: pytest.MonkeyPatch, service):
     calls: list[str] = []
 
     def fake_post(url, *, headers, json, timeout):
@@ -135,88 +143,22 @@ def test_apollo_search_uses_mixed_people_search(monkeypatch: pytest.MonkeyPatch,
 
     people = service._apollo_search(company="Titan AI", domain="titan.ai", limit=2)
 
-    assert calls == ["https://api.apollo.io/api/v1/mixed_people/search"]
+    assert calls == ["https://api.apollo.io/api/v1/mixed_people/api_search"]
     assert len(people) == 1
     assert people[0].source == "apollo"
     assert people[0].confidence > 0.9
 
 
-def test_apollo_search_falls_back_to_top_people_on_403(monkeypatch: pytest.MonkeyPatch, service):
+def test_apollo_search_returns_empty_on_forbidden(monkeypatch: pytest.MonkeyPatch, service):
     calls: list[str] = []
 
     def fake_post(url, *, headers, json, timeout):
         calls.append(url)
-        if url.endswith("mixed_people/search"):
-            return _FakeResponse(403, {})
-        if url.endswith("organizations/search"):
-            return _FakeResponse(200, {"organizations": [{"id": "org1", "domain": "shepherd.ai"}]})
-        # top_people success
-        return _FakeResponse(
-            200,
-            {
-                "people": [
-                    {
-                        "full_name": "Grace Hopper",
-                        "title": "VP Engineering",
-                        "email_personal": "grace@shepherd.ai",
-                        "email_status": "valid",
-                    }
-                ]
-            },
-        )
+        return _FakeResponse(403, {})
 
     monkeypatch.setattr("requests.post", fake_post)
 
     people = service._apollo_search(company="Shepherd", domain=None, limit=1)
 
-    assert calls == [
-        "https://api.apollo.io/api/v1/mixed_people/search",
-        "https://api.apollo.io/api/v1/organizations/search",
-        "https://api.apollo.io/api/v1/mixed_people/organization_top_people",
-    ]
-    assert len(people) == 1
-    assert people[0].email == "grace@shepherd.ai"
-    assert people[0].confidence > 0.8
-
-
-def test_apollo_top_people_uses_alt_path_on_404(monkeypatch: pytest.MonkeyPatch, service):
-    calls: list[str] = []
-
-    def fake_post(url, *, headers, json, timeout):
-        calls.append(url)
-        if url.endswith("mixed_people/search"):
-            return _FakeResponse(403, {})
-        if url.endswith("organizations/search"):
-            return _FakeResponse(200, {"organizations": [{"id": "org2", "domain": "sierra.ai"}]})
-        if url.endswith("organization_top_people"):
-            # first call with /api/ path returns 404, second should succeed
-            if len([c for c in calls if c.endswith("organization_top_people")]) == 1:
-                return _FakeResponse(404, {})
-            return _FakeResponse(
-                200,
-                {
-                    "people": [
-                        {
-                            "name": "Linus Torvalds",
-                            "title": "Chief Architect",
-                            "email": "linus@sierra.ai",
-                            "email_status": "trusted",
-                        }
-                    ]
-                },
-            )
-        raise AssertionError("unexpected url " + url)
-
-    monkeypatch.setattr("requests.post", fake_post)
-
-    people = service._apollo_search(company="Sierra", domain="sierra.ai", limit=1)
-
-    assert calls == [
-        "https://api.apollo.io/api/v1/mixed_people/search",
-        "https://api.apollo.io/api/v1/organizations/search",
-        "https://api.apollo.io/api/v1/mixed_people/organization_top_people",
-        "https://api.apollo.io/v1/mixed_people/organization_top_people",
-    ]
-    assert len(people) == 1
-    assert people[0].email == "linus@sierra.ai"
-    assert people[0].confidence > 0.6
+    assert calls == ["https://api.apollo.io/api/v1/mixed_people/api_search"]
+    assert people == []

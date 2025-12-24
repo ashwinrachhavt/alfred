@@ -15,14 +15,14 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class MongoDocRow(SQLModel, table=True):
+class DataStoreRow(SQLModel, table=True):
     """Generic JSON document stored per logical collection."""
 
-    __tablename__ = "mongo_docs"
+    __tablename__ = "datastore_docs"
     __table_args__ = (
-        sa.UniqueConstraint("collection", "doc_id", name="uq_mongo_docs_collection_doc_id"),
-        sa.Index("ix_mongo_docs_collection", "collection"),
-        sa.Index("ix_mongo_docs_data_gin", "data", postgresql_using="gin"),
+        sa.UniqueConstraint("collection", "doc_id", name="uq_datastore_docs_collection_doc_id"),
+        sa.Index("ix_datastore_docs_collection", "collection"),
+        sa.Index("ix_datastore_docs_data_gin", "data", postgresql_using="gin"),
     )
 
     id: uuid.UUID = Field(
@@ -49,4 +49,4 @@ class MongoDocRow(SQLModel, table=True):
     )
 
 
-__all__ = ["MongoDocRow"]
+__all__ = ["DataStoreRow"]

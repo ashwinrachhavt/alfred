@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 from alfred.schemas.interview_prep import PrepDoc
-from alfred.services.interview_prep_generator import InterviewPrepDocGenerator
+from alfred.services.interview_prep import InterviewPrepDocGenerator
 
 
 class _FakeLLM:

@@ -4,6 +4,7 @@ from sqlmodel import Field, SQLModel
 
 from alfred.models.base import Model, TimestampMixin
 from alfred.models.company import CompanyInterviewRow
+from alfred.models.datastore import DataStoreRow
 from alfred.models.doc_storage import DocChunkRow, DocumentRow, NoteRow
 from alfred.models.learning import (
     LearningEntity,
@@ -15,17 +16,15 @@ from alfred.models.learning import (
     LearningReview,
     LearningTopic,
 )
-from alfred.models.mongo import MongoSyncLog
-from alfred.models.mongo_store import MongoDocRow
 from alfred.models.research import ResearchRun
 from alfred.models.system import SystemSetting
+from alfred.models.user import User
 from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview
-from alfred.schemas.outreach import OutreachContact, OutreachRun
+from alfred.schemas.outreach import OutreachContact, OutreachMessage, OutreachRun
 
 __all__ = [
     "Model",
     "TimestampMixin",
-    "MongoSyncLog",
     "ResearchRun",
     "SystemSetting",
     "LearningTopic",
@@ -37,15 +36,17 @@ __all__ = [
     "LearningResourceEntity",
     "LearningEntityRelation",
     "OutreachRun",
+    "OutreachMessage",
     "OutreachContact",
     "ZettelCard",
     "ZettelLink",
     "ZettelReview",
+    "User",
     "SQLModel",
     "Field",
     "NoteRow",
     "DocumentRow",
     "DocChunkRow",
-    "MongoDocRow",
+    "DataStoreRow",
     "CompanyInterviewRow",
 ]

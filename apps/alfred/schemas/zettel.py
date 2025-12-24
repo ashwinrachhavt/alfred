@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ZettelCardCreate(BaseModel):
@@ -33,8 +33,7 @@ class ZettelCardOut(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ZettelLinkCreate(BaseModel):
@@ -42,6 +41,22 @@ class ZettelLinkCreate(BaseModel):
     type: str = Field(default="reference", max_length=64)
     context: str | None = None
     bidirectional: bool = True
+
+
+class ZettelCardPatch(BaseModel):
+    """Partial update payload for cards (bulk-friendly)."""
+
+    id: int
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    content: str | None = None
+    summary: str | None = None
+    tags: list[str] | None = None
+    topic: str | None = Field(default=None, max_length=128)
+    source_url: str | None = Field(default=None, max_length=2048)
+    document_id: str | None = None
+    importance: int | None = Field(default=None, ge=0, le=10)
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    status: str | None = None
 
 
 class ZettelLinkOut(BaseModel):
@@ -54,8 +69,7 @@ class ZettelLinkOut(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ZettelReviewOut(BaseModel):
@@ -67,8 +81,7 @@ class ZettelReviewOut(BaseModel):
     completed_at: datetime | None = None
     score: float | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CompleteReviewRequest(BaseModel):
@@ -97,3 +110,10 @@ class LinkSuggestion(BaseModel):
     to_tags: list[str] | None = None
     reason: str
     scores: LinkQuality
+
+
+class BulkUpdateResult(BaseModel):
+    """Summary for bulk update operations."""
+
+    updated_ids: list[int]
+    missing_ids: list[int]

@@ -165,13 +165,8 @@ class Settings(BaseSettings):
     doc_storage_backend: str = Field(
         default="postgres",
         alias="DOC_STORAGE_BACKEND",
-        description="Choose storage backend for documents/notes: 'postgres' (default) or 'mongo'.",
+        description="Storage backend for documents/notes. Postgres is the only supported option.",
     )
-
-    # MongoDB
-    mongo_uri: str = Field(default="mongodb://localhost:27017", alias="MONGO_URI")
-    mongo_database: str = Field(default="notes_db", alias="MONGO_DATABASE")
-    mongo_app_name: str = Field(default="notes_db", alias="MONGO_APP_NAME")
 
     # Firecrawl
     firecrawl_base_url: str = Field(default="http://localhost:8010", alias="FIRECRAWL_BASE_URL")
@@ -325,6 +320,13 @@ class Settings(BaseSettings):
     outreach_runs_csv: str = Field(
         default=".alfred_data/outreach_runs.csv", alias="OUTREACH_RUNS_CSV"
     )
+    outreach_send_enabled: bool = Field(default=False, alias="OUTREACH_SEND_ENABLED")
+    smtp_host: str | None = Field(default=None, alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, alias="SMTP_PORT")
+    smtp_username: str | None = Field(default=None, alias="SMTP_USERNAME")
+    smtp_password: str | None = Field(default=None, alias="SMTP_PASSWORD")
+    smtp_use_tls: bool = Field(default=True, alias="SMTP_USE_TLS")
+    smtp_from_email: str | None = Field(default=None, alias="SMTP_FROM_EMAIL")
 
 
 @lru_cache()

@@ -6,11 +6,13 @@ from sqlmodel import Session
 from alfred.api.dependencies import get_db_session
 from alfred.models.zettel import ZettelReview
 from alfred.schemas.zettel import (
+    BulkUpdateResult,
     CompleteReviewRequest,
     GraphSummary,
     LinkSuggestion,
     ZettelCardCreate,
     ZettelCardOut,
+    ZettelCardPatch,
     ZettelLinkCreate,
     ZettelLinkOut,
     ZettelReviewOut,
@@ -55,6 +57,42 @@ def list_cards(
     svc = ZettelkastenService(session)
     cards = svc.list_cards(q=q, topic=topic, tag=tag, limit=limit, skip=skip)
     return [_card_out(c) for c in cards]
+
+
+@router.post("/cards/bulk", response_model=dict, status_code=status.HTTP_201_CREATED)
+def bulk_create_cards(
+    payload: list[ZettelCardCreate],
+    session: Session = Depends(get_db_session),
+) -> dict:
+    """Create multiple cards in one call (uses same validation as single create)."""
+    svc = ZettelkastenService(session)
+    created = []
+    for item in payload:
+        card = svc.create_card(**item.model_dump())
+        created.append(card.id)
+    return {"inserted": len(created), "ids": created}
+
+
+@router.patch("/cards/bulk", response_model=BulkUpdateResult)
+def bulk_update_cards(
+    payload: list[ZettelCardPatch],
+    session: Session = Depends(get_db_session),
+) -> BulkUpdateResult:
+    svc = ZettelkastenService(session)
+    updated: list[int] = []
+    missing: list[int] = []
+
+    for patch in payload:
+        card = svc.get_card(patch.id)
+        if not card:
+            missing.append(patch.id)
+            continue
+        data = patch.model_dump(exclude_unset=True)
+        data.pop("id", None)
+        svc.update_card(card, **data)
+        updated.append(card.id)  # type: ignore[arg-type]
+
+    return BulkUpdateResult(updated_ids=updated, missing_ids=missing)
 
 
 @router.get("/cards/{card_id}", response_model=ZettelCardOut)

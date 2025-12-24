@@ -26,8 +26,8 @@ from alfred.schemas.system_design import (
     SystemDesignSessionCreate,
     TemplateDefinition,
 )
+from alfred.services.datastore import DataStoreService
 from alfred.services.llm_service import LLMService
-from alfred.services.mongo import MongoService
 from alfred.services.system_design_heuristics import component_library, template_library
 from alfred.services.system_design_interviewer import SystemDesignInterviewer
 
@@ -48,7 +48,7 @@ class SystemDesignService:
     llm_service: LLMService | None = None
 
     def __post_init__(self) -> None:
-        self._collection = MongoService(default_collection=self.collection_name)
+        self._collection = DataStoreService(default_collection=self.collection_name)
         self._interviewer = SystemDesignInterviewer(llm_service=self.llm_service)
 
     def ensure_indexes(self) -> None:

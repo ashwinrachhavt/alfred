@@ -2,21 +2,29 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import logging
 import os
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Optional, TypedDict
+from typing import Any, Dict, Iterable, List, Optional, TypedDict
 
+import requests
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
+from sqlmodel import Session
 
+from alfred.connectors import ApolloClient, HunterClient
+from alfred.core.database import get_session
 from alfred.core.dependencies import get_company_research_service
 from alfred.core.settings import LLMProvider, settings
 from alfred.prompts import load_prompt
+from alfred.schemas.outreach import OutreachContact, OutreachRun
 from alfred.services.agentic_rag import create_retriever_tool, make_llm, make_retriever
-from alfred.services.contact_discovery import discover_contacts
 from alfred.services.web_search import search_web
+
+logger = logging.getLogger(__name__)
 
 
 def _summarize_company_report(doc: dict[str, Any]) -> str:
@@ -323,6 +331,359 @@ def build_company_outreach_graph(company: str, role: str, personal_context: str,
     return graph.compile()
 
 
+TARGET_TITLES = [
+    "vp",
+    "head",
+    "director",
+    "cto",
+    "cpo",
+    "engineering",
+    "product",
+    "ai",
+]
+
+
+@dataclass
+class Contact:
+    name: str
+    title: str
+    email: str
+    confidence: float
+    source: str
+
+    def model_dump(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "title": self.title,
+            "email": self.email,
+            "confidence": self.confidence,
+            "source": self.source,
+        }
+
+
+def _guess_domain(company: str) -> Optional[str]:
+    slug = company.lower().replace(" ", "").replace(",", "").replace(".", "")
+    if slug and "." not in slug:
+        return f"{slug}.com"
+    return slug or None
+
+
+def _join_name(first: str | None, last: str | None) -> str:
+    parts = [part.strip() for part in (first or "", last or "") if part and part.strip()]
+    return " ".join(parts)
+
+
+def _confidence_from_status(status: str | None) -> float:
+    if not status:
+        return 0.5
+    status = status.lower()
+    if status in {"verified", "deliverable"}:
+        return 0.95
+    if status in {"valid", "trusted"}:
+        return 0.85
+    if status in {"accept_all", "risky"}:
+        return 0.65
+    if status in {"webmail", "disposable"}:
+        return 0.45
+    if status in {"unknown"}:
+        return 0.5
+    if status in {"invalid", "undeliverable", "block", "blocked"}:
+        return 0.1
+    return 0.5
+
+
+def _confidence_from_score(raw_score: Any) -> float:
+    try:
+        score = float(raw_score)
+    except (TypeError, ValueError):
+        return 0.0
+    if score > 1:
+        score = score / 100.0
+    return max(0.0, min(1.0, score))
+
+
+def _merge_confidence(base: float, *, status: str | None = None, score: Any = None) -> float:
+    candidates = [base]
+    if score is not None:
+        candidates.append(_confidence_from_score(score))
+    if status:
+        candidates.append(_confidence_from_status(status))
+    return max(candidates)
+
+
+class ContactDiscoveryService:
+    """Aggregates contacts from Apollo, Hunter, and Snov (best-effort)."""
+
+    def __init__(
+        self,
+        *,
+        cache_path: str | None = None,
+        cache_ttl_hours: int = 24,
+        session: Session | None = None,
+    ) -> None:
+        self.cache_path = cache_path
+        self.cache_ttl_hours = max(0, int(cache_ttl_hours))
+        self.apollo_api_key = settings.apollo_api_key
+        self.hunter_api_key = settings.hunter_api_key
+        self.hunter_timeout_seconds = settings.hunter_timeout_seconds
+        self.hunter_verify_top_n = settings.hunter_verify_top_n
+        self.snov_client_id = settings.snov_client_id
+        self.snov_client_secret = settings.snov_client_secret
+        self.session = session
+
+    def discover(self, company: str, *, limit: int = 20) -> list[dict[str, Any]]:
+        company = (company or "").strip()
+        if not company:
+            return []
+
+        domain = _guess_domain(company)
+        contacts: list[Contact] = []
+
+        contacts.extend(self._hunter_search(company, domain, limit=limit))
+        contacts.extend(self._apollo_search(company, domain, limit=limit))
+        contacts.extend(self._snov_search(company, domain, limit=limit))
+
+        deduped = self._dedupe_and_rank(contacts, limit=limit)
+        payload = [c.model_dump() for c in deduped]
+        self._log_run(company, source="fresh", contacts=payload)
+        return payload
+
+    def _hunter_search(self, company: str, domain: str | None, *, limit: int = 20) -> list[Contact]:
+        api_key = self.hunter_api_key
+        if not api_key:
+            return []
+
+        client = HunterClient(api_key=api_key, timeout_seconds=self.hunter_timeout_seconds)
+        try:
+            # Free email-count endpoint lets us skip paid lookups when no data exists.
+            count = client.email_count(domain=domain, company=company)
+            if count is not None:
+                if count <= 0:
+                    return []
+                limit = min(limit, count)
+        except Exception as exc:  # pragma: no cover - network path
+            logger.debug("Hunter email-count check failed: %s", exc)
+
+        try:
+            emails = client.domain_search(domain=domain, company=company, limit=limit)
+        except Exception as exc:  # pragma: no cover - network path
+            logger.warning("Hunter lookup failed: %s", exc)
+            return []
+
+        contacts: list[Contact] = []
+        for item in emails:
+            email = (item.get("value") or "").strip()
+            if not email:
+                continue
+            verification = item.get("verification") or {}
+            contact = Contact(
+                name=_join_name(item.get("first_name"), item.get("last_name")),
+                title=str(item.get("position") or ""),
+                email=email,
+                confidence=_merge_confidence(
+                    float(item.get("confidence") or 0) / 100.0,
+                    status=verification.get("status"),
+                    score=verification.get("score"),
+                ),
+                source="hunter",
+            )
+            contacts.append(contact)
+
+        if self.hunter_verify_top_n > 0:
+            budget = min(self.hunter_verify_top_n, len(contacts))
+            for contact in contacts[:budget]:
+                try:
+                    verification = client.verify_email(contact.email)
+                except Exception as exc:  # pragma: no cover - network path
+                    logger.debug("Hunter verification failed: %s", exc)
+                    continue
+                if not verification:
+                    continue
+                contact.confidence = _merge_confidence(
+                    contact.confidence,
+                    status=verification.get("status"),
+                    score=verification.get("score"),
+                )
+
+        return contacts
+
+    def _apollo_search(self, company: str, domain: str | None, *, limit: int = 20) -> list[Contact]:
+        """Query Apollo using the supported api_search endpoint (free-plan safe)."""
+
+        api_key = self.apollo_api_key
+        if not api_key:
+            return []
+
+        payload: dict[str, Any] = {
+            "page": 1,
+            "per_page": max(1, min(limit, 100)),
+            "person_titles": TARGET_TITLES,
+            "person_seniorities": ["c-suite", "vp", "head", "director"],
+        }
+        if domain:
+            payload["q_organization_domains"] = [domain]
+        else:
+            payload["q_organization_names"] = [company]
+
+        client = ApolloClient(api_key=api_key, timeout_seconds=20)
+
+        try:
+            status, data = client.mixed_people_search(payload)
+            if status >= 400:
+                raise Exception(f"status {status}")
+            return self._parse_apollo_people(data)
+        except Exception as exc:  # pragma: no cover - network path
+            logger.warning("Apollo lookup failed: %s", exc)
+            return []
+
+    @staticmethod
+    def _parse_apollo_people(data: dict[str, Any]) -> list[Contact]:
+        people = data.get("people") or data.get("contacts") or []
+        out: list[Contact] = []
+        for p in people:
+            email = (p.get("email") or p.get("email_personal") or "").strip()
+            out.append(
+                Contact(
+                    name=str(p.get("name") or p.get("full_name") or "").strip(),
+                    title=str(p.get("title") or ""),
+                    email=email,
+                    confidence=_confidence_from_status(p.get("email_status")),
+                    source="apollo",
+                )
+            )
+        return out
+
+    def _snov_token(self) -> str | None:
+        if not (self.snov_client_id and self.snov_client_secret):
+            return None
+        try:
+            resp = requests.post(
+                "https://api.snov.io/v1/oauth/access_token",
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": self.snov_client_id,
+                    "client_secret": self.snov_client_secret,
+                },
+                timeout=15,
+            )
+            resp.raise_for_status()
+            return (resp.json() or {}).get("access_token")
+        except Exception as exc:  # pragma: no cover - network path
+            logger.warning("Snov token fetch failed: %s", exc)
+            return None
+
+    def _snov_search(self, company: str, domain: str | None, *, limit: int = 20) -> list[Contact]:
+        token = self._snov_token()
+        if not token:
+            return []
+        # Use lightweight domain emails endpoint; best-effort only.
+        actual_domain = domain or _guess_domain(company)
+        if not actual_domain:
+            return []
+
+        try:
+            count = self._snov_domain_email_count(domain=actual_domain, token=token)
+            if count is not None:
+                if count <= 0:
+                    return []
+                limit = min(limit, count)
+        except Exception as exc:  # pragma: no cover - network path
+            logger.debug("Snov domain count lookup failed: %s", exc)
+
+        try:
+            start = requests.post(
+                "https://api.snov.io/v2/domain-search/domain-emails/start",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"domain": actual_domain, "limit": limit},
+                timeout=15,
+            )
+            start.raise_for_status()
+            task = (start.json() or {}).get("links", {}).get("result")
+            if not task:
+                return []
+            result = requests.get(task, headers={"Authorization": f"Bearer {token}"}, timeout=15)
+            result.raise_for_status()
+            emails = (result.json() or {}).get("data") or []
+            out: list[Contact] = []
+            for row in emails:
+                email = (row.get("email") or "").strip()
+                if not email:
+                    continue
+                out.append(
+                    Contact(
+                        name=str(row.get("name") or "").strip(),
+                        title=str(row.get("position") or ""),
+                        email=email,
+                        confidence=0.6,
+                        source="snov",
+                    )
+                )
+            return out
+        except Exception as exc:  # pragma: no cover - network path
+            logger.warning("Snov lookup failed: %s", exc)
+            return []
+
+    def _snov_domain_email_count(self, domain: str, token: str) -> int | None:
+        """Use the free Snov get-domain-emails-count endpoint before spending credits."""
+
+        resp = requests.post(
+            "https://api.snov.io/v1/get-domain-emails-count",
+            data={"domain": domain, "access_token": token},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        payload = resp.json() or {}
+        # Endpoint returns various shapes across docs; pick the first usable integer.
+        for key in ("emails", "emails_count", "total", "count"):
+            value = payload.get(key)
+            if isinstance(value, dict):
+                for nested in ("all", "total", "total_emails"):
+                    nested_value = value.get(nested)
+                    if isinstance(nested_value, (int, float)):
+                        return int(nested_value)
+            if isinstance(value, (int, float)):
+                return int(value)
+        return None
+
+    def _dedupe_and_rank(self, contacts: Iterable[Contact], *, limit: int = 20) -> List[Contact]:
+        seen: set[str] = set()
+        cleaned: list[Contact] = []
+        for contact in contacts:
+            email_key = contact.email.lower().strip()
+            if email_key and email_key in seen:
+                continue
+            if email_key:
+                seen.add(email_key)
+            cleaned.append(contact)
+
+        cleaned.sort(key=lambda x: x.confidence, reverse=True)
+        return cleaned[:limit]
+
+    def _log_run(self, company: str, *, source: str, contacts: list[dict[str, Any]]) -> None:
+        try:
+            sess_ctx = self.session or next(get_session())
+            with sess_ctx as db:
+                run = OutreachRun(company=company, source=source, count=len(contacts))
+                db.add(run)
+                db.flush()
+                rows = [
+                    OutreachContact(
+                        run_id=run.id or 0,
+                        company=company,
+                        name=str(contact.get("name", "")),
+                        title=str(contact.get("title", "")),
+                        email=str(contact.get("email", "")),
+                        confidence=float(contact.get("confidence", 0.0)),
+                        source=str(contact.get("source", "")),
+                    )
+                    for contact in contacts
+                ]
+                db.add_all(rows)
+                db.commit()
+        except Exception:
+            logger.debug("Failed to log outreach run", exc_info=True)
+
+
 def generate_company_outreach(
     company: str,
     role: str = "AI Engineer",
@@ -335,7 +696,16 @@ def generate_company_outreach(
 
     resume_context = _load_resume_context()
     job_description_context = _load_job_description_context(company, role)
-    contacts = discover_contacts(company)
+
+    contacts: list[dict[str, Any]] = []
+    try:
+        from alfred.services.outreach_service import OutreachService
+
+        contacts = OutreachService().list_contacts(
+            company, limit=20, role_filter=None, refresh=False
+        )
+    except Exception:
+        contacts = []
 
     graph = build_company_outreach_graph(
         company=company, role=role, personal_context=personal_context, k=k

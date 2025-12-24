@@ -11,7 +11,7 @@ from alfred.schemas.job_applications import (
     JobApplicationStatus,
     JobApplicationUpdate,
 )
-from alfred.services.mongo import MongoService
+from alfred.services.datastore import DataStoreService
 
 
 def _utcnow() -> datetime:
@@ -25,15 +25,10 @@ class JobApplicationService:
     collection_name: str = settings.job_applications_collection
 
     def __post_init__(self) -> None:
-        self._collection = MongoService(default_collection=self.collection_name)
+        self._collection = DataStoreService(default_collection=self.collection_name)
 
-    def ensure_indexes(self) -> None:
-        try:
-            self._collection.create_index([("company", 1), ("role", 1)], name="company_role")
-            self._collection.create_index([("status", 1)], name="status")
-            self._collection.create_index([("updated_at", -1)], name="updated_desc")
-        except Exception:
-            pass
+    def ensure_indexes(self) -> None:  # indexes are managed via Alembic
+        return
 
     def create(self, payload: JobApplicationCreate) -> str:
         now = _utcnow()

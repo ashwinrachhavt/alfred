@@ -1,4 +1,4 @@
-"""Postgres-backed drop-in replacement for the previous MongoService.
+"""Postgres-backed document store (previously MongoService-compatible).
 
 Implements a small subset of Mongo-style CRUD APIs used by the codebase.
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlmodel import Session, select
 
 from alfred.core.database import SessionLocal
-from alfred.models.mongo_store import MongoDocRow
+from alfred.models.datastore import DataStoreRow
 
 SortPairs = Sequence[tuple[str, int]]
 
@@ -68,8 +68,8 @@ def _match_filter(doc: dict[str, Any], flt: Mapping[str, Any]) -> bool:
     return True
 
 
-class MongoService:
-    """Lightweight emulation of Mongo collections using Postgres JSONB."""
+class DataStoreService:
+    """Lightweight document store emulating a subset of Mongo APIs on Postgres JSON."""
 
     def __init__(self, connector: None = None, *, default_collection: str | None = None) -> None:
         self._default_collection = default_collection
@@ -92,7 +92,7 @@ class MongoService:
         doc = dict(document)
         _id = _normalize_id(doc.get("_id") or uuid.uuid4())
         doc["_id"] = _id
-        row = MongoDocRow(collection=coll, doc_id=_id, data=doc)
+        row = DataStoreRow(collection=coll, doc_id=_id, data=doc)
         with self._session() as s:
             s.add(row)
             s.commit()
@@ -107,13 +107,13 @@ class MongoService:
     ) -> list[str]:
         coll = self._collection(collection)
         ids: list[str] = []
-        rows: list[MongoDocRow] = []
+        rows: list[DataStoreRow] = []
         for doc in documents:
             d = dict(doc)
             _id = _normalize_id(d.get("_id") or uuid.uuid4())
             d["_id"] = _id
             ids.append(_id)
-            rows.append(MongoDocRow(collection=coll, doc_id=_id, data=d))
+            rows.append(DataStoreRow(collection=coll, doc_id=_id, data=d))
         with self._session() as s:
             s.add_all(rows)
             s.commit()
@@ -128,7 +128,7 @@ class MongoService:
     ) -> dict[str, Any] | None:
         coll = self._collection(collection)
         with self._session() as s:
-            rows = s.exec(select(MongoDocRow).where(MongoDocRow.collection == coll)).all()
+            rows = s.exec(select(DataStoreRow).where(DataStoreRow.collection == coll)).all()
         flt = filter_ or {}
         for row in rows:
             doc = dict(row.data)
@@ -147,7 +147,7 @@ class MongoService:
     ) -> list[dict[str, Any]]:
         coll = self._collection(collection)
         with self._session() as s:
-            rows = s.exec(select(MongoDocRow).where(MongoDocRow.collection == coll)).all()
+            rows = s.exec(select(DataStoreRow).where(DataStoreRow.collection == coll)).all()
         flt = filter_ or {}
         docs = [dict(r.data) for r in rows if _match_filter(r.data, flt)]
         if sort:
@@ -168,7 +168,7 @@ class MongoService:
     ) -> dict[str, Any]:
         coll = self._collection(collection)
         with self._session() as s:
-            rows = s.exec(select(MongoDocRow).where(MongoDocRow.collection == coll)).all()
+            rows = s.exec(select(DataStoreRow).where(DataStoreRow.collection == coll)).all()
             target = None
             for row in rows:
                 if _match_filter(row.data, filter_):
@@ -183,7 +183,7 @@ class MongoService:
                 base.update(set_doc)
                 _id = _normalize_id(base.get("_id") or uuid.uuid4())
                 base["_id"] = _id
-                new_row = MongoDocRow(collection=coll, doc_id=_id, data=base)
+                new_row = DataStoreRow(collection=coll, doc_id=_id, data=base)
                 s.add(new_row)
                 s.commit()
                 return {"matched_count": 0, "modified_count": 0, "upserted_id": _id}
@@ -236,7 +236,7 @@ class MongoService:
     ) -> int:
         coll = self._collection(collection)
         with self._session() as s:
-            rows = s.exec(select(MongoDocRow).where(MongoDocRow.collection == coll)).all()
+            rows = s.exec(select(DataStoreRow).where(DataStoreRow.collection == coll)).all()
             for row in rows:
                 if _match_filter(row.data, filter_):
                     s.delete(row)
@@ -253,7 +253,7 @@ class MongoService:
         coll = self._collection(collection)
         deleted = 0
         with self._session() as s:
-            rows = s.exec(select(MongoDocRow).where(MongoDocRow.collection == coll)).all()
+            rows = s.exec(select(DataStoreRow).where(DataStoreRow.collection == coll)).all()
             for row in rows:
                 if _match_filter(row.data, filter_):
                     s.delete(row)
@@ -270,8 +270,8 @@ class MongoService:
     ) -> int:
         return len(self.find_many(filter_, collection=collection))
 
-    def with_collection(self, name: str) -> "MongoService":
-        return MongoService(default_collection=name)
+    def with_collection(self, name: str) -> "DataStoreService":
+        return DataStoreService(default_collection=name)
 
     def bulk_write(
         self,
@@ -285,7 +285,7 @@ class MongoService:
         modified = 0
         upserted = 0
         for op in operations:
-            # pymongo UpdateOne stores internals on private attrs
+            # UpdateOne objects from previous Mongo layer store internals on private attrs
             flt = getattr(op, "_filter", None)
             update = getattr(op, "_doc", None)
             upsert = getattr(op, "_upsert", False)

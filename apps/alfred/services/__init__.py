@@ -12,7 +12,7 @@ from typing import Any
 __all__ = [
     "CompanyResearchService",
     "generate_company_research",
-    "MongoService",
+    "DataStoreService",
 ]
 
 
@@ -24,8 +24,8 @@ def __getattr__(name: str) -> Any:  # PEP 562 lazy attribute access
             "CompanyResearchService": CompanyResearchService,
             "generate_company_research": generate_company_research,
         }[name]
-    if name == "MongoService":
-        from .mongo import MongoService
+    if name == "DataStoreService":
+        from .datastore import DataStoreService
 
-        return MongoService
+        return DataStoreService
     raise AttributeError(name)

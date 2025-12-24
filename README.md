@@ -187,27 +187,12 @@ Tip
 - Auto-generate migrations from model changes: `DATABASE_URL=... ./scripts/alembic_autogen.sh "describe change"` (or `make alembic-autogen msg="describe change"`).
 - Dependencies: `psycopg[binary]` (Postgres driver) + `sqlmodel` already in the env; install if missing.
 - Base models live in `alfred/models/`; extend `Model` (SQLModel) for timestamped tables with auto PKs. Use `sqlmodel.Field(...)` for columns, `sa_column=...` for DB-specific defaults.
-- Mongo access lives in `alfred/services/mongo.py`; configure `MONGO_URI`, `MONGO_DATABASE`, `MONGO_APP_NAME` (default `mongodb://localhost:27017/alfred`).
-- Company research reports are stored in Mongo (`COMPANY_RESEARCH_COLLECTION`). Use `/company/research?refresh=true` to bypass cache.
+- Document store lives in `alfred/services/datastore.py` (Postgres JSON); no Mongo configuration required.
+- Company research reports are cached in Postgres (`COMPANY_RESEARCH_COLLECTION`). Use `/company/research?refresh=true` to bypass cache.
 
 ## Mind Palace: Document Storage
 
-A simple Mongo-backed storage service for notes and documents lives in `alfred/services/doc_storage.py`.
-
-- Notes API surface (service methods): `create_note`, `list_notes`, `get_note`, `delete_note`.
-- Documents ingestion: `ingest_document(payload)` supports chunked text, metadata, and dedup by content hash.
-- Listing: `list_documents(...)` and `list_chunks(...)` implement filters (q/topic/date, pagination).
-- Indexes: ensured on FastAPI startup via a hook in `apps/alfred/main.py`.
-
-Example usage in a route or task:
-```python
-from alfred.services.doc_storage import DocStorageService
-from alfred.schemas.documents import NoteCreate
-
-svc = DocStorageService()
-svc.ensure_indexes()
-note_id = svc.create_note(NoteCreate(text="hello", source_url="https://example.com"))
-```
+Document storage is Postgres-backed (`alfred/services/doc_storage_pg.py` and `alfred/services/datastore.py`).
 
 ## Ingest Knowledge
 

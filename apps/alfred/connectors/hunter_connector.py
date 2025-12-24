@@ -32,6 +32,39 @@ class HunterClient:
         resp.raise_for_status()
         return (resp.json() or {}).get("data", {}).get("emails") or []
 
+    def email_count(self, *, domain: str | None, company: str | None) -> int | None:
+        """Free endpoint that estimates available emails; helps avoid burning credits."""
+
+        if not (domain or company):
+            raise ValueError("Hunter email count requires a domain or company")
+
+        params: dict[str, Any] = {"api_key": self.api_key}
+        if domain:
+            params["domain"] = domain
+        else:
+            params["company"] = company
+
+        resp = requests.get(
+            f"{HUNTER_BASE_URL}/email-count", params=params, timeout=self.timeout_seconds
+        )
+        resp.raise_for_status()
+        data = (resp.json() or {}).get("data") or {}
+        # Hunter returns either {"total": X, ...} or nested counts.
+        for key in ("total", "emails", "count"):
+            value = data.get(key)
+            if isinstance(value, dict):
+                nested = (
+                    value.get("total")
+                    or value.get("all")
+                    or value.get("personal")
+                    or value.get("generic")
+                )
+                if isinstance(nested, (int, float)):
+                    return int(nested)
+            if isinstance(value, (int, float)):
+                return int(value)
+        return None
+
     def verify_email(self, email: str) -> dict[str, Any] | None:
         if not email:
             return None

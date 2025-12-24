@@ -15,38 +15,12 @@ class ApolloClient:
 
     def mixed_people_search(self, payload: dict[str, Any]) -> Tuple[int, dict[str, Any]]:
         resp = requests.post(
-            "https://api.apollo.io/api/v1/mixed_people/search",
+            # Apollo deprecated /mixed_people/search for API callers; /api_search is the supported path.
+            "https://api.apollo.io/api/v1/mixed_people/api_search",
             headers=self.headers,
             json=payload,
             timeout=self.timeout_seconds,
         )
-        return resp.status_code, self._safe_json(resp)
-
-    def organizations_search(self, payload: dict[str, Any]) -> Tuple[int, dict[str, Any]]:
-        resp = requests.post(
-            "https://api.apollo.io/api/v1/organizations/search",
-            headers=self.headers,
-            json=payload,
-            timeout=self.timeout_seconds,
-        )
-        return resp.status_code, self._safe_json(resp)
-
-    def organization_top_people(self, payload: dict[str, Any]) -> Tuple[int, dict[str, Any]]:
-        # Primary path
-        resp = requests.post(
-            "https://api.apollo.io/api/v1/mixed_people/organization_top_people",
-            headers=self.headers,
-            json=payload,
-            timeout=self.timeout_seconds,
-        )
-        if resp.status_code == 404:
-            # Fallback path without /api prefix used in some tenants
-            resp = requests.post(
-                "https://api.apollo.io/v1/mixed_people/organization_top_people",
-                headers=self.headers,
-                json=payload,
-                timeout=self.timeout_seconds,
-            )
         return resp.status_code, self._safe_json(resp)
 
     @staticmethod

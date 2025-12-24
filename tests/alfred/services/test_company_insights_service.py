@@ -12,7 +12,7 @@ from alfred.schemas.company_insights import (
     SourceInfo,
     SourceProvider,
 )
-from alfred.services.company_insights import CompanyInsightsService
+from alfred.services.company_researcher import CompanyInsightsService
 from alfred.services.glassdoor_service import GlassdoorService
 
 

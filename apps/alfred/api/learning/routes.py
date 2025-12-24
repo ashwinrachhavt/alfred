@@ -30,7 +30,7 @@ from alfred.schemas.learning import (
 from alfred.services.graph_service import GraphService
 from alfred.services.learning_service import LearningService
 
-router = APIRouter(prefix="/api/learning", tags=["learning"])
+router = APIRouter(prefix="/api/learning", tags=["learning"], include_in_schema=False)
 
 
 def _topic_out(t: LearningTopic) -> TopicOut:

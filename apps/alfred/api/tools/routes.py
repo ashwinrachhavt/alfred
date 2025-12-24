@@ -6,10 +6,10 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from alfred.core.dependencies import get_mongo_service
+from alfred.core.dependencies import get_datastore_service
 from alfred.core.exceptions import ServiceUnavailableError
+from alfred.services.datastore import DataStoreService
 from alfred.services.linear import LinearService
-from alfred.services.mongo import MongoService
 from alfred.services.slack import SlackService
 
 router = APIRouter(prefix="/api/tools", tags=["tools"])
@@ -40,29 +40,29 @@ def slack_send(payload: SlackSendRequest) -> dict[str, Any]:
         raise ServiceUnavailableError("Slack send failed") from exc
 
 
-class MongoQueryRequest(BaseModel):
-    collection: str = Field(..., description="Mongo collection name")
-    filter: dict[str, Any] | None = Field(None, description="MongoDB filter object")
+class StoreQueryRequest(BaseModel):
+    collection: str = Field(..., description="Collection name")
+    filter: dict[str, Any] | None = Field(None, description="Filter object")
     limit: int = Field(20, ge=0, le=100, description="Max number of documents to return")
 
 
-@router.post("/mongo/query")
-def mongo_query(
-    payload: MongoQueryRequest,
-    mongo: MongoService = Depends(get_mongo_service),
+@router.post("/store/query")
+def store_query(
+    payload: StoreQueryRequest,
+    store: DataStoreService = Depends(get_datastore_service),
 ) -> dict[str, Any]:
-    """Read-only query against Mongo via MongoService."""
+    """Read-only query against the document store (Postgres JSON)."""
     coll = payload.collection.strip()
     if not coll:
         raise HTTPException(status_code=422, detail="collection is required")
 
     try:
-        svc = mongo.with_collection(coll)
+        svc = store.with_collection(coll)
         docs = svc.find_many(payload.filter or {}, limit=payload.limit)
         return {"collection": coll, "count": len(docs), "items": docs}
     except Exception as exc:
-        logger.warning("Mongo query failed: %s", exc)
-        raise ServiceUnavailableError("Mongo query failed") from exc
+        logger.warning("Store query failed: %s", exc)
+        raise ServiceUnavailableError("Store query failed") from exc
 
 
 @router.get("/status")
@@ -74,11 +74,11 @@ def tools_status() -> dict[str, Any]:
     except Exception:
         has_slack = False
 
-    mongo_ok = False
+    store_ok = False
     try:
-        mongo_ok = get_mongo_service().ping()
+        store_ok = get_datastore_service().ping()
     except Exception:
-        mongo_ok = False
+        store_ok = False
 
     linear_ok = True
     try:
@@ -88,7 +88,7 @@ def tools_status() -> dict[str, Any]:
 
     return {
         "slack": has_slack,
-        "mongo": mongo_ok,
+        "store": store_ok,
         "linear": linear_ok,
         "tracing": False,
     }

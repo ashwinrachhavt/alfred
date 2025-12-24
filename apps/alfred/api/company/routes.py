@@ -3,19 +3,17 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from starlette.concurrency import run_in_threadpool
 
 from alfred.core.celery_client import get_celery_client
 from alfred.core.dependencies import (
     get_company_insights_service,
-    get_company_interviews_service,
     get_company_research_service,
 )
 from alfred.core.exceptions import ServiceUnavailableError
-from alfred.schemas.company_interviews import InterviewProvider
 from alfred.services.company_outreach import generate_company_outreach
-from alfred.services.contact_discovery import discover_contacts
+from alfred.services.outreach_service import OutreachService
 
 router = APIRouter(prefix="/company", tags=["company"])
 logger = logging.getLogger(__name__)
@@ -101,89 +99,6 @@ async def company_insights(
         raise ServiceUnavailableError("Company insights failed") from exc
 
 
-@router.get("/interviews")
-async def company_interviews(
-    response: Response,
-    name: str = Query(..., description="Company name"),
-    provider: str | None = Query(
-        None,
-        description="Optional provider filter: glassdoor | blind",
-        pattern=r"^(glassdoor|blind)$",
-    ),
-    role: str | None = Query(None, description="Optional role filter"),
-    limit: int = Query(50, ge=1, le=500),
-    skip: int = Query(0, ge=0),
-    refresh: bool = Query(False, description="Sync interviews before returning results"),
-    background: bool = Query(False, description="Enqueue sync task instead of blocking"),
-    max_items_per_provider: int = Query(
-        0,
-        ge=0,
-        le=2000,
-        description="0 means 'all available' for Glassdoor paid API; for Blind it caps results.",
-    ),
-):
-    if not name.strip():
-        raise HTTPException(status_code=422, detail="name is required")
-
-    try:
-        svc = get_company_interviews_service()
-
-        if background:
-            celery_client = get_celery_client()
-            async_result = celery_client.send_task(
-                "alfred.tasks.company_interviews.sync",
-                kwargs={
-                    "company": name,
-                    "providers": [provider] if provider else None,
-                    "refresh": refresh,
-                    "max_items_per_provider": max_items_per_provider,
-                },
-            )
-            response.status_code = status.HTTP_202_ACCEPTED
-            return {
-                "task_id": async_result.id,
-                "status_url": f"/tasks/{async_result.id}",
-                "status": "queued",
-            }
-
-        if refresh:
-            providers = (
-                (InterviewProvider(provider),)
-                if provider
-                else (InterviewProvider.glassdoor, InterviewProvider.blind)
-            )
-            await run_in_threadpool(
-                svc.sync_company_interviews,
-                name,
-                providers=providers,
-                refresh=True,
-                max_items_per_provider=max_items_per_provider,
-            )
-
-        prov = InterviewProvider(provider) if provider else None
-        rows = await run_in_threadpool(
-            svc.list_interviews,
-            company=name,
-            provider=prov,
-            role=role,
-            limit=limit,
-            skip=skip,
-        )
-        return {
-            "company": name,
-            "provider": provider,
-            "role": role,
-            "limit": limit,
-            "skip": skip,
-            "items": rows,
-        }
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except Exception as exc:
-        logger.exception("Company interviews failed")
-        raise ServiceUnavailableError("Company interviews failed") from exc
-
-
 @router.get("/outreach")
 async def company_outreach(
     name: str = Query(..., description="Company name"),
@@ -207,16 +122,22 @@ async def company_contacts(
     name: str = Query(..., description="Company name"),
     role: str | None = Query(None, description="Optional role/title filter, e.g. 'engineering'"),
     limit: int = Query(20, ge=1, le=50, description="Max contacts to return"),
+    refresh: bool = Query(False, description="Force refresh from providers and bypass cache"),
 ):
     if not name.strip():
         raise HTTPException(status_code=422, detail="name is required")
 
     try:
-        contacts = discover_contacts(name, limit=limit)
-        if role:
-            role_l = role.lower()
-            contacts = [c for c in contacts if role_l in (c.get("title") or "").lower()]
-        return {"company": name, "role": role, "limit": limit, "items": contacts}
+        contacts = OutreachService().list_contacts(
+            name, limit=limit, role_filter=role, refresh=refresh
+        )
+        return {
+            "company": name,
+            "role": role,
+            "limit": limit,
+            "refresh": refresh,
+            "items": contacts,
+        }
     except Exception as exc:
         logger.exception("Company contacts lookup failed")
         raise ServiceUnavailableError("Company contacts lookup failed") from exc
@@ -253,3 +174,43 @@ async def company_outreach_post(payload: OutreachRequest):
     except Exception as exc:
         logger.exception("Company outreach failed")
         raise ServiceUnavailableError("Company outreach failed") from exc
+
+
+class OutreachSendRequest(BaseModel):
+    company: str = Field(..., description="Company name")
+    contact_email: EmailStr
+    contact_name: str | None = Field(default=None)
+    contact_title: str | None = Field(default=None)
+    subject: str = Field(..., description="Email subject")
+    body: str = Field(..., description="Plaintext email body")
+    dry_run: bool = Field(default=False, description="If true, do not send; just log")
+
+
+@router.post("/outreach/send")
+async def send_outreach_email(payload: OutreachSendRequest):
+    if not payload.company.strip():
+        raise HTTPException(status_code=422, detail="company is required")
+    try:
+        svc = OutreachService()
+        message = await run_in_threadpool(
+            svc.send_email,
+            company=payload.company,
+            contact_email=str(payload.contact_email),
+            contact_name=payload.contact_name or "",
+            contact_title=payload.contact_title or "",
+            subject=payload.subject,
+            body=payload.body,
+            dry_run=payload.dry_run,
+        )
+        return {
+            "id": str(message.id),
+            "status": message.status,
+            "sent_at": message.sent_at,
+            "provider": message.provider,
+            "dry_run": payload.dry_run,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Company outreach send failed")
+        raise ServiceUnavailableError("Company outreach send failed") from exc
