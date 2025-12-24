@@ -18,7 +18,7 @@ from alfred.models.learning import (
     LearningReview,
     LearningTopic,
 )
-from alfred.services.doc_storage import DocStorageService
+from alfred.services.doc_storage_pg import DocStorageService
 from alfred.services.extraction_service import ExtractionService
 from alfred.services.graph_service import GraphService
 from alfred.services.llm_service import LLMService
@@ -418,20 +418,10 @@ class LearningService:
     def _load_resource_text(self, resource: LearningResource) -> str:
         parts: list[str] = []
         if resource.document_id:
-            try:
-                from bson import ObjectId
-
-                if ObjectId.is_valid(resource.document_id):
-                    svc = DocStorageService()
-                    doc = svc.database.get_collection("documents").find_one(
-                        {"_id": ObjectId(resource.document_id)}
-                    )
-                    if doc:
-                        parts.append((doc.get("title") or "").strip())
-                        parts.append((doc.get("cleaned_text") or "").strip())
-            except Exception:
-                # Best-effort: fall back to local fields
-                pass
+            svc = DocStorageService()
+            text = svc.get_document_text(str(resource.document_id)) or ""
+            if text:
+                parts.append(text)
 
         parts.extend([(resource.title or "").strip(), (resource.notes or "").strip()])
         return "\n\n".join([p for p in parts if p]).strip()
@@ -446,16 +436,9 @@ class LearningService:
             raise ValueError("resource.document_id is required for extraction")
 
         svc = DocStorageService()
-        from bson import ObjectId
-
-        if not ObjectId.is_valid(resource.document_id):
-            raise ValueError("Invalid document_id")
-        doc = svc.database.get_collection("documents").find_one(
-            {"_id": ObjectId(resource.document_id)}
-        )
-        if not doc:
-            raise ValueError("Document not found")
-        text = (doc.get("cleaned_text") or "").strip()
+        text = svc.get_document_text(str(resource.document_id)) or ""
+        if not text:
+            raise ValueError("Document has no cleaned_text")
         if not text:
             raise ValueError("Document has no cleaned_text")
 

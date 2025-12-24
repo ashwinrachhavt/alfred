@@ -12,9 +12,9 @@ from alfred.schemas.system_design import (
     DiagramSuggestion,
     ExcalidrawData,
     InvalidConnection,
+    SystemDesignInterviewPrepDraft,
     SystemDesignKnowledgeDraft,
     SystemDesignKnowledgeTopic,
-    SystemDesignInterviewPrepDraft,
     SystemDesignZettelDraft,
     TemplateDefinition,
 )
@@ -224,9 +224,7 @@ def analyze_diagram(diagram: ExcalidrawData) -> DiagramAnalysis:
     ]
     present_categories = {cat for cat in id_to_category.values() if cat != ComponentCategory.other}
     missing = [
-        cat.value.replace("_", " ").title()
-        for cat in required
-        if cat not in present_categories
+        cat.value.replace("_", " ").title() for cat in required if cat not in present_categories
     ]
 
     allowed_connections = {
@@ -289,7 +287,10 @@ def analyze_diagram(diagram: ExcalidrawData) -> DiagramAnalysis:
     scale_notes = []
     if completeness < 60:
         scale_notes.append("Add core tiers before discussing scaling.")
-    elif ComponentCategory.cache in present_categories and ComponentCategory.message_queue in present_categories:
+    elif (
+        ComponentCategory.cache in present_categories
+        and ComponentCategory.message_queue in present_categories
+    ):
         scale_notes.append("Layering cache and async queues improves tail latency.")
 
     return DiagramAnalysis(
@@ -343,9 +344,7 @@ def suggest_improvements(diagram: ExcalidrawData) -> List[DiagramSuggestion]:
             )
         )
     for idx, hint in enumerate(analysis.best_practices_hints, start=1):
-        suggestions.append(
-            DiagramSuggestion(id=f"hint-{idx}", text=hint, priority="medium")
-        )
+        suggestions.append(DiagramSuggestion(id=f"hint-{idx}", text=hint, priority="medium"))
     if analysis.invalid_connections:
         suggestions.append(
             DiagramSuggestion(
@@ -375,7 +374,9 @@ def evaluate_design(diagram: ExcalidrawData) -> DiagramEvaluation:
     )
 
 
-def knowledge_draft(diagram: ExcalidrawData, *, problem_statement: str) -> SystemDesignKnowledgeDraft:
+def knowledge_draft(
+    diagram: ExcalidrawData, *, problem_statement: str
+) -> SystemDesignKnowledgeDraft:
     analysis = analyze_diagram(diagram)
     topics = []
     if problem_statement.strip():

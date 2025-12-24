@@ -588,6 +588,24 @@ class WebConnector:
         if self.mode == "multi":
             return self._search_multi(query, **kwargs)
         provider: Provider = self._resolve_auto() if self.mode == "auto" else self.mode
+
+        # Re-check env-based configuration at call time to handle tests that mutate env after settings load.
+        if provider == "exa" and not _env("EXA_API_KEY"):
+            logging.warning("Provider 'exa' not configured. Returning empty fallback response.")
+            return SearchResponse(
+                provider=provider, query=query, hits=[], meta={"status": "unconfigured"}
+            )
+        if provider == "tavily" and not _env("TAVILY_API_KEY"):
+            logging.warning("Provider 'tavily' not configured. Returning empty fallback response.")
+            return SearchResponse(
+                provider=provider, query=query, hits=[], meta={"status": "unconfigured"}
+            )
+        if provider == "brave" and not _env("BRAVE_SEARCH_API_KEY"):
+            logging.warning("Provider 'brave' not configured. Returning empty fallback response.")
+            return SearchResponse(
+                provider=provider, query=query, hits=[], meta={"status": "unconfigured"}
+            )
+
         client = self.clients.get(provider)
         if not client:
             if provider not in self.clients:

@@ -5,10 +5,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from bson import ObjectId
-from pymongo.collection import Collection
-from pymongo.database import Database
-
 from alfred.core.settings import settings
 from alfred.schemas.system_design import (
     AutosaveRequest,
@@ -31,6 +27,7 @@ from alfred.schemas.system_design import (
     TemplateDefinition,
 )
 from alfred.services.llm_service import LLMService
+from alfred.services.mongo import MongoService
 from alfred.services.system_design_heuristics import component_library, template_library
 from alfred.services.system_design_interviewer import SystemDesignInterviewer
 
@@ -45,27 +42,17 @@ def _new_id() -> str:
 
 @dataclass
 class SystemDesignService:
-    """Mongo-backed storage and heuristics for system design interviews."""
+    """Postgres-backed storage and heuristics for system design interviews."""
 
-    database: Database | None = None
     collection_name: str = settings.system_design_sessions_collection
     llm_service: LLMService | None = None
 
     def __post_init__(self) -> None:
-        if self.database is None:
-            from alfred.connectors.mongo_connector import MongoConnector
-
-            self.database = MongoConnector().database
-        self._collection: Collection = self.database.get_collection(self.collection_name)
+        self._collection = MongoService(default_collection=self.collection_name)
         self._interviewer = SystemDesignInterviewer(llm_service=self.llm_service)
 
     def ensure_indexes(self) -> None:
-        try:
-            self._collection.create_index([("share_id", 1)], name="share_id", unique=True)
-            self._collection.create_index([("updated_at", -1)], name="updated_desc")
-            self._collection.create_index([("created_at", -1)], name="created_desc")
-        except Exception:
-            pass
+        return
 
     def component_library(self) -> List[ComponentDefinition]:
         return component_library()
@@ -93,14 +80,11 @@ class SystemDesignService:
             "created_at": now,
             "updated_at": now,
         }
-        res = self._collection.insert_one(doc)
-        doc_id = str(res.inserted_id)
+        doc_id = self._collection.insert_one(doc)
         return self._to_session(doc_id, doc)
 
     def get_session(self, session_id: str) -> Optional[SystemDesignSession]:
-        if not ObjectId.is_valid(session_id):
-            return None
-        doc = self._collection.find_one({"_id": ObjectId(session_id)})
+        doc = self._collection.find_one({"_id": session_id})
         if not doc:
             return None
         return self._to_session(str(doc["_id"]), doc)
@@ -112,8 +96,6 @@ class SystemDesignService:
         return self._to_session(str(doc["_id"]), doc)
 
     def autosave(self, session_id: str, payload: AutosaveRequest) -> Optional[SystemDesignSession]:
-        if not ObjectId.is_valid(session_id):
-            return None
         now = _utcnow()
         version = DiagramVersion(
             id=_new_id(),
@@ -126,10 +108,10 @@ class SystemDesignService:
             "updated_at": now,
         }
         self._collection.update_one(
-            {"_id": ObjectId(session_id)},
+            {"_id": session_id},
             {"$set": update, "$push": {"versions": version.model_dump()}},
         )
-        doc = self._collection.find_one({"_id": ObjectId(session_id)})
+        doc = self._collection.find_one({"_id": session_id})
         if not doc:
             return None
         return self._to_session(str(doc["_id"]), doc)
@@ -158,8 +140,6 @@ class SystemDesignService:
     def add_export(
         self, session_id: str, payload: DiagramExportRequest
     ) -> Optional[SystemDesignSession]:
-        if not ObjectId.is_valid(session_id):
-            return None
         now = _utcnow()
         export = DiagramExport(
             id=_new_id(),
@@ -169,27 +149,25 @@ class SystemDesignService:
             created_at=now,
         )
         self._collection.update_one(
-            {"_id": ObjectId(session_id)},
+            {"_id": session_id},
             {"$push": {"exports": export.model_dump()}, "$set": {"updated_at": now}},
         )
-        doc = self._collection.find_one({"_id": ObjectId(session_id)})
+        doc = self._collection.find_one({"_id": session_id})
         if not doc:
             return None
-        return self._to_session(str(doc["_id"]), doc)
+        return self._to_session(str(doc.get("_id", session_id)), doc)
 
     def attach_artifacts(
         self, session_id: str, artifacts: SystemDesignArtifacts
     ) -> Optional[SystemDesignSession]:
-        if not ObjectId.is_valid(session_id):
-            return None
         now = _utcnow()
         data = artifacts.model_dump()
         data["published_at"] = data.get("published_at") or now
         self._collection.update_one(
-            {"_id": ObjectId(session_id)},
+            {"_id": session_id},
             {"$set": {"artifacts": data, "updated_at": now}},
         )
-        doc = self._collection.find_one({"_id": ObjectId(session_id)})
+        doc = self._collection.find_one({"_id": session_id})
         if not doc:
             return None
         return self._to_session(str(doc["_id"]), doc)

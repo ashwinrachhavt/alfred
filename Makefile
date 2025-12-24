@@ -56,3 +56,11 @@ docker-down:
 ingest-urls:
 	@if [ -z "$(FILE)" ]; then echo "Usage: make ingest-urls FILE=urls.txt [COLLECTION=personal_kb]"; exit 1; fi
 	$(RUN) python scripts/ingest.py --urls-file $(FILE) --collection $${COLLECTION:-personal_kb}
+
+.PHONY: alembic-autogen alembic-upgrade
+# Generate a migration from current models (set msg="your message", DATABASE_URL, PYTHONPATH=apps).
+alembic-autogen:
+	@msg=$${msg:-auto}; PYTHONPATH=apps DATABASE_URL=$${DATABASE_URL:?set DATABASE_URL} $(RUN) alembic revision --autogenerate -m "$${msg}"
+
+alembic-upgrade:
+	PYTHONPATH=apps DATABASE_URL=$${DATABASE_URL:?set DATABASE_URL} $(RUN) alembic upgrade head

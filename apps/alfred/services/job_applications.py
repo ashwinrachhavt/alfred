@@ -4,10 +4,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from bson import ObjectId
-from pymongo.collection import Collection
-from pymongo.database import Database
-
 from alfred.core.settings import settings
 from alfred.schemas.job_applications import (
     JobApplicationCreate,
@@ -15,6 +11,7 @@ from alfred.schemas.job_applications import (
     JobApplicationStatus,
     JobApplicationUpdate,
 )
+from alfred.services.mongo import MongoService
 
 
 def _utcnow() -> datetime:
@@ -23,17 +20,12 @@ def _utcnow() -> datetime:
 
 @dataclass
 class JobApplicationService:
-    """Mongo-backed CRUD for job applications."""
+    """Postgres-backed CRUD for job applications."""
 
-    database: Database | None = None
     collection_name: str = settings.job_applications_collection
 
     def __post_init__(self) -> None:
-        if self.database is None:
-            from alfred.connectors.mongo_connector import MongoConnector
-
-            self.database = MongoConnector().database
-        self._collection: Collection = self.database.get_collection(self.collection_name)
+        self._collection = MongoService(default_collection=self.collection_name)
 
     def ensure_indexes(self) -> None:
         try:
@@ -54,13 +46,10 @@ class JobApplicationService:
             "created_at": now,
             "updated_at": now,
         }
-        res = self._collection.insert_one(doc)
-        return str(res.inserted_id)
+        return self._collection.insert_one(doc)
 
     def get(self, job_application_id: str) -> Optional[Dict[str, Any]]:
-        if not ObjectId.is_valid(job_application_id):
-            return None
-        doc = self._collection.find_one({"_id": ObjectId(job_application_id)})
+        doc = self._collection.find_one({"_id": job_application_id})
         if not doc:
             return None
         JobApplicationRecord.model_validate(doc)
@@ -69,8 +58,6 @@ class JobApplicationService:
         return out
 
     def update(self, job_application_id: str, patch: JobApplicationUpdate) -> bool:
-        if not ObjectId.is_valid(job_application_id):
-            raise ValueError("Invalid job_application_id")
         update: dict[str, Any] = {"updated_at": patch.updated_at or _utcnow()}
         if patch.status is not None:
             update["status"] = patch.status.value
@@ -78,8 +65,8 @@ class JobApplicationService:
             update["source_url"] = patch.source_url
         if patch.metadata is not None:
             update["metadata"] = patch.metadata
-        res = self._collection.update_one({"_id": ObjectId(job_application_id)}, {"$set": update})
-        return bool(res.matched_count)
+        res = self._collection.update_one({"_id": job_application_id}, {"$set": update})
+        return bool(res.get("matched_count", 0))
 
 
 __all__ = ["JobApplicationService"]

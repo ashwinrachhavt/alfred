@@ -4,13 +4,13 @@ from dataclasses import dataclass
 from typing import List
 
 from alfred.schemas.system_design import (
+    DesignPrompt,
     DiagramAnalysis,
     DiagramEvaluation,
     DiagramQuestion,
     DiagramQuestionSet,
     DiagramSuggestion,
     DiagramSuggestionSet,
-    DesignPrompt,
     ExcalidrawData,
     SystemDesignKnowledgeDraft,
     SystemDesignSession,
@@ -19,9 +19,9 @@ from alfred.services.llm_service import LLMService
 from alfred.services.system_design_heuristics import (
     analyze_diagram,
     ask_probing_questions,
+    evaluate_design,
     knowledge_draft,
     suggest_improvements,
-    evaluate_design,
     summarize_diagram,
 )
 

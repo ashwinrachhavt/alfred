@@ -5,9 +5,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from pymongo.collection import Collection
-from pymongo.database import Database
-
 from alfred.core.settings import settings
 from alfred.schemas.company_insights import (
     CompanyInsightsReport,
@@ -19,6 +16,7 @@ from alfred.schemas.company_insights import (
     SourceInfo,
     SourceProvider,
 )
+from alfred.services.mongo import MongoService
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +50,7 @@ class CompanyInsightsService:
     - Degrade gracefully when providers are unavailable or gated.
     """
 
-    database: Database | None = None
+    database: Any | None = None
     collection_name: str = settings.company_insights_collection
     cache_ttl_hours: int = settings.company_insights_cache_ttl_hours
     glassdoor_service: Any | None = None
@@ -61,11 +59,10 @@ class CompanyInsightsService:
     llm_service: Any | None = None
 
     def __post_init__(self) -> None:
-        if self.database is None:
-            from alfred.connectors.mongo_connector import MongoConnector
-
-            self.database = MongoConnector().database
-        self._collection: Collection = self.database.get_collection(self.collection_name)
+        if self.database is not None and hasattr(self.database, "get_collection"):
+            self._collection = self.database.get_collection(self.collection_name)
+        else:
+            self._collection = MongoService(default_collection=self.collection_name)
 
         if self.glassdoor_service is None:
             from alfred.services.glassdoor_service import GlassdoorService

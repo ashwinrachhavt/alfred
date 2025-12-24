@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Optional, TypedDict
@@ -11,8 +12,10 @@ from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 
 from alfred.core.dependencies import get_company_research_service
+from alfred.core.settings import LLMProvider, settings
 from alfred.prompts import load_prompt
 from alfred.services.agentic_rag import create_retriever_tool, make_llm, make_retriever
+from alfred.services.contact_discovery import discover_contacts
 from alfred.services.web_search import search_web
 
 
@@ -82,6 +85,96 @@ def make_tools(k: int = 6):
 OUTREACH_SYSTEM_PROMPT = load_prompt("company_outreach", "system.md")
 _FINAL_PROMPT_TEMPLATE = load_prompt("company_outreach", "final_template.md")
 _SEED_PROMPT = load_prompt("company_outreach", "seed.md")
+
+
+def _use_stub_outreach() -> bool:
+    if os.getenv("ALFRED_OUTREACH_STUB") == "1":
+        return True
+    if settings.app_env in {"test", "ci"}:
+        return True
+    if settings.llm_provider == LLMProvider.openai and not settings.openai_api_key:
+        return True
+    return False
+
+
+def _stub_outreach(company: str, role: str, personal_context: str) -> Dict[str, Any]:
+    summary = (
+        f"Offline outreach kit for {company} ({role}). Set OPENAI_API_KEY or ALFRED_OLLAMA_* to "
+        "enable live generation."
+    )
+    outreach_email = (
+        f"Hi there — quick intro about {company}. I focus on AI product delivery and I'd love to "
+        f"discuss how my background maps to {role}. Happy to share a concise portfolio and adapt to your needs."
+    )
+    return {
+        "summary": summary,
+        "positioning": [
+            "Hands-on builder with AI product + growth experience",
+            "Comfortable shipping quickly with small teams",
+            f"Motivated by {company}'s roadmap and recent launches",
+        ],
+        "suggested_topics": [
+            "Current AI/automation initiatives",
+            "Team's biggest hiring priority",
+            "Where quick experiments could move the needle",
+        ],
+        "outreach_email": outreach_email,
+        "follow_up": [
+            "Follow up in 5-7 days with one concrete idea",
+            "Share a short Loom/demo tailored to their product",
+        ],
+        "sources": ["stub/offline"],
+        "contacts": [],
+        "personal_context": personal_context,
+    }
+
+
+def _normalize_contact(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "name": str(item.get("name") or "").strip(),
+        "title": str(item.get("title") or "").strip(),
+        "email": str(item.get("email") or "").strip(),
+        "confidence": float(item.get("confidence") or 0.0),
+        "source": str(item.get("source") or "unknown").strip() or "unknown",
+    }
+
+
+def _normalize_outreach_payload(raw: Dict[str, Any], company: str, role: str) -> Dict[str, Any]:
+    base: Dict[str, Any] = {
+        "summary": "",
+        "positioning": [],
+        "suggested_topics": [],
+        "outreach_email": "",
+        "follow_up": [],
+        "sources": [],
+        "contacts": [],
+    }
+    base.update(raw or {})
+
+    if not base.get("summary"):
+        base["summary"] = f"Outreach kit for {company} targeting {role}."
+
+    for key in ("positioning", "suggested_topics", "follow_up", "sources"):
+        val = base.get(key) or []
+        base[key] = [str(x).strip() for x in val if str(x).strip()]
+
+    email_text = str(base.get("outreach_email") or "").strip()
+    if not email_text:
+        email_text = base["summary"]
+    base["outreach_email"] = email_text
+
+    contacts_raw = base.get("contacts") or []
+    normalized_contacts = []
+    if isinstance(contacts_raw, list):
+        for item in contacts_raw:
+            if isinstance(item, dict):
+                normalized_contacts.append(_normalize_contact(item))
+    base["contacts"] = normalized_contacts
+
+    if not base.get("sources"):
+        base["sources"] = ["company_outreach"]
+
+    return base
 
 
 @lru_cache(maxsize=1)
@@ -237,8 +330,12 @@ def generate_company_outreach(
     personal_context: str = "",
     k: int = 6,
 ) -> Dict[str, Any]:
+    if _use_stub_outreach():
+        return _stub_outreach(company, role, personal_context)
+
     resume_context = _load_resume_context()
     job_description_context = _load_job_description_context(company, role)
+    contacts = discover_contacts(company)
 
     graph = build_company_outreach_graph(
         company=company, role=role, personal_context=personal_context, k=k
@@ -288,11 +385,12 @@ def generate_company_outreach(
     try:
         parsed = json.loads(final_text)
         if isinstance(parsed, dict):
-            return parsed
+            parsed["contacts"] = parsed.get("contacts") or contacts
+            return _normalize_outreach_payload(parsed, company, role)
     except json.JSONDecodeError:
         pass
 
-    return {"summary": final_text}
+    return _normalize_outreach_payload({"summary": final_text, "contacts": contacts}, company, role)
 
 
 class OutreachState(TypedDict):

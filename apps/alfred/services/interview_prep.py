@@ -4,16 +4,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from bson import ObjectId
-from pymongo.collection import Collection
-from pymongo.database import Database
-
 from alfred.core.settings import settings
 from alfred.schemas.interview_prep import (
     InterviewPrepCreate,
     InterviewPrepRecord,
     InterviewPrepUpdate,
 )
+from alfred.services.mongo import MongoService
 
 
 def _utcnow() -> datetime:
@@ -22,17 +19,16 @@ def _utcnow() -> datetime:
 
 @dataclass
 class InterviewPrepService:
-    """Mongo-backed CRUD and indexing for interview preparation records."""
+    """Postgres-backed CRUD and indexing for interview preparation records."""
 
-    database: Database | None = None
+    database: Any | None = None
     collection_name: str = settings.interview_prep_collection
 
     def __post_init__(self) -> None:
-        if self.database is None:
-            from alfred.connectors.mongo_connector import MongoConnector
-
-            self.database = MongoConnector().database
-        self._collection: Collection = self.database.get_collection(self.collection_name)
+        if self.database is not None and hasattr(self.database, "get_collection"):
+            self._collection = self.database.get_collection(self.collection_name)
+        else:
+            self._collection = MongoService(default_collection=self.collection_name)
 
     # -----------------
     # Indexes
@@ -40,19 +36,12 @@ class InterviewPrepService:
     def ensure_indexes(self) -> None:
         """Create indexes for common interview prep queries (best-effort)."""
         try:
-            self._collection.create_index([("job_application_id", 1)], name="job_app_id")
-            self._collection.create_index([("company", 1)], name="company")
-            self._collection.create_index([("interview_date", 1)], name="interview_date")
-            self._collection.create_index([("generated_at", -1)], name="generated_at_desc")
-            # Ensure we don't double-create records for the same Gmail message.
-            self._collection.create_index(
-                [("source.gmail_message_id", 1)],
-                name="gmail_message_id",
-                unique=True,
-                sparse=True,
-            )
+            if hasattr(self._collection, "create_index"):
+                self._collection.create_index([("job_application_id", 1)], name="job_app_id")
+                self._collection.create_index([("company", 1)], name="company")
+                self._collection.create_index([("interview_date", 1)], name="interview_date")
+                self._collection.create_index([("generated_at", -1)], name="generated_at_desc")
         except Exception:
-            # Best-effort: avoid blocking server startup if Mongo isn't reachable.
             pass
 
     # -----------------
@@ -83,14 +72,11 @@ class InterviewPrepService:
             "updated_at": now,
         }
 
-        res = self._collection.insert_one(doc)
-        return str(res.inserted_id)
+        return self._collection.insert_one(doc)
 
     def get(self, interview_prep_id: str) -> Optional[Dict[str, Any]]:
         """Fetch a record by id. Returns a serialized dict or None."""
-        if not ObjectId.is_valid(interview_prep_id):
-            return None
-        doc = self._collection.find_one({"_id": ObjectId(interview_prep_id)})
+        doc = self._collection.find_one({"_id": interview_prep_id})
         if not doc:
             return None
         InterviewPrepRecord.model_validate(doc)
@@ -113,9 +99,6 @@ class InterviewPrepService:
 
     def update(self, interview_prep_id: str, patch: InterviewPrepUpdate) -> bool:
         """Patch an existing record. Returns True when a document was matched."""
-        if not ObjectId.is_valid(interview_prep_id):
-            raise ValueError("Invalid interview_prep_id")
-
         now = _utcnow()
         update: dict[str, Any] = {"updated_at": now}
 
@@ -150,16 +133,14 @@ class InterviewPrepService:
         if patch.calendar_event is not None:
             update["calendar_event"] = patch.calendar_event.model_dump()
 
-        res = self._collection.update_one({"_id": ObjectId(interview_prep_id)}, {"$set": update})
-        return bool(res.matched_count)
+        res = self._collection.update_one({"_id": interview_prep_id}, {"$set": update})
+        return bool(res.get("matched_count", 0))
 
     @staticmethod
     def _serialize(doc: Dict[str, Any]) -> Dict[str, Any]:
         out = dict(doc)
         if "_id" in out:
             out["id"] = str(out.pop("_id"))
-        if isinstance(out.get("job_application_id"), ObjectId):
-            out["job_application_id"] = str(out["job_application_id"])
         return out
 
 

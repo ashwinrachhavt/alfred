@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
-from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
@@ -17,7 +16,7 @@ from alfred.schemas.documents import (
     NoteResponse,
     NotesListResponse,
 )
-from alfred.services.doc_storage import DocStorageService
+from alfred.services.doc_storage_pg import DocStorageService
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 logger = logging.getLogger(__name__)
@@ -140,25 +139,10 @@ def get_document(
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> dict:
     try:
-        if not ObjectId.is_valid(id):
-            raise HTTPException(status_code=400, detail="Invalid id")
-        doc = svc.database.get_collection("documents").find_one({"_id": ObjectId(id)})
+        doc = svc.get_document(id)
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
-        return {
-            "id": str(doc.get("_id")),
-            "title": doc.get("title"),
-            "source_url": doc.get("source_url"),
-            "canonical_url": doc.get("canonical_url"),
-            "topics": doc.get("topics"),
-            "captured_at": doc.get("captured_at"),
-            "tokens": doc.get("tokens"),
-            "summary": (
-                (doc.get("summary") or {}).get("short")
-                if isinstance(doc.get("summary"), dict)
-                else None
-            ),
-        }
+        return doc
     except HTTPException:
         raise
     except Exception as exc:  # pragma: no cover - external IO

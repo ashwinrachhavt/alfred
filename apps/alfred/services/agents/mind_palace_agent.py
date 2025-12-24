@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from alfred.schemas import AgentResponse, ChatMessage
-from alfred.services.doc_storage import DocStorageService
+from alfred.services.doc_storage_pg import DocStorageService
 
 
 def _summarize_items(items: List[Dict[str, Any]], *, limit: int = 5) -> str:

@@ -5,8 +5,6 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from alfred.schemas.object_id import _ObjectIdOrStr
-
 
 class StarStory(BaseModel):
     """A STAR story used in interview preparation."""
@@ -117,7 +115,7 @@ class InterviewPrepRecord(BaseModel):
 
     model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
-    job_application_id: Optional[_ObjectIdOrStr] = None
+    job_application_id: Optional[str] = None
     company: str
     role: str
     interview_date: Optional[datetime] = None
@@ -151,7 +149,7 @@ class InterviewPrepCreate(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    job_application_id: Optional[_ObjectIdOrStr] = None
+    job_application_id: Optional[str] = None
     company: str
     role: str
     interview_date: Optional[datetime] = None
@@ -203,5 +201,4 @@ __all__ = [
     "QuizQuestion",
     "StarStory",
     "TechnicalTopic",
-    "_ObjectIdOrStr",
 ]
