@@ -26,7 +26,7 @@ from alfred.schemas.system_design import (
     SystemDesignSessionCreate,
     TemplateDefinition,
 )
-from alfred.services.interview_prep import InterviewPrepService
+from alfred.services.interview_service import InterviewPrepService
 from alfred.services.learning_service import LearningService
 from alfred.services.system_design import SystemDesignService
 from alfred.services.system_design_realtime import SystemDesignRealtimeHub

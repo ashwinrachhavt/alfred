@@ -23,7 +23,7 @@ from alfred.schemas.panel_interview import (
     PanelTurnRequest,
     PanelTurnResponse,
 )
-from alfred.services.unified_interview_agent import UnifiedInterviewAgent
+from alfred.services.interview_service import UnifiedInterviewAgent
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 

@@ -1,48 +1,45 @@
 from __future__ import annotations
 
-from typing import Any, List, Sequence, Tuple
+from typing import Any
 
-from alfred.services.interview_prep import InterviewPrepService
+from alfred.schemas.interview_prep import InterviewPrepCreate, InterviewPrepUpdate
+from alfred.services.interview_service import InterviewPrepService
 
 
-class _FakeCollection:
+class _FakeStore:
     def __init__(self) -> None:
-        self.created: List[Tuple[Sequence[tuple[str, int]], str]] = []
+        self.docs: dict[str, dict[str, Any]] = {}
 
-    def create_index(self, keys: Sequence[tuple[str, int]], name: str) -> None:
-        self.created.append((tuple(keys), name))
+    def insert_one(self, doc: dict[str, Any]) -> str:  # type: ignore[no-untyped-def]
+        _id = str(doc.get("_id") or "id-1")
+        doc["_id"] = _id
+        self.docs[_id] = dict(doc)
+        return _id
 
+    def find_one(self, flt: dict[str, Any]) -> dict[str, Any] | None:  # type: ignore[no-untyped-def]
+        _id = flt.get("_id")
+        if not _id:
+            return None
+        return self.docs.get(str(_id))
 
-class _FakeDatabase:
-    def __init__(self, coll: _FakeCollection) -> None:
-        self._coll = coll
-
-    def get_collection(self, _name: str):
-        return self._coll
-
-
-def test_interview_prep_ensure_indexes_best_effort():
-    coll = _FakeCollection()
-    db = _FakeDatabase(coll)
-    svc = InterviewPrepService(  # type: ignore[arg-type]
-        database=db,
-        collection_name="interview_preps",
-    )
-    svc.ensure_indexes()
-
-    names = {name for _keys, name in coll.created}
-    assert {"job_app_id", "company", "interview_date", "generated_at_desc"} <= names
+    def update_one(self, flt: dict[str, Any], update: dict[str, Any]):  # type: ignore[no-untyped-def]
+        _id = str(flt.get("_id"))
+        if _id not in self.docs:
+            return {"matched_count": 0}
+        patch = (update.get("$set") or {}) if isinstance(update, dict) else {}
+        self.docs[_id].update(patch)
+        return {"matched_count": 1}
 
 
-def test_interview_prep_ensure_indexes_swallow_errors():
-    class _ExplodingCollection(_FakeCollection):
-        def create_index(self, keys: Any, name: str) -> None:  # type: ignore[override]
-            raise RuntimeError("boom")
+def test_interview_prep_crud_roundtrip_without_db() -> None:
+    store = _FakeStore()
+    svc = InterviewPrepService(collection_name="interview_preps", store=store)  # type: ignore[arg-type]
 
-    coll = _ExplodingCollection()
-    db = _FakeDatabase(coll)
-    svc = InterviewPrepService(  # type: ignore[arg-type]
-        database=db,
-        collection_name="interview_preps",
-    )
-    svc.ensure_indexes()  # should not raise
+    interview_id = svc.create(InterviewPrepCreate(company="Acme", role="Backend Engineer"))
+    got = svc.get(interview_id)
+    assert got and got["company"] == "Acme"
+
+    ok = svc.update(interview_id, InterviewPrepUpdate(interview_type="phone_screen"))
+    assert ok is True
+    got2 = svc.get(interview_id)
+    assert got2 and got2["interview_type"] == "phone_screen"

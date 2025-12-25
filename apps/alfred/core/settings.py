@@ -120,11 +120,6 @@ class Settings(BaseSettings):
         default="https://api.openwebninja.com/realtime-glassdoor-data",
         alias="OPENWEB_NINJA_BASE_URL",
     )
-    # Backward-compat: some environments use this alternate key name
-    openweb_ninja_glassdoor_api_key: Optional[str] = Field(
-        default=None,
-        alias="OPENWEBNINJA_GLASSDOOR_API_KEY",
-    )
 
     # LangSearch
     langsearch_api_key: Optional[str] = Field(default=None, alias="LANGSEARCH_API_KEY")

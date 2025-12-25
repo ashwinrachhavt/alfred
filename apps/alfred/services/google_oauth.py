@@ -95,11 +95,9 @@ def load_credentials(
     namespace: str | None = DEFAULT_NAMESPACE,
 ) -> Credentials | None:
     p = token_path(user_id, namespace=namespace)
-    legacy = token_path(user_id, namespace=None)
-    path = p if p.exists() else legacy
-    if not path.exists():
+    if not p.exists():
         return None
-    data = json.loads(path.read_text())
+    data = json.loads(p.read_text())
     # Ensure client fields are present (some dumps omit them)
     data.setdefault("client_id", settings.google_client_id)
     data.setdefault("client_secret", settings.google_client_secret)

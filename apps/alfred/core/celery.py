@@ -23,6 +23,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             "alfred.tasks.document_enrichment",
             "alfred.tasks.gmail_interviews",
             "alfred.tasks.interview_prep",
+            "alfred.tasks.interviews_unified",
             "alfred.tasks.paraform_company_report",
         ]
         if include_tasks
@@ -58,6 +59,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             "alfred.tasks.document_enrichment.*": {"queue": "default"},
             "alfred.tasks.gmail_interviews.*": {"queue": "default"},
             "alfred.tasks.interview_prep.*": {"queue": "default"},
+            "alfred.tasks.interviews_unified.*": {"queue": "agent"},
             "alfred.tasks.paraform_company_report.*": {"queue": "default"},
         },
     )
@@ -97,6 +99,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
         import alfred.tasks.document_enrichment  # noqa: F401
         import alfred.tasks.gmail_interviews  # noqa: F401
         import alfred.tasks.interview_prep  # noqa: F401
+        import alfred.tasks.interviews_unified  # noqa: F401
         import alfred.tasks.mind_palace_agent  # noqa: F401
         import alfred.tasks.paraform_company_report  # noqa: F401
 

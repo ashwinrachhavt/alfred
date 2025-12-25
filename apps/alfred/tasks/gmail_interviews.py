@@ -10,10 +10,11 @@ from alfred.connectors.google_gmail_connector import GoogleGmailConnector
 from alfred.core.celery_client import get_celery_client
 from alfred.core.dependencies import get_interview_prep_service
 from alfred.core.settings import settings
+from alfred.core.utils import clamp_int
 from alfred.schemas.interview_prep import InterviewPrepCreate
 from alfred.services.gmail import GmailService
 from alfred.services.google_oauth import load_credentials, persist_credentials
-from alfred.services.interview_detection import InterviewDetectionService
+from alfred.services.interview_service import InterviewDetectionService
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +44,8 @@ def poll_gmail_for_interviews_task(*, days_back: int = 7, max_results: int = 25)
     if connector is None:
         return {"ok": False, "reason": "No Gmail credentials configured"}
 
-    days = max(1, min(int(days_back), 30))
-    limit = max(1, min(int(max_results), 100))
+    days = clamp_int(days_back, lo=1, hi=30)
+    limit = clamp_int(max_results, lo=1, hi=100)
 
     query = 'newer_than:%dd (interview OR "phone screen" OR onsite OR screening)' % days
 

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from alfred.connectors.firecrawl_connector import FirecrawlClient
     from alfred.connectors.web_connector import WebConnector
     from alfred.services.agents.mind_palace_agent import KnowledgeAgentService
-    from alfred.services.company_researcher import (
+    from alfred.services.company_research_service import (
         CompanyInsightsService,
         CompanyInterviewsService,
         CompanyResearchService,
@@ -26,12 +26,15 @@ if TYPE_CHECKING:
     from alfred.services.doc_storage_pg import DocStorageService
     from alfred.services.extraction_service import ExtractionService
     from alfred.services.graph_service import GraphService
-    from alfred.services.interview_prep import InterviewPrepService
-    from alfred.services.interview_questions import InterviewQuestionsService
-    from alfred.services.job_applications import JobApplicationService
+    from alfred.services.interview_service import (
+        InterviewPrepService,
+        InterviewQuestionsService,
+        UnifiedInterviewAgent,
+    )
+    from alfred.services.job_hunt_service import JobApplicationService, JobHuntService
     from alfred.services.llm_service import LLMService
     from alfred.services.system_design import SystemDesignService
-    from alfred.services.unified_interview_agent import UnifiedInterviewAgent
+    from alfred.services.web_service import WebService
 
 
 @lru_cache(maxsize=1)
@@ -91,16 +94,16 @@ def get_doc_storage_service() -> DocStorageService:
 
 @lru_cache(maxsize=1)
 def get_interview_prep_service() -> InterviewPrepService:
-    from alfred.services.interview_prep import InterviewPrepService
+    from alfred.services.interview_service import InterviewPrepService
 
     return InterviewPrepService()
 
 
 @lru_cache(maxsize=1)
 def get_job_application_service() -> JobApplicationService:
-    from alfred.services.job_applications import JobApplicationService
+    from alfred.services.job_hunt_service import JobApplicationService
 
-    return JobApplicationService(database=None)
+    return JobApplicationService()
 
 
 @lru_cache(maxsize=1)
@@ -134,7 +137,7 @@ def get_fallback_web_search_connector() -> WebConnector:
 
 @lru_cache(maxsize=1)
 def get_company_research_service() -> CompanyResearchService:
-    from alfred.services.company_researcher import CompanyResearchService
+    from alfred.services.company_research_service import CompanyResearchService
 
     return CompanyResearchService(
         search_results=8,
@@ -147,7 +150,7 @@ def get_company_research_service() -> CompanyResearchService:
 
 @lru_cache(maxsize=1)
 def get_company_insights_service() -> CompanyInsightsService:
-    from alfred.services.company_researcher import CompanyInsightsService
+    from alfred.services.company_research_service import CompanyInsightsService
 
     return CompanyInsightsService(
         collection_name=settings.company_insights_collection,
@@ -156,22 +159,15 @@ def get_company_insights_service() -> CompanyInsightsService:
 
 
 @lru_cache(maxsize=1)
-def get_outreach_service():
-    from alfred.services.outreach_service import OutreachService
-
-    return OutreachService()
-
-
-@lru_cache(maxsize=1)
 def get_company_interviews_service() -> CompanyInterviewsService:
-    from alfred.services.company_researcher import CompanyInterviewsService
+    from alfred.services.company_research_service import CompanyInterviewsService
 
     return CompanyInterviewsService()
 
 
 @lru_cache(maxsize=1)
 def get_interview_questions_service() -> InterviewQuestionsService:
-    from alfred.services.interview_questions import InterviewQuestionsService
+    from alfred.services.interview_service import InterviewQuestionsService
 
     return InterviewQuestionsService(
         primary_search=get_primary_web_search_connector(),
@@ -182,7 +178,7 @@ def get_interview_questions_service() -> InterviewQuestionsService:
 
 @lru_cache(maxsize=1)
 def get_unified_interview_agent() -> UnifiedInterviewAgent:
-    from alfred.services.unified_interview_agent import UnifiedInterviewAgent
+    from alfred.services.interview_service import UnifiedInterviewAgent
 
     return UnifiedInterviewAgent(
         questions_service=get_interview_questions_service(),
@@ -197,6 +193,24 @@ def get_system_design_service() -> SystemDesignService:
     return SystemDesignService(
         collection_name=settings.system_design_sessions_collection,
         llm_service=get_llm_service(),
+    )
+
+
+@lru_cache(maxsize=1)
+def get_web_service() -> WebService:
+    from alfred.services.web_service import WebService
+
+    mode = "searx" if (settings.searxng_host or settings.searx_host) else "multi"
+    return WebService(mode=mode, searx_k=10)
+
+
+@lru_cache(maxsize=1)
+def get_job_hunt_service() -> JobHuntService:
+    from alfred.services.job_hunt_service import JobHuntService
+
+    return JobHuntService(
+        applications=get_job_application_service(),
+        company_research=get_company_research_service(),
     )
 
 

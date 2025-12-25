@@ -85,10 +85,7 @@ class GlassdoorClient:
         default_domain: str = "www.glassdoor.com",
     ):
         self.base_url = base_url.rstrip("/")
-        # Prefer explicitly passed key, then settings, then alt env var for backward-compat
-        self.api_key = (
-            api_key or settings.openweb_ninja_api_key or settings.openweb_ninja_glassdoor_api_key
-        )
+        self.api_key = api_key or settings.openweb_ninja_api_key
         self.timeout = timeout
         self.max_retries = max_retries
         self.backoff_base = backoff_base
@@ -104,9 +101,7 @@ class GlassdoorClient:
 
     def _headers(self) -> Dict[str, str]:
         if not self.is_configured:
-            raise ConfigurationError(
-                "Glassdoor API key not configured. Set OPENWEB_NINJA_API_KEY (or OPENWEBNINJA_GLASSDOOR_API_KEY)."
-            )
+            raise ConfigurationError("Glassdoor API key not configured. Set OPENWEB_NINJA_API_KEY.")
         return {
             "x-api-key": self.api_key,
             "User-Agent": self.user_agent,
@@ -591,28 +586,3 @@ class GlassdoorClient:
             },
             status_code=200,
         )
-
-
-if __name__ == "__main__":
-    client = GlassdoorClient(
-        base_url=settings.openweb_ninja_base_url,
-        api_key=settings.openweb_ninja_api_key
-        or settings.openweb_ninja_glassdoor_api_key
-        or settings.openweb_ninja_glassdoor_api_key,
-    )
-
-    res = client.get_company_interviews(
-        "Hubspot",  # or 9079
-        max_interviews=30,
-        sort="MOST_RECENT",
-        location="San-Francisco",  # optional
-        location_type="CITY",
-    )
-    print("Success:", res.success, "Status:", res.status_code)
-    if res.success and res.data:
-        print("Company ID:", res.data.get("company_id"))
-        print("Fetched interviews:", len(res.data.get("interviews", [])))
-        print("Total interviews (reported):", res.data.get("total_count"))
-        print("Page count (reported):", res.data.get("page_count"))
-    else:
-        print("Error:", res.error)

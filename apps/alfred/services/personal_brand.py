@@ -17,7 +17,7 @@ from alfred.schemas.brand import (
     StoriesResponse,
 )
 from alfred.services.agentic_rag import get_context_chunks
-from alfred.services.company_researcher import CompanyResearchService
+from alfred.services.company_research_service import CompanyResearchService
 from alfred.services.llm_service import LLMService
 
 _SYSTEM = load_prompt("personal_brand", "system.md")

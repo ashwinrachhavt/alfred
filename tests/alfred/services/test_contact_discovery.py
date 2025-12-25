@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "apps"))
 
 from alfred.core.settings import settings  # noqa: E402
-from alfred.services.company_outreach import ContactDiscoveryService  # noqa: E402
+from alfred.services.company_outreach_service import ContactDiscoveryService  # noqa: E402
 
 
 class _FakeResponse:

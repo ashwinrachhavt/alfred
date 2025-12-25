@@ -12,8 +12,7 @@ from alfred.core.dependencies import (
     get_company_research_service,
 )
 from alfred.core.exceptions import ServiceUnavailableError
-from alfred.services.company_outreach import generate_company_outreach
-from alfred.services.outreach_service import OutreachService
+from alfred.services.company_outreach_service import OutreachService, generate_company_outreach
 
 router = APIRouter(prefix="/company", tags=["company"])
 logger = logging.getLogger(__name__)

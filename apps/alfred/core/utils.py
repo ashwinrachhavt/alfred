@@ -12,8 +12,7 @@ def utcnow() -> datetime:
 def utcnow_naive() -> datetime:
     """Return the current time as a naive UTC datetime.
 
-    Prefer `utcnow()` for new code. This exists for legacy tables/columns that
-    store naive timestamps.
+    Prefer `utcnow()` for new code.
     """
 
     return datetime.utcnow()

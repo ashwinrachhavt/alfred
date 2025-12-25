@@ -161,24 +161,3 @@ class FirecrawlClient:
         if results:
             return results[0]
         return None
-
-
-if __name__ == "__main__":
-    client = FirecrawlClient()
-
-    print("Health:", client.health())
-    print("Scrape:", client.scrape("https://www.airops.com/"))
-    crawl_job = client.crawl("https://www.airops.com/")
-    if (
-        crawl_job.success
-        and crawl_job.data
-        and "data" in crawl_job.data
-        and isinstance(crawl_job.data["data"], dict)
-        and "id" in crawl_job.data["data"]
-    ):
-        crawl_id = crawl_job.data["data"]["id"]
-        print("Crawl Job:", crawl_id)
-        print("Crawl Status:", client.crawl_status(crawl_id))
-
-    extract_job = client.extract(["https://www.airops.com/"])
-    print("Extract:", extract_job)

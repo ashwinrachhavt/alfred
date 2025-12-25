@@ -24,6 +24,7 @@ from alfred.services.doc_storage_pg import DocStorageService
 from alfred.services.extraction_service import ExtractionService
 from alfred.services.graph_service import GraphService
 from alfred.services.llm_service import LLMService
+from alfred.services.spaced_repetition import compute_next_review_schedule
 
 
 @dataclass
@@ -174,7 +175,7 @@ class LearningService:
             .where(LearningReview.completed_at.is_(None))
             .where(LearningReview.due_at <= now)
             .order_by(LearningReview.due_at.asc())
-            .limit(int(limit))
+            .limit(clamp_int(limit, lo=1, hi=200))
         )
         return list(self.session.exec(stmt))
 
@@ -212,26 +213,23 @@ class LearningService:
         review.updated_at = now
         self.session.add(review)
 
-        # Schedule next review
-        effective_score = score if score is not None else 0.0
-        if effective_score >= pass_threshold:
-            next_stage = min(3, int(review.stage) + 1)
-            next_iteration = int(review.iteration)
-            if int(review.stage) >= 3:
-                next_stage = 3
-                next_iteration = int(review.iteration) + 1
-            due_at = now + STAGE_TO_DELTA[next_stage]
-        else:
-            next_stage = int(review.stage)
-            next_iteration = int(review.iteration)
-            due_at = now + STAGE_TO_DELTA[1]
+        next_ = compute_next_review_schedule(
+            now=now,
+            stage=int(review.stage),
+            iteration=int(review.iteration),
+            score=score,
+            pass_threshold=pass_threshold,
+            stage_to_delta=STAGE_TO_DELTA,
+            max_stage=3,
+            reset_stage=1,
+        )
 
         self.session.add(
             LearningReview(
                 topic_id=review.topic_id,
-                stage=next_stage,
-                iteration=next_iteration,
-                due_at=due_at,
+                stage=next_.stage,
+                iteration=next_.iteration,
+                due_at=next_.due_at,
             )
         )
         self.session.commit()

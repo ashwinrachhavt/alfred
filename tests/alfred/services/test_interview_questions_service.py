@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from alfred.connectors.firecrawl_connector import FirecrawlResponse
 from alfred.connectors.web_connector import SearchHit, SearchResponse
-from alfred.services.interview_questions import InterviewQuestionsService
+from alfred.services.interview_service import InterviewQuestionsService
 
 
 @dataclass

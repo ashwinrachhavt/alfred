@@ -12,6 +12,7 @@ from typing import Any, List, Literal, Optional, Sequence
 
 from alfred.core.rate_limit import web_rate_limiter
 from alfred.core.settings import settings
+from alfred.core.utils import clamp_int
 
 Provider = Literal["brave", "ddg", "exa", "tavily", "you", "searx", "langsearch"]
 DEFAULT_PROVIDER_PRIORITY: List[Provider] = [
@@ -48,9 +49,24 @@ def _env(key: str) -> Optional[str]:
     return val.strip() if val and val.strip() else None
 
 
-def _env_unused(_key: str) -> Optional[str]:  # pragma: no cover
-    # Backward-compat shim kept for older imports; prefer `_env`.
-    return None
+_PROVIDER_ENV_KEYS: dict[Provider, str] = {
+    "brave": "BRAVE_SEARCH_API_KEY",
+    "exa": "EXA_API_KEY",
+    "tavily": "TAVILY_API_KEY",
+}
+
+
+def _env_configured(provider: Provider) -> bool:
+    """Return True if a provider's env-based API key is present (when required).
+
+    Some providers are intentionally re-checked at call time to support tests
+    mutating env vars after `settings` has been loaded.
+    """
+
+    key = _PROVIDER_ENV_KEYS.get(provider)
+    if not key:
+        return True
+    return _env(key) is not None
 
 
 def _normalize_list_result(items: Any, provider: Provider) -> List[SearchHit]:
@@ -128,7 +144,7 @@ class BraveClient:
         )
 
     def search(self, query: str, pages: int = 10) -> SearchResponse:
-        pages = max(1, min(pages, 10))
+        pages = clamp_int(pages, lo=1, hi=10)
         all_hits: List[SearchHit] = []
         for offset in range(pages):
             web_rate_limiter.wait("brave")
@@ -293,7 +309,7 @@ class ExaClient:
             text_contents_options = {"max_characters": 3000}
         payload = {
             "query": query,
-            "num_results": max(1, min(num_results, 100)),
+            "num_results": clamp_int(num_results, lo=1, hi=100),
             "highlights": highlights,
             "text_contents_options": text_contents_options,
         }
@@ -449,7 +465,7 @@ class LangsearchClient:
         # https://api.langsearch.com/v1/web-search
         url = self._base_url
         headers = {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
-        payload: dict[str, Any] = {"query": query, "count": max(1, min(count, 10))}
+        payload: dict[str, Any] = {"query": query, "count": clamp_int(count, lo=1, hi=10)}
         if summary is not None:
             payload["summary"] = bool(summary)
         if freshness:
@@ -613,18 +629,10 @@ class WebConnector:
         provider: Provider = self._resolve_auto() if self.mode == "auto" else self.mode
 
         # Re-check env-based configuration at call time to handle tests that mutate env after settings load.
-        if provider == "exa" and not _env("EXA_API_KEY"):
-            logging.warning("Provider 'exa' not configured. Returning empty fallback response.")
-            return SearchResponse(
-                provider=provider, query=query, hits=[], meta={"status": "unconfigured"}
+        if not _env_configured(provider):
+            logging.warning(
+                "Provider '%s' not configured. Returning empty fallback response.", provider
             )
-        if provider == "tavily" and not _env("TAVILY_API_KEY"):
-            logging.warning("Provider 'tavily' not configured. Returning empty fallback response.")
-            return SearchResponse(
-                provider=provider, query=query, hits=[], meta={"status": "unconfigured"}
-            )
-        if provider == "brave" and not _env("BRAVE_SEARCH_API_KEY"):
-            logging.warning("Provider 'brave' not configured. Returning empty fallback response.")
             return SearchResponse(
                 provider=provider, query=query, hits=[], meta={"status": "unconfigured"}
             )
@@ -656,45 +664,3 @@ class WebConnector:
     async def asearch(self, query: str, **kwargs: Any) -> SearchResponse:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, lambda: self.search(query, **kwargs))
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="WebConnector quick test")
-    parser.add_argument("query", type=str)
-    parser.add_argument(
-        "--mode",
-        choices=["auto", "multi", "brave", "ddg", "exa", "tavily", "you", "searx", "langsearch"],
-        default="auto",
-    )
-    parser.add_argument("--brave_pages", type=int, default=10)
-    parser.add_argument("--ddg_max_results", type=int, default=50)
-    parser.add_argument("--exa_num_results", type=int, default=100)
-    parser.add_argument("--tavily_max", type=int, default=20)
-    parser.add_argument("--tavily_topic", choices=["general", "news", "finance"], default="general")
-    parser.add_argument("--you_num", dest="you_num_results", type=int, default=20)
-    parser.add_argument("--searx_k", type=int, default=10)
-    args = parser.parse_args()
-
-    conn = WebConnector(
-        mode=args.mode,
-        brave_pages=args.brave_pages,
-        ddg_max_results=args.ddg_max_results,
-        exa_num_results=args.exa_num_results,
-        tavily_max_results=args.tavily_max,
-        tavily_topic=args.tavily_topic,
-        you_num_results=args.you_num_results,
-        searx_k=args.searx_k,
-    )
-    resp = conn.search(args.query)
-    print(f"Mode     : {resp.provider}")
-    print(f"Query    : {resp.query}")
-    if resp.meta:
-        print(f"Meta     : {resp.meta}")
-    print(f"Total hits: {len(resp.hits)}")
-    for i, h in enumerate(resp.hits[: min(10, len(resp.hits))], 1):
-        print(f"\n[{i}] {h.title or '(no title)'}")
-        print(f"    {h.url or '(no url)'}")
-        if h.snippet:
-            print(f"    {h.snippet[:180]}{'…' if len(h.snippet) > 180 else ''}")

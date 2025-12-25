@@ -18,6 +18,7 @@ from sqlmodel import Session
 
 from alfred.core.database import SessionLocal
 from alfred.core.settings import settings
+from alfred.core.utils import clamp_int
 from alfred.models.doc_storage import DocChunkRow, DocumentRow, NoteRow
 from alfred.schemas.documents import DocumentIngest, NoteCreate
 from alfred.schemas.enrichment import normalize_enrichment
@@ -52,6 +53,10 @@ def _domain_from_url(url: Optional[str]) -> Optional[str]:
         return urlparse(url).netloc or None
     except Exception:
         return None
+
+
+def _apply_offset_limit(stmt, *, skip: int, limit: int, max_limit: int = 200):  # noqa: ANN001
+    return stmt.offset(int(skip)).limit(clamp_int(limit, lo=1, hi=max_limit))
 
 
 @contextmanager
@@ -121,10 +126,11 @@ class DocStorageService:
             stmt = select(NoteRow)
             if q:
                 stmt = stmt.where(NoteRow.text.ilike(f"%{q}%"))
-            stmt = (
-                stmt.order_by(NoteRow.created_at.desc())
-                .offset(int(skip))
-                .limit(int(max(1, min(limit, 200))))
+            stmt = _apply_offset_limit(
+                stmt.order_by(NoteRow.created_at.desc()),
+                skip=skip,
+                limit=limit,
+                max_limit=200,
             )
             items = s.exec(stmt).all()
 
@@ -523,7 +529,7 @@ class DocStorageService:
                 for cond in rng:
                     stmt = stmt.where(cond)
 
-            stmt = stmt.offset(int(skip)).limit(int(max(1, min(limit, 200))))
+            stmt = _apply_offset_limit(stmt, skip=skip, limit=limit, max_limit=200)
             rows = s.exec(stmt).all()
 
             count_stmt = select(func.count()).select_from(DocumentRow)
@@ -600,7 +606,7 @@ class DocStorageService:
                     stmt = stmt.where(DocChunkRow.day_bucket == d.date())
                 except Exception:
                     pass
-            stmt = stmt.offset(int(skip)).limit(int(max(1, min(limit, 200))))
+            stmt = _apply_offset_limit(stmt, skip=skip, limit=limit, max_limit=200)
             rows = s.exec(stmt).all()
 
             count_stmt = select(func.count()).select_from(DocChunkRow)

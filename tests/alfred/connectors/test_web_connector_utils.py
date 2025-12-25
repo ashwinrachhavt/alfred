@@ -57,13 +57,19 @@ def test_dedupe_by_url():
 
 
 def test_webconnector_unconfigured_provider(monkeypatch):
-    # Ensure EXA is not configured; selecting mode='exa' should provide a graceful fallback
-    monkeypatch.delenv("EXA_API_KEY", raising=False)
-    conn = WebConnector(mode="exa")
-    resp = conn.search("hello")
-    assert resp.provider == "exa"
-    assert resp.hits == []
-    assert resp.meta and resp.meta.get("status") == "unconfigured"
+    # Ensure providers are not configured; selecting them explicitly should provide a graceful fallback.
+    cases = [
+        ("exa", "EXA_API_KEY"),
+        ("tavily", "TAVILY_API_KEY"),
+        ("brave", "BRAVE_SEARCH_API_KEY"),
+    ]
+    for provider, env_key in cases:
+        monkeypatch.delenv(env_key, raising=False)
+        conn = WebConnector(mode=provider)  # type: ignore[arg-type]
+        resp = conn.search("hello")
+        assert resp.provider == provider
+        assert resp.hits == []
+        assert resp.meta and resp.meta.get("status") == "unconfigured"
 
 
 def test_webconnector_searx_enabled_when_env_set(monkeypatch):

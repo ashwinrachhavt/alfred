@@ -1,3 +1,9 @@
+"""Job hunt feature service facade.
+
+This module provides a single import path for job-hunt workflows by composing
+application tracking, company research, and outreach services.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -60,4 +66,52 @@ class JobApplicationService:
         return bool(res.get("matched_count", 0))
 
 
-__all__ = ["JobApplicationService"]
+@dataclass(slots=True)
+class JobHuntService:
+    """Feature-level facade for job search workflows."""
+
+    applications: Any | None = None
+    company_research: Any | None = None
+
+    def _applications(self):
+        if self.applications is None:
+            self.applications = JobApplicationService()
+        return self.applications
+
+    def _company_research(self):
+        if self.company_research is None:
+            from alfred.core.dependencies import get_company_research_service
+
+            self.company_research = get_company_research_service()
+        return self.company_research
+
+    def create_application(self, payload):
+        """Create a job application record.
+
+        Payload should be a `JobApplicationCreate` instance.
+        """
+
+        return self._applications().create(payload)
+
+    def update_application(self, job_application_id: str, patch):
+        """Update a job application record.
+
+        Patch should be a `JobApplicationUpdate` instance.
+        """
+
+        return self._applications().update(job_application_id, patch)
+
+    def company_report(self, company: str):
+        """Generate or fetch a company research report."""
+
+        return self._company_research().generate_report(company)
+
+    def outreach_kit(self, company: str, role: str = "AI Engineer", *, personal_context: str = ""):
+        """Generate an outreach kit for a company and role."""
+
+        from alfred.services.company_outreach_service import generate_company_outreach
+
+        return generate_company_outreach(company, role=role, personal_context=personal_context)
+
+
+__all__ = ["JobApplicationService", "JobHuntService"]

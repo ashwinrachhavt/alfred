@@ -1,4 +1,7 @@
-"""Company research, culture insights, and interview intelligence services."""
+"""Company research, culture insights, and interview intelligence services.
+
+This is the canonical module for the "company research" feature.
+"""
 
 from __future__ import annotations
 
@@ -322,19 +325,16 @@ class CompanyInsightsService:
     - Degrade gracefully when providers are unavailable or gated.
     """
 
-    database: Any | None = None
     collection_name: str = settings.company_insights_collection
     cache_ttl_hours: int = settings.company_insights_cache_ttl_hours
     glassdoor_service: Any | None = None
     blind_service: Any | None = None
     levels_service: Any | None = None
     llm_service: Any | None = None
+    store: DataStoreService | None = None
 
     def __post_init__(self) -> None:
-        if self.database is not None and hasattr(self.database, "get_collection"):
-            self._collection = self.database.get_collection(self.collection_name)
-        else:
-            self._collection = DataStoreService(default_collection=self.collection_name)
+        self._collection = self.store or DataStoreService(default_collection=self.collection_name)
 
         if self.glassdoor_service is None:
             from alfred.services.glassdoor_service import GlassdoorService
@@ -361,26 +361,6 @@ class CompanyInsightsService:
             from alfred.services.llm_service import LLMService
 
             self.llm_service = LLMService()
-
-    def ensure_indexes(self) -> None:
-        """Create best-effort indexes for cached insight retrieval.
-
-        The underlying store may be a Mongo-like collection (tests, legacy deployments) or
-        Alfred's `DataStoreService`. When index creation isn't supported, this is a no-op.
-        """
-
-        create_index = getattr(self._collection, "create_index", None)
-        if create_index is None:
-            return
-
-        try:
-            create_index([("company", 1)], name="company", unique=True)
-            create_index([("generated_at_dt", -1)], name="generated_at_dt_desc")
-            # TTL: expire at the specified date; expireAfterSeconds=0 means "expire at expires_at".
-            create_index([("expires_at", 1)], name="expires_at_ttl", expireAfterSeconds=0)
-        except Exception:
-            # Best-effort: avoid blocking startup if the backing store is unavailable.
-            return
 
     def get_cached_report(self, company: str) -> dict[str, Any] | None:
         company = (company or "").strip()
@@ -677,9 +657,6 @@ class CompanyInterviewsService:
                 timeout=settings.firecrawl_timeout,
             )
             self.blind_service = BlindService(web=web, firecrawl=firecrawl, max_hits=10)
-
-    def ensure_indexes(self) -> None:
-        return
 
     def sync_company_interviews(
         self,
