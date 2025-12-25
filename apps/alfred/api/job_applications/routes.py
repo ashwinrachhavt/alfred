@@ -6,12 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from alfred.core.dependencies import get_job_application_service
+from alfred.core.utils import clamp_int
 from alfred.schemas.job_applications import (
     JobApplicationCreate,
     JobApplicationStatus,
     JobApplicationUpdate,
 )
-from alfred.services.job_applications import JobApplicationService
+from alfred.services.job_hunt_service import JobApplicationService
 
 router = APIRouter(prefix="/api/job_applications", tags=["job_applications"])
 
@@ -67,7 +68,7 @@ def list_job_applications(
     limit: int = 20,
     svc: JobApplicationService = Depends(get_job_application_service),
 ) -> dict[str, Any]:
-    lim = max(1, min(int(limit), 100))
+    lim = clamp_int(limit, lo=1, hi=100)
     filt: dict[str, Any] = {}
     if status is not None:
         filt["status"] = status.value

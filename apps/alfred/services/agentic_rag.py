@@ -18,7 +18,7 @@ from qdrant_client import QdrantClient  # type: ignore
 from alfred.core.llm_factory import get_chat_model, get_embedding_model
 from alfred.core.settings import settings
 from alfred.prompts import load_prompt
-from alfred.services.web_search import search_web
+from alfred.services.web_service import search_web
 
 # Keep it simple: no checkpointing by default
 _MEMORY_SAVER = None

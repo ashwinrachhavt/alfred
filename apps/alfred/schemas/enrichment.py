@@ -9,8 +9,8 @@ from pydantic import BaseModel, Field, field_validator
 class EnrichmentResult(BaseModel):
     """Canonical enrichment payload for documents and MindPalace pages.
 
-    This is a versioned, stable shape intended to be forward/backward
-    compatible across prompt/model changes.
+    This is a versioned, stable shape intended to stay consistent across
+    prompt/model changes.
     """
 
     summary_short: str = Field(..., description="One-paragraph summary (short).")

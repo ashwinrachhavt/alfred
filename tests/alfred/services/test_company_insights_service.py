@@ -12,18 +12,13 @@ from alfred.schemas.company_insights import (
     SourceInfo,
     SourceProvider,
 )
-from alfred.services.company_researcher import CompanyInsightsService
+from alfred.services.company_research_service import CompanyInsightsService
 from alfred.services.glassdoor_service import GlassdoorService
 
 
 class _FakeCollection:
     def __init__(self) -> None:
         self._docs: dict[str, dict[str, Any]] = {}
-        self.created_indexes: list[dict[str, Any]] = []
-
-    def create_index(self, keys, **kwargs):  # type: ignore[no-untyped-def]
-        self.created_indexes.append({"keys": keys, **kwargs})
-        return kwargs.get("name", "idx")
 
     def find_one(self, filt):  # type: ignore[no-untyped-def]
         company = filt.get("company")
@@ -40,14 +35,6 @@ class _FakeCollection:
         doc.update(set_)
         self._docs[company] = doc
         return {"ok": 1}
-
-
-class _FakeDatabase:
-    def __init__(self, coll: _FakeCollection) -> None:
-        self._coll = coll
-
-    def get_collection(self, _name: str):  # type: ignore[no-untyped-def]
-        return self._coll
 
 
 class _FakeGlassdoorClient:
@@ -167,20 +154,16 @@ def test_glassdoor_service_normalizes_reviews_interviews_and_salary():
 
 def test_company_insights_caches_by_ttl_and_generates_without_network():
     coll = _FakeCollection()
-    db = _FakeDatabase(coll)
 
     service = CompanyInsightsService(
-        database=db,  # type: ignore[arg-type]
         collection_name="company_culture_insights",
         cache_ttl_hours=1,
         glassdoor_service=GlassdoorService(client=_FakeGlassdoorClient()),
         blind_service=_FakeBlindService(),
         levels_service=_FakeLevelsService(),
         llm_service=_FakeLLMService(),
+        store=coll,  # type: ignore[arg-type]
     )
-
-    service.ensure_indexes()
-    assert coll.created_indexes
 
     # Seed cache
     now = datetime.now(timezone.utc)

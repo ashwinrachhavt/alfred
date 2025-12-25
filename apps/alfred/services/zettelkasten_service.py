@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 from alfred.core.utils import STAGE_TO_DELTA, clamp_int
 from alfred.core.utils import utcnow_naive as _utcnow
 from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview
+from alfred.services.spaced_repetition import compute_next_review_schedule
 
 
 @dataclass
@@ -77,7 +78,7 @@ class ZettelkastenService:
             )
         if topic:
             stmt = stmt.where(ZettelCard.topic == topic.strip())
-        stmt = stmt.offset(int(max(0, skip))).limit(int(max(1, min(limit, 200))))
+        stmt = stmt.offset(clamp_int(skip, lo=0, hi=10_000)).limit(clamp_int(limit, lo=1, hi=200))
         results = list(self.session.exec(stmt))
         if tag:
             results = [c for c in results if tag in (c.tags or [])]
@@ -222,25 +223,23 @@ class ZettelkastenService:
         review.updated_at = now
         self.session.add(review)
 
-        effective_score = score if score is not None else 0.0
-        if effective_score >= pass_threshold:
-            next_stage = min(3, int(review.stage) + 1)
-            next_iteration = int(review.iteration)
-            if int(review.stage) >= 3:
-                next_stage = 3
-                next_iteration = int(review.iteration) + 1
-            due_at = now + STAGE_TO_DELTA[next_stage]
-        else:
-            next_stage = int(review.stage)
-            next_iteration = int(review.iteration)
-            due_at = now + STAGE_TO_DELTA[1]
+        next_ = compute_next_review_schedule(
+            now=now,
+            stage=int(review.stage),
+            iteration=int(review.iteration),
+            score=score,
+            pass_threshold=pass_threshold,
+            stage_to_delta=STAGE_TO_DELTA,
+            max_stage=3,
+            reset_stage=1,
+        )
 
         self.session.add(
             ZettelReview(
                 card_id=review.card_id,
-                stage=next_stage,
-                iteration=next_iteration,
-                due_at=due_at,
+                stage=next_.stage,
+                iteration=next_.iteration,
+                due_at=next_.due_at,
             )
         )
         self.session.commit()

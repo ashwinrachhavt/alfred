@@ -1,3 +1,12 @@
+"""Web feature service implementation.
+
+This is the canonical module for the "web" feature.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
 from alfred.connectors.web_connector import WebConnector
 from alfred.core.tracing import lf_update_span, observe
 
@@ -55,3 +64,20 @@ def search_web(
     except Exception:
         pass
     return payload
+
+
+@dataclass(frozen=True, slots=True)
+class WebService:
+    """High-level wrapper around Alfred's web search capability."""
+
+    mode: str = "searx"
+    searx_k: int = 10
+
+    def search(self, query: str, **kwargs):
+        query = (query or "").strip()
+        if not query:
+            raise ValueError("query must be non-empty")
+        return search_web(query, mode=self.mode, searx_k=self.searx_k, **kwargs)
+
+
+__all__ = ["WebService", "search_web"]

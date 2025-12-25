@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 from alfred.schemas.outreach import OutreachContact, OutreachMessage
-from alfred.services.outreach_service import OutreachService
+from alfred.services.company_outreach_service import OutreachService
 from sqlmodel import Session, SQLModel, create_engine
 
 
@@ -31,7 +31,7 @@ def test_list_contacts_uses_cache(monkeypatch) -> None:
 
     # Should return cached row without hitting providers
     monkeypatch.setattr(
-        "alfred.services.company_outreach.ContactDiscoveryService.discover",
+        "alfred.services.company_outreach_service.ContactDiscoveryService.discover",
         lambda *args, **kwargs: [],
     )
     results = svc.list_contacts("Stripe", limit=5, role_filter=None, refresh=False)
@@ -50,7 +50,9 @@ def test_list_contacts_refresh_calls_discovery(monkeypatch) -> None:
             {"email": "a@example.com", "title": "Head of Eng", "confidence": 0.8, "source": "x"}
         ]
 
-    monkeypatch.setattr("alfred.services.company_outreach.ContactDiscoveryService.discover", _fake)
+    monkeypatch.setattr(
+        "alfred.services.company_outreach_service.ContactDiscoveryService.discover", _fake
+    )
     results = svc.list_contacts("Acme", refresh=True)
     assert called.get("hit") is True
     assert results[0]["email"] == "a@example.com"

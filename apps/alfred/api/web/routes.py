@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query
 
 from alfred.core.tracing import lf_update_span, observe
-from alfred.services.web_search import search_web
+from alfred.services.web_service import search_web
 
 router = APIRouter(prefix="/api/web", tags=["web"])
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from alfred.core.settings import settings
-from alfred.services.web_search import search_web as _service_search_web
+from alfred.services.web_service import search_web as _service_search_web
 
 logger = logging.getLogger(__name__)
 

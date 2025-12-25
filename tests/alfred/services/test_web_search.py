@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from alfred.services import web_search
+from alfred.services import web_service
 
 
 class DummyConn:
@@ -14,8 +14,8 @@ class DummyConn:
 
 def test_search_web_shapes_and_tracing(monkeypatch):
     # Replace WebConnector with a dummy that returns deterministic payload
-    monkeypatch.setattr(web_search, "WebConnector", DummyConn)
-    out = web_search.search_web(
+    monkeypatch.setattr(web_service, "WebConnector", DummyConn)
+    out = web_service.search_web(
         q="hello",
         mode="auto",
         brave_pages=2,

@@ -8,9 +8,10 @@ from celery import shared_task
 
 from alfred.core.dependencies import get_interview_prep_service
 from alfred.core.settings import settings
+from alfred.core.utils import clamp_int
 from alfred.core.utils import utcnow as _utcnow
 from alfred.schemas.interview_prep import InterviewPrepUpdate, InterviewReminders
-from alfred.services.interview_prep import (
+from alfred.services.interview_service import (
     InterviewChecklistService,
     InterviewPrepDocGenerator,
     InterviewPrepRenderer,
@@ -116,7 +117,7 @@ def send_interview_reminders_task(*, horizon_days: int = 14) -> dict[str, Any]:
 
     svc = get_interview_prep_service()
     now = _utcnow()
-    horizon = now + timedelta(days=max(1, min(int(horizon_days), 60)))
+    horizon = now + timedelta(days=clamp_int(horizon_days, lo=1, hi=60))
 
     docs = svc.find_by_interview_date(
         start=now - timedelta(days=1),
