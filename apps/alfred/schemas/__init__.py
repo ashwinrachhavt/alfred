@@ -20,6 +20,7 @@ from .whiteboard import (
     WhiteboardUpdate,
     WhiteboardWithRevision,
 )
+from .writing import WritingPreset, WritingRequest, WritingResponse
 from .zettel import (
     CompleteReviewRequest,
     GraphSummary,
@@ -60,4 +61,8 @@ __all__ = [
     "WhiteboardRevisionOut",
     "WhiteboardCommentCreate",
     "WhiteboardCommentOut",
+    # Writing
+    "WritingPreset",
+    "WritingRequest",
+    "WritingResponse",
 ]

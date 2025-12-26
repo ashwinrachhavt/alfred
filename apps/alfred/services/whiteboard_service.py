@@ -188,4 +188,3 @@ class WhiteboardService:
             .order_by(WhiteboardComment.created_at.desc())
         )
         return list(self.session.exec(stmt))
-

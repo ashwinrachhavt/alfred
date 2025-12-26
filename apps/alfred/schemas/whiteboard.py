@@ -80,4 +80,3 @@ class WhiteboardCommentOut(BaseModel):
 
 class WhiteboardWithRevision(WhiteboardOut):
     latest_revision: WhiteboardRevisionOut | None = None
-

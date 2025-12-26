@@ -53,7 +53,9 @@ def list_whiteboards(
 
 
 @router.get("/{board_id}", response_model=WhiteboardWithRevision)
-def get_whiteboard(board_id: int, session: Session = Depends(get_db_session)) -> WhiteboardWithRevision:
+def get_whiteboard(
+    board_id: int, session: Session = Depends(get_db_session)
+) -> WhiteboardWithRevision:
     service = WhiteboardService(session)
     board = service.get_whiteboard(board_id)
     if not board:
@@ -95,7 +97,9 @@ def add_revision(
 
 
 @router.get("/{board_id}/revisions", response_model=list[WhiteboardRevisionOut])
-def list_revisions(board_id: int, session: Session = Depends(get_db_session)) -> list[WhiteboardRevisionOut]:
+def list_revisions(
+    board_id: int, session: Session = Depends(get_db_session)
+) -> list[WhiteboardRevisionOut]:
     service = WhiteboardService(session)
     if not service.get_whiteboard(board_id):
         raise HTTPException(status_code=404, detail="Whiteboard not found")
@@ -121,10 +125,11 @@ def add_comment(
 
 
 @router.get("/{board_id}/comments", response_model=list[WhiteboardCommentOut])
-def list_comments(board_id: int, session: Session = Depends(get_db_session)) -> list[WhiteboardCommentOut]:
+def list_comments(
+    board_id: int, session: Session = Depends(get_db_session)
+) -> list[WhiteboardCommentOut]:
     service = WhiteboardService(session)
     if not service.get_whiteboard(board_id):
         raise HTTPException(status_code=404, detail="Whiteboard not found")
     comments = service.list_comments(whiteboard_id=board_id)
     return [WhiteboardCommentOut.model_validate(item) for item in comments]
-

@@ -13,7 +13,9 @@ def test_create_whiteboard_seeds_revision() -> None:
     session = _session()
     service = WhiteboardService(session)
 
-    board, revision = service.create_whiteboard(title="Research Flow", initial_scene={"elements": []})
+    board, revision = service.create_whiteboard(
+        title="Research Flow", initial_scene={"elements": []}
+    )
 
     assert board.id is not None
     assert revision.whiteboard_id == board.id
@@ -61,4 +63,3 @@ def test_listing_excludes_archived_by_default() -> None:
 
     all_boards = service.list_whiteboards(include_archived=True)
     assert {b.title for b in all_boards} == {"Active", "Old"}
-

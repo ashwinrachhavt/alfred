@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, JSON, String, Text
+from sqlalchemy import JSON, Boolean, Column, ForeignKey, Index, Integer, String, Text
 from sqlmodel import Field
 
 from alfred.models.base import Model
@@ -34,7 +34,9 @@ class WhiteboardRevision(Model, table=True):
         Index("ix_whiteboard_revisions_board_rev", "whiteboard_id", "revision_no", unique=True),
     )
 
-    whiteboard_id: int = Field(sa_column=Column(Integer, ForeignKey("whiteboards.id"), nullable=False))
+    whiteboard_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("whiteboards.id"), nullable=False)
+    )
     revision_no: int = Field(sa_column=Column(Integer, nullable=False))
     scene_json: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     ai_context: dict | None = Field(default=None, sa_column=Column(JSON, nullable=True))
@@ -51,7 +53,9 @@ class WhiteboardComment(Model, table=True):
         Index("ix_whiteboard_comments_element", "element_id"),
     )
 
-    whiteboard_id: int = Field(sa_column=Column(Integer, ForeignKey("whiteboards.id"), nullable=False))
+    whiteboard_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("whiteboards.id"), nullable=False)
+    )
     element_id: str | None = Field(default=None, sa_column=Column(String(128), nullable=True))
     body: str = Field(sa_column=Column(Text, nullable=False))
     author: str | None = Field(default=None, sa_column=Column(String(255), nullable=True))
