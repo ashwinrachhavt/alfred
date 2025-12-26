@@ -12,7 +12,11 @@ from alfred.core.dependencies import (
     get_company_research_service,
 )
 from alfred.core.exceptions import ServiceUnavailableError
-from alfred.services.company_outreach_service import OutreachService, generate_company_outreach
+from alfred.services.company_outreach_service import (
+    ContactProvider,
+    OutreachService,
+    generate_company_outreach,
+)
 
 router = APIRouter(prefix="/company", tags=["company"])
 logger = logging.getLogger(__name__)
@@ -122,19 +126,24 @@ async def company_contacts(
     role: str | None = Query(None, description="Optional role/title filter, e.g. 'engineering'"),
     limit: int = Query(20, ge=1, le=50, description="Max contacts to return"),
     refresh: bool = Query(False, description="Force refresh from providers and bypass cache"),
+    providers: list[ContactProvider] | None = Query(
+        None,
+        description="Contact discovery providers to use. Repeat the parameter to select multiple.",
+    ),
 ):
     if not name.strip():
         raise HTTPException(status_code=422, detail="name is required")
 
     try:
         contacts = OutreachService().list_contacts(
-            name, limit=limit, role_filter=role, refresh=refresh
+            name, limit=limit, role_filter=role, refresh=refresh, providers=providers
         )
         return {
             "company": name,
             "role": role,
             "limit": limit,
             "refresh": refresh,
+            "providers": [p.value for p in providers] if providers else None,
             "items": contacts,
         }
     except Exception as exc:

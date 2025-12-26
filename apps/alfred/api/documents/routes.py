@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field
 
 from alfred.core.celery_client import get_celery_client
 from alfred.core.dependencies import get_doc_storage_service
-from alfred.core.settings import settings
 from alfred.schemas.documents import (
     DocumentIngest,
     NoteCreate,
@@ -91,9 +90,7 @@ def create_page(
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> PageResponse:
     try:
-        cleaned_text = payload.raw_text
-        if not (cleaned_text or "").strip():
-            cleaned_text = payload.raw_text
+        cleaned_text = (payload.raw_text or "").strip()
         ingest = DocumentIngest(
             source_url=(payload.page_url or "about:blank"),
             title=payload.page_title,
@@ -103,34 +100,36 @@ def create_page(
         res = svc.ingest_document_basic(ingest)
         if res.get("duplicate"):
             return PageResponse(id=res["id"], status="duplicate")
-
-        needs_background = bool(
-            settings.enable_ingest_enrichment
-            or settings.enable_ingest_classification
-            or (settings.neo4j_uri and settings.neo4j_user and settings.neo4j_password)
-        )
-        if not needs_background:
-            return PageResponse(id=res["id"], status="ready")
-
-        try:
-            celery_client = get_celery_client()
-            async_result = celery_client.send_task(
-                "alfred.tasks.document_enrichment.enrich",
-                kwargs={"doc_id": res["id"]},
-            )
-            return PageResponse(
-                id=res["id"],
-                status="queued",
-                task_id=async_result.id,
-                status_url=f"/tasks/{async_result.id}",
-            )
-        except Exception:
-            return PageResponse(id=res["id"], status="ready")
+        return PageResponse(id=res["id"], status="stored")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # pragma: no cover - external IO
         logger.exception("Page extract ingestion failed: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to ingest page") from exc
+
+
+@router.post("/doc/{id}/enrich", response_model=PageResponse)
+def enqueue_document_enrichment(
+    id: str,
+    force: bool = Query(False, description="Force enrichment even if already present"),
+) -> PageResponse:
+    """Enqueue asynchronous enrichment for a stored document."""
+
+    try:
+        celery_client = get_celery_client()
+        async_result = celery_client.send_task(
+            "alfred.tasks.document_enrichment.enrich",
+            kwargs={"doc_id": id, "force": force},
+        )
+        return PageResponse(
+            id=id,
+            status="queued",
+            task_id=async_result.id,
+            status_url=f"/tasks/{async_result.id}",
+        )
+    except Exception as exc:  # pragma: no cover - external IO
+        logger.exception("Failed to enqueue document enrichment: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to enqueue enrichment") from exc
 
 
 @router.get("/doc/{id}")

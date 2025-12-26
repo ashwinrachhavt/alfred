@@ -273,12 +273,14 @@ Query params
 - `name` (required): company name
 - `role` (optional): filter returned contacts by title substring
 - `limit` (optional, default 20, max 50)
+- `refresh` (optional, default false): bypass cache and hit providers
+- `providers` (optional): repeatable; restrict discovery to a subset of `hunter`, `apollo`, `snov`
 
 Response
 - `items`: list of contacts with `name`, `title`, `email`, `confidence`, `source`
 
 Behavior
-- Uses cached + provider-backed discovery (Apollo/Hunter/Snov) and logs runs to Postgres.
+- Uses cached + provider-backed discovery (Apollo/Hunter/Snov). When `providers` is provided, cached rows are filtered by `source` and missing data falls back to a provider fetch.
 
 ### `POST /company/outreach`
 

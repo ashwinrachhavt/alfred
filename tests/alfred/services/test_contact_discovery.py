@@ -8,7 +8,11 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "apps"))
 
 from alfred.core.settings import settings  # noqa: E402
-from alfred.services.company_outreach_service import ContactDiscoveryService  # noqa: E402
+from alfred.services.company_outreach_service import (  # noqa: E402
+    Contact,
+    ContactDiscoveryService,
+    ContactProvider,
+)
 
 
 class _FakeResponse:
@@ -162,3 +166,30 @@ def test_apollo_search_returns_empty_on_forbidden(monkeypatch: pytest.MonkeyPatc
 
     assert calls == ["https://api.apollo.io/api/v1/mixed_people/api_search"]
     assert people == []
+
+
+def test_discover_respects_selected_providers(monkeypatch: pytest.MonkeyPatch, service):
+    calls: list[str] = []
+
+    monkeypatch.setattr(service, "_log_run", lambda *args, **kwargs: None)
+
+    def _hunter(*args, **kwargs):
+        calls.append("hunter")
+        return [Contact(name="A", title="T", email="a@acme.com", confidence=0.9, source="hunter")]
+
+    def _apollo(*args, **kwargs):
+        calls.append("apollo")
+        return [Contact(name="B", title="T", email="b@acme.com", confidence=0.9, source="apollo")]
+
+    def _snov(*args, **kwargs):
+        calls.append("snov")
+        return [Contact(name="C", title="T", email="c@acme.com", confidence=0.9, source="snov")]
+
+    monkeypatch.setattr(service, "_hunter_search", _hunter)
+    monkeypatch.setattr(service, "_apollo_search", _apollo)
+    monkeypatch.setattr(service, "_snov_search", _snov)
+
+    contacts = service.discover("Acme", limit=5, providers=[ContactProvider.HUNTER])
+
+    assert calls == ["hunter"]
+    assert [c["source"] for c in contacts] == ["hunter"]

@@ -12,10 +12,11 @@ import logging
 import os
 import smtplib
 from dataclasses import dataclass
+from enum import Enum
 from email.message import EmailMessage
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, TypedDict
+from typing import Any, Dict, Iterable, List, Optional, Sequence, TypedDict
 
 import requests
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
@@ -369,6 +370,14 @@ class Contact:
         }
 
 
+class ContactProvider(str, Enum):
+    """Supported contact discovery providers."""
+
+    HUNTER = "hunter"
+    APOLLO = "apollo"
+    SNOV = "snov"
+
+
 def _guess_domain(company: str) -> Optional[str]:
     slug = company.lower().replace(" ", "").replace(",", "").replace(".", "")
     if slug and "." not in slug:
@@ -439,7 +448,13 @@ class ContactDiscoveryService:
         self.snov_client_secret = settings.snov_client_secret
         self.session = session
 
-    def discover(self, company: str, *, limit: int = 20) -> list[dict[str, Any]]:
+    def discover(
+        self,
+        company: str,
+        *,
+        limit: int = 20,
+        providers: Sequence[ContactProvider] | None = None,
+    ) -> list[dict[str, Any]]:
         company = (company or "").strip()
         if not company:
             return []
@@ -447,9 +462,13 @@ class ContactDiscoveryService:
         domain = _guess_domain(company)
         contacts: list[Contact] = []
 
-        contacts.extend(self._hunter_search(company, domain, limit=limit))
-        contacts.extend(self._apollo_search(company, domain, limit=limit))
-        contacts.extend(self._snov_search(company, domain, limit=limit))
+        selected = {p.value for p in providers} if providers else None
+        if selected is None or ContactProvider.HUNTER.value in selected:
+            contacts.extend(self._hunter_search(company, domain, limit=limit))
+        if selected is None or ContactProvider.APOLLO.value in selected:
+            contacts.extend(self._apollo_search(company, domain, limit=limit))
+        if selected is None or ContactProvider.SNOV.value in selected:
+            contacts.extend(self._snov_search(company, domain, limit=limit))
 
         deduped = self._dedupe_and_rank(contacts, limit=limit)
         payload = [c.model_dump() for c in deduped]
@@ -716,13 +735,18 @@ class OutreachService:
         limit: int = 20,
         role_filter: str | None = None,
         refresh: bool = False,
+        providers: Sequence[ContactProvider] | None = None,
     ) -> list[dict[str, Any]]:
         if not refresh:
-            cached = self._get_cached_contacts(company, role_filter=role_filter, limit=limit)
+            cached = self._get_cached_contacts(
+                company, role_filter=role_filter, limit=limit, providers=providers
+            )
             if cached:
                 return cached
 
-        contacts = ContactDiscoveryService(session=self.session).discover(company, limit=limit)
+        contacts = ContactDiscoveryService(session=self.session).discover(
+            company, limit=limit, providers=providers
+        )
         if role_filter:
             role_l = role_filter.lower()
             contacts = [c for c in contacts if role_l in (c.get("title") or "").lower()]
@@ -734,9 +758,11 @@ class OutreachService:
         *,
         role_filter: str | None,
         limit: int,
+        providers: Sequence[ContactProvider] | None,
     ) -> list[dict[str, Any]]:
         ttl_hours = max(0, int(getattr(settings, "outreach_cache_ttl_hours", 0)))
         cutoff = (dt.datetime.utcnow() - dt.timedelta(hours=ttl_hours)) if ttl_hours > 0 else None
+        selected = {p.value for p in providers} if providers else None
 
         sess_ctx = self.session or next(get_session())
         with sess_ctx as db:
@@ -748,6 +774,12 @@ class OutreachService:
             if not rows:
                 return []
             items = [_row_to_dict(row) for row in rows]
+            if selected is not None:
+                items = [
+                    contact
+                    for contact in items
+                    if (contact.get("source") or "").lower().strip() in selected
+                ]
             if role_filter:
                 role_l = role_filter.lower()
                 items = [c for c in items if role_l in (c.get("title") or "").lower()]

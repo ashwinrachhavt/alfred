@@ -77,24 +77,39 @@ class DocStorageService:
     extraction_service: Any | None = None
 
     def __post_init__(self) -> None:
-        if (
-            self.graph_service is None
-            and settings.neo4j_uri
-            and settings.neo4j_user
-            and settings.neo4j_password
-        ):
-            self.graph_service = GraphService(
-                uri=settings.neo4j_uri,
-                user=settings.neo4j_user,
-                password=settings.neo4j_password,
-            )
+        # Keep initialization side-effect free (no DB/network clients).
+        # Enrichment/classification/graph connections are created lazily only
+        # when an enrichment path is invoked.
+        return
+
+    def _ensure_graph_service(self) -> Any | None:
+        """Lazily create the graph service if Neo4j is configured."""
+
+        if self.graph_service is not None:
+            return self.graph_service
+        if not (settings.neo4j_uri and settings.neo4j_user and settings.neo4j_password):
+            return None
+        self.graph_service = GraphService(
+            uri=settings.neo4j_uri,
+            user=settings.neo4j_user,
+            password=settings.neo4j_password,
+        )
+        return self.graph_service
+
+    def _ensure_extraction_service(self) -> ExtractionService | None:
+        """Lazily create the extraction service if enrichment is enabled."""
+
+        if self.extraction_service is not None:
+            return self.extraction_service
         needs_extraction = bool(
             settings.enable_ingest_enrichment
             or settings.enable_ingest_classification
-            or self.graph_service is not None
+            or self._ensure_graph_service() is not None
         )
-        if self.extraction_service is None and needs_extraction:
-            self.extraction_service = ExtractionService()
+        if not needs_extraction:
+            return None
+        self.extraction_service = ExtractionService()
+        return self.extraction_service
 
     # --------------- Health ---------------
     def ping(self) -> bool:
@@ -189,7 +204,9 @@ class DocStorageService:
     def ingest_document(self, payload: DocumentIngest) -> Dict[str, Any]:
         do_enrichment = bool(settings.enable_ingest_enrichment)
         do_classification = bool(settings.enable_ingest_classification)
-        do_graph = bool(do_enrichment and self.graph_service)
+        if do_enrichment or do_classification:
+            self._ensure_extraction_service()
+        do_graph = bool(do_enrichment and self._ensure_graph_service())
         return self._ingest_document(
             payload,
             do_enrichment=do_enrichment,
@@ -399,7 +416,7 @@ class DocStorageService:
 
             if (not force) and doc.enrichment:
                 return {"id": doc_id, "skipped": True}
-            if not self.extraction_service:
+            if not self._ensure_extraction_service():
                 raise RuntimeError("Extraction service not configured")
 
             now = datetime.utcnow().replace(tzinfo=timezone.utc)
