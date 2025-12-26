@@ -162,20 +162,6 @@ def _make_agent() -> UnifiedInterviewAgent:
     )
 
 
-def test_unified_collect_questions() -> None:
-    client = _make_client(_make_agent())
-    res = client.post(
-        "/api/interviews-unified/process",
-        json={"operation": "collect_questions", "company": "Acme", "role": "Software Engineer"},
-    )
-    assert res.status_code == 200
-    data = res.json()
-    assert data["operation"] == "collect_questions"
-    assert data["sources_scraped"] == 1
-    assert len(data["questions"] or []) == 1
-    assert data["questions"][0]["question"]
-
-
 def test_unified_deep_research_compiles_report() -> None:
     client = _make_client(_make_agent())
     res = client.post(

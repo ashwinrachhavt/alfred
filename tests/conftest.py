@@ -6,6 +6,11 @@ from typing import Any
 
 import pytest
 
+# Ensure the app runs in a unit-test-safe configuration during pytest collection.
+# This prevents optional LLM modules (e.g. DSPy/OpenAI) from being enabled via a
+# developer's local environment variables during unit tests.
+os.environ.setdefault("APP_ENV", "test")
+
 
 class NetworkBlockedError(RuntimeError):
     pass

@@ -77,7 +77,11 @@ def compose_stream(
         yield _sse_encode(
             event="meta",
             data=json.dumps(
-                {"preset": preset.model_dump(mode="json"), "intent": req.intent},
+                {
+                    "preset": preset.model_dump(mode="json"),
+                    "intent": req.intent,
+                    "thread_id": req.thread_id,
+                },
                 ensure_ascii=False,
             ),
         )

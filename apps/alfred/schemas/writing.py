@@ -27,6 +27,10 @@ class WritingRequest(BaseModel):
     """Non-streaming writing request for browser extensions/clients."""
 
     intent: WritingIntent = Field(default="rewrite")
+    thread_id: Optional[str] = Field(
+        default=None,
+        description="Optional conversation/thread identifier for checkpointing/resume.",
+    )
     site_url: str = Field("", description="Current site URL (used to select a preset).")
     preset: Optional[str] = Field(
         default=None,

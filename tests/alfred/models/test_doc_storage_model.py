@@ -21,9 +21,7 @@ def test_document_tags_column_is_json_on_sqlite() -> None:
 
 
 def test_document_embedding_column_is_float_array() -> None:
-    embedding_type = DocumentRow.__table__.c.embedding.type.load_dialect_impl(
-        postgresql.dialect()
-    )
+    embedding_type = DocumentRow.__table__.c.embedding.type.load_dialect_impl(postgresql.dialect())
     assert isinstance(embedding_type, postgresql.ARRAY)
     assert isinstance(embedding_type.item_type, sa.Float)
 

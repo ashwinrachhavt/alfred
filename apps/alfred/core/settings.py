@@ -277,6 +277,36 @@ class Settings(BaseSettings):
     llm_model: str = Field(default="gpt-4.1-mini", alias="ALFRED_LLM_MODEL")
     llm_temperature: float = Field(default=0.2, alias="ALFRED_LLM_TEMPERATURE")
 
+    # --- Writer (browser extension) ---
+    writer_model: str = Field(default="gpt-5.2", alias="ALFRED_WRITER_MODEL")
+    writer_temperature: float = Field(
+        default=0.4, alias="ALFRED_WRITER_TEMPERATURE", ge=0.0, le=2.0
+    )
+    writer_voice_k: int = Field(default=6, alias="ALFRED_WRITER_VOICE_K", ge=0, le=20)
+    writer_voice_char_budget: int = Field(
+        default=2000,
+        alias="ALFRED_WRITER_VOICE_CHAR_BUDGET",
+        ge=0,
+        le=20000,
+    )
+    writer_semantic_cache_enabled: bool = Field(
+        default=True,
+        alias="ALFRED_WRITER_SEMANTIC_CACHE",
+        description="Enable Redis-backed semantic caching for writer outputs (requires Redis Stack).",
+    )
+    writer_cache_threshold: float = Field(
+        default=0.2,
+        alias="ALFRED_WRITER_CACHE_THRESHOLD",
+        ge=0.0,
+        le=2.0,
+        description="Redis semantic cache distance threshold; lower is stricter.",
+    )
+    writer_checkpoint_dsn: str | None = Field(
+        default=None,
+        alias="ALFRED_WRITER_CHECKPOINT_DSN",
+        description="Postgres DSN for LangGraph checkpointing (psycopg format, e.g. postgresql://...).",
+    )
+
     # Ollama specifics
     ollama_base_url: str = Field(default="http://localhost:11434", alias="ALFRED_OLLAMA_BASE_URL")
     ollama_chat_model: str = Field(default="llama3.2", alias="ALFRED_OLLAMA_CHAT_MODEL")

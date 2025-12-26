@@ -175,7 +175,9 @@ class PostgresCheckpointSaver(BaseCheckpointSaver[str]):
                     metadata_bytes,
                 ) = row
 
-                checkpoint_: Checkpoint = self.serde.loads_typed((checkpoint_type, checkpoint_bytes))
+                checkpoint_: Checkpoint = self.serde.loads_typed(
+                    (checkpoint_type, checkpoint_bytes)
+                )
                 checkpoint_full: Checkpoint = {
                     **checkpoint_,
                     "channel_values": self._load_blobs(
@@ -195,7 +197,9 @@ class PostgresCheckpointSaver(BaseCheckpointSaver[str]):
                 pending: list[PendingWrite] = []
                 for task_id, idx, channel, value_type, value_bytes, task_path in cur.fetchall():
                     _ = task_path  # not currently surfaced in CheckpointTuple
-                    pending.append((task_id, channel, self.serde.loads_typed((value_type, value_bytes))))
+                    pending.append(
+                        (task_id, channel, self.serde.loads_typed((value_type, value_bytes)))
+                    )
 
         return CheckpointTuple(
             config={
@@ -262,7 +266,13 @@ class PostgresCheckpointSaver(BaseCheckpointSaver[str]):
         def _iter() -> Iterator[CheckpointTuple]:
             for cid in ids:
                 tup = self.get_tuple(
-                    {"configurable": {"thread_id": thread_id, "checkpoint_ns": checkpoint_ns, "checkpoint_id": cid}}
+                    {
+                        "configurable": {
+                            "thread_id": thread_id,
+                            "checkpoint_ns": checkpoint_ns,
+                            "checkpoint_id": cid,
+                        }
+                    }
                 )
                 if tup is not None:
                     yield tup
@@ -414,4 +424,3 @@ class PostgresCheckpointSaver(BaseCheckpointSaver[str]):
 
 
 __all__ = ["PostgresCheckpointConfig", "PostgresCheckpointSaver"]
-

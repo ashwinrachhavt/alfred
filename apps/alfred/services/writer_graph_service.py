@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable, Iterator
-from typing import Any, Optional, TypedDict
+from typing import Optional, TypedDict
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
@@ -19,7 +19,6 @@ from alfred.services.checkpoint_postgres import (
 )
 from alfred.services.writer_semantic_cache import WriterSemanticCache
 from alfred.services.writing_presets import preset_rules, resolve_preset
-
 
 WRITER_CACHE_VERSION = "writer-2025-12-26-v1"
 WRITER_CHECKPOINT_NS = "writer"
@@ -55,27 +54,22 @@ def _stub_output(req: WritingRequest, preset: WritingPreset) -> str:
     return base
 
 
-def _sqlalchemy_url_to_psycopg_dsn(url: str) -> str:
-    # SQLAlchemy commonly uses "postgresql+psycopg://..."; psycopg wants "postgresql://...".
-    return url.replace("postgresql+psycopg://", "postgresql://", 1)
-
-
 def _get_checkpointer() -> Optional[PostgresCheckpointSaver]:
-    dsn = (os.getenv("ALFRED_WRITER_CHECKPOINT_DSN") or "").strip()
+    dsn = (settings.writer_checkpoint_dsn or "").strip()
     if not dsn:
         return None
     return PostgresCheckpointSaver(cfg=PostgresCheckpointConfig(dsn=dsn))
 
 
 def _get_semantic_cache() -> Optional[WriterSemanticCache]:
-    if os.getenv("ALFRED_WRITER_SEMANTIC_CACHE", "1").strip() != "1":
+    if not settings.writer_semantic_cache_enabled:
         return None
     redis_url = (settings.redis_url or "").strip()
     if not redis_url:
         return None
     try:
         embedding = get_embedding_model()
-        threshold = float(os.getenv("ALFRED_WRITER_CACHE_THRESHOLD", "0.2"))
+        threshold = float(settings.writer_cache_threshold)
         return WriterSemanticCache(
             redis_url=redis_url,
             embedding=embedding,
@@ -91,7 +85,9 @@ def _llm_string(*, model: str, temperature: float, provider: LLMProvider) -> str
     return f"provider={provider.value}|model={model}|temp={temperature}|v={WRITER_CACHE_VERSION}"
 
 
-def _build_prompt(req: WritingRequest, preset: WritingPreset, site_rules: str, voice_examples: str) -> str:
+def _build_prompt(
+    req: WritingRequest, preset: WritingPreset, site_rules: str, voice_examples: str
+) -> str:
     return load_prompt("writer", "draft.md").format(
         intent=req.intent,
         site_name=preset.title,
@@ -114,7 +110,7 @@ def _truncate(text: str, *, limit: int) -> str:
 
 def _retrieve_voice_examples(req: WritingRequest) -> str:
     # Uses the user's note KB (Qdrant/Chroma) if configured. Safe no-op otherwise.
-    retriever = make_retriever(k=int(os.getenv("ALFRED_WRITER_VOICE_K", "6")))
+    retriever = make_retriever(k=int(settings.writer_voice_k))
     query = (req.draft.strip() or req.selection.strip() or req.instruction.strip()).strip()
     if not query:
         query = "writing samples in my voice"
@@ -124,7 +120,7 @@ def _retrieve_voice_examples(req: WritingRequest) -> str:
         return ""
 
     parts: list[str] = []
-    budget = int(os.getenv("ALFRED_WRITER_VOICE_CHAR_BUDGET", "2000"))
+    budget = int(settings.writer_voice_char_budget)
     used = 0
     for d in docs or []:
         chunk = str(getattr(d, "page_content", "") or "").strip()
@@ -149,22 +145,24 @@ def build_writer_graph():
         rules = preset_rules(preset, max_chars=req.max_chars)
         return {"preset": preset, "site_rules": rules}
 
-    def cache_lookup_node(state: WriterState) -> WriterState:
+    def cache_lookup_node(state: WriterState, *, writer: StreamWriter) -> WriterState:
         if cache is None:
             return {"cache_hit": False}
         req = state["req"]
         preset = state["preset"]
         llm_key = _llm_string(
             provider=settings.llm_provider,
-            model=os.getenv("ALFRED_WRITER_MODEL", "gpt-5.2"),
+            model=settings.writer_model,
             temperature=float(
-                req.temperature if req.temperature is not None else os.getenv("ALFRED_WRITER_TEMPERATURE", "0.4")
+                req.temperature if req.temperature is not None else settings.writer_temperature
             ),
         )
         prompt = _build_prompt(req, preset, state["site_rules"], voice_examples="")
         hit = cache.lookup(prompt=prompt, llm_string=llm_key)
         if hit is None:
             return {"cache_hit": False}
+        if hit.output:
+            writer(hit.output)
         return {"cache_hit": True, "output": hit.output}
 
     def voice_node(state: WriterState) -> WriterState:
@@ -177,11 +175,15 @@ def build_writer_graph():
         if _use_stub_writing():
             return {"output": _stub_output(req, preset)}
 
-        model_name = os.getenv("ALFRED_WRITER_MODEL", "gpt-5.2").strip()
+        model_name = settings.writer_model
         temperature = (
-            float(req.temperature) if req.temperature is not None else float(os.getenv("ALFRED_WRITER_TEMPERATURE", "0.4"))
+            float(req.temperature)
+            if req.temperature is not None
+            else float(settings.writer_temperature)
         )
-        chat = get_chat_model(provider=settings.llm_provider, model=model_name, temperature=temperature)
+        chat = get_chat_model(
+            provider=settings.llm_provider, model=model_name, temperature=temperature
+        )
 
         sys = load_prompt("writer", "system.md")
         prompt = _build_prompt(req, preset, state["site_rules"], state.get("voice_examples", ""))
@@ -216,12 +218,14 @@ def build_writer_graph():
         preset = state["preset"]
         llm_key = _llm_string(
             provider=settings.llm_provider,
-            model=os.getenv("ALFRED_WRITER_MODEL", "gpt-5.2"),
+            model=settings.writer_model,
             temperature=float(
-                req.temperature if req.temperature is not None else os.getenv("ALFRED_WRITER_TEMPERATURE", "0.4")
+                req.temperature if req.temperature is not None else settings.writer_temperature
             ),
         )
-        prompt = _build_prompt(req, preset, state["site_rules"], voice_examples=state.get("voice_examples", ""))
+        prompt = _build_prompt(
+            req, preset, state["site_rules"], voice_examples=state.get("voice_examples", "")
+        )
         cache.put(prompt=prompt, llm_string=llm_key, output=state.get("output", ""))
         return {}
 
@@ -291,7 +295,9 @@ def write_stream(req: WritingRequest) -> tuple[WritingPreset, Iterable[str]]:
     def gen() -> Iterator[str]:
         for item in _graph().stream(
             {"req": req},
-            config={"configurable": {"thread_id": thread_id, "checkpoint_ns": WRITER_CHECKPOINT_NS}},
+            config={
+                "configurable": {"thread_id": thread_id, "checkpoint_ns": WRITER_CHECKPOINT_NS}
+            },
             stream_mode="custom",
         ):
             # item is whatever StreamWriter writes (we write strings).
