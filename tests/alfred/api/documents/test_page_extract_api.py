@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from alfred.api.documents import routes as doc_routes
 from fastapi import FastAPI
@@ -118,4 +118,3 @@ def test_enqueue_document_enrichment(monkeypatch) -> None:
             "kwargs": {"doc_id": "abc", "force": True},
         }
     ]
-

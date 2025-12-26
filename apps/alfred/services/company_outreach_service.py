@@ -12,8 +12,8 @@ import logging
 import os
 import smtplib
 from dataclasses import dataclass
-from enum import Enum
 from email.message import EmailMessage
+from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, TypedDict
