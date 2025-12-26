@@ -11,7 +11,7 @@ from datetime import date, datetime
 from typing import Any
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlmodel import Field, SQLModel
 
 from alfred.core.utils import utcnow as _utcnow
@@ -83,7 +83,11 @@ class DocumentRow(SQLModel, table=True):
     )
     tags: list[str] = Field(
         default_factory=list,
-        sa_column=sa.Column(sa.JSON, nullable=False, server_default=sa.text("'[]'")),
+        sa_column=sa.Column(
+            ARRAY(sa.Text),
+            nullable=False,
+            server_default=sa.text("ARRAY[]::text[]"),
+        ),
     )
     embedding: list[float] | None = Field(
         default=None,
