@@ -19,6 +19,7 @@ from alfred.models.learning import (
 from alfred.models.research import ResearchRun
 from alfred.models.system import SystemSetting
 from alfred.models.user import User
+from alfred.models.whiteboard import Whiteboard, WhiteboardComment, WhiteboardRevision
 from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview
 from alfred.schemas.outreach import OutreachContact, OutreachMessage, OutreachRun
 
@@ -41,6 +42,9 @@ __all__ = [
     "ZettelCard",
     "ZettelLink",
     "ZettelReview",
+    "Whiteboard",
+    "WhiteboardRevision",
+    "WhiteboardComment",
     "User",
     "SQLModel",
     "Field",
