@@ -10,6 +10,16 @@ from .documents import (
     NotesListResponse,
 )
 from .mind_palace_agent import AgentQueryRequest, AgentResponse, ChatMessage
+from .whiteboard import (
+    WhiteboardCommentCreate,
+    WhiteboardCommentOut,
+    WhiteboardCreate,
+    WhiteboardOut,
+    WhiteboardRevisionCreate,
+    WhiteboardRevisionOut,
+    WhiteboardUpdate,
+    WhiteboardWithRevision,
+)
 from .zettel import (
     CompleteReviewRequest,
     GraphSummary,
@@ -41,4 +51,13 @@ __all__ = [
     "ZettelReviewOut",
     "CompleteReviewRequest",
     "GraphSummary",
+    # Whiteboards
+    "WhiteboardCreate",
+    "WhiteboardUpdate",
+    "WhiteboardOut",
+    "WhiteboardWithRevision",
+    "WhiteboardRevisionCreate",
+    "WhiteboardRevisionOut",
+    "WhiteboardCommentCreate",
+    "WhiteboardCommentOut",
 ]
