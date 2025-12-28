@@ -41,7 +41,10 @@ services:
     depends_on: [redis, postgres]
 
   redis:
-    image: redis:7-alpine
+    # Redis Stack Server includes RediSearch (required for semantic caching).
+    # We use the "server" image (no RedisInsight UI / no :8001) to avoid
+    # port conflicts with MCP_SERVER_URL defaulting to 8001.
+    image: redis/redis-stack-server:latest
     container_name: commander_redis
     ports: ["6379:6379"]
 

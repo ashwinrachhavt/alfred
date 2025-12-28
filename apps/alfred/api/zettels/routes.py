@@ -17,7 +17,6 @@ from alfred.schemas.zettel import (
     ZettelLinkOut,
     ZettelReviewOut,
 )
-from alfred.services.zettel_embedding_service import ZettelEmbeddingService
 from alfred.services.zettelkasten_service import ZettelkastenService
 
 router = APIRouter(prefix="/api/zettels", tags=["zettels"])
@@ -156,9 +155,9 @@ def suggest_links(
     except (TypeError, ValueError):
         raise HTTPException(status_code=400, detail="limit must be a number") from None
     limit_int = max(1, min(50, limit_int))
-    embed_svc = ZettelEmbeddingService(session)
+    svc = ZettelkastenService(session)
     try:
-        suggestions = embed_svc.suggest_links(
+        suggestions = svc.suggest_links(
             card_id=card_id, min_confidence=min_confidence, limit=limit_int
         )
     except ValueError as exc:
