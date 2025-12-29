@@ -23,6 +23,15 @@ def _blocked(*_args: Any, **_kwargs: Any) -> Any:
     )
 
 
+def _blocked_connect(*args: Any, **_kwargs: Any) -> Any:
+    address = args[1] if len(args) > 1 else None
+    raise NetworkBlockedError(
+        "Network access is disabled during tests. "
+        f"Attempted to connect to {address!r}. "
+        "Mark the test with @pytest.mark.integration/@pytest.mark.network or set ALLOW_NETWORK=1."
+    )
+
+
 @pytest.fixture(autouse=True)
 def _disable_network(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
     """Prevent accidental outbound network calls in unit tests."""
@@ -35,3 +44,5 @@ def _disable_network(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureReq
 
     monkeypatch.setattr(socket, "create_connection", _blocked)
     monkeypatch.setattr(socket, "getaddrinfo", _blocked)
+    monkeypatch.setattr(socket.socket, "connect", _blocked_connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", _blocked_connect)

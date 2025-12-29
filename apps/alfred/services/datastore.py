@@ -6,12 +6,15 @@ Implements a small subset of Mongo-style CRUD APIs used by the codebase.
 from __future__ import annotations
 
 import uuid
-from typing import Any, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
 
 import sqlalchemy as sa
+from pydantic_core import to_jsonable_python
 from sqlmodel import Session, select
 
 from alfred.core.database import SessionLocal
+from alfred.core.utils import utcnow
 from alfred.models.datastore import DataStoreRow
 
 SortPairs = Sequence[tuple[str, int]]
@@ -28,6 +31,19 @@ def _normalize_id(value: Any) -> str:
     if isinstance(value, uuid.UUID):
         return str(value)
     return str(value)
+
+
+def _jsonable_document(document: Mapping[str, Any]) -> dict[str, Any]:
+    """Convert a document to a JSON-serializable Python dict.
+
+    Postgres JSON/JSONB columns require values that `json.dumps` can handle. We
+    normalize common non-JSON types (e.g. datetime) to stable representations.
+    """
+
+    converted = to_jsonable_python(dict(document))
+    if not isinstance(converted, dict):
+        raise TypeError("Document must serialize to a JSON object.")
+    return converted
 
 
 def _match_filter(doc: dict[str, Any], flt: Mapping[str, Any]) -> bool:
@@ -68,6 +84,79 @@ def _match_filter(doc: dict[str, Any], flt: Mapping[str, Any]) -> bool:
     return True
 
 
+def _json_path_expr(path: Sequence[str]) -> Any:
+    expr: Any = DataStoreRow.data
+    for part in path:
+        expr = expr[part]
+    return expr
+
+
+def _json_scalar(expr: Any, value: Any) -> Any:
+    if isinstance(value, bool):
+        return expr.as_boolean()
+    if isinstance(value, int) and not isinstance(value, bool):
+        return expr.as_integer()
+    if isinstance(value, float):
+        return expr.as_float()
+    return expr.as_string()
+
+
+def _jsonable_scalar(value: Any) -> Any:
+    """Convert a value to the scalar representation stored in JSON columns."""
+
+    converted = to_jsonable_python(value)
+    if isinstance(converted, (dict, list)):
+        raise TypeError("Filter values must be scalar for SQL-backed filtering.")
+    return converted
+
+
+def _build_where_clause(filter_: Mapping[str, Any]) -> sa.ColumnElement[bool] | None:
+    """Build a SQL WHERE clause for a small, safe subset of Mongo-style filters.
+
+    Supported:
+    - Exact matches on `_id` via `DataStoreRow.doc_id`
+    - Exact matches on JSON fields (including dot-paths)
+    - `$ne` on `_id` and JSON fields
+
+    Anything else falls back to in-Python filtering to preserve behavior.
+    """
+
+    if not filter_:
+        return None
+
+    clauses: list[sa.ColumnElement[bool]] = []
+    for key, cond in filter_.items():
+        if key == "_id":
+            if isinstance(cond, dict):
+                if set(cond.keys()) != {"$ne"}:
+                    return None
+                clauses.append(DataStoreRow.doc_id != _normalize_id(cond["$ne"]))
+            else:
+                clauses.append(DataStoreRow.doc_id == _normalize_id(cond))
+            continue
+
+        path = key.split(".")
+        expr = _json_path_expr(path)
+        if isinstance(cond, dict):
+            if set(cond.keys()) != {"$ne"}:
+                return None
+            try:
+                value = _jsonable_scalar(cond["$ne"])
+            except TypeError:
+                return None
+            clauses.append(_json_scalar(expr, value) != value)
+        else:
+            try:
+                value = _jsonable_scalar(cond)
+            except TypeError:
+                return None
+            clauses.append(_json_scalar(expr, value) == value)
+
+    if not clauses:
+        return None
+    return sa.and_(*clauses)
+
+
 class DataStoreService:
     """Lightweight document store emulating a subset of Mongo APIs on Postgres JSON."""
 
@@ -92,7 +181,7 @@ class DataStoreService:
         doc = dict(document)
         _id = _normalize_id(doc.get("_id") or uuid.uuid4())
         doc["_id"] = _id
-        row = DataStoreRow(collection=coll, doc_id=_id, data=doc)
+        row = DataStoreRow(collection=coll, doc_id=_id, data=_jsonable_document(doc))
         with self._session() as s:
             s.add(row)
             s.commit()
@@ -113,7 +202,7 @@ class DataStoreService:
             _id = _normalize_id(d.get("_id") or uuid.uuid4())
             d["_id"] = _id
             ids.append(_id)
-            rows.append(DataStoreRow(collection=coll, doc_id=_id, data=d))
+            rows.append(DataStoreRow(collection=coll, doc_id=_id, data=_jsonable_document(d)))
         with self._session() as s:
             s.add_all(rows)
             s.commit()
@@ -127,9 +216,22 @@ class DataStoreService:
         collection: str | None = None,
     ) -> dict[str, Any] | None:
         coll = self._collection(collection)
-        with self._session() as s:
-            rows = s.exec(select(DataStoreRow).where(DataStoreRow.collection == coll)).all()
         flt = filter_ or {}
+        clause = _build_where_clause(flt)
+        with self._session() as s:
+            if clause is not None:
+                row = (
+                    s.exec(
+                        select(DataStoreRow)
+                        .where(DataStoreRow.collection == coll)
+                        .where(clause)
+                        .limit(1)
+                    )
+                    .first()
+                )
+                return dict(row.data) if row else None
+
+            rows = s.exec(select(DataStoreRow).where(DataStoreRow.collection == coll)).all()
         for row in rows:
             doc = dict(row.data)
             if _match_filter(doc, flt):
@@ -146,9 +248,26 @@ class DataStoreService:
         collection: str | None = None,
     ) -> list[dict[str, Any]]:
         coll = self._collection(collection)
-        with self._session() as s:
-            rows = s.exec(select(DataStoreRow).where(DataStoreRow.collection == coll)).all()
         flt = filter_ or {}
+        clause = _build_where_clause(flt)
+        with self._session() as s:
+            if clause is not None:
+                stmt = select(DataStoreRow).where(DataStoreRow.collection == coll).where(clause)
+                if sort:
+                    order_by: list[Any] = []
+                    for field, direction in sort:
+                        if field == "_id":
+                            col = DataStoreRow.doc_id
+                        else:
+                            col = _json_scalar(_json_path_expr(field.split(".")), "")
+                        order_by.append(col.desc() if direction < 0 else col.asc())
+                    stmt = stmt.order_by(*order_by)
+                if limit:
+                    stmt = stmt.limit(limit)
+                rows = s.exec(stmt).all()
+                return [dict(r.data) for r in rows]
+
+            rows = s.exec(select(DataStoreRow).where(DataStoreRow.collection == coll)).all()
         docs = [dict(r.data) for r in rows if _match_filter(r.data, flt)]
         if sort:
             for field, direction in reversed(sort):
@@ -167,13 +286,25 @@ class DataStoreService:
         collection: str | None = None,
     ) -> dict[str, Any]:
         coll = self._collection(collection)
+        clause = _build_where_clause(filter_)
         with self._session() as s:
-            rows = s.exec(select(DataStoreRow).where(DataStoreRow.collection == coll)).all()
             target = None
-            for row in rows:
-                if _match_filter(row.data, filter_):
-                    target = row
-                    break
+            if clause is not None:
+                target = (
+                    s.exec(
+                        select(DataStoreRow)
+                        .where(DataStoreRow.collection == coll)
+                        .where(clause)
+                        .limit(1)
+                    )
+                    .first()
+                )
+            else:
+                rows = s.exec(select(DataStoreRow).where(DataStoreRow.collection == coll)).all()
+                for row in rows:
+                    if _match_filter(row.data, filter_):
+                        target = row
+                        break
             if target is None and upsert:
                 # create new doc applying $set and $setOnInsert
                 base: dict[str, Any] = {}
@@ -183,7 +314,7 @@ class DataStoreService:
                 base.update(set_doc)
                 _id = _normalize_id(base.get("_id") or uuid.uuid4())
                 base["_id"] = _id
-                new_row = DataStoreRow(collection=coll, doc_id=_id, data=base)
+                new_row = DataStoreRow(collection=coll, doc_id=_id, data=_jsonable_document(base))
                 s.add(new_row)
                 s.commit()
                 return {"matched_count": 0, "modified_count": 0, "upserted_id": _id}
@@ -219,7 +350,8 @@ class DataStoreService:
                     ref[parts[-1]] = arr
                     modified += 1
             # $setOnInsert is ignored on updates (Mongo behavior)
-            target.data = doc
+            target.data = _jsonable_document(doc)
+            target.updated_at = utcnow()
             s.add(target)
             s.commit()
             return {
@@ -236,6 +368,23 @@ class DataStoreService:
     ) -> int:
         coll = self._collection(collection)
         with self._session() as s:
+            clause = _build_where_clause(filter_)
+            if clause is not None:
+                row = (
+                    s.exec(
+                        select(DataStoreRow)
+                        .where(DataStoreRow.collection == coll)
+                        .where(clause)
+                        .limit(1)
+                    )
+                    .first()
+                )
+                if row is None:
+                    return 0
+                s.delete(row)
+                s.commit()
+                return 1
+
             rows = s.exec(select(DataStoreRow).where(DataStoreRow.collection == coll)).all()
             for row in rows:
                 if _match_filter(row.data, filter_):
@@ -253,7 +402,15 @@ class DataStoreService:
         coll = self._collection(collection)
         deleted = 0
         with self._session() as s:
-            rows = s.exec(select(DataStoreRow).where(DataStoreRow.collection == coll)).all()
+            clause = _build_where_clause(filter_)
+            if clause is not None:
+                rows = s.exec(
+                    select(DataStoreRow)
+                    .where(DataStoreRow.collection == coll)
+                    .where(clause)
+                ).all()
+            else:
+                rows = s.exec(select(DataStoreRow).where(DataStoreRow.collection == coll)).all()
             for row in rows:
                 if _match_filter(row.data, filter_):
                     s.delete(row)
@@ -268,7 +425,20 @@ class DataStoreService:
         *,
         collection: str | None = None,
     ) -> int:
-        return len(self.find_many(filter_, collection=collection))
+        coll = self._collection(collection)
+        flt = filter_ or {}
+        clause = _build_where_clause(flt)
+        if clause is None:
+            return len(self.find_many(flt, collection=coll))
+        with self._session() as s:
+            return int(
+                s.exec(
+                    sa.select(sa.func.count())
+                    .select_from(DataStoreRow)
+                    .where(DataStoreRow.collection == coll)
+                    .where(clause)
+                ).one()
+            )
 
     def with_collection(self, name: str) -> "DataStoreService":
         return DataStoreService(default_collection=name)

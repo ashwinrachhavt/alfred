@@ -7,6 +7,7 @@ import {
   analyzeSystemDesign,
   autosaveSystemDesignDiagram,
   evaluateSystemDesign,
+  getSystemDesignComponents,
   getSystemDesignKnowledgeDraft,
   getSystemDesignPrompt,
   getSystemDesignQuestions,
@@ -14,12 +15,17 @@ import {
   getSystemDesignSuggestions,
   publishSystemDesignSession,
   scaleEstimate,
+  updateSystemDesignNotes,
+  updateSystemDesignSession,
 } from "@/lib/api/system-design";
 import type {
   DiagramAnalysis,
   DiagramEvaluation,
+  DiagramQuestion,
+  DiagramSuggestion,
   DesignPrompt,
   ExcalidrawData,
+  ComponentDefinition,
   ScaleEstimateRequest,
   ScaleEstimateResponse,
   SystemDesignKnowledgeDraft,
@@ -30,7 +36,8 @@ import type {
 
 import { ApiError } from "@/lib/api/client";
 
-import { ExcalidrawCanvas } from "@/components/system-design/excalidraw-canvas";
+import { ExcalidrawCanvas, type ExcalidrawCanvasHandle } from "@/components/system-design/excalidraw-canvas";
+import { SystemDesignNotesEditor, type SystemDesignNotesEditorHandle } from "@/components/system-design/system-design-notes-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,6 +63,41 @@ function toShareUrl(shareId: string): string {
 export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) {
   const [session, setSession] = useState<SystemDesignSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isActionRunning, setIsActionRunning] = useState(false);
+
+  const [components, setComponents] = useState<ComponentDefinition[]>([]);
+  const [isLoadingComponents, setIsLoadingComponents] = useState(false);
+
+  const [prompt, setPrompt] = useState<DesignPrompt | null>(null);
+  const [analysis, setAnalysis] = useState<DiagramAnalysis | null>(null);
+  const [questions, setQuestions] = useState<DiagramQuestion[] | null>(null);
+  const [suggestions, setSuggestions] = useState<DiagramSuggestion[]>([]);
+  const [evaluation, setEvaluation] = useState<DiagramEvaluation | null>(null);
+  const [knowledgeDraft, setKnowledgeDraft] = useState<SystemDesignKnowledgeDraft | null>(null);
+
+  const [scaleInput, setScaleInput] = useState<ScaleEstimateRequest>({
+    qps: 1000,
+    avg_request_kb: 1,
+    avg_response_kb: 10,
+    write_percentage: 20,
+  });
+  const [scaleOutput, setScaleOutput] = useState<ScaleEstimateResponse | null>(null);
+
+  const [problemStatement, setProblemStatement] = useState("");
+
+  const [publishLearningTopics, setPublishLearningTopics] = useState(true);
+  const [publishZettels, setPublishZettels] = useState(true);
+  const [publishInterviewPrep, setPublishInterviewPrep] = useState(false);
+
+  const [learningTopicId, setLearningTopicId] = useState("");
+  const [topicTitle, setTopicTitle] = useState("");
+  const [topicTags, setTopicTags] = useState("");
+  const [zettelTags, setZettelTags] = useState("");
+  const [interviewPrepId, setInterviewPrepId] = useState("");
+  const [publishResult, setPublishResult] = useState<SystemDesignPublishResponse | null>(null);
+
+  const [viewportScale, setViewportScale] = useState<number>(1);
+  const canvasRef = useRef<ExcalidrawCanvasHandle | null>(null);
 
   const [autosaveState, setAutosaveState] = useState<AutosaveState>("idle");
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
@@ -65,48 +107,40 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
 
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const [prompt, setPrompt] = useState<DesignPrompt | null>(null);
-  const [analysis, setAnalysis] = useState<DiagramAnalysis | null>(null);
-  const [questions, setQuestions] = useState<Array<{ id: string; text: string; rationale?: string | null }> | null>(
-    null,
-  );
-  const [suggestions, setSuggestions] = useState<Array<{ id: string; text: string; priority?: string }>>(
-    [],
-  );
-  const [evaluation, setEvaluation] = useState<DiagramEvaluation | null>(null);
-  const [knowledgeDraft, setKnowledgeDraft] = useState<SystemDesignKnowledgeDraft | null>(null);
-  const [publishResult, setPublishResult] = useState<SystemDesignPublishResponse | null>(null);
-
-  const [isActionRunning, setIsActionRunning] = useState(false);
-
-  const [publishLearningTopics, setPublishLearningTopics] = useState(true);
-  const [publishZettels, setPublishZettels] = useState(true);
-  const [publishInterviewPrep, setPublishInterviewPrep] = useState(false);
-  const [learningTopicId, setLearningTopicId] = useState<string>("");
-  const [interviewPrepId, setInterviewPrepId] = useState<string>("");
-  const [topicTitle, setTopicTitle] = useState<string>("");
-  const [topicTags, setTopicTags] = useState<string>("");
-  const [zettelTags, setZettelTags] = useState<string>("");
-
-  const [scaleInput, setScaleInput] = useState<ScaleEstimateRequest>({
-    qps: 1000,
-    avg_request_kb: 5,
-    avg_response_kb: 20,
-    write_percentage: 20,
-    storage_per_write_kb: 2,
-    retention_days: 30,
-    replication_factor: 3,
-  });
-  const [scaleOutput, setScaleOutput] = useState<ScaleEstimateResponse | null>(null);
+  const [notesMarkdown, setNotesMarkdown] = useState<string>("");
+  const [notesSaveState, setNotesSaveState] = useState<AutosaveState>("idle");
+  const notesTimerRef = useRef<number | null>(null);
+  const latestNotesRef = useRef<string>("");
+  const notesEditorRef = useRef<SystemDesignNotesEditorHandle | null>(null);
+  const notesInitializedRef = useRef(false);
 
   useEffect(() => {
     async function load() {
       setIsLoading(true);
       setActionError(null);
+      setPrompt(null);
+      setAnalysis(null);
+      setQuestions(null);
+      setSuggestions([]);
+      setEvaluation(null);
+      setKnowledgeDraft(null);
+      setScaleOutput(null);
+      setPublishResult(null);
+      notesInitializedRef.current = false;
+      latestNotesRef.current = "";
+      setNotesMarkdown("");
+      setNotesSaveState("idle");
       try {
         const next = await getSystemDesignSession(sessionId);
         setSession(next);
+        setProblemStatement(next.problem_statement);
         setLastSavedAt(next.updated_at);
+        if (!notesInitializedRef.current) {
+          const initialNotes = next.notes_markdown ?? "";
+          notesInitializedRef.current = true;
+          latestNotesRef.current = initialNotes;
+          setNotesMarkdown(initialNotes);
+        }
       } catch (err) {
         setActionError(formatErrorMessage(err));
       } finally {
@@ -117,8 +151,25 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   }, [sessionId]);
 
   useEffect(() => {
+    async function loadComponents() {
+      setIsLoadingComponents(true);
+      try {
+        const next = await getSystemDesignComponents();
+        setComponents(next);
+      } catch {
+        // components are optional; ignore errors to keep the canvas usable
+      } finally {
+        setIsLoadingComponents(false);
+      }
+    }
+
+    void loadComponents();
+  }, []);
+
+  useEffect(() => {
     return () => {
       if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+      if (notesTimerRef.current) window.clearTimeout(notesTimerRef.current);
     };
   }, []);
 
@@ -154,7 +205,36 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
 
     if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = window.setTimeout(() => {
-      void flushAutosave().catch(() => {});
+      void flushAutosave().catch(() => { });
+    }, 1200);
+  }
+
+  async function flushNotesSave() {
+    const notes = latestNotesRef.current;
+    if (notesTimerRef.current) {
+      window.clearTimeout(notesTimerRef.current);
+      notesTimerRef.current = null;
+    }
+
+    setNotesSaveState("saving");
+    try {
+      const next = await updateSystemDesignNotes(sessionId, { notes_markdown: notes });
+      setSession((prev) => (prev ? { ...prev, updated_at: next.updated_at } : prev));
+      setNotesSaveState("saved");
+      setLastSavedAt(next.updated_at);
+    } catch {
+      setNotesSaveState("error");
+    }
+  }
+
+  function queueNotesSave(nextMarkdown: string) {
+    latestNotesRef.current = nextMarkdown;
+    setNotesMarkdown(nextMarkdown);
+    setNotesSaveState("dirty");
+
+    if (notesTimerRef.current) window.clearTimeout(notesTimerRef.current);
+    notesTimerRef.current = window.setTimeout(() => {
+      void flushNotesSave();
     }, 1200);
   }
 
@@ -164,12 +244,12 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
     return fn();
   }
 
-  async function runAction<T>(fn: () => Promise<T>, onSuccess: (data: T) => void) {
+  async function runAction<T>(fn: () => Promise<T>, onSuccess: (value: T) => void) {
     setIsActionRunning(true);
     setActionError(null);
     try {
-      const data = await withFreshDiagram(fn);
-      onSuccess(data);
+      const result = await withFreshDiagram(fn);
+      onSuccess(result);
     } catch (err) {
       setActionError(formatErrorMessage(err));
     } finally {
@@ -208,7 +288,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   }
 
   return (
-    <div className="grid h-full grid-cols-1 gap-4 px-4 py-4 lg:grid-cols-[1fr_420px]">
+    <div className="grid h-full grid-cols-1 gap-3 p-2 lg:grid-cols-[1fr_420px]">
       <div className="flex min-h-0 flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
@@ -248,18 +328,72 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
           </div>
         </div>
 
-        <Textarea
-          value={session.problem_statement}
-          readOnly
-          rows={3}
-          className="resize-none"
-        />
+        <div className="flex flex-col gap-2 rounded-xl border bg-background px-4 py-3">
+          <span className="text-sm font-medium">Problem Statement</span>
+          <Textarea
+            value={problemStatement}
+            onChange={(e) => {
+              setProblemStatement(e.target.value);
+              // Optional: debounce save or just relying on blur
+            }}
+            onBlur={() => {
+              if (problemStatement !== session.problem_statement) {
+                void runAction(() => updateSystemDesignSession(sessionId, { problem_statement: problemStatement }), (updated) => {
+                  setSession(updated);
+                  setLastSavedAt(updated.updated_at);
+                });
+              }
+            }}
+            readOnly={false}
+            rows={6}
+            className="resize-none"
+            placeholder="Describe the system design problem..."
+          />
+        </div>
 
         <div className="min-h-0 flex-1">
-          <ExcalidrawCanvas
-            initialDiagram={session.diagram}
-            onDiagramChange={queueAutosave}
-          />
+          <div className="flex h-full min-h-0 flex-col gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium text-muted-foreground">Components</span>
+                {isLoadingComponents ? (
+                  <span className="text-xs text-muted-foreground">Loading…</span>
+                ) : null}
+                {components.slice(0, 10).map((c) => (
+                  <Button
+                    key={c.id}
+                    size="sm"
+                    variant="outline"
+                    onClick={() => canvasRef.current?.insertComponent({ id: c.id, name: c.name, category: c.category })}
+                  >
+                    {c.name}
+                  </Button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground">View</Label>
+                <select
+                  className="h-9 rounded-md border bg-background px-2 text-sm"
+                  value={String(viewportScale)}
+                  onChange={(e) => setViewportScale(Number(e.target.value))}
+                >
+                  <option value="1">100%</option>
+                  <option value="0.5">50%</option>
+                  <option value="0.25">25%</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1">
+              <ExcalidrawCanvas
+                ref={canvasRef}
+                initialDiagram={session.diagram}
+                onDiagramChange={queueAutosave}
+                viewportScale={viewportScale}
+              />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -286,11 +420,12 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
 
           <CardContent className="min-h-0 flex-1 overflow-auto">
             <Tabs defaultValue="prompt">
-              <TabsList className="grid w-full grid-cols-4">
+              <TabsList className="grid w-full grid-cols-5">
                 <TabsTrigger value="prompt">Prompt</TabsTrigger>
                 <TabsTrigger value="analysis">Analyze</TabsTrigger>
                 <TabsTrigger value="qna">Q&A</TabsTrigger>
                 <TabsTrigger value="publish">Publish</TabsTrigger>
+                <TabsTrigger value="notes">Notes</TabsTrigger>
               </TabsList>
 
               <TabsContent value="prompt" className="space-y-4 pt-4">
@@ -688,7 +823,11 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
                       if (interviewPrepId.trim().length) payload.interview_prep_id = interviewPrepId.trim();
 
                       return publishSystemDesignSession(sessionId, payload);
-                    }, setPublishResult)
+                    }, (result) => {
+                      setPublishResult(result);
+                      setSession(result.session);
+                      setLastSavedAt(result.session.updated_at);
+                    })
                   }
                   disabled={isActionRunning}
                 >
@@ -710,6 +849,31 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
                     ) : null}
                   </div>
                 ) : null}
+              </TabsContent>
+
+              <TabsContent value="notes" className="space-y-3 pt-4">
+                <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>
+                    autosave: <span className="font-mono">{notesSaveState}</span>
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void flushNotesSave()}
+                    disabled={notesSaveState === "saving"}
+                  >
+                    Save notes
+                  </Button>
+                </div>
+
+                <div className="h-[480px] min-h-[320px]">
+                  <SystemDesignNotesEditor
+                    ref={notesEditorRef}
+                    markdown={notesMarkdown}
+                    onMarkdownChange={queueNotesSave}
+                    placeholder="Write session notes…"
+                  />
+                </div>
               </TabsContent>
             </Tabs>
           </CardContent>

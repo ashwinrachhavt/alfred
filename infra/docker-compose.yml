@@ -1,63 +1,139 @@
 version: "3.9"
+
+x-alfred-build: &alfred_build
+  context: ..
+  dockerfile: apps/alfred/Dockerfile
+
+x-alfred-env: &alfred_env
+  PYTHONDONTWRITEBYTECODE: "1"
+  DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/alfred
+  REDIS_URL: redis://redis:6379/0
+  NEO4J_URI: bolt://neo4j:7687
+  NEO4J_USER: neo4j
+  NEO4J_PASSWORD: neo4j_password
+  # Pass-through optional secrets/config from your shell or `--env-file`.
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_MODEL: ${OPENAI_MODEL:-}
+  NOTION_TOKEN: ${NOTION_TOKEN:-}
+  LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+  LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+  LANGFUSE_HOST: ${LANGFUSE_HOST:-}
+
 services:
-  api:
-    build:
-      context: ..
-      dockerfile: apps/alfred/Dockerfile
-    container_name: commander_api
-    env_file:
-      - ../apps/alfred/.env
+  postgres:
+    image: postgres:16-alpine
     environment:
-      - PYTHONDONTWRITEBYTECODE=1
-      - DATABASE_URL=postgresql+psycopg://postgres:postgres@postgres:5432/alfred
-    command: uvicorn alfred.main:app --host 0.0.0.0 --port 8000 --reload
-    ports: ["8000:8000"]
-    depends_on: [redis, postgres]
-
-  worker:
-    build:
-      context: ..
-      dockerfile: apps/alfred/Dockerfile
-    container_name: commander_worker
-    env_file:
-      - ../apps/alfred/.env
-    environment:
-      - PYTHONDONTWRITEBYTECODE=1
-      - DATABASE_URL=postgresql+psycopg://postgres:postgres@postgres:5432/alfred
-    command: celery -A alfred.celery_app.app worker -l INFO --concurrency=2 -Q default,llm,agent
-    depends_on: [redis, postgres]
-
-  beat:
-    build:
-      context: ..
-      dockerfile: apps/alfred/Dockerfile
-    container_name: commander_beat
-    env_file:
-      - ../apps/alfred/.env
-    environment:
-      - PYTHONDONTWRITEBYTECODE=1
-      - DATABASE_URL=postgresql+psycopg://postgres:postgres@postgres:5432/alfred
-    command: celery -A alfred.celery_app.app beat -l INFO
-    depends_on: [redis, postgres]
+      POSTGRES_DB: alfred
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d alfred"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   redis:
     # Redis Stack Server includes RediSearch (required for semantic caching).
     # We use the "server" image (no RedisInsight UI / no :8001) to avoid
     # port conflicts with MCP_SERVER_URL defaulting to 8001.
     image: redis/redis-stack-server:latest
-    container_name: commander_redis
-    ports: ["6379:6379"]
-
-  postgres:
-    image: postgres:16-alpine
-    container_name: commander_postgres
-    environment:
-      - POSTGRES_DB=alfred
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-    ports: ["5432:5432"]
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  neo4j:
+    image: neo4j:5
+    environment:
+      NEO4J_AUTH: neo4j/neo4j_password
+    volumes:
+      - neo4jdata:/data
+      - neo4jlogs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p neo4j_password 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  migrate:
+    build: *alfred_build
+    environment:
+      <<: *alfred_env
+    command: alembic -c alembic.ini upgrade head
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: *alfred_build
+    environment:
+      <<: *alfred_env
+    command: uvicorn alfred.main:app --host 0.0.0.0 --port 8000
+    ports: ["8020:8000"]
+    volumes:
+      - ../.alfred_data:/app/.alfred_data
+      - ../data:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+
+  worker:
+    build: *alfred_build
+    environment:
+      <<: *alfred_env
+    command: celery -A alfred.celery_app.app worker -l INFO --concurrency=2 -Q default,llm,agent
+    volumes:
+      - ../.alfred_data:/app/.alfred_data
+      - ../data:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+
+  beat:
+    build: *alfred_build
+    environment:
+      <<: *alfred_env
+    command: celery -A alfred.celery_app.app beat -l INFO
+    volumes:
+      - ../.alfred_data:/app/.alfred_data
+      - ../data:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        ALFRED_API_BASE_URL: http://api:8000
+    environment:
+      ALFRED_API_BASE_URL: http://api:8000
+      NODE_ENV: production
+    ports: ["3020:3000"]
+    depends_on:
+      - api
 
 volumes:
   pgdata:
+  redisdata:
+  neo4jdata:
+  neo4jlogs:

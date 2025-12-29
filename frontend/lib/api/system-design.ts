@@ -14,6 +14,7 @@ import type {
   SystemDesignPublishResponse,
   SystemDesignSession,
   SystemDesignSessionCreate,
+  SystemDesignSessionUpdate,
   TemplateDefinition,
 } from "@/lib/api/types/system-design";
 
@@ -24,7 +25,7 @@ export async function createSystemDesignSession(
     "/api/system-design/sessions",
     payload,
     {
-    cache: "no-store",
+      cache: "no-store",
     },
   );
 }
@@ -47,6 +48,28 @@ export async function autosaveSystemDesignDiagram(
 ): Promise<SystemDesignSession> {
   return apiPatchJson<SystemDesignSession, AutosaveRequest>(
     `/api/system-design/sessions/${sessionId}/diagram`,
+    payload,
+    { cache: "no-store" },
+  );
+}
+
+export async function updateSystemDesignSession(
+  sessionId: string,
+  payload: SystemDesignSessionUpdate,
+): Promise<SystemDesignSession> {
+  return apiPatchJson<SystemDesignSession, SystemDesignSessionUpdate>(
+    `/api/system-design/sessions/${sessionId}`,
+    payload,
+    { cache: "no-store" },
+  );
+}
+
+export async function updateSystemDesignNotes(
+  sessionId: string,
+  payload: { notes_markdown: string },
+): Promise<SystemDesignSession> {
+  return apiPatchJson<SystemDesignSession, { notes_markdown: string }>(
+    `/api/system-design/sessions/${sessionId}/notes`,
     payload,
     { cache: "no-store" },
   );

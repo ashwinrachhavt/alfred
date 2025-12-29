@@ -41,6 +41,7 @@ export type SystemDesignSession = {
   title?: string | null;
   problem_statement: string;
   template_id?: string | null;
+  notes_markdown?: string | null;
   diagram: ExcalidrawData;
   versions: DiagramVersion[];
   exports: DiagramExport[];
@@ -53,6 +54,15 @@ export type SystemDesignSession = {
 export type AutosaveRequest = {
   diagram: ExcalidrawData;
   label?: string | null;
+};
+
+export type SystemDesignSessionUpdate = {
+  title?: string;
+  problem_statement?: string;
+};
+
+export type SystemDesignNotesUpdate = {
+  notes_markdown: string;
 };
 
 export type DesignPrompt = {
@@ -183,4 +193,3 @@ export type TemplateDefinition = {
   components: string[];
   diagram: ExcalidrawData;
 };
-

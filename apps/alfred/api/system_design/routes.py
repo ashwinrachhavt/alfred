@@ -20,10 +20,12 @@ from alfred.schemas.system_design import (
     ScaleEstimateResponse,
     SystemDesignArtifacts,
     SystemDesignKnowledgeDraft,
+    SystemDesignNotesUpdate,
     SystemDesignPublishRequest,
     SystemDesignPublishResponse,
     SystemDesignSession,
     SystemDesignSessionCreate,
+    SystemDesignSessionUpdate,
     TemplateDefinition,
 )
 from alfred.services.interview_service import InterviewPrepService
@@ -66,6 +68,18 @@ def get_shared_session(
     return session
 
 
+@router.patch("/sessions/{session_id}", response_model=SystemDesignSession)
+def update_session(
+    session_id: str,
+    payload: SystemDesignSessionUpdate,
+    svc: SystemDesignService = Depends(get_system_design_service),
+) -> SystemDesignSession:
+    session = svc.update_session(session_id, payload)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return session
+
+
 @router.patch("/sessions/{session_id}/diagram", response_model=SystemDesignSession)
 def autosave_diagram(
     session_id: str,
@@ -73,6 +87,18 @@ def autosave_diagram(
     svc: SystemDesignService = Depends(get_system_design_service),
 ) -> SystemDesignSession:
     session = svc.autosave(session_id, payload)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return session
+
+
+@router.patch("/sessions/{session_id}/notes", response_model=SystemDesignSession)
+def update_notes(
+    session_id: str,
+    payload: SystemDesignNotesUpdate,
+    svc: SystemDesignService = Depends(get_system_design_service),
+) -> SystemDesignSession:
+    session = svc.update_notes(session_id, payload.notes_markdown)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
     return session
@@ -276,4 +302,6 @@ async def system_design_ws(
                 )
                 svc.autosave(session_id, autosave_payload)
     except WebSocketDisconnect:
-        realtime_hub.disconnect(session_id, websocket)
+        return
+    finally:
+        await realtime_hub.disconnect(session_id, websocket)

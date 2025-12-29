@@ -40,3 +40,9 @@ Keep this in mind for tool use
 - Serena MCP to manage coding context when needed
 - Playwright MCP also when needed. 
 - Notion MCP to get data from Notion related to Project if needing to make product related decisions
+
+
+NEVER TOUCH .env file unless explicity asked.
+
+Do not run servers in the background assume they almost always are running.
+

@@ -24,6 +24,7 @@ from alfred.schemas.system_design import (
     SystemDesignKnowledgeDraft,
     SystemDesignSession,
     SystemDesignSessionCreate,
+    SystemDesignSessionUpdate,
     TemplateDefinition,
 )
 from alfred.services.datastore import DataStoreService
@@ -68,6 +69,7 @@ class SystemDesignService:
             "title": payload.title,
             "problem_statement": payload.problem_statement,
             "template_id": payload.template_id,
+            "notes_markdown": "",
             "diagram": diagram.model_dump(by_alias=True),
             "versions": [],
             "exports": [],
@@ -80,6 +82,23 @@ class SystemDesignService:
         return self._to_session(doc_id, doc)
 
     def get_session(self, session_id: str) -> Optional[SystemDesignSession]:
+        doc = self._collection.find_one({"_id": session_id})
+        if not doc:
+            return None
+        return self._to_session(str(doc["_id"]), doc)
+
+    def update_session(self, session_id: str, payload: SystemDesignSessionUpdate) -> Optional[SystemDesignSession]:
+        now = _utcnow()
+        update: Dict[str, Any] = {"updated_at": now}
+        if payload.title is not None:
+            update["title"] = payload.title
+        if payload.problem_statement is not None:
+            update["problem_statement"] = payload.problem_statement
+        
+        self._collection.update_one(
+            {"_id": session_id},
+            {"$set": update},
+        )
         doc = self._collection.find_one({"_id": session_id})
         if not doc:
             return None
@@ -106,6 +125,17 @@ class SystemDesignService:
         self._collection.update_one(
             {"_id": session_id},
             {"$set": update, "$push": {"versions": version.model_dump()}},
+        )
+        doc = self._collection.find_one({"_id": session_id})
+        if not doc:
+            return None
+        return self._to_session(str(doc["_id"]), doc)
+
+    def update_notes(self, session_id: str, notes_markdown: str) -> Optional[SystemDesignSession]:
+        now = _utcnow()
+        self._collection.update_one(
+            {"_id": session_id},
+            {"$set": {"notes_markdown": notes_markdown, "updated_at": now}},
         )
         doc = self._collection.find_one({"_id": session_id})
         if not doc:
@@ -203,6 +233,7 @@ class SystemDesignService:
             title=doc.get("title"),
             problem_statement=doc.get("problem_statement", ""),
             template_id=doc.get("template_id"),
+            notes_markdown=doc.get("notes_markdown"),
             diagram=diagram,
             versions=versions,
             exports=exports,

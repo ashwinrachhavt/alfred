@@ -66,7 +66,7 @@ export function SharedSystemDesignSessionClient({ shareId }: { shareId: string }
   }
 
   return (
-    <div className="grid h-full grid-cols-1 gap-4 px-4 py-4 lg:grid-cols-[1fr_360px]">
+    <div className="grid h-full grid-cols-1 gap-3 p-2 lg:grid-cols-[1fr_360px]">
       <div className="flex min-h-0 flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
@@ -81,10 +81,20 @@ export function SharedSystemDesignSessionClient({ shareId }: { shareId: string }
           </Button>
         </div>
 
-        <Textarea value={session.problem_statement} readOnly rows={3} className="resize-none" />
+        <details className="rounded-xl border bg-background">
+          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium">
+            Problem statement
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              (click to expand)
+            </span>
+          </summary>
+          <div className="px-4 pb-4">
+            <Textarea value={session.problem_statement} readOnly rows={6} className="resize-none" />
+          </div>
+        </details>
 
         <div className="min-h-0 flex-1">
-          <ExcalidrawCanvas initialDiagram={session.diagram} readOnly />
+          <ExcalidrawCanvas initialDiagram={session.diagram} readOnly viewportScale={0.5} />
         </div>
       </div>
 

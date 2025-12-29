@@ -93,7 +93,13 @@ make run-api UV=0
 
 Docker (full stack)
 ```bash
-docker compose -f infra/docker-compose.yml up --build
+docker compose -f infra/docker-compose.yml up -d --build
+
+# Optional: load secrets/config from an env file (Compose does not modify it).
+docker compose --env-file apps/alfred/.env -f infra/docker-compose.yml up -d --build
+
+# Optional: expose Postgres/Redis/Neo4j ports to your host (off by default).
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.expose.yml up -d
 ```
 
 ## Personal Brand Builder

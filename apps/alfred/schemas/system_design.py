@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from alfred.schemas.interview_prep import LikelyQuestion, TechnicalTopic
 
@@ -27,13 +27,12 @@ class ComponentCategory(str, Enum):
 class ExcalidrawData(BaseModel):
     """Minimal Excalidraw payload for persistence and analysis."""
 
+    model_config = ConfigDict(validate_by_name=True)
+
     elements: List[Dict[str, Any]] = Field(default_factory=list)
     app_state: Dict[str, Any] = Field(default_factory=dict, alias="appState")
     files: Dict[str, Any] = Field(default_factory=dict)
     metadata: Dict[str, Any] = Field(default_factory=dict)
-
-    class Config:
-        allow_population_by_field_name = True
 
 
 class ComponentDefinition(BaseModel):
@@ -88,6 +87,7 @@ class SystemDesignSession(BaseModel):
     title: Optional[str] = None
     problem_statement: str
     template_id: Optional[str] = None
+    notes_markdown: Optional[str] = None
     diagram: ExcalidrawData
     versions: List[DiagramVersion] = Field(default_factory=list)
     exports: List[DiagramExport] = Field(default_factory=list)
@@ -100,6 +100,16 @@ class SystemDesignSession(BaseModel):
 class AutosaveRequest(BaseModel):
     diagram: ExcalidrawData
     label: Optional[str] = None
+
+
+class SystemDesignSessionUpdate(BaseModel):
+    title: Optional[str] = None
+    problem_statement: Optional[str] = None
+
+
+
+class SystemDesignNotesUpdate(BaseModel):
+    notes_markdown: str
 
 
 class DesignPrompt(BaseModel):
