@@ -74,7 +74,7 @@ services:
     build: *alfred_build
     environment:
       <<: *alfred_env
-    command: uvicorn alfred.main:app --host 0.0.0.0 --port 8000
+    command: uvicorn alfred.main:app --host 0.0.0.0 --port 8000 --proxy-headers
     ports: ["8020:8000"]
     volumes:
       - ../.alfred_data:/app/.alfred_data

@@ -55,6 +55,11 @@ export type ExcalidrawCanvasProps = {
   onDiagramChange?: (diagram: ExcalidrawData) => void;
   readOnly?: boolean;
   /**
+   * When enabled, renders a bordered container around the Excalidraw editor.
+   * Disable this when the parent already provides the panel chrome.
+   */
+  framed?: boolean;
+  /**
    * Additional viewport scale applied on top of Excalidraw's own zoom.
    * Useful for "extra zoom out" without patching Excalidraw's MIN_ZOOM.
    *
@@ -66,11 +71,12 @@ export type ExcalidrawCanvasProps = {
 
 export type ExcalidrawCanvasHandle = {
   insertComponent: (component: { id: string; name: string; category?: string }) => void;
+  replaceWithMermaid: (definition: string) => Promise<void>;
 };
 
 export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCanvasProps>(
   function ExcalidrawCanvasImpl(
-    { initialDiagram, onDiagramChange, readOnly, viewportScale = 1 }: ExcalidrawCanvasProps,
+    { initialDiagram, onDiagramChange, readOnly, framed = true, viewportScale = 1 }: ExcalidrawCanvasProps,
     ref,
   ) {
     const serializeRef = useRef<SerializeAsJSON | null>(null);
@@ -159,17 +165,48 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
       [readOnly],
     );
 
+    const replaceWithMermaid = useCallback(
+      async (definition: string) => {
+        if (readOnly) return;
+        const api = apiRef.current;
+        const convertToExcalidrawElements = convertRef.current;
+        if (!api || !convertToExcalidrawElements) return;
+
+        const { parseMermaidToExcalidraw } = await import("@excalidraw/mermaid-to-excalidraw");
+        const parsed = await parseMermaidToExcalidraw(definition);
+        const nextElements = convertToExcalidrawElements(parsed.elements, { regenerateIds: true });
+
+        api.updateScene({
+          elements: nextElements,
+          appState: {
+            ...api.getAppState(),
+            selectedElementIds: {},
+          },
+        });
+
+        api.scrollToContent(nextElements, { fitToContent: true, animate: true });
+      },
+      [readOnly],
+    );
+
     useImperativeHandle(
       ref,
       () => ({
         insertComponent,
+        replaceWithMermaid,
       }),
-      [insertComponent],
+      [insertComponent, replaceWithMermaid],
     );
 
     return (
-      <div className="flex h-full w-full flex-col rounded-2xl border-2 bg-background p-2">
-        <div className="min-h-0 flex-1 overflow-hidden rounded-xl">
+      <div
+        className={
+          framed
+            ? "flex h-full w-full flex-col overflow-hidden rounded-2xl border-2 bg-background p-2"
+            : "h-full w-full"
+        }
+      >
+        <div className={framed ? "min-h-0 flex-1 overflow-hidden rounded-xl" : "h-full w-full"}>
           <div
             className="h-full w-full"
             style={{

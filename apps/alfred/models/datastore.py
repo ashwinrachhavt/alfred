@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlmodel import Field, SQLModel
 
 from alfred.core.utils import utcnow as _utcnow
@@ -31,7 +31,11 @@ class DataStoreRow(SQLModel, table=True):
     doc_id: str = Field(sa_column=sa.Column(sa.String(length=96), nullable=False))
     data: dict[str, Any] = Field(
         default_factory=dict,
-        sa_column=sa.Column(sa.JSON, nullable=False, server_default=sa.text("'{}'")),
+        sa_column=sa.Column(
+            sa.JSON().with_variant(JSONB(), "postgresql"),
+            nullable=False,
+            server_default=sa.text("'{}'"),
+        ),
     )
     created_at: datetime = Field(
         default_factory=_utcnow,

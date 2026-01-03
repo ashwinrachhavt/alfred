@@ -7,7 +7,6 @@ import {
   analyzeSystemDesign,
   autosaveSystemDesignDiagram,
   evaluateSystemDesign,
-  getSystemDesignComponents,
   getSystemDesignKnowledgeDraft,
   getSystemDesignPrompt,
   getSystemDesignQuestions,
@@ -25,7 +24,6 @@ import type {
   DiagramSuggestion,
   DesignPrompt,
   ExcalidrawData,
-  ComponentDefinition,
   ScaleEstimateRequest,
   ScaleEstimateResponse,
   SystemDesignKnowledgeDraft,
@@ -41,6 +39,14 @@ import { SystemDesignNotesEditor, type SystemDesignNotesEditorHandle } from "@/c
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -64,9 +70,6 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   const [session, setSession] = useState<SystemDesignSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isActionRunning, setIsActionRunning] = useState(false);
-
-  const [components, setComponents] = useState<ComponentDefinition[]>([]);
-  const [isLoadingComponents, setIsLoadingComponents] = useState(false);
 
   const [prompt, setPrompt] = useState<DesignPrompt | null>(null);
   const [analysis, setAnalysis] = useState<DiagramAnalysis | null>(null);
@@ -96,8 +99,9 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   const [interviewPrepId, setInterviewPrepId] = useState("");
   const [publishResult, setPublishResult] = useState<SystemDesignPublishResponse | null>(null);
 
-  const [viewportScale, setViewportScale] = useState<number>(1);
   const canvasRef = useRef<ExcalidrawCanvasHandle | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isResizing, setIsResizing] = useState(false);
 
   const [autosaveState, setAutosaveState] = useState<AutosaveState>("idle");
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
@@ -113,6 +117,57 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   const latestNotesRef = useRef<string>("");
   const notesEditorRef = useRef<SystemDesignNotesEditorHandle | null>(null);
   const notesInitializedRef = useRef(false);
+
+  // Panel visibility state
+  const [showDiagram, setShowDiagram] = useState(true); // Default to showing diagram
+  const [showEditor, setShowEditor] = useState(true);
+  const [showCoach, setShowCoach] = useState(false);
+
+  const [isAiDialogOpen, setIsAiDialogOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [isGeneratingDiagram, setIsGeneratingDiagram] = useState(false);
+  const [diagramGenerationError, setDiagramGenerationError] = useState<string | null>(null);
+
+  // Panel widths (percentages)
+  const [diagramWidth, setDiagramWidth] = useState(60); // Excalidraw gets 60% by default
+  const [coachWidth, setCoachWidth] = useState(400); // Coach panel fixed at 400px
+
+  const isDraggingDiagram = useRef(false);
+  const isDraggingCoach = useRef(false);
+
+  const generateDiagramFromPrompt = async () => {
+    if (!aiPrompt.trim()) return;
+    setIsGeneratingDiagram(true);
+    setDiagramGenerationError(null);
+
+    try {
+      const response = await fetch("/api/ai/system-design-diagram", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: aiPrompt,
+          problemStatement,
+        }),
+      });
+
+      const payload = (await response.json()) as { mermaid?: string; error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to generate diagram.");
+      }
+
+      if (!payload.mermaid) {
+        throw new Error("No diagram returned.");
+      }
+
+      await canvasRef.current?.replaceWithMermaid(payload.mermaid);
+      setIsAiDialogOpen(false);
+      setAiPrompt("");
+    } catch (err) {
+      setDiagramGenerationError(formatErrorMessage(err));
+    } finally {
+      setIsGeneratingDiagram(false);
+    }
+  };
 
   useEffect(() => {
     async function load() {
@@ -151,22 +206,6 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   }, [sessionId]);
 
   useEffect(() => {
-    async function loadComponents() {
-      setIsLoadingComponents(true);
-      try {
-        const next = await getSystemDesignComponents();
-        setComponents(next);
-      } catch {
-        // components are optional; ignore errors to keep the canvas usable
-      } finally {
-        setIsLoadingComponents(false);
-      }
-    }
-
-    void loadComponents();
-  }, []);
-
-  useEffect(() => {
     return () => {
       if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
       if (notesTimerRef.current) window.clearTimeout(notesTimerRef.current);
@@ -177,6 +216,69 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
     () => (session ? toShareUrl(session.share_id) : null),
     [session],
   );
+
+  const mainGridTemplateColumns = useMemo(() => {
+    // Account for resize handles (w-1 = 4px) in the grid columns.
+    // Possible structure: [Left] [Handle] [Editor] [Handle] [Coach]
+    const hasMiddle = showEditor;
+    const hasLeft = showDiagram;
+    const hasRight = showCoach;
+
+    if (hasLeft && hasMiddle && hasRight) return `${diagramWidth}% auto 1fr auto ${coachWidth}px`;
+    if (hasLeft && hasMiddle) return `${diagramWidth}% auto 1fr`;
+    if (hasMiddle && hasRight) return `1fr auto ${coachWidth}px`;
+    if (hasLeft && hasRight) return `1fr auto ${coachWidth}px`;
+    if (hasLeft) return "1fr";
+    if (hasMiddle) return "1fr";
+    if (hasRight) return "1fr";
+    return "1fr";
+  }, [coachWidth, diagramWidth, showCoach, showDiagram, showEditor]);
+
+  // Resize handlers
+  const handleDiagramResize = (e: MouseEvent) => {
+    if (!isDraggingDiagram.current || !containerRef.current) return;
+    const containerWidth = containerRef.current.offsetWidth;
+    const newWidth = (e.clientX / containerWidth) * 100;
+    setDiagramWidth(Math.max(20, Math.min(80, newWidth))); // Clamp between 20% and 80%
+  };
+
+  const handleCoachResize = (e: MouseEvent) => {
+    if (!isDraggingCoach.current) return;
+    const newWidth = window.innerWidth - e.clientX;
+    setCoachWidth(Math.max(300, Math.min(600, newWidth))); // Clamp between 300px and 600px
+  };
+
+  const startDiagramResize = () => {
+    isDraggingDiagram.current = true;
+    setIsResizing(true);
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', handleDiagramResize as any);
+    document.addEventListener('mouseup', stopDiagramResize);
+  };
+
+  const stopDiagramResize = () => {
+    isDraggingDiagram.current = false;
+    setIsResizing(false);
+    document.body.style.userSelect = '';
+    document.removeEventListener('mousemove', handleDiagramResize as any);
+    document.removeEventListener('mouseup', stopDiagramResize);
+  };
+
+  const startCoachResize = () => {
+    isDraggingCoach.current = true;
+    setIsResizing(true);
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', handleCoachResize as any);
+    document.addEventListener('mouseup', stopCoachResize);
+  };
+
+  const stopCoachResize = () => {
+    isDraggingCoach.current = false;
+    setIsResizing(false);
+    document.body.style.userSelect = '';
+    document.removeEventListener('mousemove', handleCoachResize as any);
+    document.removeEventListener('mouseup', stopCoachResize);
+  };
 
   async function flushAutosave() {
     if (!latestDiagramRef.current) return;
@@ -288,596 +390,436 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   }
 
   return (
-    <div className="grid h-full grid-cols-1 gap-3 p-2 lg:grid-cols-[1fr_420px]">
-      <div className="flex min-h-0 flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="space-y-1">
-            <h1 className="text-xl font-semibold tracking-tight">
-              {session.title ?? "System Design Session"}
-            </h1>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <Badge variant="secondary">id: {session.id}</Badge>
-              <Badge variant="outline">share: {session.share_id}</Badge>
-              <span className="text-muted-foreground">
-                autosave:{" "}
-                <span className="font-mono">
-                  {autosaveState}
-                  {lastSavedAt ? ` • ${new Date(lastSavedAt).toLocaleString()}` : ""}
-                </span>
-              </span>
-            </div>
+    <div className="flex h-full flex-col gap-3 p-2">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold tracking-tight">
+            {session.title ?? "System Design Session"}
+          </h1>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="secondary">id: {session.id}</Badge>
+            <Badge variant="outline">share: {session.share_id}</Badge>
+            <span className="text-muted-foreground">
+              notes: <span className="font-mono">{notesSaveState}</span>
+              {lastSavedAt ? ` • ${new Date(lastSavedAt).toLocaleString()}` : ""}
+            </span>
           </div>
+        </div>
 
-          <div className="flex items-center gap-2">
-            {shareUrl ? (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => void copyToClipboard(shareUrl)}
-                >
-                  Copy share link
-                </Button>
-                <Button asChild variant="secondary">
-                  <Link href={shareUrl}>Open share view</Link>
-                </Button>
-              </>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setDiagramGenerationError(null);
+              setIsAiDialogOpen(true);
+            }}
+            disabled={!showDiagram}
+            title={!showDiagram ? "Enable Diagram to generate into the canvas." : undefined}
+          >
+            Generate Diagram
+          </Button>
+          <Button
+            variant={showDiagram ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowDiagram(!showDiagram)}
+          >
+            {showDiagram ? "Hide" : "Show"} Diagram
+          </Button>
+          <Button
+            variant={showEditor ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowEditor(!showEditor)}
+          >
+            {showEditor ? "Hide" : "Show"} Editor
+          </Button>
+          <Button
+            variant={showCoach ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowCoach(!showCoach)}
+          >
+            {showCoach ? "Hide" : "Show"} Coach
+          </Button>
+          <Separator orientation="vertical" className="h-6" />
+          {shareUrl ? (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void copyToClipboard(shareUrl)}
+              >
+                Share
+              </Button>
+            </>
+          ) : null}
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/system-design">Exit</Link>
+          </Button>
+        </div>
+      </div>
+
+      <Dialog open={isAiDialogOpen} onOpenChange={setIsAiDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Generate system diagram</DialogTitle>
+            <DialogDescription>
+              Describe the architecture you want. Alfred will generate a new Excalidraw diagram.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor="ai-diagram-prompt">Prompt</Label>
+            <Textarea
+              id="ai-diagram-prompt"
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              rows={6}
+              className="resize-none"
+              placeholder="Example: Design a URL shortener with analytics, rate limiting, and a queue-based write path."
+            />
+            {diagramGenerationError ? (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                {diagramGenerationError}
+              </div>
             ) : null}
-            <Button asChild variant="ghost">
-              <Link href="/system-design">Exit</Link>
-            </Button>
           </div>
-        </div>
 
-        <div className="flex flex-col gap-2 rounded-xl border bg-background px-4 py-3">
-          <span className="text-sm font-medium">Problem Statement</span>
-          <Textarea
-            value={problemStatement}
-            onChange={(e) => {
-              setProblemStatement(e.target.value);
-              // Optional: debounce save or just relying on blur
-            }}
-            onBlur={() => {
-              if (problemStatement !== session.problem_statement) {
-                void runAction(() => updateSystemDesignSession(sessionId, { problem_statement: problemStatement }), (updated) => {
-                  setSession(updated);
-                  setLastSavedAt(updated.updated_at);
-                });
-              }
-            }}
-            readOnly={false}
-            rows={6}
-            className="resize-none"
-            placeholder="Describe the system design problem..."
-          />
-        </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsAiDialogOpen(false)}
+              disabled={isGeneratingDiagram}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void generateDiagramFromPrompt()}
+              disabled={isGeneratingDiagram || !aiPrompt.trim()}
+            >
+              {isGeneratingDiagram ? "Generating…" : "Generate"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-        <div className="min-h-0 flex-1">
-          <div className="flex h-full min-h-0 flex-col gap-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-medium text-muted-foreground">Components</span>
-                {isLoadingComponents ? (
-                  <span className="text-xs text-muted-foreground">Loading…</span>
-                ) : null}
-                {components.slice(0, 10).map((c) => (
-                  <Button
-                    key={c.id}
-                    size="sm"
-                    variant="outline"
-                    onClick={() => canvasRef.current?.insertComponent({ id: c.id, name: c.name, category: c.category })}
-                  >
-                    {c.name}
-                  </Button>
-                ))}
-              </div>
+      {/* Main Content Grid */}
+      <div
+        ref={containerRef}
+        className="grid min-h-0 flex-1 gap-0"
+        style={{ gridTemplateColumns: mainGridTemplateColumns }}
+      >
 
-              <div className="flex items-center gap-2">
-                <Label className="text-xs text-muted-foreground">View</Label>
-                <select
-                  className="h-9 rounded-md border bg-background px-2 text-sm"
-                  value={String(viewportScale)}
-                  onChange={(e) => setViewportScale(Number(e.target.value))}
-                >
-                  <option value="1">100%</option>
-                  <option value="0.5">50%</option>
-                  <option value="0.25">25%</option>
-                </select>
-              </div>
-            </div>
+        {/* Excalidraw Panel - Collapsible */}
+        {showDiagram && (
+          <div className="relative flex min-h-0 flex-col overflow-hidden rounded-xl border bg-background">
+            {/* Overlay during resize to prevent event trapping */}
+            {isResizing && <div className="absolute inset-0 z-50 bg-transparent" />}
 
-            <div className="min-h-0 flex-1">
+            <div className="min-h-0 flex-1 p-0">
               <ExcalidrawCanvas
                 ref={canvasRef}
                 initialDiagram={session.diagram}
                 onDiagramChange={queueAutosave}
-                viewportScale={viewportScale}
+                framed={false}
+                viewportScale={1}
               />
             </div>
           </div>
-        </div>
-      </div>
+        )}
 
-      <div className="min-h-0">
-        <Card className="flex h-full flex-col">
-          <CardHeader className="space-y-2">
-            <CardTitle className="flex items-center justify-between">
-              <span>Coach</span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void flushAutosave()}
-                disabled={autosaveState === "saving"}
-              >
-                Save now
-              </Button>
-            </CardTitle>
-            {actionError ? (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-                {actionError}
-              </div>
-            ) : null}
-          </CardHeader>
+        {/* Resize Handle for Diagram */}
+        {showDiagram && showEditor && (
+          <div
+            className="group relative w-1 cursor-col-resize bg-border hover:bg-primary transition-colors"
+            onMouseDown={startDiagramResize}
+          >
+            <div className="absolute inset-y-0 -left-1 -right-1 z-10" />
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary p-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="h-8 w-0.5 bg-primary-foreground" />
+            </div>
+          </div>
+        )}
 
-          <CardContent className="min-h-0 flex-1 overflow-auto">
-            <Tabs defaultValue="prompt">
-              <TabsList className="grid w-full grid-cols-5">
-                <TabsTrigger value="prompt">Prompt</TabsTrigger>
-                <TabsTrigger value="analysis">Analyze</TabsTrigger>
-                <TabsTrigger value="qna">Q&A</TabsTrigger>
-                <TabsTrigger value="publish">Publish</TabsTrigger>
-                <TabsTrigger value="notes">Notes</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="prompt" className="space-y-4 pt-4">
-                <Button
-                  onClick={() =>
-                    void runAction(() => getSystemDesignPrompt(sessionId), setPrompt)
+        {/* Editor Panel - Collapsible */}
+        {showEditor && (
+          <div className="flex min-h-0 flex-col gap-3">
+            <div className="flex flex-col gap-2 rounded-xl border bg-background px-4 py-3">
+              <span className="text-sm font-medium">Problem Statement</span>
+              <Textarea
+                value={problemStatement}
+                onChange={(e) => {
+                  setProblemStatement(e.target.value);
+                }}
+                onBlur={() => {
+                  if (problemStatement !== session.problem_statement) {
+                    void runAction(() => updateSystemDesignSession(sessionId, { problem_statement: problemStatement }), (updated) => {
+                      setSession(updated);
+                      setLastSavedAt(updated.updated_at);
+                    });
                   }
-                  disabled={isActionRunning}
-                >
-                  Generate interviewer prompt
-                </Button>
-                {prompt ? (
-                  <div className="space-y-3 rounded-lg border p-4">
-                    <p className="font-medium">{prompt.problem}</p>
-                    {prompt.target_scale ? (
-                      <p className="text-xs text-muted-foreground">
-                        Target scale: {prompt.target_scale}
-                      </p>
-                    ) : null}
-                    {prompt.constraints.length ? (
-                      <ul className="list-disc space-y-1 pl-5 text-sm">
-                        {prompt.constraints.map((c) => (
-                          <li key={c}>{c}</li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </div>
-                ) : null}
-              </TabsContent>
+                }}
+                readOnly={false}
+                rows={4}
+                className="resize-none"
+                placeholder="Describe the system design problem..."
+              />
+            </div>
 
-              <TabsContent value="analysis" className="space-y-6 pt-4">
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    onClick={() =>
-                      void runAction(() => analyzeSystemDesign(sessionId), setAnalysis)
-                    }
-                    disabled={isActionRunning}
-                  >
-                    Analyze
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      void runAction(() => getSystemDesignQuestions(sessionId), setQuestions)
-                    }
-                    disabled={isActionRunning}
-                  >
-                    Probing questions
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      void runAction(() => getSystemDesignSuggestions(sessionId), setSuggestions)
-                    }
-                    disabled={isActionRunning}
-                  >
-                    Suggestions
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() =>
-                      void runAction(() => evaluateSystemDesign(sessionId), setEvaluation)
-                    }
-                    disabled={isActionRunning}
-                  >
-                    Evaluate
-                  </Button>
+            <div className="min-h-0 flex-1">
+              <SystemDesignNotesEditor
+                ref={notesEditorRef}
+                markdown={notesMarkdown}
+                onMarkdownChange={queueNotesSave}
+                placeholder="Write your notes, architecture decisions, and design thoughts here…"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Resize Handle for Coach */}
+        {showCoach && (showDiagram || showEditor) && (
+          <div
+            className="group relative w-1 cursor-col-resize bg-border hover:bg-primary transition-colors"
+            onMouseDown={startCoachResize}
+          >
+            <div className="absolute inset-y-0 -left-1 -right-1 z-10" />
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary p-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="h-8 w-0.5 bg-primary-foreground" />
+            </div>
+          </div>
+        )}
+
+        {/* Coach Panel - Collapsible */}
+        {showCoach && (
+          <Card className="flex min-h-0 flex-col">
+            <CardHeader className="space-y-2">
+              <CardTitle className="flex items-center justify-between">
+                <span>Coach</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void flushAutosave()}
+                  disabled={autosaveState === "saving"}
+                >
+                  Save diagram
+                </Button>
+              </CardTitle>
+              {actionError ? (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                  {actionError}
                 </div>
+              ) : null}
+            </CardHeader>
 
-                {analysis ? (
-                  <div className="space-y-2 rounded-lg border p-4">
-                    <div className="flex items-center justify-between">
-                      <p className="font-medium">Analysis</p>
-                      <Badge variant="secondary">{analysis.completeness_score}/100</Badge>
-                    </div>
-                    <Separator />
-                    {analysis.best_practices_hints.length ? (
-                      <div className="space-y-1">
-                        <p className="text-xs font-semibold text-muted-foreground">Hints</p>
-                        <ul className="list-disc space-y-1 pl-5 text-sm">
-                          {analysis.best_practices_hints.map((h) => (
-                            <li key={h}>{h}</li>
-                          ))}
-                        </ul>
+            <CardContent className="min-h-0 flex-1 overflow-auto">
+              <Tabs defaultValue="analysis">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="analysis">Analyze</TabsTrigger>
+                  <TabsTrigger value="qna">Q&A</TabsTrigger>
+                  <TabsTrigger value="publish">Publish</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="analysis" className="space-y-6 pt-4">
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      onClick={() =>
+                        void runAction(() => analyzeSystemDesign(sessionId), setAnalysis)
+                      }
+                      disabled={isActionRunning}
+                      size="sm"
+                    >
+                      Analyze
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        void runAction(() => getSystemDesignQuestions(sessionId), setQuestions)
+                      }
+                      disabled={isActionRunning}
+                    >
+                      Questions
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        void runAction(() => getSystemDesignSuggestions(sessionId), setSuggestions)
+                      }
+                      disabled={isActionRunning}
+                    >
+                      Suggestions
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() =>
+                        void runAction(() => evaluateSystemDesign(sessionId), setEvaluation)
+                      }
+                      disabled={isActionRunning}
+                    >
+                      Evaluate
+                    </Button>
+                  </div>
+
+                  {analysis ? (
+                    <div className="space-y-2 rounded-lg border p-4">
+                      <div className="flex items-center justify-between">
+                        <p className="font-medium">Analysis</p>
+                        <Badge variant="secondary">{analysis.completeness_score}/100</Badge>
                       </div>
-                    ) : null}
-                    {analysis.bottlenecks.length ? (
-                      <div className="space-y-1">
-                        <p className="text-xs font-semibold text-muted-foreground">Bottlenecks</p>
-                        <ul className="list-disc space-y-1 pl-5 text-sm">
-                          {analysis.bottlenecks.map((b) => (
-                            <li key={b}>{b}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {questions?.length ? (
-                  <div className="space-y-2 rounded-lg border p-4">
-                    <p className="font-medium">Probing questions</p>
-                    <ul className="space-y-2 text-sm">
-                      {questions.map((q) => (
-                        <li key={q.id} className="space-y-1">
-                          <p>• {q.text}</p>
-                          {q.rationale ? (
-                            <p className="text-xs text-muted-foreground">{q.rationale}</p>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-
-                {suggestions.length ? (
-                  <div className="space-y-2 rounded-lg border p-4">
-                    <p className="font-medium">Suggestions</p>
-                    <ul className="space-y-2 text-sm">
-                      {suggestions.map((s) => (
-                        <li key={s.id} className="flex items-start justify-between gap-3">
-                          <p className="leading-6">• {s.text}</p>
-                          {s.priority ? <Badge variant="outline">{s.priority}</Badge> : null}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-
-                {evaluation ? (
-                  <div className="space-y-2 rounded-lg border p-4">
-                    <p className="font-medium">Evaluation</p>
-                    <div className="grid gap-2 sm:grid-cols-2 text-sm">
-                      <p>Completeness: {evaluation.completeness}/100</p>
-                      <p>Scalability: {evaluation.scalability}/100</p>
-                      <p>Tradeoffs: {evaluation.tradeoffs}/100</p>
-                      <p>Communication: {evaluation.communication}/100</p>
-                      <p>Technical depth: {evaluation.technical_depth}/100</p>
-                    </div>
-                    {evaluation.notes.length ? (
-                      <>
-                        <Separator />
-                        <ul className="list-disc space-y-1 pl-5 text-sm">
-                          {evaluation.notes.map((n) => (
-                            <li key={n}>{n}</li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : null}
-                  </div>
-                ) : null}
-              </TabsContent>
-
-              <TabsContent value="qna" className="space-y-6 pt-4">
-                <Button
-                  onClick={() =>
-                    void runAction(() => getSystemDesignKnowledgeDraft(sessionId), setKnowledgeDraft)
-                  }
-                  disabled={isActionRunning}
-                >
-                  Generate knowledge draft
-                </Button>
-
-                {knowledgeDraft ? (
-                  <div className="space-y-4 rounded-lg border p-4">
-                    {knowledgeDraft.notes.length ? (
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold text-muted-foreground">Notes</p>
-                        <ul className="list-disc space-y-1 pl-5 text-sm">
-                          {knowledgeDraft.notes.map((n) => (
-                            <li key={n}>{n}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-
-                    {knowledgeDraft.topics.length ? (
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold text-muted-foreground">Topics</p>
-                        <ul className="space-y-2 text-sm">
-                          {knowledgeDraft.topics.map((t) => (
-                            <li key={t.title} className="rounded-md border p-3">
-                              <p className="font-medium">{t.title}</p>
-                              {t.description ? (
-                                <p className="text-xs text-muted-foreground">{t.description}</p>
-                              ) : null}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-
-                    {knowledgeDraft.interview_prep?.likely_questions?.length ? (
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold text-muted-foreground">Likely questions</p>
-                        <ul className="space-y-2 text-sm">
-                          {knowledgeDraft.interview_prep.likely_questions.map((q) => (
-                            <li key={q.question} className="rounded-md border p-3">
-                              <p className="font-medium">{q.question}</p>
-                              <p className="text-xs text-muted-foreground">{q.suggested_answer}</p>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                <Separator />
-
-                <div className="space-y-3">
-                  <p className="text-sm font-medium">Scale estimate</p>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="qps">QPS</Label>
-                      <Input
-                        id="qps"
-                        type="number"
-                        value={scaleInput.qps}
-                        onChange={(e) =>
-                          setScaleInput((prev) => ({ ...prev, qps: Number(e.target.value) }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="writePct">Write %</Label>
-                      <Input
-                        id="writePct"
-                        type="number"
-                        value={scaleInput.write_percentage ?? 20}
-                        onChange={(e) =>
-                          setScaleInput((prev) => ({
-                            ...prev,
-                            write_percentage: Number(e.target.value),
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="reqKb">Avg request (KB)</Label>
-                      <Input
-                        id="reqKb"
-                        type="number"
-                        value={scaleInput.avg_request_kb}
-                        onChange={(e) =>
-                          setScaleInput((prev) => ({
-                            ...prev,
-                            avg_request_kb: Number(e.target.value),
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="resKb">Avg response (KB)</Label>
-                      <Input
-                        id="resKb"
-                        type="number"
-                        value={scaleInput.avg_response_kb}
-                        onChange={(e) =>
-                          setScaleInput((prev) => ({
-                            ...prev,
-                            avg_response_kb: Number(e.target.value),
-                          }))
-                        }
-                      />
-                    </div>
-                  </div>
-
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      void runAction(() => scaleEstimate(scaleInput), setScaleOutput)
-                    }
-                    disabled={isActionRunning}
-                  >
-                    Estimate scale
-                  </Button>
-
-                  {scaleOutput ? (
-                    <div className="rounded-lg border p-4 text-sm space-y-1">
-                      <p>Inbound: {scaleOutput.inbound_mbps.toFixed(2)} Mbps</p>
-                      <p>Outbound: {scaleOutput.outbound_mbps.toFixed(2)} Mbps</p>
-                      <p>Writes/day: {scaleOutput.writes_per_day.toLocaleString()}</p>
-                      <p>Storage/day: {scaleOutput.storage_gb_per_day.toFixed(2)} GB</p>
-                      <p>Retained: {scaleOutput.retained_storage_gb.toFixed(2)} GB</p>
+                      <Separator />
+                      {analysis.best_practices_hints.length ? (
+                        <div className="space-y-1">
+                          <p className="text-xs font-semibold text-muted-foreground">Hints</p>
+                          <ul className="list-disc space-y-1 pl-5 text-sm">
+                            {analysis.best_practices_hints.map((h) => (
+                              <li key={h}>{h}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
-                </div>
-              </TabsContent>
 
-              <TabsContent value="publish" className="space-y-4 pt-4">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium leading-none">Create learning topics</p>
-                      <p className="text-xs text-muted-foreground">
-                        Saves topics/resources in the learning library.
-                      </p>
+                  {questions?.length ? (
+                    <div className="space-y-2 rounded-lg border p-4">
+                      <p className="font-medium">Questions</p>
+                      <ul className="space-y-2 text-sm">
+                        {questions.map((q) => (
+                          <li key={q.id} className="space-y-1">
+                            <p>• {q.text}</p>
+                            {q.rationale ? (
+                              <p className="text-xs text-muted-foreground">{q.rationale}</p>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                    <Switch checked={publishLearningTopics} onCheckedChange={setPublishLearningTopics} />
-                  </div>
+                  ) : null}
 
-                  <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium leading-none">Create zettels</p>
-                      <p className="text-xs text-muted-foreground">
-                        Converts insights into zettelkasten cards.
-                      </p>
+                  {suggestions.length ? (
+                    <div className="space-y-2 rounded-lg border p-4">
+                      <p className="font-medium">Suggestions</p>
+                      <ul className="space-y-2 text-sm">
+                        {suggestions.map((s) => (
+                          <li key={s.id} className="flex items-start justify-between gap-3">
+                            <p className="leading-6">• {s.text}</p>
+                            {s.priority ? <Badge variant="outline">{s.priority}</Badge> : null}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                    <Switch checked={publishZettels} onCheckedChange={setPublishZettels} />
-                  </div>
+                  ) : null}
 
-                  <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium leading-none">Update interview prep</p>
-                      <p className="text-xs text-muted-foreground">
-                        Appends likely questions/technical topics to an existing prep record.
-                      </p>
+                  {evaluation ? (
+                    <div className="space-y-2 rounded-lg border p-4">
+                      <p className="font-medium">Evaluation</p>
+                      <div className="grid gap-2 text-sm">
+                        <p>Completeness: {evaluation.completeness}/100</p>
+                        <p>Scalability: {evaluation.scalability}/100</p>
+                        <p>Tradeoffs: {evaluation.tradeoffs}/100</p>
+                      </div>
                     </div>
-                    <Switch checked={publishInterviewPrep} onCheckedChange={setPublishInterviewPrep} />
-                  </div>
-                </div>
+                  ) : null}
+                </TabsContent>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="learningTopicId">Learning topic ID (optional)</Label>
-                    <Input
-                      id="learningTopicId"
-                      placeholder="e.g. 12"
-                      value={learningTopicId}
-                      onChange={(e) => setLearningTopicId(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="topicTitle">Topic title override (optional)</Label>
-                    <Input
-                      id="topicTitle"
-                      placeholder="Defaults to session title/problem."
-                      value={topicTitle}
-                      onChange={(e) => setTopicTitle(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="topicTags">Topic tags (comma-separated)</Label>
-                    <Input
-                      id="topicTags"
-                      placeholder="e.g. system-design, caching"
-                      value={topicTags}
-                      onChange={(e) => setTopicTags(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="zettelTags">Zettel tags (comma-separated)</Label>
-                    <Input
-                      id="zettelTags"
-                      placeholder="e.g. interviews, distributed-systems"
-                      value={zettelTags}
-                      onChange={(e) => setZettelTags(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="interviewPrepId">Interview prep ID (optional)</Label>
-                    <Input
-                      id="interviewPrepId"
-                      placeholder="Required if 'Update interview prep' is enabled."
-                      value={interviewPrepId}
-                      onChange={(e) => setInterviewPrepId(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <Button
-                  onClick={() =>
-                    void runAction(async () => {
-                      const payload: SystemDesignPublishRequest = {
-                        create_learning_topics: publishLearningTopics,
-                        create_zettels: publishZettels,
-                        create_interview_prep_items: publishInterviewPrep,
-                        topic_title: topicTitle.trim() || null,
-                        topic_tags: topicTags
-                          .split(",")
-                          .map((t) => t.trim())
-                          .filter(Boolean),
-                        zettel_tags: zettelTags
-                          .split(",")
-                          .map((t) => t.trim())
-                          .filter(Boolean),
-                      };
-
-                      const ltId = Number(learningTopicId);
-                      if (!Number.isNaN(ltId) && learningTopicId.trim().length) {
-                        payload.learning_topic_id = ltId;
-                      }
-
-                      if (interviewPrepId.trim().length) payload.interview_prep_id = interviewPrepId.trim();
-
-                      return publishSystemDesignSession(sessionId, payload);
-                    }, (result) => {
-                      setPublishResult(result);
-                      setSession(result.session);
-                      setLastSavedAt(result.session.updated_at);
-                    })
-                  }
-                  disabled={isActionRunning}
-                >
-                  Publish artifacts
-                </Button>
-
-                {publishResult ? (
-                  <div className="space-y-2 rounded-lg border p-4 text-sm">
-                    <p className="font-medium">Published</p>
-                    <p>
-                      Learning topics: {publishResult.artifacts.learning_topic_ids.length}
-                    </p>
-                    <p>
-                      Learning resources: {publishResult.artifacts.learning_resource_ids.length}
-                    </p>
-                    <p>Zettels: {publishResult.artifacts.zettel_card_ids.length}</p>
-                    {publishResult.artifacts.interview_prep_id ? (
-                      <p>Interview prep: {publishResult.artifacts.interview_prep_id}</p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </TabsContent>
-
-              <TabsContent value="notes" className="space-y-3 pt-4">
-                <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                  <span>
-                    autosave: <span className="font-mono">{notesSaveState}</span>
-                  </span>
+                <TabsContent value="qna" className="space-y-6 pt-4">
                   <Button
-                    variant="outline"
+                    onClick={() =>
+                      void runAction(() => getSystemDesignKnowledgeDraft(sessionId), setKnowledgeDraft)
+                    }
+                    disabled={isActionRunning}
                     size="sm"
-                    onClick={() => void flushNotesSave()}
-                    disabled={notesSaveState === "saving"}
                   >
-                    Save notes
+                    Generate Draft
                   </Button>
-                </div>
 
-                <div className="h-[480px] min-h-[320px]">
-                  <SystemDesignNotesEditor
-                    ref={notesEditorRef}
-                    markdown={notesMarkdown}
-                    onMarkdownChange={queueNotesSave}
-                    placeholder="Write session notes…"
-                  />
-                </div>
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
+                  {knowledgeDraft?.notes.length ? (
+                    <div className="space-y-2 rounded-lg border p-4">
+                      <p className="text-xs font-semibold text-muted-foreground">Notes</p>
+                      <ul className="list-disc space-y-1 pl-5 text-sm">
+                        {knowledgeDraft.notes.map((n) => (
+                          <li key={n}>{n}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </TabsContent>
+
+                <TabsContent value="publish" className="space-y-4 pt-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium leading-none">Learning topics</p>
+                        <p className="text-xs text-muted-foreground">
+                          Save to learning library
+                        </p>
+                      </div>
+                      <Switch checked={publishLearningTopics} onCheckedChange={setPublishLearningTopics} />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium leading-none">Zettels</p>
+                        <p className="text-xs text-muted-foreground">
+                          Create zettelkasten cards
+                        </p>
+                      </div>
+                      <Switch checked={publishZettels} onCheckedChange={setPublishZettels} />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="topicTitle" className="text-xs">Topic title</Label>
+                      <Input
+                        id="topicTitle"
+                        placeholder="Optional"
+                        value={topicTitle}
+                        onChange={(e) => setTopicTitle(e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <Button
+                    onClick={() =>
+                      void runAction(async () => {
+                        const payload: SystemDesignPublishRequest = {
+                          create_learning_topics: publishLearningTopics,
+                          create_zettels: publishZettels,
+                          create_interview_prep_items: false,
+                          topic_title: topicTitle.trim() || null,
+                          topic_tags: [],
+                          zettel_tags: [],
+                        };
+                        return publishSystemDesignSession(sessionId, payload);
+                      }, (result) => {
+                        setPublishResult(result);
+                        setSession(result.session);
+                        setLastSavedAt(result.session.updated_at);
+                      })
+                    }
+                    disabled={isActionRunning}
+                    size="sm"
+                  >
+                    Publish
+                  </Button>
+
+                  {publishResult ? (
+                    <div className="space-y-2 rounded-lg border p-4 text-sm">
+                      <p className="font-medium">Published</p>
+                      <p>Topics: {publishResult.artifacts.learning_topic_ids.length}</p>
+                      <p>Zettels: {publishResult.artifacts.zettel_card_ids.length}</p>
+                    </div>
+                  ) : null}
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

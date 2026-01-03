@@ -107,7 +107,6 @@ class SystemDesignSessionUpdate(BaseModel):
     problem_statement: Optional[str] = None
 
 
-
 class SystemDesignNotesUpdate(BaseModel):
     notes_markdown: str
 

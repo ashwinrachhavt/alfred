@@ -220,15 +220,12 @@ class DataStoreService:
         clause = _build_where_clause(flt)
         with self._session() as s:
             if clause is not None:
-                row = (
-                    s.exec(
-                        select(DataStoreRow)
-                        .where(DataStoreRow.collection == coll)
-                        .where(clause)
-                        .limit(1)
-                    )
-                    .first()
-                )
+                row = s.exec(
+                    select(DataStoreRow)
+                    .where(DataStoreRow.collection == coll)
+                    .where(clause)
+                    .limit(1)
+                ).first()
                 return dict(row.data) if row else None
 
             rows = s.exec(select(DataStoreRow).where(DataStoreRow.collection == coll)).all()
@@ -290,15 +287,12 @@ class DataStoreService:
         with self._session() as s:
             target = None
             if clause is not None:
-                target = (
-                    s.exec(
-                        select(DataStoreRow)
-                        .where(DataStoreRow.collection == coll)
-                        .where(clause)
-                        .limit(1)
-                    )
-                    .first()
-                )
+                target = s.exec(
+                    select(DataStoreRow)
+                    .where(DataStoreRow.collection == coll)
+                    .where(clause)
+                    .limit(1)
+                ).first()
             else:
                 rows = s.exec(select(DataStoreRow).where(DataStoreRow.collection == coll)).all()
                 for row in rows:
@@ -370,15 +364,12 @@ class DataStoreService:
         with self._session() as s:
             clause = _build_where_clause(filter_)
             if clause is not None:
-                row = (
-                    s.exec(
-                        select(DataStoreRow)
-                        .where(DataStoreRow.collection == coll)
-                        .where(clause)
-                        .limit(1)
-                    )
-                    .first()
-                )
+                row = s.exec(
+                    select(DataStoreRow)
+                    .where(DataStoreRow.collection == coll)
+                    .where(clause)
+                    .limit(1)
+                ).first()
                 if row is None:
                     return 0
                 s.delete(row)
@@ -405,9 +396,7 @@ class DataStoreService:
             clause = _build_where_clause(filter_)
             if clause is not None:
                 rows = s.exec(
-                    select(DataStoreRow)
-                    .where(DataStoreRow.collection == coll)
-                    .where(clause)
+                    select(DataStoreRow).where(DataStoreRow.collection == coll).where(clause)
                 ).all()
             else:
                 rows = s.exec(select(DataStoreRow).where(DataStoreRow.collection == coll)).all()

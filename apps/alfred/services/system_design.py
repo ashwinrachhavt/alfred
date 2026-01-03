@@ -87,14 +87,16 @@ class SystemDesignService:
             return None
         return self._to_session(str(doc["_id"]), doc)
 
-    def update_session(self, session_id: str, payload: SystemDesignSessionUpdate) -> Optional[SystemDesignSession]:
+    def update_session(
+        self, session_id: str, payload: SystemDesignSessionUpdate
+    ) -> Optional[SystemDesignSession]:
         now = _utcnow()
         update: Dict[str, Any] = {"updated_at": now}
         if payload.title is not None:
             update["title"] = payload.title
         if payload.problem_statement is not None:
             update["problem_statement"] = payload.problem_statement
-        
+
         self._collection.update_one(
             {"_id": session_id},
             {"$set": update},

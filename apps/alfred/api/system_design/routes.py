@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlmodel import Session
+from starlette.concurrency import run_in_threadpool
 
 from alfred.api.dependencies import get_db_session
 from alfred.core.dependencies import get_system_design_service
@@ -287,7 +288,7 @@ async def system_design_ws(
     session_id: str,
     svc: SystemDesignService = Depends(get_system_design_service),
 ) -> None:
-    session = svc.get_session(session_id)
+    session = await run_in_threadpool(svc.get_session, session_id)
     if not session:
         await websocket.close(code=1008)
         return
@@ -300,7 +301,7 @@ async def system_design_ws(
                 autosave_payload = AutosaveRequest.model_validate(
                     {"diagram": payload.get("diagram"), "label": payload.get("label")}
                 )
-                svc.autosave(session_id, autosave_payload)
+                await run_in_threadpool(svc.autosave, session_id, autosave_payload)
     except WebSocketDisconnect:
         return
     finally:

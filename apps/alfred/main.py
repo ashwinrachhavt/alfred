@@ -18,16 +18,44 @@ setup_logging()
 
 app = FastAPI(title="Alfred API")
 register_exception_handlers(app)
+
+cors_origins = settings.cors_allow_origins
+cors_allow_credentials = "*" not in cors_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_allow_origins,
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 register_routes(app)
 mount_admin(app)
+
+
+@app.on_event("shutdown")
+def _shutdown() -> None:
+    """Best-effort cleanup for long-lived external clients."""
+
+    try:
+        from alfred.core.dependencies import get_graph_service
+
+        graph = get_graph_service()
+        if graph is not None:
+            graph.close()
+    except Exception:
+        pass
+
+    try:
+        from alfred.core.redis_client import get_redis_client
+
+        redis_client = get_redis_client()
+        close = getattr(redis_client, "close", None) if redis_client is not None else None
+        if callable(close):
+            close()
+    except Exception:
+        pass
+
 
 logger = logging.getLogger(__name__)
 logger.info("Alfred API initialized")
