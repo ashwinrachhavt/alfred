@@ -3,8 +3,6 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from alfred.admin import mount_admin
-
 # Environment is loaded by Pydantic Settings (see alfred.core.settings).
 from alfred.api import register_routes
 from alfred.core.exceptions import register_exception_handlers
@@ -30,7 +28,6 @@ app.add_middleware(
 )
 
 register_routes(app)
-mount_admin(app)
 
 
 @app.on_event("shutdown")

@@ -9,7 +9,9 @@ import type {
   CompanyResearchQueuedResponse,
 } from "@/lib/api/types/company";
 import { useStartCompanyResearch } from "@/features/company/mutations";
+import { useCompanyResearchReport } from "@/features/company/queries";
 import { useTaskStatus } from "@/features/tasks/queries";
+import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -123,13 +125,29 @@ function ResearchReport({ payload }: { payload: CompanyResearchPayload }) {
   );
 }
 
-export function CompanyResearchClient() {
+type CompanyResearchClientProps = {
+  reportId?: string;
+};
+
+export function CompanyResearchClient({ reportId }: CompanyResearchClientProps) {
   const [companyName, setCompanyName] = useState("");
+  const [hasEditedCompanyName, setHasEditedCompanyName] = useState(false);
   const [refresh, setRefresh] = useState(false);
 
   const startResearch = useStartCompanyResearch();
+  const { trackTask } = useTaskTracker();
   const [taskId, setTaskId] = useState<string | null>(null);
   const taskQuery = useTaskStatus(taskId);
+  const reportQuery = useCompanyResearchReport(reportId ?? null);
+
+  const companyFromReport = useMemo(() => {
+    const normalized = reportQuery.data ? normalizeCompanyResearchResult(reportQuery.data) : null;
+    return normalized?.company ?? "";
+  }, [reportQuery.data]);
+
+  const effectiveCompanyName = hasEditedCompanyName
+    ? companyName
+    : companyName || companyFromReport;
 
   const payload = useMemo(() => {
     if (startResearch.data && !isQueuedResponse(startResearch.data)) {
@@ -138,10 +156,14 @@ export function CompanyResearchClient() {
     if (taskQuery.data?.ready && taskQuery.data.result) {
       return normalizeCompanyResearchResult(taskQuery.data.result);
     }
+    if (reportQuery.data) {
+      return normalizeCompanyResearchResult(reportQuery.data);
+    }
     return null;
-  }, [startResearch.data, taskQuery.data]);
+  }, [startResearch.data, taskQuery.data, reportQuery.data]);
 
-  const isBusy = startResearch.isPending || (Boolean(taskId) && taskQuery.isFetching);
+  const isBusy =
+    reportQuery.isFetching || startResearch.isPending || (Boolean(taskId) && taskQuery.isFetching);
 
   return (
     <div className="space-y-6">
@@ -163,20 +185,28 @@ export function CompanyResearchClient() {
               <Input
                 id="companyName"
                 placeholder="e.g. Stripe"
-                value={companyName}
-                onChange={(event) => setCompanyName(event.target.value)}
+                value={effectiveCompanyName}
+                onChange={(event) => {
+                  if (!hasEditedCompanyName) setHasEditedCompanyName(true);
+                  setCompanyName(event.target.value);
+                }}
               />
             </div>
             <Button
               type="button"
-              disabled={!companyName.trim() || startResearch.isPending}
+              disabled={!effectiveCompanyName.trim() || startResearch.isPending}
               onClick={async () => {
-                const name = companyName.trim();
+                const name = effectiveCompanyName.trim();
                 setTaskId(null);
                 try {
                   const result = await startResearch.mutateAsync({ name, refresh });
                   if (isQueuedResponse(result)) {
                     setTaskId(result.task_id);
+                    trackTask({
+                      id: result.task_id,
+                      source: "company_research",
+                      label: `Company research: ${name}`,
+                    });
                     toast.message("Research started in background.");
                   } else {
                     toast.success("Research ready.");
@@ -220,6 +250,14 @@ export function CompanyResearchClient() {
             </div>
           ) : null}
 
+          {reportQuery.isError ? (
+            <p className="text-destructive text-sm">
+              {reportQuery.error instanceof Error
+                ? reportQuery.error.message
+                : "Failed to load report."}
+            </p>
+          ) : null}
+
           {startResearch.error ? (
             <p className="text-destructive text-sm">
               {startResearch.error instanceof Error
@@ -230,7 +268,18 @@ export function CompanyResearchClient() {
         </CardContent>
       </Card>
 
-      {isBusy && !payload ? (
+      {reportQuery.isFetching && !payload ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Loading report…</CardTitle>
+          </CardHeader>
+          <CardContent className="text-muted-foreground text-sm">
+            Fetching a saved research report.
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {isBusy && !payload && !reportQuery.isFetching ? (
         <Card>
           <CardHeader>
             <CardTitle>Generating…</CardTitle>

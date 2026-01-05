@@ -1,16 +1,16 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MessageCircle } from "lucide-react";
+
+import { Page } from "@/components/layout/page";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default function RagPage() {
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-10">
-      <Card>
-        <CardHeader>
-          <CardTitle>Knowledge Assistant (RAG)</CardTitle>
-        </CardHeader>
-        <CardContent className="text-muted-foreground text-sm">
-          Coming next: chat with citations, context viewer, and modes.
-        </CardContent>
-      </Card>
-    </div>
+    <Page>
+      <EmptyState
+        icon={MessageCircle}
+        title="Knowledge Assistant (RAG)"
+        description="Coming next: chat with citations, context viewer, and modes."
+      />
+    </Page>
   );
 }

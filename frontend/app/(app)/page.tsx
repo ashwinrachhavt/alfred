@@ -1,11 +1,12 @@
 import Link from "next/link";
 
+import { Page } from "@/components/layout/page";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function Home() {
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-14">
+    <Page className="py-14">
       <div className="grid gap-10 lg:grid-cols-[1fr_380px]">
         <div className="space-y-5">
           <h1 className="text-4xl font-semibold tracking-tight">
@@ -107,6 +108,6 @@ export default function Home() {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </Page>
   );
 }

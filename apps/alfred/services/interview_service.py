@@ -417,6 +417,7 @@ class InterviewQuestionsService:
         warnings: list[str] = []
         sources: list[QuestionSource] = []
         urls: list[str] = []
+        used_fallback_questions = False
 
         def _search(conn: Any, query: str) -> SearchResponse | None:
             try:
@@ -463,7 +464,9 @@ class InterviewQuestionsService:
                     urls.append(url)
                     content = item.get("content")
                     extracted = extract_questions_heuristic(
-                        content if isinstance(content, str) else None, max_questions=8
+                        content if isinstance(content, str) else None,
+                        max_questions=8,
+                        max_line_chars=420,
                     )
                     sources.append(
                         QuestionSource(
@@ -490,7 +493,7 @@ class InterviewQuestionsService:
         by_url: dict[str, QuestionSource] = {s.url: s for s in sources if s.url}
         for url in urls:
             markdown, error = _scrape(url)
-            qs = extract_questions_heuristic(markdown, max_questions=16)
+            qs = extract_questions_heuristic(markdown, max_questions=16, max_line_chars=420)
             existing = by_url.get(url)
             if existing is None:
                 sources.append(
@@ -524,6 +527,25 @@ class InterviewQuestionsService:
             key=lambda x: (-x.occurrences, x.question.lower()),
         )[:max_questions]
 
+        if not question_list:
+            used_fallback_questions = True
+            warnings.append(
+                "No interview questions could be extracted from sources; using a built-in fallback set."
+            )
+            fallback = self._fallback_questions(role_clean, max_questions=max_questions)
+            for q in fallback:
+                norm = normalize_question(q)
+                key = norm.lower()
+                if key in items:
+                    continue
+                items[key] = QuestionItem(
+                    question=norm,
+                    categories=_categorize(norm),
+                    occurrences=1,
+                    sources=[],
+                )
+            question_list = list(items.values())[:max_questions]
+
         return InterviewQuestionsReport(
             company=company,
             role=role_clean,
@@ -532,8 +554,60 @@ class InterviewQuestionsService:
             questions=question_list,
             sources=sources[:max_sources],
             warnings=warnings,
-            meta={"sources_considered": len(urls)},
+            meta={"sources_considered": len(urls), "fallback_questions": used_fallback_questions},
         )
+
+    def _fallback_questions(self, role: str | None, *, max_questions: int) -> list[str]:
+        """Return a small, high-signal set of generic questions.
+
+        This is used when all external sources fail (rate limits, timeouts) or
+        contain no extractable question lines.
+        """
+
+        base = [
+            "Given an array of integers, find two numbers that add up to a target",
+            "Given a string, find the first non-repeating character",
+            "Write a function to reverse a linked list",
+            "Given a binary tree, return the level-order traversal",
+            "Given a graph, detect whether it has a cycle",
+            "Implement an LRU cache with O(1) get and put",
+            "Merge k sorted lists",
+            "Find the longest substring without repeating characters",
+            "Given intervals, merge all overlapping intervals",
+            "Given a 2D grid, find the shortest path from start to end",
+            "Design a rate limiter for an API",
+            "Explain the difference between processes and threads",
+            "How would you design a URL shortener",
+            "How would you design a chat system with online presence",
+            "How would you handle idempotency in distributed systems",
+        ]
+
+        role_lower = (role or "").lower()
+        if "frontend" in role_lower or "react" in role_lower:
+            base.extend(
+                [
+                    "Explain how React reconciliation works",
+                    "How would you optimize a slow React page",
+                    "Explain CORS and how you'd debug it",
+                ]
+            )
+        if "backend" in role_lower or "api" in role_lower:
+            base.extend(
+                [
+                    "Design an API for a multi-tenant product",
+                    "How would you model eventual consistency in a system",
+                    "Describe how you'd implement pagination at scale",
+                ]
+            )
+        if "data" in role_lower:
+            base.extend(
+                [
+                    "Given a large dataset, how would you find the top-k elements efficiently",
+                    "How would you design a data pipeline with backfills and retries",
+                ]
+            )
+
+        return base[: max(1, int(max_questions))]
 
 
 class _LLM(Protocol):

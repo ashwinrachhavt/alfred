@@ -39,3 +39,16 @@ export type CompanyResearchPayload = {
 };
 
 export type CompanyResearchResponse = CompanyResearchPayload | CompanyResearchQueuedResponse;
+
+export type CompanyResearchReportSummary = {
+  id: string;
+  company: string;
+  model_name?: string | null;
+  generated_at?: string | null;
+  updated_at?: string | null;
+  executive_summary?: string | null;
+};
+
+export type CompanyResearchReportPayloadResponse = CompanyResearchPayload & {
+  id: string;
+};

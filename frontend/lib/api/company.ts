@@ -1,6 +1,10 @@
 import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
-import type { CompanyResearchResponse } from "@/lib/api/types/company";
+import type {
+  CompanyResearchReportPayloadResponse,
+  CompanyResearchReportSummary,
+  CompanyResearchResponse,
+} from "@/lib/api/types/company";
 
 type CompanyResearchParams = {
   name: string;
@@ -22,4 +26,24 @@ export async function companyResearch(
   return apiFetch<CompanyResearchResponse>(`${apiRoutes.company.research}?${buildQuery(params)}`, {
     cache: "no-store",
   });
+}
+
+export async function listRecentCompanyResearchReports(
+  limit = 20,
+): Promise<CompanyResearchReportSummary[]> {
+  const query = new URLSearchParams();
+  query.set("limit", String(limit));
+  return apiFetch<CompanyResearchReportSummary[]>(
+    `${apiRoutes.company.researchReportsRecent}?${query.toString()}`,
+    { cache: "no-store" },
+  );
+}
+
+export async function getCompanyResearchReportById(
+  reportId: string,
+): Promise<CompanyResearchReportPayloadResponse> {
+  return apiFetch<CompanyResearchReportPayloadResponse>(
+    apiRoutes.company.researchReportById(reportId),
+    { cache: "no-store" },
+  );
 }

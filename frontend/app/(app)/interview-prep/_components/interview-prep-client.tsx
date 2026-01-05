@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { toast } from "sonner";
+
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { processUnifiedInterview } from "@/lib/api/interviews-unified";
 import type { UnifiedInterviewOperation } from "@/lib/api/types/interviews-unified";
 import type {
@@ -9,11 +12,10 @@ import type {
   UnifiedInterviewRequest,
   UnifiedInterviewResponse,
 } from "@/lib/api/types/interviews-unified";
-import type { TaskStatusResponse } from "@/lib/api/types/tasks";
 
 import { ApiError } from "@/lib/api/client";
-import { getTaskStatus } from "@/lib/api/interviews-unified";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +25,8 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { useTaskStatus } from "@/features/tasks/queries";
+import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 
 type PersistedInterviewPrepState = {
   company: string;
@@ -60,6 +64,68 @@ function isQueuedResponse(
   return "task_id" in response;
 }
 
+function formatInterviewPrepResultForClipboard({
+  company,
+  role,
+  result,
+}: {
+  company: string;
+  role: string;
+  result: UnifiedInterviewResponse;
+}): string {
+  const normalizedCompany = company.trim() || "Company";
+  const normalizedRole = role.trim() || "Role";
+
+  const lines: string[] = [];
+  lines.push(`# Interview Prep — ${normalizedCompany} (${normalizedRole})`);
+  if (result.session_id) lines.push(`Session: ${result.session_id}`);
+  if (typeof result.sources_scraped === "number")
+    lines.push(`Sources scraped: ${result.sources_scraped}`);
+  lines.push("");
+
+  if (result.operation === "collect_questions") {
+    lines.push("## Questions");
+    const questions = result.questions ?? [];
+    if (!questions.length) {
+      lines.push("_No questions returned._");
+      return `${lines.join("\n").trim()}\n`;
+    }
+
+    questions.forEach((question, idx) => {
+      const prefix = `${idx + 1}. ${question.question}`;
+      lines.push(prefix);
+      if (question.categories?.length) {
+        lines.push(`   - Categories: ${question.categories.join(", ")}`);
+      }
+      if (question.solution?.approach) {
+        lines.push(`   - Approach: ${question.solution.approach}`);
+      }
+      lines.push("");
+    });
+
+    return `${lines.join("\n").trim()}\n`;
+  }
+
+  if (result.operation === "deep_research") {
+    if (result.key_insights?.length) {
+      lines.push("## Key insights");
+      result.key_insights.forEach((insight) => lines.push(`- ${insight}`));
+      lines.push("");
+    }
+
+    lines.push("## Research report");
+    lines.push(result.research_report?.trim() || "_No report returned._");
+    return `${lines.join("\n").trim()}\n`;
+  }
+
+  lines.push("## Interviewer response");
+  lines.push(result.interviewer_response?.trim() || "_No response returned._");
+  lines.push("");
+  lines.push("## Feedback");
+  lines.push(JSON.stringify(result.feedback ?? {}, null, 2));
+  return `${lines.join("\n").trim()}\n`;
+}
+
 export function InterviewPrepClient() {
   const [company, setCompany] = useState("");
   const [role, setRole] = useState("Software Engineer");
@@ -79,14 +145,22 @@ export function InterviewPrepClient() {
 
   const [runInBackground, setRunInBackground] = useState(false);
 
-  const [isRunning, setIsRunning] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UnifiedInterviewResponse | null>(null);
+  const [questionFilter, setQuestionFilter] = useState("");
 
   const [queued, setQueued] = useState<EnqueueUnifiedInterviewTaskResponse | null>(null);
-  const [taskStatus, setTaskStatus] = useState<TaskStatusResponse | null>(null);
 
-  const pollerRef = useRef<number | null>(null);
+  const queuedTaskId = queued?.task_id ?? null;
+  const queuedStatusQuery = useTaskStatus(queuedTaskId);
+  const queuedStatus = queuedStatusQuery.data ?? null;
+  const handledQueuedTaskIdRef = useRef<string | null>(null);
+  const isQueuedRunning = Boolean(
+    queuedTaskId && !queuedStatus?.ready && !queuedStatusQuery.isError,
+  );
+
+  const { trackTask } = useTaskTracker();
 
   useEffect(() => {
     const persisted = parsePersistedState(window.localStorage.getItem(STORAGE_KEY));
@@ -131,37 +205,42 @@ export function InterviewPrepClient() {
   ]);
 
   useEffect(() => {
-    return () => {
-      if (pollerRef.current) window.clearInterval(pollerRef.current);
-    };
-  }, []);
+    if (!queuedTaskId) return;
+    if (!queuedStatus?.ready) return;
+    if (handledQueuedTaskIdRef.current === queuedTaskId) return;
+    handledQueuedTaskIdRef.current = queuedTaskId;
+
+    if (queuedStatus.successful && queuedStatus.result && typeof queuedStatus.result === "object") {
+      setResult(queuedStatus.result as UnifiedInterviewResponse);
+      const maybeSessionId = (queuedStatus.result as { session_id?: unknown }).session_id;
+      if (typeof maybeSessionId === "string") setPracticeSessionId(maybeSessionId);
+    } else if (queuedStatus.failed) {
+      setError(queuedStatus.error ?? "Background task failed.");
+    }
+  }, [queuedStatus, queuedTaskId]);
 
   const canRun = useMemo(() => company.trim().length > 0, [company]);
 
-  async function pollStatus(statusUrl: string) {
-    const status = await getTaskStatus<TaskStatusResponse>(statusUrl);
-    setTaskStatus(status);
-    if (!status.ready) return;
+  const filteredQuestions = useMemo(() => {
+    if (!result || result.operation !== "collect_questions") return [];
+    const questions = result.questions ?? [];
+    const normalizedQuery = questionFilter.trim().toLowerCase();
+    if (!normalizedQuery) return questions;
 
-    if (pollerRef.current) window.clearInterval(pollerRef.current);
-    pollerRef.current = null;
-
-    if (status.successful && status.result && typeof status.result === "object") {
-      setResult(status.result as UnifiedInterviewResponse);
-      const maybeSessionId = (status.result as { session_id?: unknown }).session_id;
-      if (typeof maybeSessionId === "string") setPracticeSessionId(maybeSessionId);
-    } else if (status.failed) {
-      setError(status.error ?? "Background task failed.");
-    }
-    setIsRunning(false);
-  }
+    return questions.filter((question) => {
+      if (question.question.toLowerCase().includes(normalizedQuery)) return true;
+      if (question.categories?.some((c) => c.toLowerCase().includes(normalizedQuery))) return true;
+      return false;
+    });
+  }, [questionFilter, result]);
 
   async function onRun() {
     setError(null);
     setResult(null);
+    setQuestionFilter("");
     setQueued(null);
-    setTaskStatus(null);
-    setIsRunning(true);
+    setIsSubmitting(true);
+    handledQueuedTaskIdRef.current = null;
 
     const payload: UnifiedInterviewRequest = {
       operation,
@@ -190,9 +269,11 @@ export function InterviewPrepClient() {
       const response = await processUnifiedInterview(payload, { background: runInBackground });
       if (isQueuedResponse(response)) {
         setQueued(response);
-        pollerRef.current = window.setInterval(() => {
-          void pollStatus(response.status_url);
-        }, 2000);
+        trackTask({
+          id: response.task_id,
+          source: "interview_prep",
+          label: `Interview prep: ${payload.company} (${operation})`,
+        });
         return;
       }
 
@@ -201,7 +282,18 @@ export function InterviewPrepClient() {
     } catch (err) {
       setError(formatErrorMessage(err));
     } finally {
-      if (!runInBackground) setIsRunning(false);
+      setIsSubmitting(false);
+    }
+  }
+
+  async function onCopyResult(next: UnifiedInterviewResponse) {
+    try {
+      await copyTextToClipboard(
+        formatInterviewPrepResultForClipboard({ company, role, result: next }),
+      );
+      toast.success("Copied to clipboard");
+    } catch (err) {
+      toast.error("Could not copy", { description: formatErrorMessage(err) });
     }
   }
 
@@ -359,15 +451,15 @@ export function InterviewPrepClient() {
                 </p>
               </div>
             </div>
-            <Button onClick={onRun} disabled={!canRun || isRunning}>
-              {isRunning ? "Running..." : "Run"}
+            <Button onClick={onRun} disabled={!canRun || isSubmitting || isQueuedRunning}>
+              {isSubmitting || isQueuedRunning ? "Running..." : "Run"}
             </Button>
           </div>
 
           {error ? (
-            <div className="border-destructive/30 bg-destructive/5 text-destructive rounded-lg border p-3 text-sm">
-              {error}
-            </div>
+            <Alert variant="destructive">
+              <AlertDescription className="text-destructive">{error}</AlertDescription>
+            </Alert>
           ) : null}
         </CardContent>
 
@@ -379,11 +471,17 @@ export function InterviewPrepClient() {
             <p className="text-muted-foreground text-xs">
               Status URL: <span className="font-mono">{queued.status_url}</span>
             </p>
-            {taskStatus ? (
+            {queuedStatus ? (
               <p className="text-muted-foreground text-xs">
-                Status: <span className="font-mono">{taskStatus.status}</span>
+                Status: <span className="font-mono">{queuedStatus.status}</span>
               </p>
-            ) : null}
+            ) : queuedStatusQuery.isError ? (
+              <p className="text-destructive text-xs">
+                Status unavailable: {formatErrorMessage(queuedStatusQuery.error)}
+              </p>
+            ) : (
+              <p className="text-muted-foreground text-xs">Checking status...</p>
+            )}
           </CardFooter>
         ) : null}
       </Card>
@@ -391,7 +489,17 @@ export function InterviewPrepClient() {
       {result ? (
         <Card>
           <CardHeader className="space-y-2">
-            <CardTitle>Result</CardTitle>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <CardTitle>Result</CardTitle>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void onCopyResult(result)}
+              >
+                Copy
+              </Button>
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="secondary">{result.operation}</Badge>
               {typeof result.sources_scraped === "number" ? (
@@ -406,9 +514,27 @@ export function InterviewPrepClient() {
           <CardContent className="space-y-6">
             {result.operation === "collect_questions" && result.questions?.length ? (
               <div className="space-y-3">
-                <h3 className="text-muted-foreground text-sm font-semibold">Questions</h3>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="space-y-1">
+                    <h3 className="text-muted-foreground text-sm font-semibold">Questions</h3>
+                    <p className="text-muted-foreground text-xs">
+                      Showing {filteredQuestions.length} of {result.questions.length}
+                    </p>
+                  </div>
+                  <div className="sm:w-64">
+                    <Label htmlFor="questionFilter" className="sr-only">
+                      Filter questions
+                    </Label>
+                    <Input
+                      id="questionFilter"
+                      value={questionFilter}
+                      onChange={(e) => setQuestionFilter(e.target.value)}
+                      placeholder="Filter questions..."
+                    />
+                  </div>
+                </div>
                 <div className="space-y-3">
-                  {result.questions.map((q) => (
+                  {filteredQuestions.map((q) => (
                     <div key={q.question} className="rounded-lg border p-4">
                       <div className="flex flex-col gap-2">
                         <p className="leading-6 font-medium">{q.question}</p>

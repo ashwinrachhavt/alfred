@@ -10,6 +10,7 @@ dependencies = [
     "tenacity>=8.5,<9",
     "notion-client>=2.2,<3",
     "pydantic-settings>=2.4,<3",
+    "email-validator>=2,<3",
     "langchain>=0.3.0,<0.4",
     "langchain-community>=0.3.0,<0.4",
     "langgraph>=0.3.18,<0.5",

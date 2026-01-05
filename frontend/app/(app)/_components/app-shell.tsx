@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 
+import { AppCommandPaletteTrigger } from "@/components/app-command-palette";
 import { AppNavigationMenu } from "@/components/app-navigation-menu";
 import { AppSidebar } from "@/components/app-sidebar";
+import { CompanyResearchHistorySheet } from "@/components/company-research-history-sheet";
+import { TaskCenterTrigger } from "@/components/task-center-sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 
@@ -30,14 +33,20 @@ export function AppShell({
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <nav className="hidden items-center md:flex">
+              <nav className="hidden items-center md:flex" aria-label="Primary navigation">
                 <AppNavigationMenu />
               </nav>
+              <AppCommandPaletteTrigger className="md:hidden" variant="icon" />
+              <AppCommandPaletteTrigger className="hidden md:flex" />
+              <TaskCenterTrigger />
+              <CompanyResearchHistorySheet />
               <ThemeToggle />
             </div>
           </div>
         </header>
-        <main>{children}</main>
+        <main id="main-content" tabIndex={-1} className="focus:outline-none">
+          {children}
+        </main>
       </SidebarInset>
     </SidebarProvider>
   );

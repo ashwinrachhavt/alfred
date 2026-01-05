@@ -9,6 +9,7 @@ import type { SystemDesignSession } from "@/lib/api/types/system-design";
 import { ApiError } from "@/lib/api/client";
 import { useCreateSystemDesignSession } from "@/features/system-design/mutations";
 import { useSystemDesignTemplates } from "@/features/system-design/queries";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -160,9 +161,9 @@ export function SystemDesignStartClient() {
             </div>
 
             {errorMessage ? (
-              <div className="border-destructive/30 bg-destructive/5 text-destructive rounded-lg border p-3 text-sm">
-                {errorMessage}
-              </div>
+              <Alert variant="destructive">
+                <AlertDescription className="text-destructive">{errorMessage}</AlertDescription>
+              </Alert>
             ) : null}
           </CardContent>
           <CardFooter className="flex justify-end">

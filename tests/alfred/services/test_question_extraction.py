@@ -10,6 +10,8 @@ def test_extract_questions_heuristic_normalizes_and_dedupes():
     text = """
     - Explain CAP theorem in distributed systems
     - Explain CAP theorem in distributed systems?
+    - Given an array of integers, return indices of two numbers such that they add up to a target.
+    - Write a function to reverse a linked list.
     - https://example.com/ignore-me
     Tell me about a conflict with a coworker
     """
@@ -17,6 +19,8 @@ def test_extract_questions_heuristic_normalizes_and_dedupes():
     questions = extract_questions_heuristic(text, max_questions=10)
 
     assert "Explain CAP theorem in distributed systems?" in questions
+    assert any(q.lower().startswith("given an array of integers") for q in questions)
+    assert any(q.lower().startswith("write a function to reverse a linked list") for q in questions)
     assert sum(1 for q in questions if q.lower().startswith("explain cap theorem")) == 1
     assert any("conflict" in q.lower() for q in questions)
     assert all(q.endswith("?") for q in questions)

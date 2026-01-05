@@ -47,6 +47,7 @@ import {
   SystemDesignNotesEditor,
   type SystemDesignNotesEditorHandle,
 } from "@/components/system-design/system-design-notes-editor";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -496,9 +497,11 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
               placeholder="Example: Design a URL shortener with analytics, rate limiting, and a queue-based write path."
             />
             {diagramGenerationError ? (
-              <div className="border-destructive/30 bg-destructive/5 text-destructive rounded-md border px-3 py-2 text-sm">
-                {diagramGenerationError}
-              </div>
+              <Alert variant="destructive" className="px-3 py-2">
+                <AlertDescription className="text-destructive">
+                  {diagramGenerationError}
+                </AlertDescription>
+              </Alert>
             ) : null}
           </div>
 
@@ -625,9 +628,9 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
                 </Button>
               </CardTitle>
               {actionError ? (
-                <div className="border-destructive/30 bg-destructive/5 text-destructive rounded-lg border p-3 text-sm">
-                  {actionError}
-                </div>
+                <Alert variant="destructive">
+                  <AlertDescription className="text-destructive">{actionError}</AlertDescription>
+                </Alert>
               ) : null}
             </CardHeader>
 

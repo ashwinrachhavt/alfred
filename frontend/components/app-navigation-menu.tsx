@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { appTopNavItems } from "@/lib/navigation";
+
 import {
   NavigationMenu,
   NavigationMenuItem,
@@ -17,27 +19,15 @@ export function AppNavigationMenu({ className }: { className?: string }) {
   return (
     <NavigationMenu className={className}>
       <NavigationMenuList>
-        <NavigationMenuItem>
-          <NavigationMenuLink asChild className={navigationMenuTriggerStyle()}>
-            <Link
-              href="/system-design"
-              aria-current={pathname === "/system-design" ? "page" : undefined}
-            >
-              System Design
-            </Link>
-          </NavigationMenuLink>
-        </NavigationMenuItem>
-
-        <NavigationMenuItem>
-          <NavigationMenuLink asChild className={navigationMenuTriggerStyle()}>
-            <Link
-              href="/interview-prep"
-              aria-current={pathname === "/interview-prep" ? "page" : undefined}
-            >
-              Interview Prep
-            </Link>
-          </NavigationMenuLink>
-        </NavigationMenuItem>
+        {appTopNavItems.map((item) => (
+          <NavigationMenuItem key={item.key}>
+            <NavigationMenuLink asChild className={navigationMenuTriggerStyle()}>
+              <Link href={item.href} aria-current={pathname === item.href ? "page" : undefined}>
+                {item.title}
+              </Link>
+            </NavigationMenuLink>
+          </NavigationMenuItem>
+        ))}
       </NavigationMenuList>
     </NavigationMenu>
   );

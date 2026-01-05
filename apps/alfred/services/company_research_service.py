@@ -15,8 +15,7 @@ from typing import Any, Iterable, List, Optional, cast
 import sqlalchemy as sa
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
-from sqlalchemy import select
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from alfred.connectors.firecrawl_connector import FirecrawlClient
 from alfred.connectors.web_connector import SearchHit, WebConnector

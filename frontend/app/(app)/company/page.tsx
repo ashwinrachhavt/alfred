@@ -1,9 +1,20 @@
 import { CompanyResearchClient } from "@/app/(app)/company/_components/company-research-client";
+import { Page } from "@/components/layout/page";
 
-export default function CompanyPage() {
+type CompanyPageProps = {
+  searchParams?: {
+    reportId?: string | string[];
+  };
+};
+
+export default function CompanyPage({ searchParams }: CompanyPageProps) {
+  const reportId = Array.isArray(searchParams?.reportId)
+    ? searchParams?.reportId[0]
+    : searchParams?.reportId;
+
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-10">
-      <CompanyResearchClient />
-    </div>
+    <Page>
+      <CompanyResearchClient reportId={reportId} />
+    </Page>
   );
 }
