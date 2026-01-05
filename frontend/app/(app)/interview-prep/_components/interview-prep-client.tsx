@@ -25,6 +25,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { PracticeSessionDrill } from "@/app/(app)/interview-prep/_components/practice-session-drill";
 import { useTaskStatus } from "@/features/tasks/queries";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 
@@ -141,7 +142,6 @@ export function InterviewPrepClient() {
   const [targetLengthWords, setTargetLengthWords] = useState(1000);
 
   const [practiceSessionId, setPracticeSessionId] = useState("");
-  const [candidateResponse, setCandidateResponse] = useState("");
 
   const [runInBackground, setRunInBackground] = useState(false);
 
@@ -234,6 +234,12 @@ export function InterviewPrepClient() {
     });
   }, [questionFilter, result]);
 
+  const activeResult = useMemo(() => {
+    if (!result) return null;
+    if (result.operation !== operation) return null;
+    return result;
+  }, [operation, result]);
+
   async function onRun() {
     setError(null);
     setResult(null);
@@ -249,6 +255,12 @@ export function InterviewPrepClient() {
       candidate_background: candidateBackground.trim() || null,
     };
 
+    if (operation === "practice_session") {
+      setError("Use the Practice Session drill below.");
+      setIsSubmitting(false);
+      return;
+    }
+
     if (operation === "collect_questions") {
       payload.max_sources = maxSources;
       payload.max_questions = maxQuestions;
@@ -258,11 +270,6 @@ export function InterviewPrepClient() {
     if (operation === "deep_research") {
       payload.include_deep_research = includeDeepResearch;
       payload.target_length_words = targetLengthWords;
-    }
-
-    if (operation === "practice_session") {
-      payload.session_id = practiceSessionId.trim() || null;
-      payload.candidate_response = candidateResponse.trim() || null;
     }
 
     try {
@@ -414,52 +421,42 @@ export function InterviewPrepClient() {
               </div>
             </TabsContent>
 
-            <TabsContent value="practice_session" className="space-y-4 pt-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="practiceSessionId">Session ID (optional)</Label>
-                  <Input
-                    id="practiceSessionId"
-                    placeholder="Leave empty to start a new practice session."
-                    value={practiceSessionId}
-                    onChange={(e) => setPracticeSessionId(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="candidateResponse">Your response (optional)</Label>
-                <Textarea
-                  id="candidateResponse"
-                  placeholder="Paste your answer here to get feedback and follow-up questions."
-                  value={candidateResponse}
-                  onChange={(e) => setCandidateResponse(e.target.value)}
-                  rows={7}
-                />
-              </div>
+            <TabsContent value="practice_session" className="pt-4">
+              <PracticeSessionDrill
+                company={company}
+                role={role}
+                candidateBackground={candidateBackground}
+                sessionId={practiceSessionId}
+                onSessionIdChange={setPracticeSessionId}
+              />
             </TabsContent>
           </Tabs>
 
-          <Separator />
+          {operation !== "practice_session" ? (
+            <>
+              <Separator />
 
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <Switch checked={runInBackground} onCheckedChange={setRunInBackground} />
-              <div className="space-y-0.5">
-                <p className="text-sm leading-none font-medium">Run in background</p>
-                <p className="text-muted-foreground text-xs">
-                  Returns immediately and updates when the task completes.
-                </p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <Switch checked={runInBackground} onCheckedChange={setRunInBackground} />
+                  <div className="space-y-0.5">
+                    <p className="text-sm leading-none font-medium">Run in background</p>
+                    <p className="text-muted-foreground text-xs">
+                      Returns immediately and updates when the task completes.
+                    </p>
+                  </div>
+                </div>
+                <Button onClick={onRun} disabled={!canRun || isSubmitting || isQueuedRunning}>
+                  {isSubmitting || isQueuedRunning ? "Running..." : "Run"}
+                </Button>
               </div>
-            </div>
-            <Button onClick={onRun} disabled={!canRun || isSubmitting || isQueuedRunning}>
-              {isSubmitting || isQueuedRunning ? "Running..." : "Run"}
-            </Button>
-          </div>
 
-          {error ? (
-            <Alert variant="destructive">
-              <AlertDescription className="text-destructive">{error}</AlertDescription>
-            </Alert>
+              {error ? (
+                <Alert variant="destructive">
+                  <AlertDescription className="text-destructive">{error}</AlertDescription>
+                </Alert>
+              ) : null}
+            </>
           ) : null}
         </CardContent>
 
@@ -486,7 +483,7 @@ export function InterviewPrepClient() {
         ) : null}
       </Card>
 
-      {result ? (
+      {activeResult ? (
         <Card>
           <CardHeader className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -495,30 +492,30 @@ export function InterviewPrepClient() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => void onCopyResult(result)}
+                onClick={() => void onCopyResult(activeResult)}
               >
                 Copy
               </Button>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">{result.operation}</Badge>
-              {typeof result.sources_scraped === "number" ? (
-                <Badge variant="outline">{result.sources_scraped} sources</Badge>
+              <Badge variant="secondary">{activeResult.operation}</Badge>
+              {typeof activeResult.sources_scraped === "number" ? (
+                <Badge variant="outline">{activeResult.sources_scraped} sources</Badge>
               ) : null}
-              {result.session_id ? (
-                <Badge variant="outline">session: {result.session_id}</Badge>
+              {activeResult.session_id ? (
+                <Badge variant="outline">session: {activeResult.session_id}</Badge>
               ) : null}
             </div>
           </CardHeader>
 
           <CardContent className="space-y-6">
-            {result.operation === "collect_questions" && result.questions?.length ? (
+            {activeResult.operation === "collect_questions" && activeResult.questions?.length ? (
               <div className="space-y-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                   <div className="space-y-1">
                     <h3 className="text-muted-foreground text-sm font-semibold">Questions</h3>
                     <p className="text-muted-foreground text-xs">
-                      Showing {filteredQuestions.length} of {result.questions.length}
+                      Showing {filteredQuestions.length} of {activeResult.questions.length}
                     </p>
                   </div>
                   <div className="sm:w-64">
@@ -560,46 +557,46 @@ export function InterviewPrepClient() {
               </div>
             ) : null}
 
-            {result.operation === "deep_research" ? (
+            {activeResult.operation === "deep_research" ? (
               <div className="space-y-6">
-                {result.key_insights?.length ? (
+                {activeResult.key_insights?.length ? (
                   <div className="space-y-2">
                     <h3 className="text-muted-foreground text-sm font-semibold">Key insights</h3>
                     <ul className="list-disc space-y-1 pl-5 text-sm">
-                      {result.key_insights.map((insight) => (
+                      {activeResult.key_insights.map((insight) => (
                         <li key={insight}>{insight}</li>
                       ))}
                     </ul>
                   </div>
                 ) : null}
-                {result.research_report ? (
+                {activeResult.research_report ? (
                   <div className="space-y-2">
                     <h3 className="text-muted-foreground text-sm font-semibold">Report</h3>
                     <pre className="bg-muted/30 max-h-[520px] overflow-auto rounded-lg border p-4 text-sm whitespace-pre-wrap">
-                      {result.research_report}
+                      {activeResult.research_report}
                     </pre>
                   </div>
                 ) : null}
               </div>
             ) : null}
 
-            {result.operation === "practice_session" ? (
+            {activeResult.operation === "practice_session" ? (
               <div className="space-y-6">
-                {result.interviewer_response ? (
+                {activeResult.interviewer_response ? (
                   <div className="space-y-2">
                     <h3 className="text-muted-foreground text-sm font-semibold">
                       Interviewer response
                     </h3>
                     <pre className="bg-muted/30 max-h-[520px] overflow-auto rounded-lg border p-4 text-sm whitespace-pre-wrap">
-                      {result.interviewer_response}
+                      {activeResult.interviewer_response}
                     </pre>
                   </div>
                 ) : null}
-                {result.feedback ? (
+                {activeResult.feedback ? (
                   <div className="space-y-2">
                     <h3 className="text-muted-foreground text-sm font-semibold">Feedback</h3>
                     <pre className="bg-muted/30 max-h-[520px] overflow-auto rounded-lg border p-4 text-sm">
-                      {JSON.stringify(result.feedback, null, 2)}
+                      {JSON.stringify(activeResult.feedback, null, 2)}
                     </pre>
                   </div>
                 ) : null}

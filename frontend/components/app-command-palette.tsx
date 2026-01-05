@@ -45,15 +45,27 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 function usePlatformShortcut(): string {
-  return typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform)
-    ? "⌘K"
-    : "Ctrl K";
+  const [shortcut, setShortcut] = React.useState("Ctrl K");
+
+  React.useEffect(() => {
+    const isApplePlatform =
+      typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
+    setShortcut(isApplePlatform ? "⌘K" : "Ctrl K");
+  }, []);
+
+  return shortcut;
 }
 
 function useThemeToggleShortcut(): string {
-  return typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform)
-    ? "⌘⇧L"
-    : "Ctrl Shift L";
+  const [shortcut, setShortcut] = React.useState("Ctrl Shift L");
+
+  React.useEffect(() => {
+    const isApplePlatform =
+      typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
+    setShortcut(isApplePlatform ? "⌘⇧L" : "Ctrl Shift L");
+  }, []);
+
+  return shortcut;
 }
 
 function AppCommandPaletteDialog({
