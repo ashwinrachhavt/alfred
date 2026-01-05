@@ -4,6 +4,8 @@ import re
 
 _WS_RE = re.compile(r"\s+")
 _BULLET_PREFIX_RE = re.compile(r"^\s*(?:[-*•]+|\d+[.)])\s*")
+_QUESTION_PREFIX_RE = re.compile(r"^\s*(?:q(?:uestion)?\s*[:.)-]+)\s*", flags=re.IGNORECASE)
+_MARKDOWN_DECORATION_RE = re.compile(r"[*_`]+")
 
 
 def normalize_question(text: str) -> str:
@@ -24,6 +26,8 @@ def normalize_question(text: str) -> str:
 
 def _clean_candidate_line(line: str) -> str:
     cleaned = _BULLET_PREFIX_RE.sub("", line.strip())
+    cleaned = _QUESTION_PREFIX_RE.sub("", cleaned)
+    cleaned = _MARKDOWN_DECORATION_RE.sub("", cleaned)
     cleaned = cleaned.strip(" \t-–—•*")
     cleaned = _WS_RE.sub(" ", cleaned).strip()
     return cleaned
@@ -45,6 +49,23 @@ def _looks_like_question(text: str) -> bool:
         "where ",
         "which ",
         "who ",
+        "given ",
+        "you are given ",
+        "write ",
+        "find ",
+        "return ",
+        "build ",
+        "create ",
+        "calculate ",
+        "determine ",
+        "compute ",
+        "reverse ",
+        "merge ",
+        "sort ",
+        "remove ",
+        "add ",
+        "insert ",
+        "delete ",
         "explain ",
         "describe ",
         "tell me ",
@@ -62,7 +83,9 @@ def _looks_like_question(text: str) -> bool:
     return lower.startswith(starters)
 
 
-def extract_questions_heuristic(text: str | None, *, max_questions: int = 12) -> list[str]:
+def extract_questions_heuristic(
+    text: str | None, *, max_questions: int = 12, max_line_chars: int = 360
+) -> list[str]:
     """Extract likely interview questions from arbitrary scraped text.
 
     This is intentionally permissive: it accepts either explicit question marks or
@@ -80,7 +103,7 @@ def extract_questions_heuristic(text: str | None, *, max_questions: int = 12) ->
             continue
         if "http" in line.lower():
             continue
-        if len(line) > 220:
+        if len(line) > max(1, int(max_line_chars)):
             continue
         if not _looks_like_question(line):
             continue

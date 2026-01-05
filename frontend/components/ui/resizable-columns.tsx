@@ -25,7 +25,10 @@ export function ResizableColumns({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
 
-  const clampedLeftWidthPx = useMemo(() => Math.max(minLeftPx, leftWidthPx), [leftWidthPx, minLeftPx]);
+  const clampedLeftWidthPx = useMemo(
+    () => Math.max(minLeftPx, leftWidthPx),
+    [leftWidthPx, minLeftPx],
+  );
 
   useEffect(() => {
     if (!storageKey) return;
@@ -75,7 +78,7 @@ export function ResizableColumns({
         role="separator"
         aria-orientation="vertical"
       >
-        <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border group-hover:bg-foreground/30" />
+        <div className="bg-border group-hover:bg-foreground/30 absolute inset-y-0 left-1/2 w-px -translate-x-1/2" />
       </div>
       <div className="min-h-0 flex-1">{right}</div>
     </div>

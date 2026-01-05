@@ -1,0 +1,12 @@
+node_modules
+.next
+out
+build
+.npm-cache
+.pnpm-store
+
+pnpm-lock.yaml
+package-lock.json
+
+tsconfig.tsbuildinfo
+next-env.d.ts

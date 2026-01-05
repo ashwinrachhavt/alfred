@@ -21,8 +21,18 @@ function isAbsoluteUrl(url: string): boolean {
   return /^https?:\/\//i.test(url);
 }
 
+function isFrontendApiPath(path: string): boolean {
+  return path === "/api" || path.startsWith("/api/");
+}
+
 export function apiUrl(path: string): string {
   if (isAbsoluteUrl(path)) return path;
+
+  // Prefer Next.js rewrites for internal API calls. This keeps the frontend
+  // consistent (always calling `/api/*`) even when the backend mounts routers
+  // outside `/api/*`.
+  if (isFrontendApiPath(path)) return path;
+
   const base = getApiBaseUrl();
   if (!base) return path;
   return `${base}${path.startsWith("/") ? "" : "/"}${path}`;
@@ -46,20 +56,13 @@ function coerceErrorMessage(payload: unknown, fallback: string): string {
   return fallback;
 }
 
-export async function apiFetch<TResponse>(
-  path: string,
-  init?: RequestInit,
-): Promise<TResponse> {
+export async function apiFetch<TResponse>(path: string, init?: RequestInit): Promise<TResponse> {
   const url = apiUrl(path);
   const response = await fetch(url, init);
   const payload = await safeReadJson(response);
 
   if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      coerceErrorMessage(payload, response.statusText),
-      payload,
-    );
+    throw new ApiError(response.status, coerceErrorMessage(payload, response.statusText), payload);
   }
 
   return payload as TResponse;

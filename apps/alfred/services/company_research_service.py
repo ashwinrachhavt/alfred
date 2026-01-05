@@ -12,10 +12,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, List, Optional, cast
 
+import sqlalchemy as sa
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
-from sqlalchemy import select
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from alfred.connectors.firecrawl_connector import FirecrawlClient
 from alfred.connectors.web_connector import SearchHit, WebConnector
@@ -23,7 +23,7 @@ from alfred.core.database import SessionLocal
 from alfred.core.exceptions import ConfigurationError
 from alfred.core.settings import settings
 from alfred.core.utils import utcnow as _utcnow
-from alfred.models.company import CompanyInterviewRow
+from alfred.models.company import CompanyInterviewRow, CompanyResearchReportRow
 from alfred.prompts import load_prompt
 from alfred.schemas.company_insights import (
     CompanyInsightsReport,
@@ -107,6 +107,89 @@ class CompanyResearchService:
         self._llm = None
         self._structured_llm = None
 
+    def _company_key(self, company: str) -> str:
+        return (company or "").strip().lower()
+
+    def _read_latest_from_db(self, company: str) -> dict[str, Any] | None:
+        key = self._company_key(company)
+        if not key:
+            return None
+
+        with SessionLocal() as session:
+            row = session.exec(
+                select(CompanyResearchReportRow).where(CompanyResearchReportRow.company_key == key)
+            ).first()
+            if row is None:
+                return None
+
+            payload: dict[str, Any] = dict(row.payload or {})
+            payload.setdefault("company", row.company)
+            payload["id"] = str(row.id)
+            return payload
+
+    def _upsert_latest_to_db(
+        self,
+        *,
+        company: str,
+        payload: dict[str, Any],
+        model_name: str | None = None,
+        generated_at: datetime | None = None,
+    ) -> dict[str, Any]:
+        key = self._company_key(company)
+        if not key:
+            raise ValueError("Company name is required")
+
+        now = _utcnow()
+        with SessionLocal() as session:
+            row = session.exec(
+                select(CompanyResearchReportRow).where(CompanyResearchReportRow.company_key == key)
+            ).first()
+
+            if row is None:
+                row = CompanyResearchReportRow(
+                    company_key=key,
+                    company=company.strip(),
+                    payload=payload,
+                    model_name=model_name,
+                    generated_at=generated_at,
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(row)
+            else:
+                row.company = company.strip()
+                row.payload = payload
+                row.model_name = model_name
+                row.generated_at = generated_at
+                row.updated_at = now
+                session.add(row)
+
+            try:
+                session.commit()
+            except sa.exc.IntegrityError:
+                session.rollback()
+                row = session.exec(
+                    select(CompanyResearchReportRow).where(
+                        CompanyResearchReportRow.company_key == key
+                    )
+                ).first()
+                if row is None:
+                    raise
+                row.company = company.strip()
+                row.payload = payload
+                row.model_name = model_name
+                row.generated_at = generated_at
+                row.updated_at = now
+                session.add(row)
+                session.commit()
+
+            session.refresh(row)
+
+            stored: dict[str, Any] = dict(row.payload or {})
+            stored.setdefault("company", row.company)
+            stored["id"] = str(row.id)
+            return stored
+
     # Lazily construct dependencies
     def _get_primary_search(self) -> WebConnector:
         if self._primary_search is None:
@@ -140,7 +223,38 @@ class CompanyResearchService:
         company = (company or "").strip()
         if not company:
             return None
-        return self._find_latest(company)
+        try:
+            cached = self._read_latest_from_db(company)
+            if cached:
+                return cached
+        except Exception:
+            logger.debug("Company research DB cache lookup failed", exc_info=True)
+
+        # Back-compat: older deployments may have written to the JSON document store.
+        legacy = self._find_latest(company)
+        if legacy is None:
+            return None
+        try:
+            legacy_payload = dict(legacy)
+            legacy_payload.pop("id", None)
+
+            generated_at: datetime | None = None
+            raw_generated = legacy_payload.get("generated_at")
+            if isinstance(raw_generated, str) and raw_generated.strip():
+                try:
+                    generated_at = datetime.fromisoformat(raw_generated.strip().replace("Z", "+00:00"))
+                except Exception:
+                    generated_at = None
+
+            stored = self._upsert_latest_to_db(
+                company=company,
+                payload=legacy_payload,
+                model_name=str(legacy_payload.get("model")) if legacy_payload.get("model") else None,
+                generated_at=generated_at,
+            )
+            return stored
+        except Exception:
+            return legacy
 
     def generate_report(self, company: str, *, refresh: bool = False) -> dict[str, Any]:
         company = company.strip()
@@ -168,9 +282,20 @@ class CompanyResearchService:
         }
         payload["report"]["references"] = sanitized_refs
 
-        self._get_store().update_one({"company": company}, {"$set": payload}, upsert=True)
-        stored = self._find_latest(company)
-        return stored or payload
+        try:
+            return self._upsert_latest_to_db(
+                company=company,
+                payload=payload,
+                model_name=self._model_name,
+                generated_at=datetime.now(timezone.utc),
+            )
+        except Exception:
+            logger.exception("Failed to persist company research report")
+            # Fallback to the legacy JSON store so the feature still works even if the
+            # relational table hasn't been migrated yet.
+            self._get_store().update_one({"company": company}, {"$set": payload}, upsert=True)
+            stored = self._find_latest(company)
+            return stored or payload
 
     # ------------------------------------------------------------------
     # Internals

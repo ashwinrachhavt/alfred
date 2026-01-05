@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
-import { createSystemDesignSession, getSystemDesignTemplates } from "@/lib/api/system-design";
-import type { SystemDesignSession, TemplateDefinition } from "@/lib/api/types/system-design";
+import type { SystemDesignSession } from "@/lib/api/types/system-design";
 
 import { ApiError } from "@/lib/api/client";
+import { useCreateSystemDesignSession } from "@/features/system-design/mutations";
+import { useSystemDesignTemplates } from "@/features/system-design/queries";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,44 +60,26 @@ export function SystemDesignStartClient() {
   const [problemStatement, setProblemStatement] = useState("");
   const [templateId, setTemplateId] = useState<string | null>(null);
 
-  const [templates, setTemplates] = useState<TemplateDefinition[]>([]);
-  const [isLoadingTemplates, setIsLoadingTemplates] = useState(true);
-  const [isCreating, setIsCreating] = useState(false);
+  const templatesQuery = useSystemDesignTemplates();
+  const templates = templatesQuery.data ?? [];
+  const isLoadingTemplates = templatesQuery.isPending;
+  const createSession = useCreateSystemDesignSession();
   const [error, setError] = useState<string | null>(null);
 
-  const [recents, setRecents] = useState<RecentSystemDesignSession[]>([]);
-
-  useEffect(() => {
-    setRecents(safeParseRecents(window.localStorage.getItem(RECENTS_KEY)));
-  }, []);
-
-  useEffect(() => {
-    async function loadTemplates() {
-      setIsLoadingTemplates(true);
-      setError(null);
-      try {
-        const next = await getSystemDesignTemplates();
-        setTemplates(next);
-      } catch (err) {
-        setError(formatErrorMessage(err));
-      } finally {
-        setIsLoadingTemplates(false);
-      }
-    }
-
-    void loadTemplates();
-  }, []);
+  const [recents, setRecents] = useState<RecentSystemDesignSession[]>(() => {
+    if (typeof window === "undefined") return [];
+    return safeParseRecents(window.localStorage.getItem(RECENTS_KEY));
+  });
 
   const canCreate = useMemo(
-    () => problemStatement.trim().length > 0 && !isCreating,
-    [problemStatement, isCreating],
+    () => problemStatement.trim().length > 0 && !createSession.isPending,
+    [problemStatement, createSession.isPending],
   );
 
   async function onCreateSession() {
     setError(null);
-    setIsCreating(true);
     try {
-      const session = await createSystemDesignSession({
+      const session = await createSession.mutateAsync({
         title: title.trim() || null,
         problem_statement: problemStatement.trim(),
         template_id: templateId,
@@ -110,9 +94,11 @@ export function SystemDesignStartClient() {
       router.push(`/system-design/sessions/${session.id}`);
     } catch (err) {
       setError(formatErrorMessage(err));
-      setIsCreating(false);
     }
   }
+
+  const errorMessage =
+    error ?? (templatesQuery.error ? formatErrorMessage(templatesQuery.error) : null);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
@@ -156,7 +142,7 @@ export function SystemDesignStartClient() {
               <div className="relative">
                 <select
                   id="sdTemplate"
-                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  className="bg-background h-10 w-full rounded-md border px-3 text-sm"
                   value={templateId ?? ""}
                   onChange={(e) => setTemplateId(e.target.value || null)}
                   disabled={isLoadingTemplates}
@@ -170,19 +156,19 @@ export function SystemDesignStartClient() {
                 </select>
               </div>
               {isLoadingTemplates ? (
-                <p className="text-xs text-muted-foreground">Loading templates…</p>
+                <p className="text-muted-foreground text-xs">Loading templates…</p>
               ) : null}
             </div>
 
-            {error ? (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-                {error}
-              </div>
+            {errorMessage ? (
+              <Alert variant="destructive">
+                <AlertDescription className="text-destructive">{errorMessage}</AlertDescription>
+              </Alert>
             ) : null}
           </CardContent>
           <CardFooter className="flex justify-end">
             <Button onClick={onCreateSession} disabled={!canCreate}>
-              {isCreating ? "Creating..." : "Create session"}
+              {createSession.isPending ? "Creating..." : "Create session"}
             </Button>
           </CardFooter>
         </Card>
@@ -201,7 +187,7 @@ export function SystemDesignStartClient() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 space-y-1">
                         <p className="truncate font-medium">{s.title ?? "Untitled session"}</p>
-                        <p className="max-h-10 overflow-hidden text-xs text-muted-foreground">
+                        <p className="text-muted-foreground max-h-10 overflow-hidden text-xs">
                           {s.problemStatement}
                         </p>
                         <div className="flex flex-wrap gap-2 pt-1">
@@ -217,7 +203,7 @@ export function SystemDesignStartClient() {
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-muted-foreground text-sm">
                 No recent sessions yet. Create one to get started.
               </p>
             )}

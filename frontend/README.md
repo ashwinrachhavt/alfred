@@ -1,5 +1,18 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Architecture (Alfred)
+
+This frontend is organized by **features** (feature-sliced-ish) rather than technical layers:
+
+- `app/` owns routing + top-level layouts/providers.
+- `features/` owns feature modules (queries, mutations, UI) with high cohesion.
+- `lib/` owns shared primitives (API client, types, generic utilities).
+- `components/` owns shared UI components (shadcn/ui, layout primitives).
+
+The rule of thumb:
+
+- A feature should depend on `lib/` and `components/`, but not on other features (or only through explicit public APIs).
+
 ## Getting Started
 
 First, run the development server:
@@ -30,6 +43,23 @@ export ALFRED_API_BASE_URL="http://localhost:8000"
 ```
 
 Then restart `next dev`.
+
+Optional: if you ever want the browser to call a different base URL directly (instead of relying on
+Next.js rewrites), set:
+
+```bash
+export NEXT_PUBLIC_API_BASE_URL="http://localhost:8000"
+```
+
+## Data fetching
+
+We use [TanStack Query](https://tanstack.com/query/latest) for server state.
+
+- Add query keys in `features/<feature>/query-keys.ts`.
+- Put query hooks in `features/<feature>/queries.ts`.
+- Put mutation hooks in `features/<feature>/mutations.ts`.
+
+Example: `features/tasks/queries.ts` polls `/api/tasks/:taskId` until the task is ready.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 

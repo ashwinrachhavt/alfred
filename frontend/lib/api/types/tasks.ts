@@ -7,4 +7,3 @@ export type TaskStatusResponse = {
   result?: unknown | null;
   error?: string | null;
 };
-

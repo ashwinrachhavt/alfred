@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlmodel import Field, SQLModel
 
 from alfred.core.utils import utcnow as _utcnow
@@ -69,5 +69,46 @@ class CompanyInterviewRow(SQLModel, table=True):
         ),
     )
 
+class CompanyResearchReportRow(SQLModel, table=True):
+    """Latest generated company research report payload (per company)."""
 
-__all__ = ["CompanyInterviewRow"]
+    __tablename__ = "company_research_reports"
+    __table_args__ = (
+        sa.UniqueConstraint("company_key", name="uq_company_research_reports_company_key"),
+        sa.Index("ix_company_research_reports_company_key", "company_key"),
+        sa.Index("ix_company_research_reports_updated_at", "updated_at"),
+    )
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=sa.Column(UUID(as_uuid=True), primary_key=True, nullable=False),
+    )
+    company_key: str = Field(sa_column=sa.Column(sa.Text, nullable=False))
+    company: str = Field(sa_column=sa.Column(sa.Text, nullable=False))
+    model_name: str | None = Field(default=None, sa_column=sa.Column(sa.Text, nullable=True))
+    generated_at: datetime | None = Field(
+        default=None, sa_column=sa.Column(sa.DateTime(timezone=True), nullable=True)
+    )
+    payload: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=sa.Column(
+            sa.JSON().with_variant(JSONB(), "postgresql"),
+            nullable=False,
+            server_default=sa.text("'{}'"),
+        ),
+    )
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=sa.Column(
+            sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+    )
+    updated_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=sa.Column(
+            sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+    )
+
+
+__all__ = ["CompanyInterviewRow", "CompanyResearchReportRow"]

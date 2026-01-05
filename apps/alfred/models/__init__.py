@@ -3,7 +3,7 @@
 from sqlmodel import Field, SQLModel
 
 from alfred.models.base import Model, TimestampMixin
-from alfred.models.company import CompanyInterviewRow
+from alfred.models.company import CompanyInterviewRow, CompanyResearchReportRow
 from alfred.models.datastore import DataStoreRow
 from alfred.models.doc_storage import DocChunkRow, DocumentRow, NoteRow
 from alfred.models.learning import (
@@ -53,4 +53,5 @@ __all__ = [
     "DocChunkRow",
     "DataStoreRow",
     "CompanyInterviewRow",
+    "CompanyResearchReportRow",
 ]
