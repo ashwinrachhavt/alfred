@@ -10,11 +10,10 @@ export async function processUnifiedInterview(
   options?: { background?: boolean },
 ): Promise<UnifiedInterviewResponse | EnqueueUnifiedInterviewTaskResponse> {
   const background = options?.background ? "?background=true" : "";
-  return apiPostJson<UnifiedInterviewResponse | EnqueueUnifiedInterviewTaskResponse, UnifiedInterviewRequest>(
-    `/api/interviews-unified/process${background}`,
-    payload,
-    { cache: "no-store" },
-  );
+  return apiPostJson<
+    UnifiedInterviewResponse | EnqueueUnifiedInterviewTaskResponse,
+    UnifiedInterviewRequest
+  >(`/api/interviews-unified/process${background}`, payload, { cache: "no-store" });
 }
 
 export async function getTaskStatus<TResponse>(statusUrl: string): Promise<TResponse> {

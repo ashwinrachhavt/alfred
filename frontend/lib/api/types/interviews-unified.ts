@@ -1,7 +1,4 @@
-export type UnifiedInterviewOperation =
-  | "collect_questions"
-  | "deep_research"
-  | "practice_session";
+export type UnifiedInterviewOperation = "collect_questions" | "deep_research" | "practice_session";
 
 export type UnifiedInterviewRequest = {
   operation: UnifiedInterviewOperation;
@@ -56,4 +53,3 @@ export type EnqueueUnifiedInterviewTaskResponse = {
   status_url: string;
   status: "queued";
 };
-

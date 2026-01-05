@@ -18,12 +18,10 @@ import {
   autosaveSystemDesignDiagram,
   evaluateSystemDesign,
   getSystemDesignKnowledgeDraft,
-  getSystemDesignPrompt,
   getSystemDesignQuestions,
   getSystemDesignSession,
   getSystemDesignSuggestions,
   publishSystemDesignSession,
-  scaleEstimate,
   updateSystemDesignNotes,
   updateSystemDesignSession,
 } from "@/lib/api/system-design";
@@ -32,10 +30,7 @@ import type {
   DiagramEvaluation,
   DiagramQuestion,
   DiagramSuggestion,
-  DesignPrompt,
   ExcalidrawData,
-  ScaleEstimateRequest,
-  ScaleEstimateResponse,
   SystemDesignKnowledgeDraft,
   SystemDesignPublishRequest,
   SystemDesignPublishResponse,
@@ -44,8 +39,14 @@ import type {
 
 import { ApiError } from "@/lib/api/client";
 
-import { ExcalidrawCanvas, type ExcalidrawCanvasHandle } from "@/components/system-design/excalidraw-canvas";
-import { SystemDesignNotesEditor, type SystemDesignNotesEditorHandle } from "@/components/system-design/system-design-notes-editor";
+import {
+  ExcalidrawCanvas,
+  type ExcalidrawCanvasHandle,
+} from "@/components/system-design/excalidraw-canvas";
+import {
+  SystemDesignNotesEditor,
+  type SystemDesignNotesEditorHandle,
+} from "@/components/system-design/system-design-notes-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -82,32 +83,18 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   const [isLoading, setIsLoading] = useState(true);
   const [isActionRunning, setIsActionRunning] = useState(false);
 
-  const [prompt, setPrompt] = useState<DesignPrompt | null>(null);
   const [analysis, setAnalysis] = useState<DiagramAnalysis | null>(null);
   const [questions, setQuestions] = useState<DiagramQuestion[] | null>(null);
   const [suggestions, setSuggestions] = useState<DiagramSuggestion[]>([]);
   const [evaluation, setEvaluation] = useState<DiagramEvaluation | null>(null);
   const [knowledgeDraft, setKnowledgeDraft] = useState<SystemDesignKnowledgeDraft | null>(null);
 
-  const [scaleInput, setScaleInput] = useState<ScaleEstimateRequest>({
-    qps: 1000,
-    avg_request_kb: 1,
-    avg_response_kb: 10,
-    write_percentage: 20,
-  });
-  const [scaleOutput, setScaleOutput] = useState<ScaleEstimateResponse | null>(null);
-
   const [problemStatement, setProblemStatement] = useState("");
 
   const [publishLearningTopics, setPublishLearningTopics] = useState(true);
   const [publishZettels, setPublishZettels] = useState(true);
-  const [publishInterviewPrep, setPublishInterviewPrep] = useState(false);
 
-  const [learningTopicId, setLearningTopicId] = useState("");
   const [topicTitle, setTopicTitle] = useState("");
-  const [topicTags, setTopicTags] = useState("");
-  const [zettelTags, setZettelTags] = useState("");
-  const [interviewPrepId, setInterviewPrepId] = useState("");
   const [publishResult, setPublishResult] = useState<SystemDesignPublishResponse | null>(null);
 
   const canvasRef = useRef<ExcalidrawCanvasHandle | null>(null);
@@ -115,7 +102,6 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   const [isResizing, setIsResizing] = useState(false);
 
   const [autosaveState, setAutosaveState] = useState<AutosaveState>("idle");
-  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
   const autosaveTimerRef = useRef<number | null>(null);
   const latestDiagramRef = useRef<ExcalidrawData | null>(null);
@@ -123,7 +109,6 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   const [actionError, setActionError] = useState<string | null>(null);
 
   const [notesMarkdown, setNotesMarkdown] = useState<string>("");
-  const [notesSaveState, setNotesSaveState] = useState<AutosaveState>("idle");
   const notesTimerRef = useRef<number | null>(null);
   const latestNotesRef = useRef<string>("");
   const notesEditorRef = useRef<SystemDesignNotesEditorHandle | null>(null);
@@ -184,23 +169,19 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
     async function load() {
       setIsLoading(true);
       setActionError(null);
-      setPrompt(null);
       setAnalysis(null);
       setQuestions(null);
       setSuggestions([]);
       setEvaluation(null);
       setKnowledgeDraft(null);
-      setScaleOutput(null);
       setPublishResult(null);
       notesInitializedRef.current = false;
       latestNotesRef.current = "";
       setNotesMarkdown("");
-      setNotesSaveState("idle");
       try {
         const next = await getSystemDesignSession(sessionId);
         setSession(next);
         setProblemStatement(next.problem_statement);
-        setLastSavedAt(next.updated_at);
         if (!notesInitializedRef.current) {
           const initialNotes = next.notes_markdown ?? "";
           notesInitializedRef.current = true;
@@ -223,10 +204,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
     };
   }, []);
 
-  const shareUrl = useMemo(
-    () => (session ? toShareUrl(session.share_id) : null),
-    [session],
-  );
+  const shareUrl = useMemo(() => (session ? toShareUrl(session.share_id) : null), [session]);
 
   const mainGridTemplateColumns = useMemo(() => {
     // Account for resize handles (w-1 = 4px) in the grid columns.
@@ -262,7 +240,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   const startDiagramResize = () => {
     isDraggingDiagram.current = true;
     setIsResizing(true);
-    document.body.style.userSelect = 'none';
+    document.body.style.userSelect = "none";
     document.addEventListener("mousemove", handleDiagramResize);
     document.addEventListener("mouseup", stopDiagramResize);
   };
@@ -270,7 +248,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   const stopDiagramResize = () => {
     isDraggingDiagram.current = false;
     setIsResizing(false);
-    document.body.style.userSelect = '';
+    document.body.style.userSelect = "";
     document.removeEventListener("mousemove", handleDiagramResize);
     document.removeEventListener("mouseup", stopDiagramResize);
   };
@@ -278,7 +256,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   const startCoachResize = () => {
     isDraggingCoach.current = true;
     setIsResizing(true);
-    document.body.style.userSelect = 'none';
+    document.body.style.userSelect = "none";
     document.addEventListener("mousemove", handleCoachResize);
     document.addEventListener("mouseup", stopCoachResize);
   };
@@ -286,7 +264,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   const stopCoachResize = () => {
     isDraggingCoach.current = false;
     setIsResizing(false);
-    document.body.style.userSelect = '';
+    document.body.style.userSelect = "";
     document.removeEventListener("mousemove", handleCoachResize);
     document.removeEventListener("mouseup", stopCoachResize);
   };
@@ -305,7 +283,6 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
       });
       setSession((prev) => (prev ? { ...prev, updated_at: next.updated_at } : prev));
       setAutosaveState("saved");
-      setLastSavedAt(next.updated_at);
     } catch (err) {
       setAutosaveState("error");
       throw err;
@@ -318,7 +295,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
 
     if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = window.setTimeout(() => {
-      void flushAutosave().catch(() => { });
+      void flushAutosave().catch(() => {});
     }, 1200);
   }
 
@@ -329,21 +306,15 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
       notesTimerRef.current = null;
     }
 
-    setNotesSaveState("saving");
     try {
       const next = await updateSystemDesignNotes(sessionId, { notes_markdown: notes });
       setSession((prev) => (prev ? { ...prev, updated_at: next.updated_at } : prev));
-      setNotesSaveState("saved");
-      setLastSavedAt(next.updated_at);
-    } catch {
-      setNotesSaveState("error");
-    }
+    } catch {}
   }
 
   function queueNotesSave(nextMarkdown: string) {
     latestNotesRef.current = nextMarkdown;
     setNotesMarkdown(nextMarkdown);
-    setNotesSaveState("dirty");
 
     if (notesTimerRef.current) window.clearTimeout(notesTimerRef.current);
     notesTimerRef.current = window.setTimeout(() => {
@@ -380,7 +351,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
 
   if (isLoading) {
     return (
-      <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+      <div className="text-muted-foreground flex h-full w-full items-center justify-center text-sm">
         Loading session…
       </div>
     );
@@ -388,11 +359,9 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
 
   if (!session) {
     return (
-      <div className="mx-auto w-full max-w-3xl px-4 py-10 space-y-4">
+      <div className="mx-auto w-full max-w-3xl space-y-4 px-4 py-10">
         <h1 className="text-2xl font-semibold">System Design Session</h1>
-        <p className="text-sm text-muted-foreground">
-          {actionError ?? "Session not found."}
-        </p>
+        <p className="text-muted-foreground text-sm">{actionError ?? "Session not found."}</p>
         <Button asChild variant="outline">
           <Link href="/system-design">Back</Link>
         </Button>
@@ -420,13 +389,15 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
               setIsAiDialogOpen(true);
             }}
             disabled={!showDiagram}
-            title={!showDiagram ? "Show Diagram to generate into the canvas." : "Generate a new diagram"}
+            title={
+              !showDiagram ? "Show Diagram to generate into the canvas." : "Generate a new diagram"
+            }
           >
             <WandSparkles className="size-4" />
             Generate
           </Button>
 
-          <div className="flex items-center rounded-xl border bg-background/70 p-1 shadow-sm backdrop-blur-sm">
+          <div className="bg-background/70 flex items-center rounded-xl border p-1 shadow-sm backdrop-blur-sm">
             <Tooltip content={showDiagram ? "Hide diagram" : "Show diagram"}>
               <Button
                 variant="ghost"
@@ -437,11 +408,15 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
                 )}
                 onClick={() => setShowDiagram((prev) => !prev)}
               >
-                {showDiagram ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
+                {showDiagram ? (
+                  <PanelLeftClose className="size-4" />
+                ) : (
+                  <PanelLeftOpen className="size-4" />
+                )}
               </Button>
             </Tooltip>
 
-            <div className="mx-1 h-6 w-px bg-border" />
+            <div className="bg-border mx-1 h-6 w-px" />
 
             <Tooltip content={showEditor ? "Hide editor" : "Show editor"}>
               <Button
@@ -453,11 +428,15 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
                 )}
                 onClick={() => setShowEditor((prev) => !prev)}
               >
-                {showEditor ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}
+                {showEditor ? (
+                  <PanelRightClose className="size-4" />
+                ) : (
+                  <PanelRightOpen className="size-4" />
+                )}
               </Button>
             </Tooltip>
 
-            <div className="mx-1 h-6 w-px bg-border" />
+            <div className="bg-border mx-1 h-6 w-px" />
 
             <Tooltip content={showCoach ? "Hide coach" : "Show coach"}>
               <Button
@@ -469,7 +448,11 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
                 )}
                 onClick={() => setShowCoach((prev) => !prev)}
               >
-                {showCoach ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}
+                {showCoach ? (
+                  <PanelRightClose className="size-4" />
+                ) : (
+                  <PanelRightOpen className="size-4" />
+                )}
               </Button>
             </Tooltip>
           </div>
@@ -513,7 +496,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
               placeholder="Example: Design a URL shortener with analytics, rate limiting, and a queue-based write path."
             />
             {diagramGenerationError ? (
-              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              <div className="border-destructive/30 bg-destructive/5 text-destructive rounded-md border px-3 py-2 text-sm">
                 {diagramGenerationError}
               </div>
             ) : null}
@@ -543,10 +526,9 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
         className="grid min-h-0 flex-1 gap-0"
         style={{ gridTemplateColumns: mainGridTemplateColumns }}
       >
-
         {/* Excalidraw Panel - Collapsible */}
         {showDiagram && (
-          <div className="relative flex min-h-0 flex-col overflow-hidden rounded-xl border bg-background">
+          <div className="bg-background relative flex min-h-0 flex-col overflow-hidden rounded-xl border">
             {/* Overlay during resize to prevent event trapping */}
             {isResizing && <div className="absolute inset-0 z-50 bg-transparent" />}
 
@@ -565,12 +547,12 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
         {/* Resize Handle for Diagram */}
         {showDiagram && showEditor && (
           <div
-            className="group relative w-1 cursor-col-resize bg-border hover:bg-primary transition-colors"
+            className="group bg-border hover:bg-primary relative w-1 cursor-col-resize transition-colors"
             onMouseDown={startDiagramResize}
           >
-            <div className="absolute inset-y-0 -left-1 -right-1 z-10" />
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary p-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <div className="h-8 w-0.5 bg-primary-foreground" />
+            <div className="absolute inset-y-0 -right-1 -left-1 z-10" />
+            <div className="bg-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full p-1 opacity-0 transition-opacity group-hover:opacity-100">
+              <div className="bg-primary-foreground h-8 w-0.5" />
             </div>
           </div>
         )}
@@ -578,7 +560,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
         {/* Editor Panel - Collapsible */}
         {showEditor && (
           <div className="flex min-h-0 flex-col gap-3">
-            <div className="flex flex-col gap-2 rounded-xl border bg-background px-4 py-3">
+            <div className="bg-background flex flex-col gap-2 rounded-xl border px-4 py-3">
               <span className="text-sm font-medium">Problem Statement</span>
               <Textarea
                 value={problemStatement}
@@ -587,10 +569,13 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
                 }}
                 onBlur={() => {
                   if (problemStatement !== session.problem_statement) {
-                    void runAction(() => updateSystemDesignSession(sessionId, { problem_statement: problemStatement }), (updated) => {
-                      setSession(updated);
-                      setLastSavedAt(updated.updated_at);
-                    });
+                    void runAction(
+                      () =>
+                        updateSystemDesignSession(sessionId, {
+                          problem_statement: problemStatement,
+                        }),
+                      setSession,
+                    );
                   }
                 }}
                 readOnly={false}
@@ -614,12 +599,12 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
         {/* Resize Handle for Coach */}
         {showCoach && (showDiagram || showEditor) && (
           <div
-            className="group relative w-1 cursor-col-resize bg-border hover:bg-primary transition-colors"
+            className="group bg-border hover:bg-primary relative w-1 cursor-col-resize transition-colors"
             onMouseDown={startCoachResize}
           >
-            <div className="absolute inset-y-0 -left-1 -right-1 z-10" />
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary p-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <div className="h-8 w-0.5 bg-primary-foreground" />
+            <div className="absolute inset-y-0 -right-1 -left-1 z-10" />
+            <div className="bg-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full p-1 opacity-0 transition-opacity group-hover:opacity-100">
+              <div className="bg-primary-foreground h-8 w-0.5" />
             </div>
           </div>
         )}
@@ -640,7 +625,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
                 </Button>
               </CardTitle>
               {actionError ? (
-                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                <div className="border-destructive/30 bg-destructive/5 text-destructive rounded-lg border p-3 text-sm">
                   {actionError}
                 </div>
               ) : null}
@@ -706,7 +691,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
                       <Separator />
                       {analysis.best_practices_hints.length ? (
                         <div className="space-y-1">
-                          <p className="text-xs font-semibold text-muted-foreground">Hints</p>
+                          <p className="text-muted-foreground text-xs font-semibold">Hints</p>
                           <ul className="list-disc space-y-1 pl-5 text-sm">
                             {analysis.best_practices_hints.map((h) => (
                               <li key={h}>{h}</li>
@@ -725,7 +710,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
                           <li key={q.id} className="space-y-1">
                             <p>• {q.text}</p>
                             {q.rationale ? (
-                              <p className="text-xs text-muted-foreground">{q.rationale}</p>
+                              <p className="text-muted-foreground text-xs">{q.rationale}</p>
                             ) : null}
                           </li>
                         ))}
@@ -762,7 +747,10 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
                 <TabsContent value="qna" className="space-y-6 pt-4">
                   <Button
                     onClick={() =>
-                      void runAction(() => getSystemDesignKnowledgeDraft(sessionId), setKnowledgeDraft)
+                      void runAction(
+                        () => getSystemDesignKnowledgeDraft(sessionId),
+                        setKnowledgeDraft,
+                      )
                     }
                     disabled={isActionRunning}
                     size="sm"
@@ -772,7 +760,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
 
                   {knowledgeDraft?.notes.length ? (
                     <div className="space-y-2 rounded-lg border p-4">
-                      <p className="text-xs font-semibold text-muted-foreground">Notes</p>
+                      <p className="text-muted-foreground text-xs font-semibold">Notes</p>
                       <ul className="list-disc space-y-1 pl-5 text-sm">
                         {knowledgeDraft.notes.map((n) => (
                           <li key={n}>{n}</li>
@@ -786,20 +774,19 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
                   <div className="space-y-3">
                     <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
                       <div className="space-y-1">
-                        <p className="text-sm font-medium leading-none">Learning topics</p>
-                        <p className="text-xs text-muted-foreground">
-                          Save to learning library
-                        </p>
+                        <p className="text-sm leading-none font-medium">Learning topics</p>
+                        <p className="text-muted-foreground text-xs">Save to learning library</p>
                       </div>
-                      <Switch checked={publishLearningTopics} onCheckedChange={setPublishLearningTopics} />
+                      <Switch
+                        checked={publishLearningTopics}
+                        onCheckedChange={setPublishLearningTopics}
+                      />
                     </div>
 
                     <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
                       <div className="space-y-1">
-                        <p className="text-sm font-medium leading-none">Zettels</p>
-                        <p className="text-xs text-muted-foreground">
-                          Create zettelkasten cards
-                        </p>
+                        <p className="text-sm leading-none font-medium">Zettels</p>
+                        <p className="text-muted-foreground text-xs">Create zettelkasten cards</p>
                       </div>
                       <Switch checked={publishZettels} onCheckedChange={setPublishZettels} />
                     </div>
@@ -807,7 +794,9 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
 
                   <div className="grid gap-3">
                     <div className="space-y-2">
-                      <Label htmlFor="topicTitle" className="text-xs">Topic title</Label>
+                      <Label htmlFor="topicTitle" className="text-xs">
+                        Topic title
+                      </Label>
                       <Input
                         id="topicTitle"
                         placeholder="Optional"
@@ -820,21 +809,23 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
 
                   <Button
                     onClick={() =>
-                      void runAction(async () => {
-                        const payload: SystemDesignPublishRequest = {
-                          create_learning_topics: publishLearningTopics,
-                          create_zettels: publishZettels,
-                          create_interview_prep_items: false,
-                          topic_title: topicTitle.trim() || null,
-                          topic_tags: [],
-                          zettel_tags: [],
-                        };
-                        return publishSystemDesignSession(sessionId, payload);
-                      }, (result) => {
-                        setPublishResult(result);
-                        setSession(result.session);
-                        setLastSavedAt(result.session.updated_at);
-                      })
+                      void runAction(
+                        async () => {
+                          const payload: SystemDesignPublishRequest = {
+                            create_learning_topics: publishLearningTopics,
+                            create_zettels: publishZettels,
+                            create_interview_prep_items: false,
+                            topic_title: topicTitle.trim() || null,
+                            topic_tags: [],
+                            zettel_tags: [],
+                          };
+                          return publishSystemDesignSession(sessionId, payload);
+                        },
+                        (result) => {
+                          setPublishResult(result);
+                          setSession(result.session);
+                        },
+                      )
                     }
                     disabled={isActionRunning}
                     size="sm"

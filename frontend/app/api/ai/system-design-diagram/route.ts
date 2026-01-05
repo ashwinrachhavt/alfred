@@ -93,10 +93,7 @@ export async function POST(req: Request) {
         : "";
 
     if (!mermaid) {
-      return NextResponse.json(
-        { error: "Model did not return mermaid" },
-        { status: 502 },
-      );
+      return NextResponse.json({ error: "Model did not return mermaid" }, { status: 502 });
     }
 
     const payload: GenerateDiagramResponse = { mermaid };
@@ -106,4 +103,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
-

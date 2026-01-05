@@ -13,4 +13,4 @@ export const apiRoutes = {
   tasks: {
     status: (taskId: string) => `/api/tasks/${taskId}`,
   },
-} as const
+} as const;

@@ -1,9 +1,18 @@
-"use client"
+"use client";
 
-import Link from "next/link"
-import { usePathname } from "next/navigation"
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 
-import { BookOpen, Calendar, Command, FileText, LayoutGrid, MessageCircle, Shapes, Sparkles } from "lucide-react"
+import {
+  BookOpen,
+  Calendar,
+  Command,
+  FileText,
+  LayoutGrid,
+  MessageCircle,
+  Shapes,
+  Sparkles,
+} from "lucide-react";
 
 import {
   Sidebar,
@@ -15,13 +24,13 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar"
+} from "@/components/ui/sidebar";
 
 type NavItem = {
-  title: string
-  href: string
-  icon: React.ComponentType<{ className?: string }>
-}
+  title: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+};
 
 const primaryItems: NavItem[] = [
   { title: "Home", href: "/", icon: LayoutGrid },
@@ -32,10 +41,10 @@ const primaryItems: NavItem[] = [
   { title: "Interview Prep", href: "/interview-prep", icon: BookOpen },
   { title: "RAG", href: "/rag", icon: MessageCircle },
   { title: "Tasks", href: "/tasks", icon: Command },
-]
+];
 
 export function AppSidebar() {
-  const pathname = usePathname()
+  const pathname = usePathname();
 
   return (
     <Sidebar collapsible="icon">
@@ -63,5 +72,5 @@ export function AppSidebar() {
 
       <SidebarFooter className="space-y-2" />
     </Sidebar>
-  )
+  );
 }

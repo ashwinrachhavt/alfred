@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  type Editor,
-  EditorContent,
-  useEditor,
-} from "@tiptap/react";
+import { type Editor, EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Markdown } from "@tiptap/markdown";
@@ -20,23 +16,7 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  Bold,
-  Italic,
-  Strikethrough,
-  Code,
-  List,
-  ListOrdered,
-  Quote,
-  Sparkles,
-  Heading1,
-  Heading2,
-  CheckSquare,
-  Wand2,
-  PenLine,
-  Loader2,
-  FileText,
-} from "lucide-react";
+import { Bold, Italic, Wand2, PenLine, Loader2, FileText } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { completeText, rewriteText, summarizeText } from "@/lib/api/ai-assist";
 import { toast } from "sonner";
@@ -153,24 +133,28 @@ export const SystemDesignNotesEditor = forwardRef<
     setMenuPosition({ top, left });
   }, []);
 
-  const handleAiAction = async (action: 'rewrite' | 'complete' | 'summarize') => {
+  const handleAiAction = async (action: "rewrite" | "complete" | "summarize") => {
     if (!editor) return;
-    const { from, to, empty } = editor.state.selection;
+    const { from, to } = editor.state.selection;
     const text = editor.state.doc.textBetween(from, to, " ");
 
-    if (!text && (action === 'rewrite' || action === 'summarize')) return;
+    if (!text && (action === "rewrite" || action === "summarize")) return;
 
     setAiLoading(action);
     try {
       let result = "";
-      if (action === 'rewrite') {
+      if (action === "rewrite") {
         result = await rewriteText(text);
-      } else if (action === 'summarize') {
+      } else if (action === "summarize") {
         result = await summarizeText(text);
-      } else if (action === 'complete') {
+      } else if (action === "complete") {
         // Get context
         const before = editor.state.doc.textBetween(Math.max(0, from - 500), from, " ");
-        const after = editor.state.doc.textBetween(to, Math.min(editor.state.doc.content.size, to + 500), " ");
+        const after = editor.state.doc.textBetween(
+          to,
+          Math.min(editor.state.doc.content.size, to + 500),
+          " ",
+        );
         result = await completeText(text || before, text ? "" : before, after);
 
         if (text) {
@@ -182,10 +166,10 @@ export const SystemDesignNotesEditor = forwardRef<
 
       if (editor.isDestroyed) return;
 
-      if (action === 'rewrite') {
+      if (action === "rewrite") {
         editor.commands.insertContent(result);
         toast.success("Rewritten with AI");
-      } else if (action === 'summarize') {
+      } else if (action === "summarize") {
         // Insert summary after selection or replace? Let's replace for now or append.
         // Usually summary replaces or is shown elsewhere. Let's replace for "Summarize this section" flow.
         editor.commands.insertContent(result);
@@ -196,7 +180,7 @@ export const SystemDesignNotesEditor = forwardRef<
         editor.view.dispatch(transaction);
         toast.success("Completed with AI");
       }
-    } catch (err) {
+    } catch {
       toast.error("AI action failed");
     } finally {
       setAiLoading(null);
@@ -224,7 +208,6 @@ export const SystemDesignNotesEditor = forwardRef<
     isFirstRender.current = false;
   }, [editor, markdown, isFocused]);
 
-
   useImperativeHandle(
     ref,
     () => ({
@@ -251,27 +234,30 @@ export const SystemDesignNotesEditor = forwardRef<
   return (
     <div
       className={cn(
-        "relative flex h-full w-full flex-col overflow-hidden rounded-xl border bg-background ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2",
+        "bg-background ring-offset-background focus-within:ring-ring relative flex h-full w-full flex-col overflow-hidden rounded-xl border focus-within:ring-2 focus-within:ring-offset-2",
         readOnly && "opacity-80",
-        className
+        className,
       )}
     >
       {/* Custom Floating Menu */}
       {menuPosition && editor && !editor.state.selection.empty && (
         <div
           ref={menuRef}
-          className="fixed z-50 flex items-center gap-1 rounded-lg border bg-popover p-1 shadow-lg animate-in fade-in zoom-in-95 duration-100"
+          className="bg-popover animate-in fade-in zoom-in-95 fixed z-50 flex items-center gap-1 rounded-lg border p-1 shadow-lg duration-100"
           style={{
             top: `${menuPosition.top}px`,
             left: `${menuPosition.left}px`,
-            transform: 'translateX(-50%)',
+            transform: "translateX(-50%)",
           }}
         >
           <Button
             variant="ghost"
             size="sm"
             onClick={() => editor.chain().focus().toggleBold().run()}
-            className={cn("h-7 w-7 p-0", editor.isActive("bold") && "bg-accent text-accent-foreground")}
+            className={cn(
+              "h-7 w-7 p-0",
+              editor.isActive("bold") && "bg-accent text-accent-foreground",
+            )}
           >
             <Bold className="h-3.5 w-3.5" />
           </Button>
@@ -279,7 +265,10 @@ export const SystemDesignNotesEditor = forwardRef<
             variant="ghost"
             size="sm"
             onClick={() => editor.chain().focus().toggleItalic().run()}
-            className={cn("h-7 w-7 p-0", editor.isActive("italic") && "bg-accent text-accent-foreground")}
+            className={cn(
+              "h-7 w-7 p-0",
+              editor.isActive("italic") && "bg-accent text-accent-foreground",
+            )}
           >
             <Italic className="h-3.5 w-3.5" />
           </Button>
@@ -293,7 +282,11 @@ export const SystemDesignNotesEditor = forwardRef<
             onClick={() => handleAiAction("rewrite")}
             disabled={!!aiLoading}
           >
-            {aiLoading === 'rewrite' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+            {aiLoading === "rewrite" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Wand2 className="h-3.5 w-3.5" />
+            )}
             Rewrite
           </Button>
           <Button
@@ -303,7 +296,11 @@ export const SystemDesignNotesEditor = forwardRef<
             onClick={() => handleAiAction("summarize")}
             disabled={!!aiLoading}
           >
-            {aiLoading === 'summarize' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+            {aiLoading === "summarize" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FileText className="h-3.5 w-3.5" />
+            )}
             Summarize
           </Button>
           <Button
@@ -313,7 +310,11 @@ export const SystemDesignNotesEditor = forwardRef<
             onClick={() => handleAiAction("complete")}
             disabled={!!aiLoading}
           >
-            {aiLoading === 'complete' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PenLine className="h-3.5 w-3.5" />}
+            {aiLoading === "complete" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <PenLine className="h-3.5 w-3.5" />
+            )}
             Continue
           </Button>
         </div>
@@ -326,7 +327,7 @@ export const SystemDesignNotesEditor = forwardRef<
 
       {/* Optional Footer / Status */}
       {!readOnly && (
-        <div className="flex items-center justify-between border-t bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
+        <div className="bg-muted/20 text-muted-foreground flex items-center justify-between border-t px-3 py-1.5 text-xs">
           <div className="flex items-center gap-2">
             <span>Markdown supported</span>
           </div>

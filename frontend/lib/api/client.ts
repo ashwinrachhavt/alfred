@@ -46,20 +46,13 @@ function coerceErrorMessage(payload: unknown, fallback: string): string {
   return fallback;
 }
 
-export async function apiFetch<TResponse>(
-  path: string,
-  init?: RequestInit,
-): Promise<TResponse> {
+export async function apiFetch<TResponse>(path: string, init?: RequestInit): Promise<TResponse> {
   const url = apiUrl(path);
   const response = await fetch(url, init);
   const payload = await safeReadJson(response);
 
   if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      coerceErrorMessage(payload, response.statusText),
-      payload,
-    );
+    throw new ApiError(response.status, coerceErrorMessage(payload, response.statusText), payload);
   }
 
   return payload as TResponse;

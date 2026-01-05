@@ -96,7 +96,8 @@ export function SystemDesignStartClient() {
     }
   }
 
-  const errorMessage = error ?? (templatesQuery.error ? formatErrorMessage(templatesQuery.error) : null);
+  const errorMessage =
+    error ?? (templatesQuery.error ? formatErrorMessage(templatesQuery.error) : null);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
@@ -140,7 +141,7 @@ export function SystemDesignStartClient() {
               <div className="relative">
                 <select
                   id="sdTemplate"
-                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  className="bg-background h-10 w-full rounded-md border px-3 text-sm"
                   value={templateId ?? ""}
                   onChange={(e) => setTemplateId(e.target.value || null)}
                   disabled={isLoadingTemplates}
@@ -154,12 +155,12 @@ export function SystemDesignStartClient() {
                 </select>
               </div>
               {isLoadingTemplates ? (
-                <p className="text-xs text-muted-foreground">Loading templates…</p>
+                <p className="text-muted-foreground text-xs">Loading templates…</p>
               ) : null}
             </div>
 
             {errorMessage ? (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+              <div className="border-destructive/30 bg-destructive/5 text-destructive rounded-lg border p-3 text-sm">
                 {errorMessage}
               </div>
             ) : null}
@@ -185,7 +186,7 @@ export function SystemDesignStartClient() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 space-y-1">
                         <p className="truncate font-medium">{s.title ?? "Untitled session"}</p>
-                        <p className="max-h-10 overflow-hidden text-xs text-muted-foreground">
+                        <p className="text-muted-foreground max-h-10 overflow-hidden text-xs">
                           {s.problemStatement}
                         </p>
                         <div className="flex flex-wrap gap-2 pt-1">
@@ -201,7 +202,7 @@ export function SystemDesignStartClient() {
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-muted-foreground text-sm">
                 No recent sessions yet. Create one to get started.
               </p>
             )}

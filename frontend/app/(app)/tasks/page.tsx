@@ -1,17 +1,17 @@
-"use client"
+"use client";
 
-import { useState } from "react"
+import { useState } from "react";
 
-import { toast } from "sonner"
+import { toast } from "sonner";
 
-import { useTaskStatus } from "@/features/tasks/queries"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
+import { useTaskStatus } from "@/features/tasks/queries";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 
 export default function TasksPage() {
-  const [taskId, setTaskId] = useState<string>("")
-  const { data, error, isFetching } = useTaskStatus(taskId.trim() ? taskId.trim() : null)
+  const [taskId, setTaskId] = useState<string>("");
+  const { data, error, isFetching } = useTaskStatus(taskId.trim() ? taskId.trim() : null);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10">
@@ -30,8 +30,8 @@ export default function TasksPage() {
               type="button"
               variant="outline"
               onClick={() => {
-                setTaskId("")
-                toast.message("Cleared task id.")
+                setTaskId("");
+                toast.message("Cleared task id.");
               }}
             >
               Clear
@@ -39,7 +39,7 @@ export default function TasksPage() {
           </div>
 
           {error ? (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
+            <div className="border-destructive/30 bg-destructive/5 rounded-lg border p-3 text-sm">
               <p className="font-medium">Could not load task status</p>
               <p className="text-muted-foreground">
                 {error instanceof Error ? error.message : "Unknown error"}
@@ -48,42 +48,42 @@ export default function TasksPage() {
           ) : null}
 
           {data ? (
-            <div className="rounded-lg border bg-background p-4 text-sm">
+            <div className="bg-background rounded-lg border p-4 text-sm">
               <div className="flex flex-wrap items-center gap-3">
                 <span className="font-medium">{data.task_id}</span>
-                <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
+                <span className="text-muted-foreground rounded-full border px-2 py-0.5 text-xs">
                   {data.status}
                 </span>
-                <span className="text-xs text-muted-foreground">
+                <span className="text-muted-foreground text-xs">
                   {isFetching ? "Updating…" : "Idle"}
                 </span>
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <div>
-                  <p className="text-xs text-muted-foreground">Ready</p>
+                  <p className="text-muted-foreground text-xs">Ready</p>
                   <p className="font-medium">{String(data.ready)}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Successful</p>
+                  <p className="text-muted-foreground text-xs">Successful</p>
                   <p className="font-medium">{String(data.successful)}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Failed</p>
+                  <p className="text-muted-foreground text-xs">Failed</p>
                   <p className="font-medium">{String(data.failed)}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Error</p>
+                  <p className="text-muted-foreground text-xs">Error</p>
                   <p className="truncate font-medium">{data.error ?? "—"}</p>
                 </div>
               </div>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-muted-foreground text-sm">
               Enter a task id to poll status from the API.
             </p>
           )}
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

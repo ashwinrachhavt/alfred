@@ -1,16 +1,16 @@
 /** @type {import("next").NextConfig} */
 const nextConfig = {
   async rewrites() {
-    const normalizeApiBaseUrl = (raw) => raw.trim().replace(/\/+$/, "")
+    const normalizeApiBaseUrl = (raw) => raw.trim().replace(/\/+$/, "");
 
-    const configured = process.env.ALFRED_API_BASE_URL?.trim()
+    const configured = process.env.ALFRED_API_BASE_URL?.trim();
     const apiBaseUrl = configured
       ? normalizeApiBaseUrl(configured)
       : process.env.NODE_ENV !== "production"
         ? "http://localhost:8000"
-        : null
+        : null;
 
-    if (!apiBaseUrl) return []
+    if (!apiBaseUrl) return [];
 
     return [
       // Some FastAPI routers are mounted outside `/api/*` on the backend.
@@ -19,8 +19,8 @@ const nextConfig = {
       { source: "/api/tasks/:path*", destination: `${apiBaseUrl}/tasks/:path*` },
       { source: "/api/rag/:path*", destination: `${apiBaseUrl}/rag/:path*` },
       { source: "/api/:path*", destination: `${apiBaseUrl}/api/:path*` },
-    ]
+    ];
   },
-}
+};
 
-module.exports = nextConfig
+module.exports = nextConfig;

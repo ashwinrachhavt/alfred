@@ -1,11 +1,11 @@
-"use client"
+"use client";
 
-import { useState } from "react"
+import { useState } from "react";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import { ThemeProvider } from "@/components/theme-provider"
-import { Toaster } from "@/components/ui/sonner"
+import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/sonner";
 
 function createQueryClient(): QueryClient {
   return new QueryClient({
@@ -16,11 +16,11 @@ function createQueryClient(): QueryClient {
         staleTime: 30_000,
       },
     },
-  })
+  });
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(() => createQueryClient())
+  const [queryClient] = useState(() => createQueryClient());
 
   return (
     <ThemeProvider
@@ -35,5 +35,5 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <Toaster />
       </QueryClientProvider>
     </ThemeProvider>
-  )
+  );
 }

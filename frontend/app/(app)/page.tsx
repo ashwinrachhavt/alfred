@@ -11,7 +11,7 @@ export default function Home() {
           <h1 className="text-4xl font-semibold tracking-tight">
             A calm, powerful workspace for thinking.
           </h1>
-          <p className="max-w-2xl text-lg text-muted-foreground">
+          <p className="text-muted-foreground max-w-2xl text-lg">
             Alfred helps you practice interviews and turn messy information into durable knowledge.
             Start with System Design, Interview Prep, or your knowledge base.
           </p>
@@ -32,7 +32,7 @@ export default function Home() {
               <CardHeader>
                 <CardTitle className="text-base">Company Intelligence</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3 text-sm text-muted-foreground">
+              <CardContent className="text-muted-foreground space-y-3 text-sm">
                 Search, research, and track your target companies.
                 <div>
                   <Button asChild size="sm" variant="outline">
@@ -46,7 +46,7 @@ export default function Home() {
               <CardHeader>
                 <CardTitle className="text-base">Knowledge Assistant</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3 text-sm text-muted-foreground">
+              <CardContent className="text-muted-foreground space-y-3 text-sm">
                 Ask questions across your documents with citations.
                 <div>
                   <Button asChild size="sm" variant="outline">
@@ -60,7 +60,7 @@ export default function Home() {
               <CardHeader>
                 <CardTitle className="text-base">Calendar & Email</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3 text-sm text-muted-foreground">
+              <CardContent className="text-muted-foreground space-y-3 text-sm">
                 Connect Google and run scheduling workflows.
                 <div>
                   <Button asChild size="sm" variant="outline">
@@ -74,7 +74,7 @@ export default function Home() {
               <CardHeader>
                 <CardTitle className="text-base">Background Tasks</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3 text-sm text-muted-foreground">
+              <CardContent className="text-muted-foreground space-y-3 text-sm">
                 Monitor long-running jobs and their results.
                 <div>
                   <Button asChild size="sm" variant="outline">
@@ -91,16 +91,16 @@ export default function Home() {
             <CardTitle>What you can do</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <div className="rounded-lg border bg-background p-3">
+            <div className="bg-background rounded-lg border p-3">
               <p className="font-medium">System Design whiteboard</p>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 Draw your architecture and get probing questions, critiques, and a publishable
                 knowledge draft.
               </p>
             </div>
-            <div className="rounded-lg border bg-background p-3">
+            <div className="bg-background rounded-lg border p-3">
               <p className="font-medium">Interview Prep workflows</p>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 Collect questions, research the company, and run practice sessions.
               </p>
             </div>

@@ -82,7 +82,9 @@ export async function getSystemDesignComponents(): Promise<ComponentDefinition[]
 }
 
 export async function getSystemDesignTemplates(): Promise<TemplateDefinition[]> {
-  return apiFetch<TemplateDefinition[]>("/api/system-design/library/templates", { cache: "no-store" });
+  return apiFetch<TemplateDefinition[]>("/api/system-design/library/templates", {
+    cache: "no-store",
+  });
 }
 
 export async function getSystemDesignPrompt(sessionId: string): Promise<DesignPrompt> {
@@ -101,9 +103,7 @@ export async function analyzeSystemDesign(sessionId: string): Promise<DiagramAna
   );
 }
 
-export async function getSystemDesignQuestions(
-  sessionId: string,
-): Promise<DiagramQuestion[]> {
+export async function getSystemDesignQuestions(sessionId: string): Promise<DiagramQuestion[]> {
   return apiPostJson<DiagramQuestion[], Record<string, never>>(
     `/api/system-design/sessions/${sessionId}/questions`,
     {},
@@ -111,9 +111,7 @@ export async function getSystemDesignQuestions(
   );
 }
 
-export async function getSystemDesignSuggestions(
-  sessionId: string,
-): Promise<DiagramSuggestion[]> {
+export async function getSystemDesignSuggestions(sessionId: string): Promise<DiagramSuggestion[]> {
   return apiPostJson<DiagramSuggestion[], Record<string, never>>(
     `/api/system-design/sessions/${sessionId}/suggestions`,
     {},
@@ -150,9 +148,7 @@ export async function publishSystemDesignSession(
   );
 }
 
-export async function scaleEstimate(
-  payload: ScaleEstimateRequest,
-): Promise<ScaleEstimateResponse> {
+export async function scaleEstimate(payload: ScaleEstimateRequest): Promise<ScaleEstimateResponse> {
   return apiPostJson<ScaleEstimateResponse, ScaleEstimateRequest>(
     "/api/system-design/scale-estimate",
     payload,

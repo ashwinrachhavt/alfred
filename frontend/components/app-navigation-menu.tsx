@@ -1,7 +1,7 @@
-"use client"
+"use client";
 
-import Link from "next/link"
-import { usePathname } from "next/navigation"
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import {
   NavigationMenu,
@@ -9,17 +9,20 @@ import {
   NavigationMenuLink,
   NavigationMenuList,
   navigationMenuTriggerStyle,
-} from "@/components/ui/navigation-menu"
+} from "@/components/ui/navigation-menu";
 
 export function AppNavigationMenu({ className }: { className?: string }) {
-  const pathname = usePathname()
+  const pathname = usePathname();
 
   return (
     <NavigationMenu className={className}>
       <NavigationMenuList>
         <NavigationMenuItem>
           <NavigationMenuLink asChild className={navigationMenuTriggerStyle()}>
-            <Link href="/system-design" aria-current={pathname === "/system-design" ? "page" : undefined}>
+            <Link
+              href="/system-design"
+              aria-current={pathname === "/system-design" ? "page" : undefined}
+            >
               System Design
             </Link>
           </NavigationMenuLink>
@@ -37,5 +40,5 @@ export function AppNavigationMenu({ className }: { className?: string }) {
         </NavigationMenuItem>
       </NavigationMenuList>
     </NavigationMenu>
-  )
+  );
 }

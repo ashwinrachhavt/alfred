@@ -1,8 +1,8 @@
-import * as React from "react"
+import * as React from "react";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
-type InputGroupProps = React.ComponentPropsWithoutRef<"div">
+type InputGroupProps = React.ComponentPropsWithoutRef<"div">;
 
 const InputGroup = React.forwardRef<React.ElementRef<"div">, InputGroupProps>(
   ({ className, ...props }, ref) => {
@@ -13,12 +13,12 @@ const InputGroup = React.forwardRef<React.ElementRef<"div">, InputGroupProps>(
         className={cn("flex w-full items-stretch", className)}
         {...props}
       />
-    )
-  }
-)
-InputGroup.displayName = "InputGroup"
+    );
+  },
+);
+InputGroup.displayName = "InputGroup";
 
-type InputGroupAddonProps = React.ComponentPropsWithoutRef<"div">
+type InputGroupAddonProps = React.ComponentPropsWithoutRef<"div">;
 
 const InputGroupAddon = React.forwardRef<React.ElementRef<"div">, InputGroupAddonProps>(
   ({ className, ...props }, ref) => {
@@ -27,14 +27,14 @@ const InputGroupAddon = React.forwardRef<React.ElementRef<"div">, InputGroupAddo
         ref={ref}
         data-slot="input-group-addon"
         className={cn(
-          "inline-flex items-center rounded-md border border-r-0 bg-muted px-2 text-sm text-muted-foreground",
-          className
+          "bg-muted text-muted-foreground inline-flex items-center rounded-md border border-r-0 px-2 text-sm",
+          className,
         )}
         {...props}
       />
-    )
-  }
-)
-InputGroupAddon.displayName = "InputGroupAddon"
+    );
+  },
+);
+InputGroupAddon.displayName = "InputGroupAddon";
 
-export { InputGroup, InputGroupAddon }
+export { InputGroup, InputGroupAddon };

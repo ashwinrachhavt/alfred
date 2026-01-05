@@ -1,9 +1,9 @@
-import { useQuery } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query";
 
-import { getTaskStatus } from "@/lib/api/tasks"
+import { getTaskStatus } from "@/lib/api/tasks";
 
 export function taskStatusQueryKey(taskId: string) {
-  return ["tasks", "status", taskId] as const
+  return ["tasks", "status", taskId] as const;
 }
 
 export function useTaskStatus(taskId: string | null) {
@@ -12,5 +12,5 @@ export function useTaskStatus(taskId: string | null) {
     queryKey: taskId ? taskStatusQueryKey(taskId) : ["tasks", "status", "disabled"],
     queryFn: () => getTaskStatus(taskId!),
     refetchInterval: (query) => (query.state.data?.ready ? false : 2000),
-  })
+  });
 }

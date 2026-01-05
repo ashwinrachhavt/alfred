@@ -1,12 +1,12 @@
-import * as React from "react"
+import * as React from "react";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 type TooltipProps = {
-  children: React.ReactNode
-  content: React.ReactNode
-  className?: string
-}
+  children: React.ReactNode;
+  content: React.ReactNode;
+  className?: string;
+};
 
 /**
  * A lightweight tooltip implementation with hover/focus support.
@@ -19,12 +19,12 @@ export function Tooltip({ children, content, className }: TooltipProps) {
       <span
         role="tooltip"
         className={cn(
-          "pointer-events-none absolute left-1/2 top-full z-50 mt-2 hidden -translate-x-1/2 rounded-md border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md",
-          "group-hover:block group-focus-within:block"
+          "bg-popover text-popover-foreground pointer-events-none absolute top-full left-1/2 z-50 mt-2 hidden -translate-x-1/2 rounded-md border px-2 py-1 text-xs shadow-md",
+          "group-focus-within:block group-hover:block",
         )}
       >
         {content}
       </span>
     </span>
-  )
+  );
 }

@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function CalendarPage() {
   return (
@@ -7,10 +7,10 @@ export default function CalendarPage() {
         <CardHeader>
           <CardTitle>Calendar & Email</CardTitle>
         </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
+        <CardContent className="text-muted-foreground text-sm">
           Coming next: OAuth connection cards, calendar views, and email threads.
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

@@ -251,7 +251,10 @@ export function InterviewPrepClient() {
             />
           </div>
 
-          <Tabs value={operation} onValueChange={(v) => setOperation(v as UnifiedInterviewOperation)}>
+          <Tabs
+            value={operation}
+            onValueChange={(v) => setOperation(v as UnifiedInterviewOperation)}
+          >
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="collect_questions">Collect Questions</TabsTrigger>
               <TabsTrigger value="deep_research">Deep Research</TabsTrigger>
@@ -284,8 +287,8 @@ export function InterviewPrepClient() {
                 </div>
                 <div className="flex items-end justify-between gap-4 rounded-lg border p-3">
                   <div className="space-y-1">
-                    <p className="text-sm font-medium leading-none">Use Firecrawl</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-sm leading-none font-medium">Use Firecrawl</p>
+                    <p className="text-muted-foreground text-xs">
                       Adds Firecrawl search alongside SearxNG/DDG.
                     </p>
                   </div>
@@ -298,8 +301,8 @@ export function InterviewPrepClient() {
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="flex items-end justify-between gap-4 rounded-lg border p-3 sm:col-span-1">
                   <div className="space-y-1">
-                    <p className="text-sm font-medium leading-none">Include deep research</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-sm leading-none font-medium">Include deep research</p>
+                    <p className="text-muted-foreground text-xs">
                       Include a company deep research section.
                     </p>
                   </div>
@@ -319,7 +322,7 @@ export function InterviewPrepClient() {
               </div>
             </TabsContent>
 
-            <TabsContent value="practice_session" className="pt-4 space-y-4">
+            <TabsContent value="practice_session" className="space-y-4 pt-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="practiceSessionId">Session ID (optional)</Label>
@@ -350,8 +353,8 @@ export function InterviewPrepClient() {
             <div className="flex items-center gap-3">
               <Switch checked={runInBackground} onCheckedChange={setRunInBackground} />
               <div className="space-y-0.5">
-                <p className="text-sm font-medium leading-none">Run in background</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-sm leading-none font-medium">Run in background</p>
+                <p className="text-muted-foreground text-xs">
                   Returns immediately and updates when the task completes.
                 </p>
               </div>
@@ -362,7 +365,7 @@ export function InterviewPrepClient() {
           </div>
 
           {error ? (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+            <div className="border-destructive/30 bg-destructive/5 text-destructive rounded-lg border p-3 text-sm">
               {error}
             </div>
           ) : null}
@@ -373,11 +376,11 @@ export function InterviewPrepClient() {
             <p className="text-sm">
               Background task queued: <span className="font-mono">{queued.task_id}</span>
             </p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-muted-foreground text-xs">
               Status URL: <span className="font-mono">{queued.status_url}</span>
             </p>
             {taskStatus ? (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 Status: <span className="font-mono">{taskStatus.status}</span>
               </p>
             ) : null}
@@ -403,12 +406,12 @@ export function InterviewPrepClient() {
           <CardContent className="space-y-6">
             {result.operation === "collect_questions" && result.questions?.length ? (
               <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-muted-foreground">Questions</h3>
+                <h3 className="text-muted-foreground text-sm font-semibold">Questions</h3>
                 <div className="space-y-3">
                   {result.questions.map((q) => (
                     <div key={q.question} className="rounded-lg border p-4">
                       <div className="flex flex-col gap-2">
-                        <p className="font-medium leading-6">{q.question}</p>
+                        <p className="leading-6 font-medium">{q.question}</p>
                         {q.categories?.length ? (
                           <div className="flex flex-wrap gap-2">
                             {q.categories.map((c) => (
@@ -419,8 +422,8 @@ export function InterviewPrepClient() {
                           </div>
                         ) : null}
                         {q.solution?.approach ? (
-                          <div className="text-sm text-muted-foreground">
-                            <span className="font-medium text-foreground">Approach:</span>{" "}
+                          <div className="text-muted-foreground text-sm">
+                            <span className="text-foreground font-medium">Approach:</span>{" "}
                             {q.solution.approach}
                           </div>
                         ) : null}
@@ -435,7 +438,7 @@ export function InterviewPrepClient() {
               <div className="space-y-6">
                 {result.key_insights?.length ? (
                   <div className="space-y-2">
-                    <h3 className="text-sm font-semibold text-muted-foreground">Key insights</h3>
+                    <h3 className="text-muted-foreground text-sm font-semibold">Key insights</h3>
                     <ul className="list-disc space-y-1 pl-5 text-sm">
                       {result.key_insights.map((insight) => (
                         <li key={insight}>{insight}</li>
@@ -445,8 +448,8 @@ export function InterviewPrepClient() {
                 ) : null}
                 {result.research_report ? (
                   <div className="space-y-2">
-                    <h3 className="text-sm font-semibold text-muted-foreground">Report</h3>
-                    <pre className="max-h-[520px] overflow-auto rounded-lg border bg-muted/30 p-4 text-sm whitespace-pre-wrap">
+                    <h3 className="text-muted-foreground text-sm font-semibold">Report</h3>
+                    <pre className="bg-muted/30 max-h-[520px] overflow-auto rounded-lg border p-4 text-sm whitespace-pre-wrap">
                       {result.research_report}
                     </pre>
                   </div>
@@ -458,18 +461,18 @@ export function InterviewPrepClient() {
               <div className="space-y-6">
                 {result.interviewer_response ? (
                   <div className="space-y-2">
-                    <h3 className="text-sm font-semibold text-muted-foreground">
+                    <h3 className="text-muted-foreground text-sm font-semibold">
                       Interviewer response
                     </h3>
-                    <pre className="max-h-[520px] overflow-auto rounded-lg border bg-muted/30 p-4 text-sm whitespace-pre-wrap">
+                    <pre className="bg-muted/30 max-h-[520px] overflow-auto rounded-lg border p-4 text-sm whitespace-pre-wrap">
                       {result.interviewer_response}
                     </pre>
                   </div>
                 ) : null}
                 {result.feedback ? (
                   <div className="space-y-2">
-                    <h3 className="text-sm font-semibold text-muted-foreground">Feedback</h3>
-                    <pre className="max-h-[520px] overflow-auto rounded-lg border bg-muted/30 p-4 text-sm">
+                    <h3 className="text-muted-foreground text-sm font-semibold">Feedback</h3>
+                    <pre className="bg-muted/30 max-h-[520px] overflow-auto rounded-lg border p-4 text-sm">
                       {JSON.stringify(result.feedback, null, 2)}
                     </pre>
                   </div>

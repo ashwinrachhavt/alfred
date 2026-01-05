@@ -40,14 +40,11 @@ export function SharedSystemDesignSessionClient({ shareId }: { shareId: string }
     void load();
   }, [shareId]);
 
-  const title = useMemo(
-    () => session?.title ?? "Shared System Design Session",
-    [session],
-  );
+  const title = useMemo(() => session?.title ?? "Shared System Design Session", [session]);
 
   if (isLoading) {
     return (
-      <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+      <div className="text-muted-foreground flex h-full w-full items-center justify-center text-sm">
         Loading shared session…
       </div>
     );
@@ -55,9 +52,9 @@ export function SharedSystemDesignSessionClient({ shareId }: { shareId: string }
 
   if (!session) {
     return (
-      <div className="mx-auto w-full max-w-3xl px-4 py-10 space-y-4">
+      <div className="mx-auto w-full max-w-3xl space-y-4 px-4 py-10">
         <h1 className="text-2xl font-semibold">{title}</h1>
-        <p className="text-sm text-muted-foreground">{error ?? "Session not found."}</p>
+        <p className="text-muted-foreground text-sm">{error ?? "Session not found."}</p>
         <Button asChild variant="outline">
           <Link href="/system-design">Back</Link>
         </Button>
@@ -71,7 +68,7 @@ export function SharedSystemDesignSessionClient({ shareId }: { shareId: string }
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
             <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
               <Badge variant="secondary">share: {session.share_id}</Badge>
               <Badge variant="outline">id: {session.id}</Badge>
             </div>
@@ -81,10 +78,10 @@ export function SharedSystemDesignSessionClient({ shareId }: { shareId: string }
           </Button>
         </div>
 
-        <details className="rounded-xl border bg-background">
-          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium">
+        <details className="bg-background rounded-xl border">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-medium select-none">
             Problem statement
-            <span className="ml-2 text-xs font-normal text-muted-foreground">
+            <span className="text-muted-foreground ml-2 text-xs font-normal">
               (click to expand)
             </span>
           </summary>
@@ -101,7 +98,7 @@ export function SharedSystemDesignSessionClient({ shareId }: { shareId: string }
       <div className="min-h-0">
         <Card className="h-full p-4">
           <p className="text-sm font-medium">Shared view</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-muted-foreground text-xs">
             This is a read-only snapshot. To continue editing, open the original session.
           </p>
         </Card>

@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function RagPage() {
   return (
@@ -7,10 +7,10 @@ export default function RagPage() {
         <CardHeader>
           <CardTitle>Knowledge Assistant (RAG)</CardTitle>
         </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
+        <CardContent className="text-muted-foreground text-sm">
           Coming next: chat with citations, context viewer, and modes.
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

@@ -1,29 +1,27 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 
 import type { ExcalidrawData } from "@/lib/api/types/system-design";
 
 type SerializeAsJSON = typeof import("@excalidraw/excalidraw").serializeAsJSON;
-type ConvertToExcalidrawElements = typeof import("@excalidraw/excalidraw").convertToExcalidrawElements;
+type ConvertToExcalidrawElements =
+  typeof import("@excalidraw/excalidraw").convertToExcalidrawElements;
 type Restore = typeof import("@excalidraw/excalidraw").restore;
 type ExcalidrawAPI = import("@excalidraw/excalidraw/types").ExcalidrawImperativeAPI;
 type ExcalidrawElementSkeleton = NonNullable<Parameters<ConvertToExcalidrawElements>[0]>[number];
 
-const Excalidraw = dynamic(
-  async () => (await import("@excalidraw/excalidraw")).Excalidraw,
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
-        Loading canvas…
-      </div>
-    ),
-  },
-);
+const Excalidraw = dynamic(async () => (await import("@excalidraw/excalidraw")).Excalidraw, {
+  ssr: false,
+  loading: () => (
+    <div className="text-muted-foreground flex h-full w-full items-center justify-center text-sm">
+      Loading canvas…
+    </div>
+  ),
+});
 
 function toPersistedDiagram(
   serialize: SerializeAsJSON,
@@ -82,7 +80,13 @@ export type ExcalidrawCanvasHandle = {
 
 export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCanvasProps>(
   function ExcalidrawCanvasImpl(
-    { initialDiagram, onDiagramChange, readOnly, framed = true, viewportScale = 1 }: ExcalidrawCanvasProps,
+    {
+      initialDiagram,
+      onDiagramChange,
+      readOnly,
+      framed = true,
+      viewportScale = 1,
+    }: ExcalidrawCanvasProps,
     ref,
   ) {
     const serializeRef = useRef<SerializeAsJSON | null>(null);
@@ -90,9 +94,8 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
     const restoreRef = useRef<Restore | null>(null);
     const apiRef = useRef<ExcalidrawAPI | null>(null);
     const [helpersReady, setHelpersReady] = useState(false);
-    const [normalizedInitialData, setNormalizedInitialData] = useState<ExcalidrawInitialDataState | null>(
-      null,
-    );
+    const [normalizedInitialData, setNormalizedInitialData] =
+      useState<ExcalidrawInitialDataState | null>(null);
 
     const normalizeFallback = useCallback((diagram: ExcalidrawData): ExcalidrawInitialDataState => {
       const rawElements = Array.isArray(diagram.elements) ? diagram.elements : [];
@@ -195,10 +198,10 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
         const width = 260;
         const height = 120;
 
-      const skeleton: ExcalidrawElementSkeleton[] = [
-        {
-          type: "rectangle",
-          x: centerX - width / 2,
+        const skeleton: ExcalidrawElementSkeleton[] = [
+          {
+            type: "rectangle",
+            x: centerX - width / 2,
             y: centerY - height / 2,
             width,
             height,
@@ -210,16 +213,16 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
           },
         ];
 
-      const newElements = convertToExcalidrawElements(skeleton, { regenerateIds: true });
-      const existing = api.getSceneElementsIncludingDeleted();
-      const nextElements = [...existing, ...newElements];
-      const selectedElementIds = Object.fromEntries(
-        newElements.map((el) => [el.id, true as const]),
-      ) as Record<string, true>;
+        const newElements = convertToExcalidrawElements(skeleton, { regenerateIds: true });
+        const existing = api.getSceneElementsIncludingDeleted();
+        const nextElements = [...existing, ...newElements];
+        const selectedElementIds = Object.fromEntries(
+          newElements.map((el) => [el.id, true as const]),
+        ) as Record<string, true>;
 
-      api.updateScene({
-        elements: nextElements,
-        appState: {
+        api.updateScene({
+          elements: nextElements,
+          appState: {
             selectedElementIds,
           },
         });
@@ -264,7 +267,7 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
       <div
         className={
           framed
-            ? "flex h-full w-full flex-col overflow-hidden rounded-2xl border-2 bg-background p-2"
+            ? "bg-background flex h-full w-full flex-col overflow-hidden rounded-2xl border-2 p-2"
             : "h-full w-full"
         }
       >
@@ -294,7 +297,7 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
                 }}
               />
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+              <div className="text-muted-foreground flex h-full w-full items-center justify-center text-sm">
                 Preparing canvas…
               </div>
             )}
