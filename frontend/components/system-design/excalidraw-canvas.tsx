@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 
 import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 
@@ -9,6 +9,7 @@ import type { ExcalidrawData } from "@/lib/api/types/system-design";
 
 type SerializeAsJSON = typeof import("@excalidraw/excalidraw").serializeAsJSON;
 type ConvertToExcalidrawElements = typeof import("@excalidraw/excalidraw").convertToExcalidrawElements;
+type Restore = typeof import("@excalidraw/excalidraw").restore;
 type ExcalidrawAPI = import("@excalidraw/excalidraw/types").ExcalidrawImperativeAPI;
 type ExcalidrawElementSkeleton = NonNullable<Parameters<ConvertToExcalidrawElements>[0]>[number];
 
@@ -37,11 +38,16 @@ function toPersistedDiagram(
     "database",
   );
 
-  const parsed = JSON.parse(serialized) as Partial<{
-    elements: unknown;
-    appState: unknown;
-    files: unknown;
-  }>;
+  let parsed: Partial<{ elements: unknown; appState: unknown; files: unknown }> = {};
+  try {
+    parsed = JSON.parse(serialized) as Partial<{
+      elements: unknown;
+      appState: unknown;
+      files: unknown;
+    }>;
+  } catch {
+    parsed = {};
+  }
 
   return {
     elements: (parsed.elements ?? []) as Record<string, unknown>[],
@@ -81,7 +87,38 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
   ) {
     const serializeRef = useRef<SerializeAsJSON | null>(null);
     const convertRef = useRef<ConvertToExcalidrawElements | null>(null);
+    const restoreRef = useRef<Restore | null>(null);
     const apiRef = useRef<ExcalidrawAPI | null>(null);
+    const [helpersReady, setHelpersReady] = useState(false);
+    const [normalizedInitialData, setNormalizedInitialData] = useState<ExcalidrawInitialDataState | null>(
+      null,
+    );
+
+    const normalizeFallback = useCallback((diagram: ExcalidrawData): ExcalidrawInitialDataState => {
+      const rawElements = Array.isArray(diagram.elements) ? diagram.elements : [];
+      const safeElements = rawElements.filter((el) => {
+        if (!el || typeof el !== "object") return false;
+        const type = (el as Record<string, unknown>).type;
+        if (type !== "line" && type !== "arrow") return true;
+        const points = (el as Record<string, unknown>).points;
+        if (!Array.isArray(points) || points.length < 2) return false;
+        return points.every(
+          (p) =>
+            Array.isArray(p) &&
+            p.length === 2 &&
+            typeof p[0] === "number" &&
+            Number.isFinite(p[0]) &&
+            typeof p[1] === "number" &&
+            Number.isFinite(p[1]),
+        );
+      });
+
+      return {
+        elements: safeElements as unknown as ExcalidrawInitialDataState["elements"],
+        appState: (diagram.appState ?? {}) as unknown as ExcalidrawInitialDataState["appState"],
+        files: (diagram.files ?? {}) as unknown as ExcalidrawInitialDataState["files"],
+      };
+    }, []);
 
     useEffect(() => {
       // Important: Excalidraw touches `navigator` at module init, so avoid any
@@ -90,21 +127,46 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
         .then((mod) => {
           serializeRef.current = mod.serializeAsJSON;
           convertRef.current = mod.convertToExcalidrawElements;
+          restoreRef.current = mod.restore;
+          setHelpersReady(true);
         })
         .catch(() => {
           serializeRef.current = null;
           convertRef.current = null;
+          restoreRef.current = null;
+          setHelpersReady(true);
         });
     }, []);
 
-    const initialData = useMemo<ExcalidrawInitialDataState>(
-      () => ({
-        elements: initialDiagram.elements as unknown as ExcalidrawInitialDataState["elements"],
-        appState: initialDiagram.appState as unknown as ExcalidrawInitialDataState["appState"],
-        files: initialDiagram.files as unknown as ExcalidrawInitialDataState["files"],
-      }),
-      [initialDiagram],
-    );
+    useEffect(() => {
+      if (!helpersReady) return;
+      const restore = restoreRef.current;
+      if (!restore) {
+        setNormalizedInitialData(normalizeFallback(initialDiagram));
+        return;
+      }
+
+      try {
+        const restored = restore(
+          {
+            elements: initialDiagram.elements as unknown as ExcalidrawInitialDataState["elements"],
+            appState: initialDiagram.appState as unknown as ExcalidrawInitialDataState["appState"],
+            files: initialDiagram.files as unknown as ExcalidrawInitialDataState["files"],
+          },
+          null,
+          null,
+          { refreshDimensions: true, repairBindings: true },
+        );
+
+        setNormalizedInitialData({
+          elements: restored.elements as unknown as ExcalidrawInitialDataState["elements"],
+          appState: restored.appState as unknown as ExcalidrawInitialDataState["appState"],
+          files: restored.files as unknown as ExcalidrawInitialDataState["files"],
+        });
+      } catch {
+        setNormalizedInitialData(normalizeFallback(initialDiagram));
+      }
+    }, [helpersReady, initialDiagram, normalizeFallback]);
 
     const handleChange = useCallback(
       (elements: unknown, appState: unknown, files: unknown) => {
@@ -206,7 +268,13 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
             : "h-full w-full"
         }
       >
-        <div className={framed ? "min-h-0 flex-1 overflow-hidden rounded-xl" : "h-full w-full"}>
+        <div
+          className={
+            framed
+              ? `min-h-0 flex-1 overflow-hidden rounded-xl ${viewportScale === 1 ? "" : "p-2"}`
+              : "h-full w-full"
+          }
+        >
           <div
             className="h-full w-full"
             style={{
@@ -216,14 +284,20 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
               height: viewportScale === 1 ? undefined : `${100 / viewportScale}%`,
             }}
           >
-            <Excalidraw
-              initialData={initialData}
-              onChange={handleChange}
-              viewModeEnabled={readOnly}
-              excalidrawAPI={(api) => {
-                apiRef.current = api;
-              }}
-            />
+            {normalizedInitialData ? (
+              <Excalidraw
+                initialData={normalizedInitialData}
+                onChange={handleChange}
+                viewModeEnabled={readOnly}
+                excalidrawAPI={(api) => {
+                  apiRef.current = api;
+                }}
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+                Preparing canvas…
+              </div>
+            )}
           </div>
         </div>
       </div>

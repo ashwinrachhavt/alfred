@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type Editor,
   EditorContent,
   useEditor,
 } from "@tiptap/react";
@@ -39,6 +40,17 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { completeText, rewriteText, summarizeText } from "@/lib/api/ai-assist";
 import { toast } from "sonner";
+
+type TiptapMarkdownStorage = {
+  markdown?: {
+    getMarkdown?: () => string;
+  };
+};
+
+function readEditorMarkdown(editor: Editor): string {
+  const storage = editor.storage as unknown as TiptapMarkdownStorage;
+  return storage.markdown?.getMarkdown?.() ?? "";
+}
 
 export type SystemDesignNotesEditorHandle = {
   appendMarkdown: (markdown: string) => void;
@@ -107,8 +119,7 @@ export const SystemDesignNotesEditor = forwardRef<
       },
     },
     onUpdate: ({ editor }) => {
-      // @ts-ignore - tiptap-markdown storage typing issue
-      onMarkdownChange?.(editor.storage.markdown?.getMarkdown?.() ?? "");
+      onMarkdownChange?.(readEditorMarkdown(editor));
       updateMenuPosition(editor);
     },
     onSelectionUpdate: ({ editor }) => {
@@ -121,7 +132,7 @@ export const SystemDesignNotesEditor = forwardRef<
     },
   });
 
-  const updateMenuPosition = useCallback((editor: any) => {
+  const updateMenuPosition = useCallback((editor: Editor) => {
     if (editor.state.selection.empty) {
       setMenuPosition(null);
       return;
@@ -204,8 +215,7 @@ export const SystemDesignNotesEditor = forwardRef<
   useEffect(() => {
     if (!editor) return;
 
-    // @ts-ignore - tiptap-markdown storage typing issue
-    const currentContent = editor.storage.markdown?.getMarkdown?.() ?? "";
+    const currentContent = readEditorMarkdown(editor);
     if (markdown !== currentContent) {
       if (!isFocused || isFirstRender.current) {
         editor.commands.setContent(markdown);
@@ -220,15 +230,13 @@ export const SystemDesignNotesEditor = forwardRef<
     () => ({
       appendMarkdown: (nextMarkdown: string) => {
         if (!editor) return;
-        // @ts-ignore - tiptap-markdown storage typing issue
-        const current = editor.storage.markdown?.getMarkdown?.() ?? "";
+        const current = readEditorMarkdown(editor);
         const combined = current ? `${current}\n\n${nextMarkdown}` : nextMarkdown;
         editor.commands.setContent(combined);
         // Scroll to bottom
         editor.commands.scrollIntoView();
       },
-      // @ts-ignore - tiptap-markdown storage typing issue
-      getMarkdown: () => editor?.storage.markdown?.getMarkdown?.() ?? "",
+      getMarkdown: () => (editor ? readEditorMarkdown(editor) : ""),
       setMarkdown: (nextMarkdown: string) => {
         editor?.commands.setContent(nextMarkdown);
       },

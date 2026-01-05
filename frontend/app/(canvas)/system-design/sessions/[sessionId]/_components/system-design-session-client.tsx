@@ -2,6 +2,16 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  Share2,
+  WandSparkles,
+} from "lucide-react";
+
+import { cn } from "@/lib/utils";
 
 import {
   analyzeSystemDesign,
@@ -53,6 +63,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip } from "@/components/ui/tooltip";
 
 type AutosaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 
@@ -252,32 +263,32 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
     isDraggingDiagram.current = true;
     setIsResizing(true);
     document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', handleDiagramResize as any);
-    document.addEventListener('mouseup', stopDiagramResize);
+    document.addEventListener("mousemove", handleDiagramResize);
+    document.addEventListener("mouseup", stopDiagramResize);
   };
 
   const stopDiagramResize = () => {
     isDraggingDiagram.current = false;
     setIsResizing(false);
     document.body.style.userSelect = '';
-    document.removeEventListener('mousemove', handleDiagramResize as any);
-    document.removeEventListener('mouseup', stopDiagramResize);
+    document.removeEventListener("mousemove", handleDiagramResize);
+    document.removeEventListener("mouseup", stopDiagramResize);
   };
 
   const startCoachResize = () => {
     isDraggingCoach.current = true;
     setIsResizing(true);
     document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', handleCoachResize as any);
-    document.addEventListener('mouseup', stopCoachResize);
+    document.addEventListener("mousemove", handleCoachResize);
+    document.addEventListener("mouseup", stopCoachResize);
   };
 
   const stopCoachResize = () => {
     isDraggingCoach.current = false;
     setIsResizing(false);
     document.body.style.userSelect = '';
-    document.removeEventListener('mousemove', handleCoachResize as any);
-    document.removeEventListener('mouseup', stopCoachResize);
+    document.removeEventListener("mousemove", handleCoachResize);
+    document.removeEventListener("mouseup", stopCoachResize);
   };
 
   async function flushAutosave() {
@@ -397,60 +408,83 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
           <h1 className="text-xl font-semibold tracking-tight">
             {session.title ?? "System Design Session"}
           </h1>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="secondary">id: {session.id}</Badge>
-            <Badge variant="outline">share: {session.share_id}</Badge>
-            <span className="text-muted-foreground">
-              notes: <span className="font-mono">{notesSaveState}</span>
-              {lastSavedAt ? ` • ${new Date(lastSavedAt).toLocaleString()}` : ""}
-            </span>
-          </div>
         </div>
 
         <div className="flex items-center gap-2">
           <Button
-            variant="outline"
+            variant="default"
             size="sm"
+            className="gap-2"
             onClick={() => {
               setDiagramGenerationError(null);
               setIsAiDialogOpen(true);
             }}
             disabled={!showDiagram}
-            title={!showDiagram ? "Enable Diagram to generate into the canvas." : undefined}
+            title={!showDiagram ? "Show Diagram to generate into the canvas." : "Generate a new diagram"}
           >
-            Generate Diagram
+            <WandSparkles className="size-4" />
+            Generate
           </Button>
-          <Button
-            variant={showDiagram ? "default" : "outline"}
-            size="sm"
-            onClick={() => setShowDiagram(!showDiagram)}
-          >
-            {showDiagram ? "Hide" : "Show"} Diagram
-          </Button>
-          <Button
-            variant={showEditor ? "default" : "outline"}
-            size="sm"
-            onClick={() => setShowEditor(!showEditor)}
-          >
-            {showEditor ? "Hide" : "Show"} Editor
-          </Button>
-          <Button
-            variant={showCoach ? "default" : "outline"}
-            size="sm"
-            onClick={() => setShowCoach(!showCoach)}
-          >
-            {showCoach ? "Hide" : "Show"} Coach
-          </Button>
-          <Separator orientation="vertical" className="h-6" />
+
+          <div className="flex items-center rounded-xl border bg-background/70 p-1 shadow-sm backdrop-blur-sm">
+            <Tooltip content={showDiagram ? "Hide diagram" : "Show diagram"}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={cn(
+                  "rounded-lg",
+                  showDiagram ? "bg-accent text-accent-foreground hover:bg-accent/80" : "",
+                )}
+                onClick={() => setShowDiagram((prev) => !prev)}
+              >
+                {showDiagram ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
+              </Button>
+            </Tooltip>
+
+            <div className="mx-1 h-6 w-px bg-border" />
+
+            <Tooltip content={showEditor ? "Hide editor" : "Show editor"}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={cn(
+                  "rounded-lg",
+                  showEditor ? "bg-accent text-accent-foreground hover:bg-accent/80" : "",
+                )}
+                onClick={() => setShowEditor((prev) => !prev)}
+              >
+                {showEditor ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}
+              </Button>
+            </Tooltip>
+
+            <div className="mx-1 h-6 w-px bg-border" />
+
+            <Tooltip content={showCoach ? "Hide coach" : "Show coach"}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={cn(
+                  "rounded-lg",
+                  showCoach ? "bg-accent text-accent-foreground hover:bg-accent/80" : "",
+                )}
+                onClick={() => setShowCoach((prev) => !prev)}
+              >
+                {showCoach ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}
+              </Button>
+            </Tooltip>
+          </div>
+
           {shareUrl ? (
             <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void copyToClipboard(shareUrl)}
-              >
-                Share
-              </Button>
+              <Tooltip content="Copy share link">
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={() => void copyToClipboard(shareUrl)}
+                >
+                  <Share2 className="size-4" />
+                </Button>
+              </Tooltip>
             </>
           ) : null}
           <Button asChild variant="ghost" size="sm">

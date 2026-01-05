@@ -13,7 +13,7 @@ export default function Home() {
           </h1>
           <p className="max-w-2xl text-lg text-muted-foreground">
             Alfred helps you practice interviews and turn messy information into durable knowledge.
-            Start with System Design or Interview Prep.
+            Start with System Design, Interview Prep, or your knowledge base.
           </p>
           <div className="flex flex-wrap gap-3">
             <Button asChild>
@@ -22,6 +22,67 @@ export default function Home() {
             <Button asChild variant="outline">
               <Link href="/interview-prep">Open Interview Prep</Link>
             </Button>
+            <Button asChild variant="ghost">
+              <Link href="/documents">Browse Documents</Link>
+            </Button>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Company Intelligence</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                Search, research, and track your target companies.
+                <div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/company">Open</Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Knowledge Assistant</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                Ask questions across your documents with citations.
+                <div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/rag">Open</Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Calendar & Email</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                Connect Google and run scheduling workflows.
+                <div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/calendar">Open</Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Background Tasks</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                Monitor long-running jobs and their results.
+                <div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/tasks">Open</Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
 
