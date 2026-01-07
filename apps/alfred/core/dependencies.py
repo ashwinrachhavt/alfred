@@ -10,6 +10,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
+from alfred.core.exceptions import ConfigurationError
 from alfred.core.settings import settings
 
 if TYPE_CHECKING:
@@ -124,15 +125,17 @@ def get_firecrawl_client() -> FirecrawlClient:
 def get_primary_web_search_connector() -> WebConnector:
     from alfred.connectors.web_connector import WebConnector
 
-    mode = "searx" if (settings.searxng_host or settings.searx_host) else "multi"
-    return WebConnector(mode=mode, searx_k=8)
+    if not (settings.searxng_host or settings.searx_host):
+        raise ConfigurationError(
+            "SearxNG is required for web search. Set SEARXNG_HOST (or SEARX_HOST)."
+        )
+    return WebConnector(mode="searx", searx_k=8)
 
 
 @lru_cache(maxsize=1)
 def get_fallback_web_search_connector() -> WebConnector:
-    from alfred.connectors.web_connector import WebConnector
-
-    return WebConnector(mode="multi", searx_k=8)
+    # SearxNG-only: keep a single consistent provider for predictable latency/cost.
+    return get_primary_web_search_connector()
 
 
 @lru_cache(maxsize=1)
@@ -177,12 +180,20 @@ def get_interview_questions_service() -> InterviewQuestionsService:
 
 
 @lru_cache(maxsize=1)
+def get_thread_service():
+    from alfred.services.thread_service import ThreadService
+
+    return ThreadService()
+
+
+@lru_cache(maxsize=1)
 def get_unified_interview_agent() -> UnifiedInterviewAgent:
     from alfred.services.interview_service import UnifiedInterviewAgent
 
     return UnifiedInterviewAgent(
         questions_service=get_interview_questions_service(),
         company_research_service=get_company_research_service(),
+        thread_service=get_thread_service(),
     )
 
 

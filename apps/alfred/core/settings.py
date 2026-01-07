@@ -166,6 +166,21 @@ class Settings(BaseSettings):
     # Firecrawl
     firecrawl_base_url: str = Field(default="http://localhost:8010", alias="FIRECRAWL_BASE_URL")
     firecrawl_timeout: int = Field(default=30, alias="FIRECRAWL_TIMEOUT")
+
+    # Web search performance (multi-provider + fallbacks)
+    web_ddg_timeout_s: float = Field(default=3.0, alias="WEB_DDG_TIMEOUT_S", ge=0.5, le=30.0)
+    web_ddg_retries: int = Field(default=0, alias="WEB_DDG_RETRIES", ge=0, le=5)
+    web_langsearch_timeout_s: float = Field(
+        default=4.0, alias="WEB_LANGSEARCH_TIMEOUT_S", ge=0.5, le=30.0
+    )
+
+    # Interview performance guards (scraping can dominate latency)
+    interview_scrape_budget_max: int = Field(
+        default=16, alias="INTERVIEW_SCRAPE_BUDGET_MAX", ge=0, le=200
+    )
+    interview_scrape_time_budget_s: float = Field(
+        default=15.0, alias="INTERVIEW_SCRAPE_TIME_BUDGET_S", ge=1.0, le=120.0
+    )
     company_research_model: str = Field(default="gpt-5.1", alias="COMPANY_RESEARCH_MODEL")
     company_research_collection: str = Field(
         default="company_research_reports",

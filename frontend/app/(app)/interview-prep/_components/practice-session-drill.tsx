@@ -18,7 +18,6 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  loadPracticeSessionIndex,
   loadPracticeSessionTranscript,
   savePracticeSessionTranscript,
   upsertPracticeSessionSummary,
@@ -127,7 +126,6 @@ export function PracticeSessionDrill({
   const [resumeSessionId, setResumeSessionId] = React.useState("");
   const [isSending, setIsSending] = React.useState(false);
   const [localError, setLocalError] = React.useState<string | null>(null);
-  const [recentSessions, setRecentSessions] = React.useState(() => loadPracticeSessionIndex());
   const [timer, setTimer] = React.useState<TimerState>(() => ({
     durationSeconds: 180,
     remainingSeconds: 180,
@@ -191,8 +189,6 @@ export function PracticeSessionDrill({
       updatedAt,
       lastInterviewerPrompt,
     });
-
-    setRecentSessions(loadPracticeSessionIndex());
   }, [company, messages, role, sessionId]);
 
   React.useEffect(() => {
@@ -598,31 +594,6 @@ export function PracticeSessionDrill({
             </div>
           </div>
 
-          {recentSessions.length ? (
-            <div className="bg-background space-y-3 rounded-lg border p-4">
-              <h3 className="text-sm font-semibold">Recent</h3>
-              <div className="space-y-2">
-                {recentSessions.slice(0, 5).map((entry) => (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    className="hover:bg-muted/40 flex w-full flex-col gap-1 rounded-md border px-3 py-2 text-left text-sm"
-                    onClick={() => void loadSession(entry.id)}
-                  >
-                    <span className="font-medium">{entry.company}</span>
-                    <span className="text-muted-foreground text-xs">
-                      {entry.role} • {entry.id}
-                    </span>
-                    {entry.lastInterviewerPrompt ? (
-                      <span className="text-muted-foreground line-clamp-2 text-xs">
-                        {entry.lastInterviewerPrompt}
-                      </span>
-                    ) : null}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
         </aside>
       </div>
     </div>

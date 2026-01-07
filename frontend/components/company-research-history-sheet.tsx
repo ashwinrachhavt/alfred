@@ -35,16 +35,27 @@ function formatRelativeTimestamp(value: string | null | undefined): string {
   return `${deltaDays}d ago`;
 }
 
-export function CompanyResearchHistorySheet() {
+type CompanyResearchHistorySheetProps = {
+  trigger?: React.ReactElement;
+};
+
+export function CompanyResearchHistorySheet({ trigger }: CompanyResearchHistorySheetProps) {
   const router = useRouter();
   const recent = useRecentCompanyResearchReports(20);
 
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <Button type="button" variant="ghost" size="icon" aria-label="Open recent company research">
-          <Clock className="h-4 w-4" />
-        </Button>
+        {trigger ?? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Open recent company research"
+          >
+            <Clock className="h-4 w-4" />
+          </Button>
+        )}
       </SheetTrigger>
 
       <SheetContent side="right" className="w-[420px] sm:max-w-[420px]">

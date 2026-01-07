@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" fill="none" role="img" aria-label="Abstract knowledge graph">
+  <defs>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="1" />
+    </pattern>
+    <linearGradient id="edge" x1="140" y1="140" x2="1060" y2="760" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38bdf8" stop-opacity="0.35" />
+      <stop offset="0.5" stop-color="#34d399" stop-opacity="0.22" />
+      <stop offset="1" stop-color="#c084fc" stop-opacity="0.28" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(820 260) rotate(120) scale(560 660)">
+      <stop stop-color="#38bdf8" stop-opacity="0.18" />
+      <stop offset="0.55" stop-color="#c084fc" stop-opacity="0.08" />
+      <stop offset="1" stop-color="#0b0f17" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="panel" x1="200" y1="140" x2="460" y2="420" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0b0f17" stop-opacity="0.75" />
+      <stop offset="1" stop-color="#0b0f17" stop-opacity="0.45" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="900" rx="48" fill="url(#glow)" />
+  <rect width="1200" height="900" rx="48" fill="url(#grid)" />
+
+  <g stroke="url(#edge)" stroke-width="2.5" stroke-linecap="round">
+    <path d="M220 650C360 520 470 470 610 470" />
+    <path d="M610 470C740 470 830 420 960 320" />
+    <path d="M610 470C740 560 860 610 980 620" />
+    <path d="M220 650C340 720 510 740 670 700" />
+    <path d="M670 700C760 680 840 650 980 620" />
+    <path d="M610 470C520 360 420 300 300 260" />
+    <path d="M300 260C450 240 560 280 690 340" />
+    <path d="M690 340C780 380 860 390 960 320" />
+    <path d="M690 340C760 470 820 520 980 620" />
+    <path d="M300 260C350 370 370 470 430 560" />
+    <path d="M430 560C470 610 520 650 670 700" />
+  </g>
+
+  <g>
+    <circle cx="220" cy="650" r="18" fill="#0b0f17" fill-opacity="0.75" stroke="#ffffff" stroke-opacity="0.20" stroke-width="2" />
+    <circle cx="610" cy="470" r="20" fill="#0b0f17" fill-opacity="0.75" stroke="#ffffff" stroke-opacity="0.22" stroke-width="2" />
+    <circle cx="960" cy="320" r="18" fill="#0b0f17" fill-opacity="0.75" stroke="#ffffff" stroke-opacity="0.20" stroke-width="2" />
+    <circle cx="980" cy="620" r="18" fill="#0b0f17" fill-opacity="0.75" stroke="#ffffff" stroke-opacity="0.20" stroke-width="2" />
+    <circle cx="670" cy="700" r="18" fill="#0b0f17" fill-opacity="0.75" stroke="#ffffff" stroke-opacity="0.20" stroke-width="2" />
+    <circle cx="300" cy="260" r="18" fill="#0b0f17" fill-opacity="0.75" stroke="#ffffff" stroke-opacity="0.20" stroke-width="2" />
+    <circle cx="690" cy="340" r="16" fill="#0b0f17" fill-opacity="0.75" stroke="#ffffff" stroke-opacity="0.18" stroke-width="2" />
+    <circle cx="430" cy="560" r="14" fill="#0b0f17" fill-opacity="0.75" stroke="#ffffff" stroke-opacity="0.18" stroke-width="2" />
+
+    <circle cx="760" cy="540" r="6" fill="#38bdf8" fill-opacity="0.55" />
+    <circle cx="540" cy="610" r="6" fill="#34d399" fill-opacity="0.55" />
+    <circle cx="820" cy="410" r="6" fill="#c084fc" fill-opacity="0.55" />
+    <circle cx="480" cy="300" r="6" fill="#38bdf8" fill-opacity="0.45" />
+  </g>
+
+  <g opacity="0.92">
+    <rect x="150" y="120" width="360" height="190" rx="28" fill="url(#panel)" stroke="#ffffff" stroke-opacity="0.10" />
+    <path d="M190 170H440" stroke="#ffffff" stroke-opacity="0.16" stroke-width="8" stroke-linecap="round" />
+    <path d="M190 205H400" stroke="#ffffff" stroke-opacity="0.12" stroke-width="8" stroke-linecap="round" />
+    <path d="M190 240H360" stroke="#ffffff" stroke-opacity="0.12" stroke-width="8" stroke-linecap="round" />
+    <path d="M190 275H330" stroke="#ffffff" stroke-opacity="0.12" stroke-width="8" stroke-linecap="round" />
+  </g>
+
+  <g opacity="0.92">
+    <rect x="720" y="130" width="330" height="160" rx="28" fill="url(#panel)" stroke="#ffffff" stroke-opacity="0.10" />
+    <path d="M760 175H1000" stroke="#ffffff" stroke-opacity="0.16" stroke-width="8" stroke-linecap="round" />
+    <path d="M760 210H950" stroke="#ffffff" stroke-opacity="0.12" stroke-width="8" stroke-linecap="round" />
+    <path d="M760 245H910" stroke="#ffffff" stroke-opacity="0.12" stroke-width="8" stroke-linecap="round" />
+  </g>
+</svg>
+

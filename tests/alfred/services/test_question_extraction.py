@@ -44,3 +44,26 @@ def test_extract_questions_qmark_only_keeps_short_qmark_lines():
     assert "Any tips? Thanks." in questions
     assert too_long not in questions
     assert allowed_trailing_backslash in questions
+
+
+def test_extract_questions_heuristic_merges_wrapped_bullets():
+    text = """
+    - How would you design a system
+      that supports 1M requests per second?
+    """
+
+    questions = extract_questions_heuristic(text, max_questions=5)
+
+    assert "How would you design a system that supports 1M requests per second?" in questions
+
+
+def test_extract_questions_heuristic_recognizes_leetcode_titles():
+    text = """
+    - LC: 146 LRU Cache
+    - LeetCode 2 - Add Two Numbers
+    """
+
+    questions = extract_questions_heuristic(text, max_questions=10)
+
+    assert "Solve: 146 LRU Cache?" in questions
+    assert any("add two numbers" in q.lower() for q in questions)

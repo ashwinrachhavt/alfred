@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, type Query } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { getTaskStatus } from "@/lib/api/tasks";
@@ -114,7 +114,8 @@ export function TaskTrackerProvider({ children }: { children: React.ReactNode })
       queryKey: ["tasks", "status", task.id] as const,
       queryFn: () => getTaskStatus(task.id),
       enabled: isOnline,
-      refetchInterval: (query) => (query.state.data?.ready ? false : 2000),
+      refetchInterval: (query: Query<TaskStatusResponse>) =>
+        query.state.data?.ready ? false : 2000,
       retry: 1,
       staleTime: 0,
     })),

@@ -16,13 +16,13 @@ from alfred.core.utils import clamp_int
 
 Provider = Literal["brave", "ddg", "exa", "tavily", "you", "searx", "langsearch"]
 DEFAULT_PROVIDER_PRIORITY: List[Provider] = [
-    "ddg",
     "searx",
     "brave",
     "you",
     "tavily",
     "exa",
     "langsearch",
+    "ddg",
 ]
 Mode = Literal["auto", "multi", Provider]
 
@@ -471,7 +471,7 @@ class LangsearchClient:
         if freshness:
             payload["freshness"] = freshness
         try:
-            with self._httpx.Client(timeout=10.0) as client:
+            with self._httpx.Client(timeout=float(settings.web_langsearch_timeout_s)) as client:
                 resp = client.post(url, json=payload, headers=headers)
                 resp.raise_for_status()
                 data = resp.json()
@@ -544,7 +544,13 @@ class WebConnector:
             except ImportError as exc:
                 logging.warning("You.com client disabled: %s", exc)
         try:
-            self.clients["ddg"] = DDGClient(max_results=ddg_max_results)
+            # DDG is a best-effort fallback; keep it fast to avoid dominating tail latency.
+            self.clients["ddg"] = DDGClient(
+                max_results=ddg_max_results,
+                backend="api",
+                timeout=float(settings.web_ddg_timeout_s),
+                retries=int(settings.web_ddg_retries),
+            )
         except ImportError as exc:
             logging.warning("DDG client disabled: %s", exc)
         # SearxNG client (enabled when SEARXNG_HOST/SEARX_HOST is set and langchain-community is present)
@@ -581,7 +587,33 @@ class WebConnector:
         return [p for p in DEFAULT_PROVIDER_PRIORITY if p in self.clients]
 
     def _search_multi(self, query: str, **kwargs: Any) -> SearchResponse:
-        providers = self._collect_enabled()
+        """Search across multiple enabled providers with early stopping.
+
+        Multi-provider search is used as a fallback when a single primary provider is
+        unavailable. This method biases toward predictable latency by:
+        - Prioritizing SearxNG (when configured) and API-backed providers.
+        - Batching calls with low concurrency.
+        - Stopping early once enough unique URLs are collected.
+        """
+
+        # Prefer self-hosted SearxNG and API-backed providers before slower HTML scrapers.
+        multi_priority: list[Provider] = [
+            "searx",
+            "brave",
+            "you",
+            "tavily",
+            "exa",
+            "langsearch",
+            "ddg",
+        ]
+        providers = [p for p in multi_priority if p in self.clients]
+        if not providers:
+            return SearchResponse(provider="multi", query=query, hits=[], meta={"providers": []})
+
+        max_providers = clamp_int(kwargs.pop("max_providers", 4), lo=1, hi=len(providers))
+        min_unique_urls = clamp_int(kwargs.pop("min_unique_urls", 10), lo=1, hi=250)
+        batch_size = clamp_int(kwargs.pop("batch_size", 2), lo=1, hi=min(4, max_providers))
+        time_budget_s = float(kwargs.pop("time_budget_s", 6.0))
 
         def call(p: Provider):
             c = self.clients[p]
@@ -590,36 +622,62 @@ class WebConnector:
                 return c.search(query, pages=1)
             if p == "exa":
                 return c.search(query, num_results=kwargs.get("num_results", 100))
+            if p == "searx":
+                return c.search(
+                    query,
+                    num_results=kwargs.get("num_results"),
+                    categories=kwargs.get("categories"),
+                    time_range=kwargs.get("time_range"),
+                )
             return c.search(query)
 
-        # Run provider calls concurrently using a thread pool to avoid
-        # interacting with any already-running asyncio event loop (e.g. FastAPI).
+        started = time.monotonic()
         results: List[SearchResponse] = []
         errors: dict[str, Any] = {}
-        if not providers:
-            return SearchResponse(provider="multi", query=query, hits=[], meta={"providers": []})
-        # Keep concurrency low to avoid bursting across providers.
-        max_workers = min(2, len(providers)) or 1
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_map = {executor.submit(call, p): p for p in providers}
-            for future in as_completed(future_map):
-                prov = future_map[future]
-                try:
-                    res = future.result()
-                    if isinstance(res, SearchResponse):
-                        results.append(res)
-                except Exception as exc:  # pragma: no cover - network/provider failures
-                    logging.warning("Web provider '%s' failed: %s", prov, exc)
-                    errors[prov] = str(exc)
-        merged = _dedupe_by_url([h for r in results for h in r.hits])
+        attempted: list[Provider] = []
+        merged_hits: list[SearchHit] = []
+
+        for batch_start in range(0, max_providers, batch_size):
+            if time_budget_s > 0 and (time.monotonic() - started) >= time_budget_s:
+                break
+            batch = providers[batch_start : batch_start + batch_size]
+            if not batch:
+                break
+
+            # Keep concurrency low to avoid bursting across providers.
+            with ThreadPoolExecutor(max_workers=len(batch)) as executor:
+                future_map = {executor.submit(call, p): p for p in batch}
+                for future in as_completed(future_map):
+                    prov = future_map[future]
+                    attempted.append(prov)
+                    try:
+                        res = future.result()
+                        if isinstance(res, SearchResponse):
+                            results.append(res)
+                            merged_hits = _dedupe_by_url(merged_hits + list(res.hits or []))
+                    except Exception as exc:  # pragma: no cover - network/provider failures
+                        logging.warning("Web provider '%s' failed: %s", prov, exc)
+                        errors[prov] = str(exc)
+
+            if len(merged_hits) >= min_unique_urls:
+                break
+            if time_budget_s > 0 and (time.monotonic() - started) >= time_budget_s:
+                break
+
         return SearchResponse(
             provider="multi",
             query=query,
-            hits=merged,
+            hits=merged_hits,
             meta={
                 "providers": providers,
+                "providers_attempted": attempted,
+                "providers_succeeded": [r.provider for r in results],
                 "sizes": {r.provider: len(r.hits) for r in results},
                 "errors": errors or None,
+                "elapsed_s": round(time.monotonic() - started, 3),
+                "max_providers": max_providers,
+                "min_unique_urls": min_unique_urls,
+                "time_budget_s": time_budget_s,
             },
         )
 

@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" fill="none" role="img" aria-label="Abstract knowledge graph">
+  <defs>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#0f172a" stroke-opacity="0.06" stroke-width="1" />
+    </pattern>
+    <linearGradient id="edge" x1="140" y1="140" x2="1060" y2="760" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0ea5e9" stop-opacity="0.35" />
+      <stop offset="0.5" stop-color="#22c55e" stop-opacity="0.25" />
+      <stop offset="1" stop-color="#a855f7" stop-opacity="0.28" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(820 260) rotate(120) scale(520 620)">
+      <stop stop-color="#0ea5e9" stop-opacity="0.14" />
+      <stop offset="0.6" stop-color="#a855f7" stop-opacity="0.05" />
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="panel" x1="200" y1="140" x2="460" y2="420" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff" stop-opacity="0.92" />
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.65" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="900" rx="48" fill="url(#glow)" />
+  <rect width="1200" height="900" rx="48" fill="url(#grid)" />
+
+  <g stroke="url(#edge)" stroke-width="2.5" stroke-linecap="round">
+    <path d="M220 650C360 520 470 470 610 470" />
+    <path d="M610 470C740 470 830 420 960 320" />
+    <path d="M610 470C740 560 860 610 980 620" />
+    <path d="M220 650C340 720 510 740 670 700" />
+    <path d="M670 700C760 680 840 650 980 620" />
+    <path d="M610 470C520 360 420 300 300 260" />
+    <path d="M300 260C450 240 560 280 690 340" />
+    <path d="M690 340C780 380 860 390 960 320" />
+    <path d="M690 340C760 470 820 520 980 620" />
+    <path d="M300 260C350 370 370 470 430 560" />
+    <path d="M430 560C470 610 520 650 670 700" />
+  </g>
+
+  <g>
+    <circle cx="220" cy="650" r="18" fill="#ffffff" stroke="#0f172a" stroke-opacity="0.22" stroke-width="2" />
+    <circle cx="610" cy="470" r="20" fill="#ffffff" stroke="#0f172a" stroke-opacity="0.22" stroke-width="2" />
+    <circle cx="960" cy="320" r="18" fill="#ffffff" stroke="#0f172a" stroke-opacity="0.22" stroke-width="2" />
+    <circle cx="980" cy="620" r="18" fill="#ffffff" stroke="#0f172a" stroke-opacity="0.22" stroke-width="2" />
+    <circle cx="670" cy="700" r="18" fill="#ffffff" stroke="#0f172a" stroke-opacity="0.22" stroke-width="2" />
+    <circle cx="300" cy="260" r="18" fill="#ffffff" stroke="#0f172a" stroke-opacity="0.22" stroke-width="2" />
+    <circle cx="690" cy="340" r="16" fill="#ffffff" stroke="#0f172a" stroke-opacity="0.18" stroke-width="2" />
+    <circle cx="430" cy="560" r="14" fill="#ffffff" stroke="#0f172a" stroke-opacity="0.18" stroke-width="2" />
+
+    <circle cx="760" cy="540" r="6" fill="#0ea5e9" fill-opacity="0.55" />
+    <circle cx="540" cy="610" r="6" fill="#22c55e" fill-opacity="0.55" />
+    <circle cx="820" cy="410" r="6" fill="#a855f7" fill-opacity="0.55" />
+    <circle cx="480" cy="300" r="6" fill="#0ea5e9" fill-opacity="0.45" />
+  </g>
+
+  <g opacity="0.85">
+    <rect x="150" y="120" width="360" height="190" rx="28" fill="url(#panel)" stroke="#0f172a" stroke-opacity="0.10" />
+    <path d="M190 170H440" stroke="#0f172a" stroke-opacity="0.14" stroke-width="8" stroke-linecap="round" />
+    <path d="M190 205H400" stroke="#0f172a" stroke-opacity="0.10" stroke-width="8" stroke-linecap="round" />
+    <path d="M190 240H360" stroke="#0f172a" stroke-opacity="0.10" stroke-width="8" stroke-linecap="round" />
+    <path d="M190 275H330" stroke="#0f172a" stroke-opacity="0.10" stroke-width="8" stroke-linecap="round" />
+  </g>
+
+  <g opacity="0.85">
+    <rect x="720" y="130" width="330" height="160" rx="28" fill="url(#panel)" stroke="#0f172a" stroke-opacity="0.10" />
+    <path d="M760 175H1000" stroke="#0f172a" stroke-opacity="0.14" stroke-width="8" stroke-linecap="round" />
+    <path d="M760 210H950" stroke="#0f172a" stroke-opacity="0.10" stroke-width="8" stroke-linecap="round" />
+    <path d="M760 245H910" stroke="#0f172a" stroke-opacity="0.10" stroke-width="8" stroke-linecap="round" />
+  </g>
+</svg>
+

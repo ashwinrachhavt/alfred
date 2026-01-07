@@ -4,6 +4,7 @@ export type UnifiedInterviewRequest = {
   operation: UnifiedInterviewOperation;
   company: string;
   role?: string;
+  thread_id?: string | null;
   max_sources?: number;
   max_questions?: number;
   use_firecrawl?: boolean;

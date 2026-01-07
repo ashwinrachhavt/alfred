@@ -71,7 +71,9 @@ function normalizeTranscript(value: PracticeSessionTranscript): PracticeSessionT
   const updatedAt = value.updatedAt?.trim();
   if (!createdAt || !updatedAt) return null;
   const messages = Array.isArray(value.messages)
-    ? value.messages.map(normalizeMessage).filter(Boolean)
+    ? value.messages
+        .map(normalizeMessage)
+        .filter((message): message is PracticeMessage => Boolean(message))
     : [];
   return {
     version: 1,
@@ -96,7 +98,7 @@ export function loadPracticeSessionIndex(): PracticeSessionSummary[] {
     return sessions
       .map((entry) => entry as PracticeSessionSummary)
       .map(normalizeSessionSummary)
-      .filter(Boolean)
+      .filter((session): session is PracticeSessionSummary => Boolean(session))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   } catch {
     return [];
