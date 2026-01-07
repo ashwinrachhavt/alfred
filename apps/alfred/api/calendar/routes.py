@@ -4,15 +4,18 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from alfred.connectors.google_calendar_connector import GoogleCalendarConnector
 from alfred.services.google_oauth import (
-    exchange_code_for_tokens,
     generate_authorization_url,
     load_credentials,
     persist_credentials,
 )
+from alfred.services.google_oauth_flow import complete_google_oauth
+from alfred.services.oauth_callback_page import render_oauth_callback_page
+from alfred.services.oauth_state import save_oauth_state
 
 CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 CALENDAR_TOKEN_NAMESPACE = "calendar"
@@ -39,26 +42,46 @@ router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 @router.get("/auth_url")
 def calendar_auth_url(state: str | None = Query(default=None)):
     url, st = generate_authorization_url(state, scopes=CALENDAR_SCOPES)
+    save_oauth_state(st, scopes=CALENDAR_SCOPES, namespaces=[CALENDAR_TOKEN_NAMESPACE])
     return {"authorization_url": url, "state": st}
 
 
 @router.get("/oauth/callback")
-def calendar_oauth_callback(code: str, state: str | None = None):
-    exchange_code_for_tokens(
-        user_id=None,
-        code=code,
-        state=state,
-        scopes=CALENDAR_SCOPES,
-        namespace=CALENDAR_TOKEN_NAMESPACE,
+def calendar_oauth_callback(
+    code: str,
+    state: str | None = None,
+    json: bool = Query(default=False),
+):
+    try:
+        result = complete_google_oauth(
+            code=code,
+            state=state,
+            fallback_scopes=CALENDAR_SCOPES,
+            fallback_namespaces=[CALENDAR_TOKEN_NAMESPACE],
+            user_id=None,
+        )
+    except Exception as exc:
+        if json:
+            raise
+        return HTMLResponse(
+            content=render_oauth_callback_page(ok=False, message=str(exc)),
+            status_code=400,
+        )
+
+    if json:
+        return result
+
+    return HTMLResponse(
+        content=render_oauth_callback_page(ok=True, message="You can return to Alfred."),
+        status_code=200,
     )
-    return {"ok": True}
 
 
 @router.get("/calendars")
 async def list_calendars():
     creds = load_credentials(namespace=CALENDAR_TOKEN_NAMESPACE)
     if creds is None:
-        raise HTTPException(404, "No credentials found; authorize via /api/calendar/auth_url")
+        raise HTTPException(404, "No credentials found; authorize via /api/google/auth_url")
     connector = GoogleCalendarConnector(
         creds,
         user_id=None,
@@ -76,7 +99,7 @@ async def list_calendars():
 async def list_events(start_date: str, end_date: str, max_results: int = 2500):
     creds = load_credentials(namespace=CALENDAR_TOKEN_NAMESPACE)
     if creds is None:
-        raise HTTPException(404, "No credentials found; authorize via /api/calendar/auth_url")
+        raise HTTPException(404, "No credentials found; authorize via /api/google/auth_url")
     connector = GoogleCalendarConnector(
         creds,
         user_id=None,
@@ -96,7 +119,7 @@ async def list_events(start_date: str, end_date: str, max_results: int = 2500):
 async def create_event(payload: CalendarEventCreate) -> dict[str, Any]:
     creds = load_credentials(namespace=CALENDAR_TOKEN_NAMESPACE)
     if creds is None:
-        raise HTTPException(404, "No credentials found; authorize via /api/calendar/auth_url")
+        raise HTTPException(404, "No credentials found; authorize via /api/google/auth_url")
 
     connector = GoogleCalendarConnector(
         creds,

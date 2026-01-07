@@ -242,14 +242,18 @@ class CompanyResearchService:
             raw_generated = legacy_payload.get("generated_at")
             if isinstance(raw_generated, str) and raw_generated.strip():
                 try:
-                    generated_at = datetime.fromisoformat(raw_generated.strip().replace("Z", "+00:00"))
+                    generated_at = datetime.fromisoformat(
+                        raw_generated.strip().replace("Z", "+00:00")
+                    )
                 except Exception:
                     generated_at = None
 
             stored = self._upsert_latest_to_db(
                 company=company,
                 payload=legacy_payload,
-                model_name=str(legacy_payload.get("model")) if legacy_payload.get("model") else None,
+                model_name=str(legacy_payload.get("model"))
+                if legacy_payload.get("model")
+                else None,
                 generated_at=generated_at,
             )
             return stored

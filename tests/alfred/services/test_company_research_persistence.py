@@ -46,4 +46,3 @@ def test_company_research_service_db_roundtrip(monkeypatch) -> None:
     assert fetched is not None
     assert fetched["id"] == stored["id"]
     assert fetched["report"]["executive_summary"] == "hello"
-

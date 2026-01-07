@@ -69,6 +69,7 @@ class CompanyInterviewRow(SQLModel, table=True):
         ),
     )
 
+
 class CompanyResearchReportRow(SQLModel, table=True):
     """Latest generated company research report payload (per company)."""
 
