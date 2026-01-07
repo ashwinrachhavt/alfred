@@ -21,6 +21,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 
+const EMPTY_THREADS: Thread[] = [];
+
 function formatMaybeDate(raw?: string | null): string {
   if (!raw) return "—";
   const maybeNumber = Number(raw);
@@ -52,7 +54,7 @@ export function ThreadsClient() {
   const [title, setTitle] = useState("");
   const [filter, setFilter] = useState("");
 
-  const threads = threadsQuery.data ?? [];
+  const threads = threadsQuery.data ?? EMPTY_THREADS;
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();

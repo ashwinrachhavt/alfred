@@ -29,6 +29,8 @@ type PracticeSessionDrillProps = {
   company: string;
   role: string;
   candidateBackground: string;
+  threadId: string;
+  onThreadIdChange: (nextThreadId: string) => void;
   sessionId: string;
   onSessionIdChange: (nextSessionId: string) => void;
 };
@@ -53,6 +55,14 @@ function formatErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
   return "Something went wrong.";
+}
+
+function extractThreadIdFromMetadata(metadata: Record<string, unknown> | null | undefined): string | null {
+  if (!metadata) return null;
+  const value = metadata.thread_id;
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized ? normalized : null;
 }
 
 function formatTimer(valueSeconds: number): string {
@@ -118,6 +128,8 @@ export function PracticeSessionDrill({
   company,
   role,
   candidateBackground,
+  threadId,
+  onThreadIdChange,
   sessionId,
   onSessionIdChange,
 }: PracticeSessionDrillProps) {
@@ -344,11 +356,13 @@ export function PracticeSessionDrill({
     setAnswerDraft("");
 
     try {
+      const normalizedThreadId = threadId.trim();
       const response = await processUnifiedInterview({
         operation: "practice_session",
         company: company.trim(),
         role: role.trim() || "Software Engineer",
         candidate_background: candidateBackground.trim() || null,
+        ...(normalizedThreadId ? { thread_id: normalizedThreadId } : {}),
         session_id: sessionId.trim() || null,
         candidate_response: answer,
       });
@@ -358,6 +372,13 @@ export function PracticeSessionDrill({
           "Practice sessions can’t be queued. Disable background mode and try again.",
         );
       }
+
+      const persistedThreadId = extractThreadIdFromMetadata(
+        "metadata" in response && response.metadata && typeof response.metadata === "object"
+          ? (response.metadata as Record<string, unknown>)
+          : null,
+      );
+      if (persistedThreadId) onThreadIdChange(persistedThreadId);
 
       const { nextSessionId } = coercePracticeSessionResponse(response, answer);
       if (nextSessionId !== sessionId) {

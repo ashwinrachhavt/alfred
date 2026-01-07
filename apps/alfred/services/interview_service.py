@@ -11,6 +11,7 @@ import json
 import logging
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -22,9 +23,9 @@ from dateutil import tz as date_tz
 from fastapi.concurrency import run_in_threadpool
 from langgraph.graph import END, START, StateGraph
 
-from alfred.connectors.firecrawl_connector import FirecrawlClient, FirecrawlResponse
+from alfred.connectors.firecrawl_connector import FirecrawlClient
 from alfred.connectors.web_connector import SearchHit, SearchResponse, WebConnector
-from alfred.core.exceptions import ServiceUnavailableError
+from alfred.core.exceptions import ConfigurationError, ServiceUnavailableError
 from alfred.core.settings import LLMProvider, settings
 from alfred.core.utils import clamp_int
 from alfred.core.utils import utcnow as _utcnow
@@ -485,16 +486,35 @@ class InterviewQuestionsService:
 
     def __post_init__(self) -> None:
         if self.primary_search is None:
-            # Prefer self-hosted SearxNG when configured; otherwise fall back to multi-provider search.
-            mode = "searx" if (settings.searxng_host or settings.searx_host) else "multi"
-            self.primary_search = WebConnector(mode=mode, searx_k=self.search_results)
+            if not (settings.searxng_host or settings.searx_host):
+                raise ConfigurationError(
+                    "SearxNG is required for interview question collection. Set SEARXNG_HOST (or SEARX_HOST)."
+                )
+            self.primary_search = WebConnector(mode="searx", searx_k=self.search_results)
         if self.fallback_search is None:
-            self.fallback_search = WebConnector(mode="multi", searx_k=self.search_results)
+            # SearxNG-only: no fallback provider.
+            self.fallback_search = self.primary_search
         if self.firecrawl is None:
             self.firecrawl = FirecrawlClient(
                 base_url=settings.firecrawl_base_url,
                 timeout=settings.firecrawl_timeout,
             )
+        if not hasattr(self, "_cache"):
+            self._cache = None
+
+    def _get_cache(self) -> DataStoreService:
+        cache = getattr(self, "_cache", None)
+        if cache is None:
+            self._cache = DataStoreService(
+                default_collection=settings.interview_questions_collection
+            )
+        return self._cache
+
+    @staticmethod
+    def _cache_key(*, company: str, role: str | None) -> str:
+        c = (company or "").strip().lower()
+        r = (role or "").strip().lower() if role else ""
+        return f"{c}|{r}"
 
     def _build_queries(self, *, company: str, role: str | None) -> list[str]:
         company_clean = (company or "").strip()
@@ -573,6 +593,36 @@ class InterviewQuestionsService:
         max_sources = max(1, int(max_sources))
         max_questions = max(1, int(max_questions))
 
+        cache_ttl = int(getattr(settings, "interview_questions_cache_ttl_hours", 0) or 0)
+        if cache_ttl != 0:
+            key = self._cache_key(company=company, role=role_clean)
+            cached = self._get_cache().find_one({"_id": key})
+            if cached:
+                cached_at = cached.get("cached_at")
+                try:
+                    cached_dt = (
+                        datetime.fromisoformat(str(cached_at).replace("Z", "+00:00"))
+                        if cached_at
+                        else None
+                    )
+                except Exception:
+                    cached_dt = None
+
+                is_fresh = True
+                if cache_ttl > 0 and cached_dt is not None:
+                    age = (_utcnow() - cached_dt).total_seconds()
+                    is_fresh = age <= (cache_ttl * 3600)
+
+                if is_fresh:
+                    try:
+                        report = InterviewQuestionsReport.model_validate(cached.get("report"))
+                        report.questions = report.questions[:max_questions]
+                        report.sources = report.sources[:max_sources]
+                        report.warnings = list(report.warnings or []) + ["cache_hit"]
+                        return report
+                    except Exception:
+                        pass
+
         queries = self._build_queries(company=company, role=role_clean)
 
         warnings: list[str] = []
@@ -637,11 +687,9 @@ class InterviewQuestionsService:
                 warnings.append(f"Search failed for query '{query}': {exc}")
                 return None
 
-        # --- SearxNG-backed web search (primary) + multi-provider fallback ---
+        # --- SearxNG-backed web search (primary only) ---
         for q in queries:
             res = _search(self.primary_search, q)
-            if res is None or not getattr(res, "hits", None):
-                res = _search(self.fallback_search, q)
             if res is None:
                 continue
 
@@ -661,55 +709,9 @@ class InterviewQuestionsService:
             if len(sources_by_url) >= candidate_target:
                 break
 
-        # --- Firecrawl search (content-aware) ---
-        if use_firecrawl_search and self.firecrawl is not None:
-            firecrawl_queries: list[str] = []
-            for q in queries:
-                q_lower = q.lower()
-                if q_lower.startswith("site:"):
-                    continue
-                if "interview" in q_lower:
-                    firecrawl_queries.append(q)
-                if len(firecrawl_queries) >= 3:
-                    break
-
-            for q in firecrawl_queries:
-                if len(sources_by_url) >= candidate_target:
-                    break
-                try:
-                    fire = self.firecrawl.search(
-                        q,
-                        max_results=max(1, int(self.firecrawl_search_results)),
-                    )
-                except Exception as exc:  # pragma: no cover - network/provider errors
-                    fire = FirecrawlResponse(success=False, error=str(exc))
-                if not (fire.success and isinstance(fire.data, list)):
-                    continue
-
-                for rank, item in enumerate(
-                    fire.data[: max(1, int(self.firecrawl_search_results))]
-                ):
-                    if not isinstance(item, dict):
-                        continue
-                    url = item.get("url")
-                    if not isinstance(url, str) or not url.strip():
-                        continue
-
-                    content = item.get("content")
-                    extracted = self._extract_questions_from_text(
-                        content if isinstance(content, str) else None,
-                        max_questions=8,
-                    )
-                    rank_boost = max(0.0, 0.4 - (0.05 * float(rank)))
-                    _upsert_source(
-                        url=url,
-                        title=item.get("title") if isinstance(item.get("title"), str) else None,
-                        snippet=content if isinstance(content, str) else None,
-                        provider="firecrawl",
-                        seed_query=q,
-                        rank_boost=rank_boost,
-                        extra_questions=extracted,
-                    )
+        # --- Firecrawl search (disabled: SearxNG-only search mode) ---
+        if use_firecrawl_search:
+            warnings.append("Firecrawl search is disabled (SearxNG-only search mode).")
 
         if not sources_by_url:
             warnings.append("No sources were discovered via search providers.")
@@ -750,43 +752,83 @@ class InterviewQuestionsService:
 
         scraped_count = 0
         js_rendered_count = 0
-        for url in ranked_urls[:scrape_budget]:
-            if time.monotonic() >= scrape_deadline:
-                warnings.append("Scrape time budget exceeded; returning partial results.")
-                break
-            if self.firecrawl is None:
-                break
-
-            src = sources_by_url[url]
-            # Skip scraping when we already have enough questions for this source (e.g., from Firecrawl search).
-            if len(src.questions) >= min(8, per_source_max):
-                continue
-
-            markdown, error = _scrape(url, render_js=False)
-            extracted = self._extract_questions_from_text(markdown, max_questions=per_source_max)
-
-            if _should_try_render_js(
-                url=url,
-                extracted_questions=len(extracted),
-                markdown=markdown,
-            ):
+        if self.firecrawl is not None and scrape_budget > 0:
+            urls_to_scrape: list[str] = []
+            for url in ranked_urls[:scrape_budget]:
                 if time.monotonic() >= scrape_deadline:
-                    warnings.append("Scrape time budget exceeded before JS render; returning partial results.")
+                    warnings.append("Scrape time budget exceeded; returning partial results.")
+                    break
+                src = sources_by_url[url]
+                if len(src.questions) >= min(8, per_source_max):
+                    continue
+                urls_to_scrape.append(url)
+
+            max_workers = min(6, max(1, len(urls_to_scrape)))
+            scraped: dict[str, tuple[str | None, str | None, list[str]]] = {}
+
+            def _scrape_plain(url: str) -> tuple[str, str | None, str | None]:
+                md, err = _scrape(url, render_js=False)
+                return url, md, err
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(_scrape_plain, url) for url in urls_to_scrape]
+                for future in as_completed(futures):
+                    if time.monotonic() >= scrape_deadline:
+                        warnings.append("Scrape time budget exceeded; returning partial results.")
+                        break
+                    try:
+                        url, markdown, error = future.result()
+                    except Exception:  # pragma: no cover - network/provider errors
+                        continue
+
+                    extracted = self._extract_questions_from_text(
+                        markdown, max_questions=per_source_max
+                    )
+                    scraped[url] = (markdown, error, extracted)
+
+                    src = sources_by_url.get(url)
+                    if src is None:
+                        continue
+                    if extracted:
+                        src.questions = _unique_sources(src.questions + extracted)[:per_source_max]
+                    src.error = src.error or error
+                    scraped_count += 1
+
+            # Optional (bounded) JS render pass: only try for the top few sources
+            # where the plain scrape yielded little/no signal.
+            max_js_renders = 1
+            js_candidates = [
+                url
+                for url in ranked_urls[:scrape_budget]
+                if url in scraped
+                and _should_try_render_js(
+                    url=url,
+                    extracted_questions=len(scraped[url][2]),
+                    markdown=scraped[url][0],
+                )
+            ][:max_js_renders]
+
+            for url in js_candidates:
+                if time.monotonic() >= scrape_deadline:
+                    warnings.append(
+                        "Scrape time budget exceeded before JS render; returning partial results."
+                    )
                     break
                 markdown_js, error_js = _scrape(url, render_js=True)
                 extracted_js = self._extract_questions_from_text(
                     markdown_js, max_questions=per_source_max
                 )
-                if len(extracted_js) > len(extracted):
-                    markdown = markdown_js
-                    error = error_js or error
-                    extracted = extracted_js
-                    js_rendered_count += 1
-
-            if extracted:
-                src.questions = _unique_sources(src.questions + extracted)[:per_source_max]
-            src.error = src.error or error
-            scraped_count += 1
+                if not extracted_js:
+                    continue
+                _, prev_error, extracted_prev = scraped[url]
+                if len(extracted_js) <= len(extracted_prev):
+                    continue
+                src = sources_by_url.get(url)
+                if src is None:
+                    continue
+                src.questions = _unique_sources(src.questions + extracted_js)[:per_source_max]
+                src.error = src.error or error_js or prev_error
+                js_rendered_count += 1
 
         # Pick top sources by post-scrape score (question density + URL/seed quality).
         scored_sources: list[tuple[float, str]] = []
@@ -843,7 +885,7 @@ class InterviewQuestionsService:
                 )
             question_list = list(items.values())[:max_questions]
 
-        return InterviewQuestionsReport(
+        report = InterviewQuestionsReport(
             company=company,
             role=role_clean,
             queries=queries,
@@ -859,6 +901,21 @@ class InterviewQuestionsService:
                 "fallback_questions": used_fallback_questions,
             },
         )
+        if cache_ttl != 0:
+            try:
+                key = self._cache_key(company=company, role=role_clean)
+                now = _utcnow().isoformat()
+                self._get_cache().update_one(
+                    {"_id": key},
+                    {"$set": {"_id": key, "cached_at": now, "report": report.model_dump(mode="json")}},
+                    upsert=True,
+                )
+            except Exception:
+                pass
+
+        report.questions = report.questions[:max_questions]
+        report.sources = report.sources[:max_sources]
+        return report
 
     def _fallback_questions(self, role: str | None, *, max_questions: int) -> list[str]:
         """Return a small, high-signal set of generic questions.

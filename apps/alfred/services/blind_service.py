@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 from alfred.connectors.firecrawl_connector import FirecrawlClient
@@ -61,10 +62,28 @@ class BlindService:
 
         posts: list[DiscussionPost] = []
         sources: list[SourceInfo] = []
-        for hit in hits:
-            if not hit.url:
-                continue
-            markdown, error = self._scrape(hit.url)
+
+        runnable_hits = [(idx, hit) for idx, hit in enumerate(hits) if hit.url]
+        if not runnable_hits:
+            return [], []
+
+        max_workers = min(4, len(runnable_hits))
+        results: dict[int, tuple[SearchHit, str | None, str | None]] = {}
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {
+                executor.submit(self._scrape, hit.url or ""): (idx, hit)
+                for idx, hit in runnable_hits
+            }
+            for future in as_completed(future_map):
+                idx, hit = future_map[future]
+                try:
+                    markdown, error = future.result()
+                except Exception as exc:
+                    markdown, error = None, str(exc)
+                results[idx] = (hit, markdown, error)
+
+        for idx in sorted(results):
+            hit, markdown, error = results[idx]
             sources.append(
                 SourceInfo(
                     provider=SourceProvider.blind,
@@ -97,10 +116,28 @@ class BlindService:
 
         interviews: list[InterviewExperience] = []
         sources: list[SourceInfo] = []
-        for hit in hits:
-            if not hit.url:
-                continue
-            markdown, error = self._scrape(hit.url)
+
+        runnable_hits = [(idx, hit) for idx, hit in enumerate(hits) if hit.url]
+        if not runnable_hits:
+            return [], []
+
+        max_workers = min(4, len(runnable_hits))
+        results: dict[int, tuple[SearchHit, str | None, str | None]] = {}
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {
+                executor.submit(self._scrape, hit.url or ""): (idx, hit)
+                for idx, hit in runnable_hits
+            }
+            for future in as_completed(future_map):
+                idx, hit = future_map[future]
+                try:
+                    markdown, error = future.result()
+                except Exception as exc:
+                    markdown, error = None, str(exc)
+                results[idx] = (hit, markdown, error)
+
+        for idx in sorted(results):
+            hit, markdown, error = results[idx]
             sources.append(
                 SourceInfo(
                     provider=SourceProvider.blind,

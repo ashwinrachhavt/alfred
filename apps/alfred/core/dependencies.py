@@ -211,8 +211,11 @@ def get_system_design_service() -> SystemDesignService:
 def get_web_service() -> WebService:
     from alfred.services.web_service import WebService
 
-    mode = "searx" if (settings.searxng_host or settings.searx_host) else "multi"
-    return WebService(mode=mode, searx_k=10)
+    if not (settings.searxng_host or settings.searx_host):
+        raise ConfigurationError(
+            "SearxNG is required for web search. Set SEARXNG_HOST (or SEARX_HOST)."
+        )
+    return WebService(mode="searx", searx_k=10)
 
 
 @lru_cache(maxsize=1)

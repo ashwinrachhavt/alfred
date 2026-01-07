@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, List, Literal, Optional, Sequence
 
+from alfred.core.exceptions import ConfigurationError
 from alfred.core.rate_limit import web_rate_limiter
 from alfred.core.settings import settings
 from alfred.core.utils import clamp_int
@@ -524,6 +525,78 @@ class WebConnector:
         searx_k: int,
     ) -> None:
         self.clients: dict[Provider, Any] = {}
+        # Initialize only the clients required for the chosen mode to keep Celery/task
+        # cold starts fast and minimize optional imports.
+        if self.mode != "multi" and self.mode != "auto":
+            provider: Provider = self.mode  # type: ignore[assignment]
+            if provider == "searx":
+                searx_host = (
+                    _env("SEARXNG_HOST")
+                    or _env("SEARX_HOST")
+                    or settings.searxng_host
+                    or settings.searx_host
+                )
+                if not searx_host:
+                    raise ConfigurationError(
+                        "SearxNG is required for web search. Set SEARXNG_HOST (or SEARX_HOST)."
+                    )
+                self.clients["searx"] = SearxClient(host=searx_host, k=searx_k)
+                return
+            if provider == "brave":
+                if not settings.brave_search_api_key:
+                    raise ConfigurationError("BRAVE_SEARCH_API_KEY is not set")
+                self.clients["brave"] = BraveClient(count=brave_count)
+                return
+            if provider == "ddg":
+                try:
+                    self.clients["ddg"] = DDGClient(
+                        max_results=ddg_max_results,
+                        backend="api",
+                        timeout=float(settings.web_ddg_timeout_s),
+                        retries=int(settings.web_ddg_retries),
+                    )
+                except ImportError as exc:
+                    raise ConfigurationError(f"DDG client dependency missing: {exc}") from exc
+                return
+            if provider == "exa":
+                if not settings.exa_api_key:
+                    raise ConfigurationError("EXA_API_KEY is not set")
+                try:
+                    self.clients["exa"] = ExaClient(default_num_results=exa_num_results)
+                except ImportError as exc:
+                    raise ConfigurationError(f"Exa client dependency missing: {exc}") from exc
+                return
+            if provider == "tavily":
+                if not settings.tavily_api_key:
+                    raise ConfigurationError("TAVILY_API_KEY is not set")
+                try:
+                    self.clients["tavily"] = TavilyClient(
+                        max_results=tavily_max_results, topic=tavily_topic
+                    )
+                except ImportError as exc:
+                    raise ConfigurationError(f"Tavily client dependency missing: {exc}") from exc
+                return
+            if provider == "you":
+                if not settings.ydc_api_key:
+                    raise ConfigurationError("YDC_API_KEY is not set")
+                try:
+                    self.clients["you"] = YouClient(num_web_results=you_num_results)
+                except ImportError as exc:
+                    raise ConfigurationError(f"You.com client dependency missing: {exc}") from exc
+                return
+            if provider == "langsearch":
+                langsearch_key = _env("LANGSEARCH_API_KEY") or settings.langsearch_api_key
+                if not langsearch_key:
+                    raise ConfigurationError("LANGSEARCH_API_KEY is not set")
+                base_url = _env("LANGSEARCH_BASE_URL") or settings.langsearch_base_url
+                self.clients["langsearch"] = LangsearchClient(
+                    api_key=langsearch_key,
+                    base_url=base_url,
+                )
+                return
+
+            raise ConfigurationError(f"Unsupported web provider: {provider}")
+
         if settings.exa_api_key:
             try:
                 self.clients["exa"] = ExaClient(default_num_results=exa_num_results)
@@ -543,16 +616,17 @@ class WebConnector:
                 self.clients["you"] = YouClient(num_web_results=you_num_results)
             except ImportError as exc:
                 logging.warning("You.com client disabled: %s", exc)
-        try:
-            # DDG is a best-effort fallback; keep it fast to avoid dominating tail latency.
-            self.clients["ddg"] = DDGClient(
-                max_results=ddg_max_results,
-                backend="api",
-                timeout=float(settings.web_ddg_timeout_s),
-                retries=int(settings.web_ddg_retries),
-            )
-        except ImportError as exc:
-            logging.warning("DDG client disabled: %s", exc)
+        if self.mode in {"multi", "auto"}:
+            try:
+                # DDG is a best-effort fallback; keep it fast to avoid dominating tail latency.
+                self.clients["ddg"] = DDGClient(
+                    max_results=ddg_max_results,
+                    backend="api",
+                    timeout=float(settings.web_ddg_timeout_s),
+                    retries=int(settings.web_ddg_retries),
+                )
+            except ImportError as exc:
+                logging.warning("DDG client disabled: %s", exc)
         # SearxNG client (enabled when SEARXNG_HOST/SEARX_HOST is set and langchain-community is present)
         try:
             searx_host = (
@@ -685,6 +759,9 @@ class WebConnector:
         if self.mode == "multi":
             return self._search_multi(query, **kwargs)
         provider: Provider = self._resolve_auto() if self.mode == "auto" else self.mode
+
+        if provider == "searx" and provider not in self.clients:
+            return SearchResponse(provider="searx", query=query, hits=[], meta={"status": "unconfigured"})
 
         # Re-check env-based configuration at call time to handle tests that mutate env after settings load.
         if not _env_configured(provider):

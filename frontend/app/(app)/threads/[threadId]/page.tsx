@@ -2,11 +2,11 @@ import { ThreadDetailClient } from "@/app/(app)/threads/_components/thread-detai
 import { Page } from "@/components/layout/page";
 
 type ThreadDetailPageProps = {
-  params: Promise<{ threadId: string }>;
+  params: { threadId: string };
 };
 
-export default async function ThreadDetailPage({ params }: ThreadDetailPageProps) {
-  const { threadId } = await params;
+export default function ThreadDetailPage({ params }: ThreadDetailPageProps) {
+  const { threadId } = params;
 
   return (
     <Page size="comfortable">

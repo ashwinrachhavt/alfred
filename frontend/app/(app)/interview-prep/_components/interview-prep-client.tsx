@@ -418,7 +418,7 @@ export function InterviewPrepClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setThreadId(\"\")}
+                onClick={() => setThreadId("")}
                 disabled={!threadId.trim()}
               >
                 Clear
@@ -506,6 +506,8 @@ export function InterviewPrepClient() {
                 company={company}
                 role={role}
                 candidateBackground={candidateBackground}
+                threadId={threadId}
+                onThreadIdChange={setThreadId}
                 sessionId={practiceSessionId}
                 onSessionIdChange={syncPracticeSessionId}
               />
@@ -584,6 +586,11 @@ export function InterviewPrepClient() {
               ) : null}
               {activeResult.session_id ? (
                 <Badge variant="outline">session: {activeResult.session_id}</Badge>
+              ) : null}
+              {threadId.trim() ? (
+                <Button asChild variant="ghost" size="sm">
+                  <Link href={`/threads/${threadId.trim()}`}>thread: {threadId.trim().slice(0, 8)}</Link>
+                </Button>
               ) : null}
             </div>
           </CardHeader>

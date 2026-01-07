@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from alfred.connectors.web_connector import WebConnector
 from alfred.core.tracing import lf_update_span, observe
 
 
@@ -24,16 +23,10 @@ def search_web(
     you_num_results: int = 20,
     searx_k: int = 10,
 ) -> dict:
-    conn = WebConnector(
-        mode=mode,
-        brave_pages=brave_pages,
-        ddg_max_results=ddg_max_results,
-        exa_num_results=exa_num_results,
-        tavily_max_results=tavily_max_results,
-        tavily_topic=tavily_topic,
-        you_num_results=you_num_results,
-        searx_k=searx_k,
-    )
+    # SearxNG-only: use the process-scoped connector from dependencies.
+    from alfred.core.dependencies import get_primary_web_search_connector
+
+    conn = get_primary_web_search_connector()
     resp = conn.search(q)
     payload = {
         "provider": resp.provider,
@@ -49,13 +42,7 @@ def search_web(
         lf_update_span(
             input={
                 "q": q,
-                "mode": mode,
-                "brave_pages": brave_pages,
-                "ddg_max_results": ddg_max_results,
-                "exa_num_results": exa_num_results,
-                "tavily_max_results": tavily_max_results,
-                "tavily_topic": tavily_topic,
-                "you_num_results": you_num_results,
+                "mode": "searx",
                 "searx_k": searx_k,
             },
             output={"hits_count": len(resp.hits), "provider": resp.provider},

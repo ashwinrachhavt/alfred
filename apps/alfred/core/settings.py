@@ -201,6 +201,13 @@ class Settings(BaseSettings):
         default="company_interview_experiences",
         alias="COMPANY_INTERVIEWS_COLLECTION",
     )
+    company_interviews_cache_ttl_hours: int = Field(
+        default=24 * 3,
+        alias="COMPANY_INTERVIEWS_CACHE_TTL_HOURS",
+        ge=0,
+        le=24 * 365,
+        description="0 disables freshness checks (always sync unless refresh=false short-circuit is disabled).",
+    )
     panel_interview_sessions_collection: str = Field(
         default="panel_interview_sessions",
         alias="PANEL_INTERVIEW_SESSIONS_COLLECTION",
@@ -214,6 +221,17 @@ class Settings(BaseSettings):
     interview_prep_collection: str = Field(
         default="interview_preps",
         alias="INTERVIEW_PREP_COLLECTION",
+    )
+    interview_questions_collection: str = Field(
+        default="interview_question_reports",
+        alias="INTERVIEW_QUESTIONS_COLLECTION",
+    )
+    interview_questions_cache_ttl_hours: int = Field(
+        default=24 * 2,
+        alias="INTERVIEW_QUESTIONS_CACHE_TTL_HOURS",
+        ge=0,
+        le=24 * 365,
+        description="0 disables freshness checks (always recompute).",
     )
 
     # Culture fit
