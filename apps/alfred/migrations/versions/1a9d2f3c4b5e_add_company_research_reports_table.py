@@ -64,4 +64,3 @@ def downgrade() -> None:
     op.drop_index("ix_company_research_reports_updated_at", table_name="company_research_reports")
     op.drop_index("ix_company_research_reports_company_key", table_name="company_research_reports")
     op.drop_table("company_research_reports")
-

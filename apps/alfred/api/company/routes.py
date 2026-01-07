@@ -26,6 +26,7 @@ from alfred.services.company_outreach_service import (
 router = APIRouter(prefix="/company", tags=["company"])
 logger = logging.getLogger(__name__)
 
+
 class CompanyResearchReportSummary(BaseModel):
     id: str
     company: str

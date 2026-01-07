@@ -1,7 +1,12 @@
-"""
-Google Gmail Connector Module | Google OAuth Credentials | Gmail API
+"""Google Gmail Connector.
+
+Provides a thin wrapper around the Gmail API that:
+- Accepts Google OAuth credentials
+- Refreshes credentials when needed
+- Exposes convenience helpers for common Gmail operations
 """
 
+import asyncio
 import base64
 import re
 from datetime import datetime, timedelta
@@ -57,11 +62,18 @@ class GoogleGmailConnector:
         except Exception as exc:
             raise RuntimeError(f"Failed to create Gmail service: {exc!s}") from exc
 
+    @staticmethod
+    async def _execute(request: Any) -> Any:
+        """Execute a googleapiclient request in a worker thread."""
+
+        return await asyncio.to_thread(request.execute)
+
     async def get_user_profile(self) -> tuple[dict[str, Any], str | None]:
         """Fetch user's Gmail profile information."""
         try:
             service = await self._get_service()
-            profile = service.users().getProfile(userId="me").execute()
+            request = service.users().getProfile(userId="me")
+            profile = await self._execute(request)
 
             return {
                 "email_address": profile.get("emailAddress"),
@@ -92,7 +104,8 @@ class GoogleGmailConnector:
                 request_params["q"] = query
             if label_ids:
                 request_params["labelIds"] = label_ids
-            result = service.users().messages().list(**request_params).execute()
+            request = service.users().messages().list(**request_params)
+            result = await self._execute(request)
             messages = result.get("messages", [])
             return messages, None
 
@@ -103,13 +116,37 @@ class GoogleGmailConnector:
         """Fetch detailed information for a specific message."""
         try:
             service = await self._get_service()
-            message = (
-                service.users().messages().get(userId="me", id=message_id, format="full").execute()
-            )
+            request = service.users().messages().get(userId="me", id=message_id, format="full")
+            message = await self._execute(request)
             return message, None
 
         except Exception as e:
             return {}, f"Error fetching message details: {e!s}"
+
+    async def get_message_metadata(
+        self,
+        message_id: str,
+        *,
+        metadata_headers: list[str] | None = None,
+    ) -> tuple[dict[str, Any], str | None]:
+        """Fetch message metadata (headers + snippet) for a specific message."""
+
+        try:
+            service = await self._get_service()
+            request = (
+                service.users()
+                .messages()
+                .get(
+                    userId="me",
+                    id=message_id,
+                    format="metadata",
+                    metadataHeaders=metadata_headers or None,
+                )
+            )
+            message = await self._execute(request)
+            return message, None
+        except Exception as e:
+            return {}, f"Error fetching message metadata: {e!s}"
 
     async def get_recent_messages(
         self,
