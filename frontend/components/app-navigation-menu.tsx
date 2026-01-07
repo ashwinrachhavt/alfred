@@ -16,6 +16,8 @@ import {
 export function AppNavigationMenu({ className }: { className?: string }) {
   const pathname = usePathname();
 
+  if (!appTopNavItems.length) return null;
+
   return (
     <NavigationMenu className={className}>
       <NavigationMenuList>

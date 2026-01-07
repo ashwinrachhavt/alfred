@@ -11,6 +11,10 @@ class UnifiedInterviewRequest(BaseModel):
     """Single unified request for interview question collection, research, and practice sessions."""
 
     operation: UnifiedInterviewOperation
+    thread_id: str | None = Field(
+        default=None,
+        description="Optional thread id for storing results as a frontend-visible conversation.",
+    )
 
     # Common fields
     company: str = Field(..., min_length=1)

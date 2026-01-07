@@ -18,7 +18,6 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  loadPracticeSessionIndex,
   loadPracticeSessionTranscript,
   savePracticeSessionTranscript,
   upsertPracticeSessionSummary,
@@ -30,6 +29,8 @@ type PracticeSessionDrillProps = {
   company: string;
   role: string;
   candidateBackground: string;
+  threadId: string;
+  onThreadIdChange: (nextThreadId: string) => void;
   sessionId: string;
   onSessionIdChange: (nextSessionId: string) => void;
 };
@@ -54,6 +55,14 @@ function formatErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
   return "Something went wrong.";
+}
+
+function extractThreadIdFromMetadata(metadata: Record<string, unknown> | null | undefined): string | null {
+  if (!metadata) return null;
+  const value = metadata.thread_id;
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized ? normalized : null;
 }
 
 function formatTimer(valueSeconds: number): string {
@@ -119,6 +128,8 @@ export function PracticeSessionDrill({
   company,
   role,
   candidateBackground,
+  threadId,
+  onThreadIdChange,
   sessionId,
   onSessionIdChange,
 }: PracticeSessionDrillProps) {
@@ -127,7 +138,6 @@ export function PracticeSessionDrill({
   const [resumeSessionId, setResumeSessionId] = React.useState("");
   const [isSending, setIsSending] = React.useState(false);
   const [localError, setLocalError] = React.useState<string | null>(null);
-  const [recentSessions, setRecentSessions] = React.useState(() => loadPracticeSessionIndex());
   const [timer, setTimer] = React.useState<TimerState>(() => ({
     durationSeconds: 180,
     remainingSeconds: 180,
@@ -191,8 +201,6 @@ export function PracticeSessionDrill({
       updatedAt,
       lastInterviewerPrompt,
     });
-
-    setRecentSessions(loadPracticeSessionIndex());
   }, [company, messages, role, sessionId]);
 
   React.useEffect(() => {
@@ -348,11 +356,13 @@ export function PracticeSessionDrill({
     setAnswerDraft("");
 
     try {
+      const normalizedThreadId = threadId.trim();
       const response = await processUnifiedInterview({
         operation: "practice_session",
         company: company.trim(),
         role: role.trim() || "Software Engineer",
         candidate_background: candidateBackground.trim() || null,
+        ...(normalizedThreadId ? { thread_id: normalizedThreadId } : {}),
         session_id: sessionId.trim() || null,
         candidate_response: answer,
       });
@@ -362,6 +372,13 @@ export function PracticeSessionDrill({
           "Practice sessions can’t be queued. Disable background mode and try again.",
         );
       }
+
+      const persistedThreadId = extractThreadIdFromMetadata(
+        "metadata" in response && response.metadata && typeof response.metadata === "object"
+          ? (response.metadata as Record<string, unknown>)
+          : null,
+      );
+      if (persistedThreadId) onThreadIdChange(persistedThreadId);
 
       const { nextSessionId } = coercePracticeSessionResponse(response, answer);
       if (nextSessionId !== sessionId) {
@@ -598,31 +615,6 @@ export function PracticeSessionDrill({
             </div>
           </div>
 
-          {recentSessions.length ? (
-            <div className="bg-background space-y-3 rounded-lg border p-4">
-              <h3 className="text-sm font-semibold">Recent</h3>
-              <div className="space-y-2">
-                {recentSessions.slice(0, 5).map((entry) => (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    className="hover:bg-muted/40 flex w-full flex-col gap-1 rounded-md border px-3 py-2 text-left text-sm"
-                    onClick={() => void loadSession(entry.id)}
-                  >
-                    <span className="font-medium">{entry.company}</span>
-                    <span className="text-muted-foreground text-xs">
-                      {entry.role} • {entry.id}
-                    </span>
-                    {entry.lastInterviewerPrompt ? (
-                      <span className="text-muted-foreground line-clamp-2 text-xs">
-                        {entry.lastInterviewerPrompt}
-                      </span>
-                    ) : null}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
         </aside>
       </div>
     </div>

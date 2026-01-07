@@ -6,6 +6,62 @@ _WS_RE = re.compile(r"\s+")
 _BULLET_PREFIX_RE = re.compile(r"^\s*(?:[-*•]+|\d+[.)])\s*")
 _QUESTION_PREFIX_RE = re.compile(r"^\s*(?:q(?:uestion)?\s*[:.)-]+)\s*", flags=re.IGNORECASE)
 _MARKDOWN_DECORATION_RE = re.compile(r"[*_`]+")
+_LEETCODE_PREFIX_RE = re.compile(
+    r"^\s*(?:lc|leetcode)\s*[:#-]?\s*(?:(?P<number>\d+)\s*)?(?P<title>.+)$",
+    flags=re.IGNORECASE,
+)
+
+
+def _merge_markdown_wrapped_lines(text: str) -> list[str]:
+    """Merge bullet list items that wrap onto indented continuation lines."""
+
+    merged: list[str] = []
+    buffer: list[str] = []
+    bullet_indent: int | None = None
+
+    def leading_indent_len(raw: str) -> int:
+        count = 0
+        for ch in raw:
+            if ch == " ":
+                count += 1
+            elif ch == "\t":
+                # Treat a tab as multiple spaces for indentation comparisons.
+                count += 4
+            else:
+                break
+        return count
+
+    def flush() -> None:
+        if not buffer:
+            return
+        merged.append(" ".join(buffer).strip())
+        buffer.clear()
+        nonlocal bullet_indent
+        bullet_indent = None
+
+    for raw in (text or "").splitlines():
+        line = raw.rstrip()
+        if not line.strip():
+            flush()
+            continue
+
+        starts_list_item = _BULLET_PREFIX_RE.match(line) is not None
+
+        if starts_list_item:
+            flush()
+            buffer.append(line.strip())
+            bullet_indent = leading_indent_len(raw)
+            continue
+
+        if buffer and bullet_indent is not None and leading_indent_len(raw) > bullet_indent:
+            buffer.append(line.strip())
+            continue
+
+        flush()
+        merged.append(line.strip())
+
+    flush()
+    return merged
 
 
 def normalize_question(text: str) -> str:
@@ -97,7 +153,8 @@ def extract_questions_heuristic(
 
     extracted: list[str] = []
     seen: set[str] = set()
-    for raw in text.splitlines():
+
+    for raw in _merge_markdown_wrapped_lines(text):
         line = _clean_candidate_line(raw)
         if not line:
             continue
@@ -105,8 +162,21 @@ def extract_questions_heuristic(
             continue
         if len(line) > max(1, int(max_line_chars)):
             continue
+
         if not _looks_like_question(line):
-            continue
+            leet = _LEETCODE_PREFIX_RE.match(line)
+            if leet:
+                number = (leet.group("number") or "").strip()
+                title = _WS_RE.sub(" ", (leet.group("title") or "").strip()).strip()
+                title = title.lstrip("-:–— ").strip()
+                if number:
+                    title = f"{number} {title}".strip()
+                if title:
+                    line = f"Solve: {title}"
+                else:
+                    continue
+            else:
+                continue
 
         question = normalize_question(line)
         key = question.lower()

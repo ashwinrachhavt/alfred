@@ -10,18 +10,22 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Iterable, Literal, Mapping, Protocol, TypedDict
+from urllib.parse import urlparse
 
 from dateutil import parser as date_parser
 from dateutil import tz as date_tz
 from fastapi.concurrency import run_in_threadpool
 from langgraph.graph import END, START, StateGraph
 
-from alfred.connectors.firecrawl_connector import FirecrawlClient, FirecrawlResponse
+from alfred.connectors.firecrawl_connector import FirecrawlClient
 from alfred.connectors.web_connector import SearchHit, SearchResponse, WebConnector
+from alfred.core.exceptions import ConfigurationError, ServiceUnavailableError
 from alfred.core.settings import LLMProvider, settings
 from alfred.core.utils import clamp_int
 from alfred.core.utils import utcnow as _utcnow
@@ -53,7 +57,12 @@ from alfred.schemas.unified_interview import (
     UnifiedQuestion,
 )
 from alfred.services.datastore import DataStoreService
-from alfred.services.utils import extract_questions_heuristic, normalize_question
+from alfred.services.thread_service import ThreadService
+from alfred.services.utils import (
+    extract_questions_heuristic,
+    extract_questions_qmark_only,
+    normalize_question,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -370,6 +379,101 @@ def _unique_sources(urls: Iterable[str]) -> list[str]:
     return out
 
 
+def _url_host(url: str) -> str:
+    try:
+        return (urlparse(url).netloc or "").lower()
+    except Exception:
+        return ""
+
+
+def _score_source_seed(query: str) -> float:
+    """Score how likely a search query yields high-signal interview questions."""
+
+    q = (query or "").lower()
+    score = 0.0
+    if q.startswith("site:"):
+        score += 2.5
+    if "interview experience" in q:
+        score += 2.0
+    if "system design" in q:
+        score += 1.5
+    if "coding interview" in q:
+        score += 1.2
+    if "behavioral" in q:
+        score += 1.0
+    if "interview questions" in q:
+        score += 1.0
+    return score
+
+
+def _score_source_url(url: str, *, seed_query: str | None) -> float:
+    """Heuristic URL score to prioritize sources with real question lists."""
+
+    parsed = urlparse(url)
+    host = (parsed.netloc or "").lower()
+    path = (parsed.path or "").lower()
+    query = (seed_query or "").lower()
+
+    score = 0.0
+
+    # Prefer sources that often contain "questions asked" style content.
+    preferred_hosts = (
+        "teamblind.com",
+        "leetcode.com",
+        "glassdoor.com",
+        "geeksforgeeks.org",
+        "interviewbit.com",
+        "reddit.com",
+        "github.com",
+    )
+    if any(h in host for h in preferred_hosts):
+        score += 2.5
+
+    if "interview" in path:
+        score += 0.8
+    if "question" in path or "questions" in path:
+        score += 0.8
+    if "experience" in path:
+        score += 0.8
+
+    # Demote job boards and listings which frequently match but rarely contain Q lists.
+    low_signal_hosts = (
+        "linkedin.com",
+        "indeed.com",
+        "lever.co",
+        "greenhouse.io",
+        "workday.com",
+        "ziprecruiter.com",
+        "monster.com",
+    )
+    if any(h in host for h in low_signal_hosts) and "interview" not in path:
+        score -= 3.0
+
+    if any(ext in path for ext in (".pdf", ".ppt", ".pptx", ".doc", ".docx")):
+        score -= 1.5
+
+    if "site:" in query:
+        score += 0.6
+
+    return score
+
+
+def _should_try_render_js(*, url: str, extracted_questions: int, markdown: str | None) -> bool:
+    if extracted_questions >= 4:
+        return False
+    host = _url_host(url)
+    js_heavy_hosts = (
+        "teamblind.com",
+        "glassdoor.com",
+        "linkedin.com",
+    )
+    if any(h in host for h in js_heavy_hosts):
+        return True
+    if not markdown or len(markdown) < 400:
+        return True
+    return False
+
+
 @dataclass
 class InterviewQuestionsService:
     """Collect and normalize interview questions from public sources."""
@@ -382,14 +486,98 @@ class InterviewQuestionsService:
 
     def __post_init__(self) -> None:
         if self.primary_search is None:
-            self.primary_search = WebConnector(mode="auto", searx_k=self.search_results)
+            if not (settings.searxng_host or settings.searx_host):
+                raise ConfigurationError(
+                    "SearxNG is required for interview question collection. Set SEARXNG_HOST (or SEARX_HOST)."
+                )
+            self.primary_search = WebConnector(mode="searx", searx_k=self.search_results)
         if self.fallback_search is None:
+            # SearxNG-only: no fallback provider.
             self.fallback_search = self.primary_search
         if self.firecrawl is None:
             self.firecrawl = FirecrawlClient(
                 base_url=settings.firecrawl_base_url,
                 timeout=settings.firecrawl_timeout,
             )
+        if not hasattr(self, "_cache"):
+            self._cache = None
+
+    def _get_cache(self) -> DataStoreService:
+        cache = getattr(self, "_cache", None)
+        if cache is None:
+            self._cache = DataStoreService(
+                default_collection=settings.interview_questions_collection
+            )
+        return self._cache
+
+    @staticmethod
+    def _cache_key(*, company: str, role: str | None) -> str:
+        c = (company or "").strip().lower()
+        r = (role or "").strip().lower() if role else ""
+        return f"{c}|{r}"
+
+    def _build_queries(self, *, company: str, role: str | None) -> list[str]:
+        company_clean = (company or "").strip()
+        role_clean = (role or "").strip() or None
+        base = f"{company_clean} {role_clean}".strip()
+
+        queries: list[str] = [
+            f"{base} interview questions".strip(),
+            f"{base} interview experience questions".strip(),
+            f"{base} coding interview questions".strip(),
+        ]
+
+        role_lower = (role_clean or "").lower()
+        if any(
+            term in role_lower
+            for term in ("engineer", "developer", "software", "backend", "frontend", "swe")
+        ):
+            queries.extend(
+                [
+                    f"{base} system design interview questions".strip(),
+                    f"{base} behavioral interview questions".strip(),
+                ]
+            )
+
+        if any(term in role_lower for term in ("data", "ml", "machine learning", "ai")):
+            queries.extend(
+                [
+                    f"{base} machine learning interview questions".strip(),
+                    f"{company_clean} ml system design interview questions".strip(),
+                ]
+            )
+
+        if "product" in role_lower and "manager" in role_lower:
+            queries.append(f"{company_clean} product sense interview questions".strip())
+
+        # Target sources that often contain firsthand "questions asked" content.
+        queries.extend(
+            [
+                f'site:teamblind.com "{company_clean}" interview questions',
+                f'site:glassdoor.com "{company_clean}" interview questions',
+                f'site:leetcode.com "{company_clean}" interview questions',
+                f'site:reddit.com "{company_clean}" interview questions',
+                f'site:geeksforgeeks.org "{company_clean}" interview experience',
+            ]
+        )
+
+        # Keep query volume bounded for latency/cost predictability.
+        return _unique_sources([q for q in queries if (q or "").strip()])[:12]
+
+    def _extract_questions_from_text(self, text: str | None, *, max_questions: int) -> list[str]:
+        if not text:
+            return []
+
+        primary = extract_questions_qmark_only(
+            text, max_questions=max_questions, max_body_chars=220
+        )
+        if len(primary) >= max_questions:
+            return primary[:max_questions]
+
+        heuristic = extract_questions_heuristic(
+            text, max_questions=max_questions, max_line_chars=420
+        )
+        return _unique_sources(primary + heuristic)[:max_questions]
 
     def generate_report(
         self,
@@ -408,16 +596,93 @@ class InterviewQuestionsService:
         max_sources = max(1, int(max_sources))
         max_questions = max(1, int(max_questions))
 
-        base = f"{company} {role_clean}".strip()
-        queries = [
-            f"{base} coding interview questions".strip(),
-            f"{base} interview questions".strip(),
-        ]
-
         warnings: list[str] = []
-        sources: list[QuestionSource] = []
-        urls: list[str] = []
+
+        cache_ttl = int(getattr(settings, "interview_questions_cache_ttl_hours", 0) or 0)
+        if cache_ttl != 0:
+            key = self._cache_key(company=company, role=role_clean)
+            try:
+                cached = self._get_cache().find_one({"_id": key})
+            except Exception as exc:
+                warnings.append(f"Cache unavailable; skipping cache read: {exc}")
+                cached = None
+            if cached:
+                cached_at = cached.get("cached_at")
+                try:
+                    cached_dt = (
+                        datetime.fromisoformat(str(cached_at).replace("Z", "+00:00"))
+                        if cached_at
+                        else None
+                    )
+                except Exception:
+                    cached_dt = None
+
+                is_fresh = True
+                if cache_ttl > 0 and cached_dt is not None:
+                    age = (_utcnow() - cached_dt).total_seconds()
+                    is_fresh = age <= (cache_ttl * 3600)
+
+                if is_fresh:
+                    try:
+                        report = InterviewQuestionsReport.model_validate(cached.get("report"))
+                        report.questions = report.questions[:max_questions]
+                        report.sources = report.sources[:max_sources]
+                        report.warnings = list(report.warnings or []) + ["cache_hit"]
+                        return report
+                    except Exception:
+                        pass
+
+        queries = self._build_queries(company=company, role=role_clean)
         used_fallback_questions = False
+
+        sources_by_url: dict[str, QuestionSource] = {}
+        seed_score_by_url: dict[str, float] = {}
+        seed_query_by_url: dict[str, str] = {}
+        budget_max = max(0, int(settings.interview_scrape_budget_max))
+        candidate_target = max_sources * 2 if budget_max == 0 else max(12, budget_max * 2)
+
+        def _upsert_source(
+            *,
+            url: str,
+            title: str | None,
+            snippet: str | None,
+            provider: str | None,
+            seed_query: str,
+            rank_boost: float,
+            extra_questions: list[str] | None = None,
+        ) -> None:
+            clean_url = (url or "").strip()
+            if not clean_url:
+                return
+
+            source = sources_by_url.get(clean_url)
+            if source is None:
+                snippet_questions = self._extract_questions_from_text(snippet, max_questions=4)
+                source = QuestionSource(
+                    url=clean_url,
+                    title=title,
+                    snippet=snippet,
+                    provider=provider,
+                    questions=snippet_questions,
+                )
+                sources_by_url[clean_url] = source
+            else:
+                source.title = source.title or title
+                source.snippet = source.snippet or snippet
+                source.provider = source.provider or provider
+                if snippet:
+                    source.questions = _unique_sources(
+                        source.questions
+                        + self._extract_questions_from_text(snippet, max_questions=2)
+                    )
+
+            if extra_questions:
+                source.questions = _unique_sources(source.questions + extra_questions)
+
+            seed_score = _score_source_seed(seed_query) + rank_boost
+            if seed_score > seed_score_by_url.get(clean_url, float("-inf")):
+                seed_score_by_url[clean_url] = seed_score
+                seed_query_by_url[clean_url] = seed_query
 
         def _search(conn: Any, query: str) -> SearchResponse | None:
             try:
@@ -426,63 +691,104 @@ class InterviewQuestionsService:
                 warnings.append(f"Search failed for query '{query}': {exc}")
                 return None
 
+        # --- SearxNG-backed web search (primary only) ---
         for q in queries:
             res = _search(self.primary_search, q)
-            if res is None or not getattr(res, "hits", None):
-                res = _search(self.fallback_search, q)
             if res is None:
                 continue
-            hits = list(res.hits or [])[: max(1, self.search_results)]
-            for hit in hits:
+
+            hits = list(res.hits or [])[: max(1, int(self.search_results))]
+            for rank, hit in enumerate(hits):
                 if not isinstance(hit, SearchHit) or not hit.url:
                     continue
-                urls.append(hit.url)
-                sources.append(
-                    QuestionSource(
-                        url=hit.url,
-                        title=hit.title,
-                        snippet=hit.snippet,
-                        provider=str(getattr(res, "provider", None) or hit.source),
-                    )
+                rank_boost = max(0.0, 0.6 - (0.1 * float(rank)))
+                _upsert_source(
+                    url=hit.url,
+                    title=hit.title,
+                    snippet=hit.snippet,
+                    provider=str(getattr(res, "provider", None) or hit.source),
+                    seed_query=q,
+                    rank_boost=rank_boost,
                 )
+            if len(sources_by_url) >= candidate_target:
+                break
 
+        # --- Firecrawl search (augment sources with higher-signal "questions asked" pages) ---
         if use_firecrawl_search and self.firecrawl is not None:
-            try:
-                fire = self.firecrawl.search(
-                    f"{base} interview questions".strip(),
-                    max_results=max(1, int(self.firecrawl_search_results)),
-                )
-            except Exception as exc:  # pragma: no cover - network/provider errors
-                fire = FirecrawlResponse(success=False, error=str(exc))
-            if fire.success and isinstance(fire.data, list):
-                for item in fire.data[: max(1, self.firecrawl_search_results)]:
+            for q in queries:
+                try:
+                    fc = self.firecrawl.search(
+                        q, max_results=max(1, int(self.firecrawl_search_results))
+                    )
+                except Exception as exc:  # pragma: no cover - network/provider errors
+                    warnings.append(f"Firecrawl search failed for query '{q}': {exc}")
+                    continue
+
+                if not getattr(fc, "success", False):
+                    err = getattr(fc, "error", None)
+                    warnings.append(
+                        f"Firecrawl search failed for query '{q}': "
+                        f"{err if isinstance(err, str) else str(err)}"
+                    )
+                    continue
+
+                data = getattr(fc, "data", None)
+                if not isinstance(data, list):
+                    continue
+
+                for rank, item in enumerate(
+                    data[: max(1, int(self.firecrawl_search_results))]
+                ):
                     if not isinstance(item, dict):
                         continue
                     url = item.get("url")
-                    if not isinstance(url, str) or not url.strip():
+                    if not url:
                         continue
-                    urls.append(url)
-                    content = item.get("content")
-                    extracted = extract_questions_heuristic(
-                        content if isinstance(content, str) else None,
-                        max_questions=8,
-                        max_line_chars=420,
+                    title = item.get("title")
+                    snippet = item.get("content") or item.get("snippet") or item.get("description")
+                    rank_boost = max(0.0, 0.45 - (0.08 * float(rank)))
+                    extra_questions = self._extract_questions_from_text(
+                        snippet, max_questions=4
                     )
-                    sources.append(
-                        QuestionSource(
-                            url=url,
-                            title=item.get("title") if isinstance(item.get("title"), str) else None,
-                            snippet=content if isinstance(content, str) else None,
-                            provider="firecrawl",
-                            questions=extracted,
-                        )
+                    _upsert_source(
+                        url=str(url),
+                        title=str(title) if title else None,
+                        snippet=str(snippet) if snippet else None,
+                        provider="firecrawl",
+                        seed_query=q,
+                        rank_boost=rank_boost,
+                        extra_questions=extra_questions,
                     )
 
-        urls = _unique_sources(urls)[:max_sources]
+                if len(sources_by_url) >= candidate_target:
+                    break
 
-        def _scrape(url: str) -> tuple[str | None, str | None]:
+        if not sources_by_url:
+            warnings.append("No sources were discovered via search providers.")
+
+        # --- Scrape a larger candidate pool, then pick the best sources ---
+        per_source_max = 20
+        scrape_budget = 0 if budget_max == 0 else clamp_int(max_sources * 2, lo=1, hi=budget_max)
+        scrape_deadline = time.monotonic() + float(settings.interview_scrape_time_budget_s)
+
+        pre_scores: dict[str, float] = {}
+        for url, src in sources_by_url.items():
+            seed_query = seed_query_by_url.get(url)
+            base_score = seed_score_by_url.get(url, 0.0) + _score_source_url(
+                url, seed_query=seed_query
+            )
+            base_score += min(3, len(src.questions)) * 0.3
+            pre_scores[url] = base_score
+
+        ranked_urls = sorted(
+            sources_by_url.keys(),
+            key=lambda u: (pre_scores.get(u, 0.0), u.lower()),
+            reverse=True,
+        )
+
+        def _scrape(url: str, *, render_js: bool) -> tuple[str | None, str | None]:
             try:
-                resp = self.firecrawl.scrape(url, render_js=False)
+                resp = self.firecrawl.scrape(url, render_js=render_js)
             except Exception as exc:  # pragma: no cover - network/provider errors
                 return None, str(exc)
             if not getattr(resp, "success", False):
@@ -490,22 +796,101 @@ class InterviewQuestionsService:
                 return None, err if isinstance(err, str) else str(err)
             return getattr(resp, "markdown", None), None
 
-        by_url: dict[str, QuestionSource] = {s.url: s for s in sources if s.url}
-        for url in urls:
-            markdown, error = _scrape(url)
-            qs = extract_questions_heuristic(markdown, max_questions=16, max_line_chars=420)
-            existing = by_url.get(url)
-            if existing is None:
-                sources.append(
-                    QuestionSource(url=url, provider="firecrawl", questions=qs, error=error)
-                )
-            else:
-                existing.error = existing.error or error
-                existing.questions = _unique_sources(existing.questions + qs)  # type: ignore[arg-type]
+        scraped_count = 0
+        js_rendered_count = 0
+        if self.firecrawl is not None and scrape_budget > 0:
+            urls_to_scrape: list[str] = []
+            for url in ranked_urls[:scrape_budget]:
+                if time.monotonic() >= scrape_deadline:
+                    warnings.append("Scrape time budget exceeded; returning partial results.")
+                    break
+                src = sources_by_url[url]
+                if len(src.questions) >= min(8, per_source_max):
+                    continue
+                urls_to_scrape.append(url)
 
-        # Aggregate questions across sources.
+            max_workers = min(6, max(1, len(urls_to_scrape)))
+            scraped: dict[str, tuple[str | None, str | None, list[str]]] = {}
+
+            def _scrape_plain(url: str) -> tuple[str, str | None, str | None]:
+                md, err = _scrape(url, render_js=False)
+                return url, md, err
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(_scrape_plain, url) for url in urls_to_scrape]
+                for future in as_completed(futures):
+                    if time.monotonic() >= scrape_deadline:
+                        warnings.append("Scrape time budget exceeded; returning partial results.")
+                        break
+                    try:
+                        url, markdown, error = future.result()
+                    except Exception:  # pragma: no cover - network/provider errors
+                        continue
+
+                    extracted = self._extract_questions_from_text(
+                        markdown, max_questions=per_source_max
+                    )
+                    scraped[url] = (markdown, error, extracted)
+
+                    src = sources_by_url.get(url)
+                    if src is None:
+                        continue
+                    if extracted:
+                        src.questions = _unique_sources(src.questions + extracted)[:per_source_max]
+                    src.error = src.error or error
+                    scraped_count += 1
+
+            # Optional (bounded) JS render pass: only try for the top few sources
+            # where the plain scrape yielded little/no signal.
+            max_js_renders = 1
+            js_candidates = [
+                url
+                for url in ranked_urls[:scrape_budget]
+                if url in scraped
+                and _should_try_render_js(
+                    url=url,
+                    extracted_questions=len(scraped[url][2]),
+                    markdown=scraped[url][0],
+                )
+            ][:max_js_renders]
+
+            for url in js_candidates:
+                if time.monotonic() >= scrape_deadline:
+                    warnings.append(
+                        "Scrape time budget exceeded before JS render; returning partial results."
+                    )
+                    break
+                markdown_js, error_js = _scrape(url, render_js=True)
+                extracted_js = self._extract_questions_from_text(
+                    markdown_js, max_questions=per_source_max
+                )
+                if not extracted_js:
+                    continue
+                _, prev_error, extracted_prev = scraped[url]
+                if len(extracted_js) <= len(extracted_prev):
+                    continue
+                src = sources_by_url.get(url)
+                if src is None:
+                    continue
+                src.questions = _unique_sources(src.questions + extracted_js)[:per_source_max]
+                src.error = src.error or error_js or prev_error
+                js_rendered_count += 1
+
+        # Pick top sources by post-scrape score (question density + URL/seed quality).
+        scored_sources: list[tuple[float, str]] = []
+        for url, src in sources_by_url.items():
+            if not src.questions:
+                continue
+            score = pre_scores.get(url, 0.0) + (min(len(src.questions), 20) * 1.4)
+            scored_sources.append((score, url))
+
+        scored_sources.sort(key=lambda x: (x[0], x[1].lower()), reverse=True)
+        selected_urls = [url for _, url in scored_sources][:max_sources]
+        selected_sources = [sources_by_url[url] for url in selected_urls]
+
+        # Aggregate questions across selected sources.
         items: dict[str, QuestionItem] = {}
-        for src in sources:
+        for src in selected_sources:
             for q in src.questions:
                 norm = normalize_question(q)
                 key = norm.lower()
@@ -546,16 +931,43 @@ class InterviewQuestionsService:
                 )
             question_list = list(items.values())[:max_questions]
 
-        return InterviewQuestionsReport(
+        report = InterviewQuestionsReport(
             company=company,
             role=role_clean,
             queries=queries,
             total_unique_questions=len(items),
             questions=question_list,
-            sources=sources[:max_sources],
+            sources=selected_sources,
             warnings=warnings,
-            meta={"sources_considered": len(urls), "fallback_questions": used_fallback_questions},
+            meta={
+                "candidates_found": len(sources_by_url),
+                "candidates_scraped": scraped_count,
+                "render_js_used": js_rendered_count,
+                "selected_sources": len(selected_sources),
+                "fallback_questions": used_fallback_questions,
+            },
         )
+        if cache_ttl != 0:
+            try:
+                key = self._cache_key(company=company, role=role_clean)
+                now = _utcnow().isoformat()
+                self._get_cache().update_one(
+                    {"_id": key},
+                    {
+                        "$set": {
+                            "_id": key,
+                            "cached_at": now,
+                            "report": report.model_dump(mode="json"),
+                        }
+                    },
+                    upsert=True,
+                )
+            except Exception:
+                pass
+
+        report.questions = report.questions[:max_questions]
+        report.sources = report.sources[:max_sources]
+        return report
 
     def _fallback_questions(self, role: str | None, *, max_questions: int) -> list[str]:
         """Return a small, high-signal set of generic questions.
@@ -1216,6 +1628,7 @@ class UnifiedInterviewAgent:
     questions_service: InterviewQuestionsServiceProtocol
     company_research_service: CompanyResearchServiceProtocol
     panel_service: PanelInterviewServiceProtocol | None = None
+    thread_service: ThreadService | None = None
 
     def __post_init__(self) -> None:
         self._graph = self._build_graph()
@@ -1448,6 +1861,29 @@ class UnifiedInterviewAgent:
         if not company:
             raise ValueError("company is required")
 
+        thread_id: str | None = None
+        if self.thread_service is not None:
+            title = f"{company} — {role}"
+            try:
+                thread = self.thread_service.upsert_thread(
+                    thread_id=request.thread_id,
+                    kind="interview_prep",
+                    title=title,
+                    metadata={"company": company, "role": role},
+                )
+                thread_id = str(thread.id)
+                self.thread_service.append_message(
+                    thread_id=thread.id,
+                    role="user",
+                    content=None,
+                    data={
+                        "type": "unified_interview_request",
+                        "payload": request.model_dump(mode="json"),
+                    },
+                )
+            except Exception as exc:
+                raise ServiceUnavailableError(f"Failed to persist interview thread: {exc}") from exc
+
         initial_state: InterviewAgentState = {
             "operation": request.operation,
             "company": company,
@@ -1495,7 +1931,7 @@ class UnifiedInterviewAgent:
             else None
         )
 
-        return UnifiedInterviewResponse(
+        response = UnifiedInterviewResponse(
             operation=request.operation,
             questions=questions,
             sources_scraped=final_state.get("sources_scraped"),
@@ -1512,6 +1948,33 @@ class UnifiedInterviewAgent:
                 "validated_count": len(final_state.get("validated_questions") or []),
             },
         )
+
+        if thread_id is not None:
+            response.metadata["thread_id"] = thread_id
+            if self.thread_service is not None:
+                try:
+                    if request.operation == "deep_research":
+                        content = response.research_report
+                    elif request.operation == "collect_questions":
+                        content = None
+                    else:
+                        content = response.interviewer_response
+
+                    self.thread_service.append_message(
+                        thread_id=thread_id,
+                        role="assistant",
+                        content=content,
+                        data={
+                            "type": "unified_interview_response",
+                            "payload": response.model_dump(mode="json"),
+                        },
+                    )
+                except Exception as exc:
+                    raise ServiceUnavailableError(
+                        f"Failed to persist interview thread message: {exc}"
+                    ) from exc
+
+        return response
 
 
 __all__ = [

@@ -193,15 +193,16 @@ class CompanyResearchService:
     # Lazily construct dependencies
     def _get_primary_search(self) -> WebConnector:
         if self._primary_search is None:
-            # Prefer self-hosted SearxNG when configured; otherwise fall back to multi-provider search.
-            mode = "searx" if (settings.searxng_host or settings.searx_host) else "multi"
-            self._primary_search = WebConnector(mode=mode, searx_k=self.search_results)
+            if not (settings.searxng_host or settings.searx_host):
+                raise ConfigurationError(
+                    "SearxNG is required for company research. Set SEARXNG_HOST (or SEARX_HOST)."
+                )
+            self._primary_search = WebConnector(mode="searx", searx_k=self.search_results)
         return self._primary_search
 
     def _get_fallback_search(self) -> WebConnector:
-        if self._fallback_search is None:
-            self._fallback_search = WebConnector(mode="multi", searx_k=self.search_results)
-        return self._fallback_search
+        # SearxNG-only: no fallback provider.
+        return self._get_primary_search()
 
     def _get_firecrawl(self) -> FirecrawlClient:
         if self._firecrawl is None:
@@ -327,10 +328,9 @@ class CompanyResearchService:
         hits = primary.hits[: self.search_results]
         meta = {"provider": primary.provider, "hits": len(hits), "meta": primary.meta}
         if not hits and primary.meta and primary.meta.get("status") == "unconfigured":
-            logger.info("SearxNG unavailable; falling back to multi-provider search")
-            fallback = self._search(company, self._get_fallback_search())
-            hits = fallback.hits[: self.search_results]
-            meta = {"provider": fallback.provider, "hits": len(hits), "meta": fallback.meta}
+            raise ConfigurationError(
+                "SearxNG is required for company research. Set SEARXNG_HOST (or SEARX_HOST)."
+            )
 
         provider = meta.get("provider")
         if not hits:
@@ -779,8 +779,11 @@ class CompanyInterviewsService:
         if self.blind_service is None:
             from alfred.services.blind_service import BlindService
 
-            mode = "searx" if (settings.searxng_host or settings.searx_host) else "multi"
-            web = WebConnector(mode=mode, searx_k=10)
+            if not (settings.searxng_host or settings.searx_host):
+                raise ConfigurationError(
+                    "SearxNG is required for Blind interview collection. Set SEARXNG_HOST (or SEARX_HOST)."
+                )
+            web = WebConnector(mode="searx", searx_k=10)
             firecrawl = FirecrawlClient(
                 base_url=settings.firecrawl_base_url,
                 timeout=settings.firecrawl_timeout,
@@ -803,17 +806,52 @@ class CompanyInterviewsService:
         ops: list[dict[str, Any]] = []
         now = _utcnow()
 
-        for provider in providers:
-            if provider == InterviewProvider.glassdoor:
-                ops.extend(
-                    self._collect_glassdoor(
-                        company, now=now, refresh=refresh, max_items=max_items_per_provider
-                    )
-                )
-            elif provider == InterviewProvider.blind:
-                ops.extend(self._collect_blind(company, now=now, max_items=max_items_per_provider))
+        provider_list = list(providers)
+        cache_ttl = int(getattr(settings, "company_interviews_cache_ttl_hours", 0) or 0)
+        if not refresh and cache_ttl > 0:
+            cutoff = now - timedelta(hours=cache_ttl)
+            remaining: list[InterviewProvider] = []
+            with self.session as s:
+                for provider in provider_list:
+                    existing = s.exec(
+                        select(sa.func.count(CompanyInterviewRow.id)).where(
+                            CompanyInterviewRow.company == company,
+                            CompanyInterviewRow.provider == provider.value,
+                            CompanyInterviewRow.updated_at >= cutoff,
+                        )
+                    ).one()
+                    if int(existing or 0) > 0:
+                        summary.warnings.append(
+                            f"cache_hit: recent interviews exist for {provider.value}; skipping sync"
+                        )
+                    else:
+                        remaining.append(provider)
+            provider_list = remaining
+
+        supported: set[InterviewProvider] = {InterviewProvider.glassdoor, InterviewProvider.blind}
+        filtered: list[InterviewProvider] = []
+        for provider in provider_list:
+            if provider in supported:
+                filtered.append(provider)
             else:
                 summary.warnings.append(f"Unsupported provider: {provider.value}")
+        provider_list = filtered
+
+        def _collect(provider: InterviewProvider) -> list[dict[str, Any]]:
+            if provider == InterviewProvider.glassdoor:
+                return self._collect_glassdoor(
+                    company, now=now, refresh=refresh, max_items=max_items_per_provider
+                )
+            return self._collect_blind(company, now=now, max_items=max_items_per_provider)
+
+        # Parallelize provider collection (network-bound) for lower wall-clock latency.
+        with ThreadPoolExecutor(max_workers=min(4, max(1, len(provider_list)))) as executor:
+            futures = [executor.submit(_collect, p) for p in provider_list]
+            for fut in futures:
+                try:
+                    ops.extend(fut.result())
+                except Exception as exc:
+                    summary.warnings.append(f"Interview provider fetch failed: {exc}")
 
         if not ops:
             summary.warnings.append("No interview experiences found.")

@@ -87,3 +87,13 @@ def test_generate_report_dedupes_and_categorizes_questions():
     conflict_q = next((q for q in report.questions if "conflict" in q.question.lower()), None)
     assert conflict_q is not None
     assert "behavioral" in conflict_q.categories or "general" in conflict_q.categories
+
+
+def test_build_queries_includes_glassdoor_site_filter():
+    web = _FakeWeb(hits=[])
+    firecrawl = _FakeFirecrawl()
+    svc = InterviewQuestionsService(primary_search=web, fallback_search=web, firecrawl=firecrawl)
+
+    queries = svc._build_queries(company="Acme", role="Software Engineer")
+
+    assert any(q.startswith("site:glassdoor.com ") for q in queries)

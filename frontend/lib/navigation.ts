@@ -5,6 +5,7 @@ import {
   FileText,
   LayoutGrid,
   MessageCircle,
+  MessageSquareText,
   Shapes,
   Sparkles,
   type LucideIcon,
@@ -46,7 +47,6 @@ export const appNavItems: AppNavItem[] = [
     href: "/system-design",
     icon: Shapes,
     keywords: ["system design", "diagram", "architecture"],
-    topNav: true,
   },
   {
     key: "interview-prep",
@@ -54,7 +54,13 @@ export const appNavItems: AppNavItem[] = [
     href: "/interview-prep",
     icon: BookOpen,
     keywords: ["interview", "prep", "questions", "practice"],
-    topNav: true,
+  },
+  {
+    key: "threads",
+    title: "Threads",
+    href: "/threads",
+    icon: MessageSquareText,
+    keywords: ["threads", "history", "messages", "conversation"],
   },
   { key: "rag", title: "RAG", href: "/rag", icon: MessageCircle, keywords: ["rag", "chat", "qa"] },
   {

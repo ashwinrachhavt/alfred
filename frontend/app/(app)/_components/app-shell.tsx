@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 
+import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
+
 import { AppCommandPaletteTrigger } from "@/components/app-command-palette";
 import { AppNavigationMenu } from "@/components/app-navigation-menu";
 import { AppSidebar } from "@/components/app-sidebar";
-import { CompanyResearchHistorySheet } from "@/components/company-research-history-sheet";
 import { TaskCenterTrigger } from "@/components/task-center-sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 
 export function AppShell({
@@ -39,8 +41,20 @@ export function AppShell({
               <AppCommandPaletteTrigger className="md:hidden" variant="icon" />
               <AppCommandPaletteTrigger className="hidden md:flex" />
               <TaskCenterTrigger />
-              <CompanyResearchHistorySheet />
               <ThemeToggle />
+              <SignedOut>
+                <SignInButton mode="modal">
+                  <Button size="sm" variant="ghost">
+                    Sign in
+                  </Button>
+                </SignInButton>
+                <SignUpButton mode="modal">
+                  <Button size="sm">Sign up</Button>
+                </SignUpButton>
+              </SignedOut>
+              <SignedIn>
+                <UserButton />
+              </SignedIn>
             </div>
           </div>
         </header>

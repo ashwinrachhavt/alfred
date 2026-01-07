@@ -28,7 +28,7 @@ type StoredPayload = {
 
 function isTaskStatusResponse(value: unknown): value is TaskStatusResponse {
   return (
-    Boolean(value) &&
+    value !== null &&
     typeof value === "object" &&
     "task_id" in value &&
     "status" in value &&

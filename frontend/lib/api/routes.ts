@@ -12,6 +12,11 @@ export const apiRoutes = {
     researchReportsRecent: "/api/company/research-reports/recent",
     researchReportById: (reportId: string) => `/api/company/research-reports/${reportId}`,
   },
+  threads: {
+    list: "/api/threads",
+    create: "/api/threads",
+    messages: (threadId: string) => `/api/threads/${threadId}/messages`,
+  },
   tasks: {
     status: (taskId: string) => `/api/tasks/${taskId}`,
   },

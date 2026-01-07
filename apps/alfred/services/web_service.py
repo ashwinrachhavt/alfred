@@ -24,16 +24,22 @@ def search_web(
     you_num_results: int = 20,
     searx_k: int = 10,
 ) -> dict:
-    conn = WebConnector(
-        mode=mode,
-        brave_pages=brave_pages,
-        ddg_max_results=ddg_max_results,
-        exa_num_results=exa_num_results,
-        tavily_max_results=tavily_max_results,
-        tavily_topic=tavily_topic,
-        you_num_results=you_num_results,
-        searx_k=searx_k,
-    )
+    # For searx mode, prefer the process-scoped connector for better cold-start behavior.
+    if mode == "searx":
+        from alfred.core.dependencies import get_primary_web_search_connector
+
+        conn = get_primary_web_search_connector()
+    else:
+        conn = WebConnector(
+            mode=mode,  # type: ignore[arg-type]
+            brave_pages=brave_pages,
+            ddg_max_results=ddg_max_results,
+            exa_num_results=exa_num_results,
+            tavily_max_results=tavily_max_results,
+            tavily_topic=tavily_topic,  # type: ignore[arg-type]
+            you_num_results=you_num_results,
+            searx_k=searx_k,
+        )
     resp = conn.search(q)
     payload = {
         "provider": resp.provider,
@@ -50,12 +56,6 @@ def search_web(
             input={
                 "q": q,
                 "mode": mode,
-                "brave_pages": brave_pages,
-                "ddg_max_results": ddg_max_results,
-                "exa_num_results": exa_num_results,
-                "tavily_max_results": tavily_max_results,
-                "tavily_topic": tavily_topic,
-                "you_num_results": you_num_results,
                 "searx_k": searx_k,
             },
             output={"hits_count": len(resp.hits), "provider": resp.provider},

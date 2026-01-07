@@ -72,6 +72,13 @@ class RateLimitError(AlfredException):
     default_code = "rate_limited"
 
 
+class NotFoundError(AlfredException):
+    """Raised when a requested resource does not exist."""
+
+    status_code = 404
+    default_code = "not_found"
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """Register Alfred's exception handlers on a FastAPI app."""
 

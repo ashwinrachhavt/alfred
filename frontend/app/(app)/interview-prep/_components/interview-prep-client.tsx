@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { toast } from "sonner";
 
@@ -34,6 +36,7 @@ type PersistedInterviewPrepState = {
   role: string;
   candidateBackground: string;
   operation: UnifiedInterviewOperation;
+  threadId: string;
   maxSources: number;
   maxQuestions: number;
   useFirecrawl: boolean;
@@ -57,6 +60,14 @@ function formatErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
   return "Something went wrong.";
+}
+
+function extractThreadIdFromMetadata(metadata: Record<string, unknown> | null | undefined): string | null {
+  if (!metadata) return null;
+  const value = metadata.thread_id;
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized ? normalized : null;
 }
 
 function isQueuedResponse(
@@ -128,11 +139,16 @@ function formatInterviewPrepResultForClipboard({
 }
 
 export function InterviewPrepClient() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [company, setCompany] = useState("");
   const [role, setRole] = useState("Software Engineer");
   const [candidateBackground, setCandidateBackground] = useState("");
 
   const [operation, setOperation] = useState<UnifiedInterviewOperation>("collect_questions");
+  const [threadId, setThreadId] = useState("");
 
   const [maxSources, setMaxSources] = useState(12);
   const [maxQuestions, setMaxQuestions] = useState(60);
@@ -142,6 +158,21 @@ export function InterviewPrepClient() {
   const [targetLengthWords, setTargetLengthWords] = useState(1000);
 
   const [practiceSessionId, setPracticeSessionId] = useState("");
+
+  const syncPracticeSessionId = useCallback(
+    (nextSessionId: string) => {
+      const normalized = nextSessionId.trim();
+      setPracticeSessionId(normalized);
+
+      const params = new URLSearchParams(searchParams.toString());
+      if (normalized) params.set("sessionId", normalized);
+      else params.delete("sessionId");
+
+      const queryString = params.toString();
+      router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
 
   const [runInBackground, setRunInBackground] = useState(false);
 
@@ -169,6 +200,7 @@ export function InterviewPrepClient() {
     setRole(persisted.role);
     setCandidateBackground(persisted.candidateBackground);
     setOperation(persisted.operation);
+    setThreadId(persisted.threadId || "");
     setMaxSources(persisted.maxSources);
     setMaxQuestions(persisted.maxQuestions);
     setUseFirecrawl(persisted.useFirecrawl);
@@ -178,11 +210,19 @@ export function InterviewPrepClient() {
   }, []);
 
   useEffect(() => {
+    const sessionIdFromUrl = searchParams.get("sessionId")?.trim() ?? "";
+    if (!sessionIdFromUrl) return;
+    if (sessionIdFromUrl === practiceSessionId) return;
+    setPracticeSessionId(sessionIdFromUrl);
+  }, [practiceSessionId, searchParams]);
+
+  useEffect(() => {
     const nextState: PersistedInterviewPrepState = {
       company,
       role,
       candidateBackground,
       operation,
+      threadId,
       maxSources,
       maxQuestions,
       useFirecrawl,
@@ -196,6 +236,7 @@ export function InterviewPrepClient() {
     role,
     candidateBackground,
     operation,
+    threadId,
     maxSources,
     maxQuestions,
     useFirecrawl,
@@ -211,13 +252,16 @@ export function InterviewPrepClient() {
     handledQueuedTaskIdRef.current = queuedTaskId;
 
     if (queuedStatus.successful && queuedStatus.result && typeof queuedStatus.result === "object") {
-      setResult(queuedStatus.result as UnifiedInterviewResponse);
+      const parsed = queuedStatus.result as UnifiedInterviewResponse;
+      setResult(parsed);
+      const persistedThreadId = extractThreadIdFromMetadata(parsed.metadata);
+      if (persistedThreadId) setThreadId(persistedThreadId);
       const maybeSessionId = (queuedStatus.result as { session_id?: unknown }).session_id;
-      if (typeof maybeSessionId === "string") setPracticeSessionId(maybeSessionId);
+      if (typeof maybeSessionId === "string") syncPracticeSessionId(maybeSessionId);
     } else if (queuedStatus.failed) {
       setError(queuedStatus.error ?? "Background task failed.");
     }
-  }, [queuedStatus, queuedTaskId]);
+  }, [queuedStatus, queuedTaskId, syncPracticeSessionId]);
 
   const canRun = useMemo(() => company.trim().length > 0, [company]);
 
@@ -255,6 +299,9 @@ export function InterviewPrepClient() {
       candidate_background: candidateBackground.trim() || null,
     };
 
+    const normalizedThreadId = threadId.trim();
+    if (normalizedThreadId) payload.thread_id = normalizedThreadId;
+
     if (operation === "practice_session") {
       setError("Use the Practice Session drill below.");
       setIsSubmitting(false);
@@ -285,6 +332,8 @@ export function InterviewPrepClient() {
       }
 
       setResult(response);
+      const persistedThreadId = extractThreadIdFromMetadata(response.metadata);
+      if (persistedThreadId) setThreadId(persistedThreadId);
       if (response.session_id) setPracticeSessionId(response.session_id);
     } catch (err) {
       setError(formatErrorMessage(err));
@@ -348,6 +397,37 @@ export function InterviewPrepClient() {
               onChange={(e) => setCandidateBackground(e.target.value)}
               rows={4}
             />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="threadId">Thread (optional)</Label>
+              {threadId.trim() ? (
+                <Button asChild variant="ghost" size="sm">
+                  <Link href={`/threads/${threadId.trim()}`}>Open</Link>
+                </Button>
+              ) : null}
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                id="threadId"
+                placeholder="Leave blank to create a new thread on run"
+                value={threadId}
+                onChange={(e) => setThreadId(e.target.value)}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setThreadId("")}
+                disabled={!threadId.trim()}
+              >
+                Clear
+              </Button>
+            </div>
+            <p className="text-muted-foreground text-xs">
+              When set, each run appends request/response to the thread. When blank, the backend
+              creates a new thread and returns its id.
+            </p>
           </div>
 
           <Tabs
@@ -426,8 +506,10 @@ export function InterviewPrepClient() {
                 company={company}
                 role={role}
                 candidateBackground={candidateBackground}
+                threadId={threadId}
+                onThreadIdChange={setThreadId}
                 sessionId={practiceSessionId}
-                onSessionIdChange={setPracticeSessionId}
+                onSessionIdChange={syncPracticeSessionId}
               />
             </TabsContent>
           </Tabs>
@@ -504,6 +586,11 @@ export function InterviewPrepClient() {
               ) : null}
               {activeResult.session_id ? (
                 <Badge variant="outline">session: {activeResult.session_id}</Badge>
+              ) : null}
+              {threadId.trim() ? (
+                <Button asChild variant="ghost" size="sm">
+                  <Link href={`/threads/${threadId.trim()}`}>thread: {threadId.trim().slice(0, 8)}</Link>
+                </Button>
               ) : null}
             </div>
           </CardHeader>
