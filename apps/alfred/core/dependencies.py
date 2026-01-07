@@ -126,9 +126,10 @@ def get_primary_web_search_connector() -> WebConnector:
     from alfred.connectors.web_connector import WebConnector
 
     if not (settings.searxng_host or settings.searx_host):
-        raise ConfigurationError(
-            "SearxNG is required for web search. Set SEARXNG_HOST (or SEARX_HOST)."
-        )
+        if settings.app_env not in {"test", "ci"}:
+            raise ConfigurationError(
+                "SearxNG is required for web search. Set SEARXNG_HOST (or SEARX_HOST)."
+            )
     return WebConnector(mode="searx", searx_k=8)
 
 
@@ -212,9 +213,10 @@ def get_web_service() -> WebService:
     from alfred.services.web_service import WebService
 
     if not (settings.searxng_host or settings.searx_host):
-        raise ConfigurationError(
-            "SearxNG is required for web search. Set SEARXNG_HOST (or SEARX_HOST)."
-        )
+        if settings.app_env not in {"test", "ci"}:
+            raise ConfigurationError(
+                "SearxNG is required for web search. Set SEARXNG_HOST (or SEARX_HOST)."
+            )
     return WebService(mode="searx", searx_k=10)
 
 

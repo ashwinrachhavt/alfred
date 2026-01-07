@@ -536,16 +536,12 @@ class WebConnector:
                     or settings.searxng_host
                     or settings.searx_host
                 )
-                if not searx_host:
-                    raise ConfigurationError(
-                        "SearxNG is required for web search. Set SEARXNG_HOST (or SEARX_HOST)."
-                    )
-                self.clients["searx"] = SearxClient(host=searx_host, k=searx_k)
+                if searx_host:
+                    self.clients["searx"] = SearxClient(host=searx_host, k=searx_k)
                 return
             if provider == "brave":
-                if not settings.brave_search_api_key:
-                    raise ConfigurationError("BRAVE_SEARCH_API_KEY is not set")
-                self.clients["brave"] = BraveClient(count=brave_count)
+                if settings.brave_search_api_key:
+                    self.clients["brave"] = BraveClient(count=brave_count)
                 return
             if provider == "ddg":
                 try:
@@ -555,44 +551,40 @@ class WebConnector:
                         timeout=float(settings.web_ddg_timeout_s),
                         retries=int(settings.web_ddg_retries),
                     )
-                except ImportError as exc:
-                    raise ConfigurationError(f"DDG client dependency missing: {exc}") from exc
+                except ImportError as exc:  # pragma: no cover - optional dependency
+                    logging.warning("DDG client disabled: %s", exc)
                 return
             if provider == "exa":
-                if not settings.exa_api_key:
-                    raise ConfigurationError("EXA_API_KEY is not set")
-                try:
-                    self.clients["exa"] = ExaClient(default_num_results=exa_num_results)
-                except ImportError as exc:
-                    raise ConfigurationError(f"Exa client dependency missing: {exc}") from exc
+                if settings.exa_api_key:
+                    try:
+                        self.clients["exa"] = ExaClient(default_num_results=exa_num_results)
+                    except ImportError as exc:  # pragma: no cover - optional dependency
+                        logging.warning("Exa client disabled: %s", exc)
                 return
             if provider == "tavily":
-                if not settings.tavily_api_key:
-                    raise ConfigurationError("TAVILY_API_KEY is not set")
-                try:
-                    self.clients["tavily"] = TavilyClient(
-                        max_results=tavily_max_results, topic=tavily_topic
-                    )
-                except ImportError as exc:
-                    raise ConfigurationError(f"Tavily client dependency missing: {exc}") from exc
+                if settings.tavily_api_key:
+                    try:
+                        self.clients["tavily"] = TavilyClient(
+                            max_results=tavily_max_results, topic=tavily_topic
+                        )
+                    except ImportError as exc:  # pragma: no cover - optional dependency
+                        logging.warning("Tavily client disabled: %s", exc)
                 return
             if provider == "you":
-                if not settings.ydc_api_key:
-                    raise ConfigurationError("YDC_API_KEY is not set")
-                try:
-                    self.clients["you"] = YouClient(num_web_results=you_num_results)
-                except ImportError as exc:
-                    raise ConfigurationError(f"You.com client dependency missing: {exc}") from exc
+                if settings.ydc_api_key:
+                    try:
+                        self.clients["you"] = YouClient(num_web_results=you_num_results)
+                    except ImportError as exc:  # pragma: no cover - optional dependency
+                        logging.warning("You.com client disabled: %s", exc)
                 return
             if provider == "langsearch":
                 langsearch_key = _env("LANGSEARCH_API_KEY") or settings.langsearch_api_key
-                if not langsearch_key:
-                    raise ConfigurationError("LANGSEARCH_API_KEY is not set")
-                base_url = _env("LANGSEARCH_BASE_URL") or settings.langsearch_base_url
-                self.clients["langsearch"] = LangsearchClient(
-                    api_key=langsearch_key,
-                    base_url=base_url,
-                )
+                if langsearch_key:
+                    base_url = _env("LANGSEARCH_BASE_URL") or settings.langsearch_base_url
+                    self.clients["langsearch"] = LangsearchClient(
+                        api_key=langsearch_key,
+                        base_url=base_url,
+                    )
                 return
 
             raise ConfigurationError(f"Unsupported web provider: {provider}")
@@ -761,7 +753,9 @@ class WebConnector:
         provider: Provider = self._resolve_auto() if self.mode == "auto" else self.mode
 
         if provider == "searx" and provider not in self.clients:
-            return SearchResponse(provider="searx", query=query, hits=[], meta={"status": "unconfigured"})
+            return SearchResponse(
+                provider="searx", query=query, hits=[], meta={"status": "unconfigured"}
+            )
 
         # Re-check env-based configuration at call time to handle tests that mutate env after settings load.
         if not _env_configured(provider):

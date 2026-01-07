@@ -154,7 +154,11 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = Field(
-        default="postgresql+psycopg://localhost:5432/alfred",
+        default=(
+            f"sqlite:///{DEFAULT_DB_PATH}"
+            if _app_env in {"test", "ci"}
+            else "postgresql+psycopg://localhost:5432/alfred"
+        ),
         alias="DATABASE_URL",
     )
     doc_storage_backend: str = Field(

@@ -528,7 +528,10 @@ class InterviewQuestionsService:
         ]
 
         role_lower = (role_clean or "").lower()
-        if any(term in role_lower for term in ("engineer", "developer", "software", "backend", "frontend", "swe")):
+        if any(
+            term in role_lower
+            for term in ("engineer", "developer", "software", "backend", "frontend", "swe")
+        ):
             queries.extend(
                 [
                     f"{base} system design interview questions".strip(),
@@ -593,10 +596,16 @@ class InterviewQuestionsService:
         max_sources = max(1, int(max_sources))
         max_questions = max(1, int(max_questions))
 
+        warnings: list[str] = []
+
         cache_ttl = int(getattr(settings, "interview_questions_cache_ttl_hours", 0) or 0)
         if cache_ttl != 0:
             key = self._cache_key(company=company, role=role_clean)
-            cached = self._get_cache().find_one({"_id": key})
+            try:
+                cached = self._get_cache().find_one({"_id": key})
+            except Exception as exc:
+                warnings.append(f"Cache unavailable; skipping cache read: {exc}")
+                cached = None
             if cached:
                 cached_at = cached.get("cached_at")
                 try:
@@ -624,17 +633,13 @@ class InterviewQuestionsService:
                         pass
 
         queries = self._build_queries(company=company, role=role_clean)
-
-        warnings: list[str] = []
         used_fallback_questions = False
 
         sources_by_url: dict[str, QuestionSource] = {}
         seed_score_by_url: dict[str, float] = {}
         seed_query_by_url: dict[str, str] = {}
         budget_max = max(0, int(settings.interview_scrape_budget_max))
-        candidate_target = (
-            max_sources * 2 if budget_max == 0 else max(12, budget_max * 2)
-        )
+        candidate_target = max_sources * 2 if budget_max == 0 else max(12, budget_max * 2)
 
         def _upsert_source(
             *,
@@ -652,9 +657,7 @@ class InterviewQuestionsService:
 
             source = sources_by_url.get(clean_url)
             if source is None:
-                snippet_questions = self._extract_questions_from_text(
-                    snippet, max_questions=4
-                )
+                snippet_questions = self._extract_questions_from_text(snippet, max_questions=4)
                 source = QuestionSource(
                     url=clean_url,
                     title=title,
@@ -669,7 +672,8 @@ class InterviewQuestionsService:
                 source.provider = source.provider or provider
                 if snippet:
                     source.questions = _unique_sources(
-                        source.questions + self._extract_questions_from_text(snippet, max_questions=2)
+                        source.questions
+                        + self._extract_questions_from_text(snippet, max_questions=2)
                     )
 
             if extra_questions:
@@ -709,20 +713,62 @@ class InterviewQuestionsService:
             if len(sources_by_url) >= candidate_target:
                 break
 
-        # --- Firecrawl search (disabled: SearxNG-only search mode) ---
-        if use_firecrawl_search:
-            warnings.append("Firecrawl search is disabled (SearxNG-only search mode).")
+        # --- Firecrawl search (augment sources with higher-signal "questions asked" pages) ---
+        if use_firecrawl_search and self.firecrawl is not None:
+            for q in queries:
+                try:
+                    fc = self.firecrawl.search(
+                        q, max_results=max(1, int(self.firecrawl_search_results))
+                    )
+                except Exception as exc:  # pragma: no cover - network/provider errors
+                    warnings.append(f"Firecrawl search failed for query '{q}': {exc}")
+                    continue
+
+                if not getattr(fc, "success", False):
+                    err = getattr(fc, "error", None)
+                    warnings.append(
+                        f"Firecrawl search failed for query '{q}': "
+                        f"{err if isinstance(err, str) else str(err)}"
+                    )
+                    continue
+
+                data = getattr(fc, "data", None)
+                if not isinstance(data, list):
+                    continue
+
+                for rank, item in enumerate(
+                    data[: max(1, int(self.firecrawl_search_results))]
+                ):
+                    if not isinstance(item, dict):
+                        continue
+                    url = item.get("url")
+                    if not url:
+                        continue
+                    title = item.get("title")
+                    snippet = item.get("content") or item.get("snippet") or item.get("description")
+                    rank_boost = max(0.0, 0.45 - (0.08 * float(rank)))
+                    extra_questions = self._extract_questions_from_text(
+                        snippet, max_questions=4
+                    )
+                    _upsert_source(
+                        url=str(url),
+                        title=str(title) if title else None,
+                        snippet=str(snippet) if snippet else None,
+                        provider="firecrawl",
+                        seed_query=q,
+                        rank_boost=rank_boost,
+                        extra_questions=extra_questions,
+                    )
+
+                if len(sources_by_url) >= candidate_target:
+                    break
 
         if not sources_by_url:
             warnings.append("No sources were discovered via search providers.")
 
         # --- Scrape a larger candidate pool, then pick the best sources ---
         per_source_max = 20
-        scrape_budget = (
-            0
-            if budget_max == 0
-            else clamp_int(max_sources * 2, lo=1, hi=budget_max)
-        )
+        scrape_budget = 0 if budget_max == 0 else clamp_int(max_sources * 2, lo=1, hi=budget_max)
         scrape_deadline = time.monotonic() + float(settings.interview_scrape_time_budget_s)
 
         pre_scores: dict[str, float] = {}
@@ -907,7 +953,13 @@ class InterviewQuestionsService:
                 now = _utcnow().isoformat()
                 self._get_cache().update_one(
                     {"_id": key},
-                    {"$set": {"_id": key, "cached_at": now, "report": report.model_dump(mode="json")}},
+                    {
+                        "$set": {
+                            "_id": key,
+                            "cached_at": now,
+                            "report": report.model_dump(mode="json"),
+                        }
+                    },
                     upsert=True,
                 )
             except Exception:

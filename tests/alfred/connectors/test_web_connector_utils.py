@@ -96,16 +96,12 @@ def test_search_multi_stops_early_when_enough_hits(monkeypatch):
     conn = WebConnector(mode="multi")
     searx = _Stub(
         "searx",
-        [
-            SearchHit(title="A", url="https://example.com/a", snippet=None, source="searx", raw={})
-        ],
+        [SearchHit(title="A", url="https://example.com/a", snippet=None, source="searx", raw={})],
     )
     brave = _Stub("brave", [])
     ddg = _Stub(
         "ddg",
-        [
-            SearchHit(title="B", url="https://example.com/b", snippet=None, source="ddg", raw={})
-        ],
+        [SearchHit(title="B", url="https://example.com/b", snippet=None, source="ddg", raw={})],
     )
     conn.clients = {"searx": searx, "brave": brave, "ddg": ddg}
 
@@ -135,9 +131,7 @@ def test_search_multi_falls_back_to_ddg_when_needed(monkeypatch):
     brave = _Stub("brave", [])
     ddg = _Stub(
         "ddg",
-        [
-            SearchHit(title="B", url="https://example.com/b", snippet=None, source="ddg", raw={})
-        ],
+        [SearchHit(title="B", url="https://example.com/b", snippet=None, source="ddg", raw={})],
     )
     conn.clients = {"searx": searx, "brave": brave, "ddg": ddg}
 
