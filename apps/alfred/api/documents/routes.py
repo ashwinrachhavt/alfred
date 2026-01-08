@@ -3,17 +3,21 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from alfred.core.celery_client import get_celery_client
 from alfred.core.dependencies import get_doc_storage_service
 from alfred.schemas.documents import (
+    DocumentDetailsResponse,
     DocumentIngest,
+    ExplorerDocumentsResponse,
     NoteCreate,
     NoteCreateRequest,
     NoteResponse,
     NotesListResponse,
+    SemanticMapResponse,
 )
 from alfred.services.doc_storage_pg import DocStorageService
 
@@ -84,6 +88,20 @@ class PageResponse(BaseModel):
     status_url: str | None = None
 
 
+class DocumentTitleImageRequest(BaseModel):
+    model: str = Field(default="gpt-image-1", description="OpenAI image model to use.")
+    size: str = Field(default="1024x1024", description="Requested output size.")
+    quality: str = Field(default="high", description="Requested output quality.")
+
+
+class DocumentTitleImageResponse(BaseModel):
+    id: str
+    status: str
+    cover_image_url: str | None = None
+    skipped: bool = False
+    reason: str | None = None
+
+
 @router.post("/page/extract", response_model=PageResponse)
 def create_page(
     payload: PageRequest,
@@ -132,6 +150,93 @@ def enqueue_document_enrichment(
         raise HTTPException(status_code=500, detail="Failed to enqueue enrichment") from exc
 
 
+@router.get("/{id}/image")
+def get_document_image(
+    id: str,
+    svc: DocStorageService = Depends(get_doc_storage_service),
+) -> Response:
+    """Fetch the stored cover image for a document (PNG)."""
+
+    try:
+        img = svc.get_document_image_bytes(id)
+        if not img:
+            raise HTTPException(status_code=404, detail="Image not found")
+        return Response(
+            content=img,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - external IO
+        logger.exception("Failed to fetch document image: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch image") from exc
+
+
+@router.post("/{id}/image", response_model=DocumentTitleImageResponse)
+def generate_document_image(
+    id: str,
+    force: bool = Query(False, description="Regenerate even if already present"),
+    payload: DocumentTitleImageRequest = Body(default_factory=DocumentTitleImageRequest),
+    svc: DocStorageService = Depends(get_doc_storage_service),
+) -> DocumentTitleImageResponse:
+    """Generate and persist a cover image for a document synchronously."""
+
+    try:
+        res = svc.generate_document_title_image(
+            id,
+            force=force,
+            model=payload.model,
+            size=payload.size,
+            quality=payload.quality,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # pragma: no cover - external IO
+        logger.exception("Failed to generate document image: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to generate image") from exc
+
+    skipped = bool(res.get("skipped"))
+    return DocumentTitleImageResponse(
+        id=id,
+        status="skipped" if skipped else "generated",
+        cover_image_url=f"/api/documents/{id}/image",
+        skipped=skipped,
+        reason=res.get("reason"),
+    )
+
+
+@router.post("/{id}/image/async", response_model=PageResponse)
+def enqueue_document_image_generation(
+    id: str,
+    force: bool = Query(False, description="Regenerate even if already present"),
+    payload: DocumentTitleImageRequest = Body(default_factory=DocumentTitleImageRequest),
+) -> PageResponse:
+    """Enqueue asynchronous title-image generation for a stored document."""
+
+    try:
+        celery_client = get_celery_client()
+        async_result = celery_client.send_task(
+            "alfred.tasks.document_title_image.generate",
+            kwargs={
+                "doc_id": id,
+                "force": force,
+                "model": payload.model,
+                "size": payload.size,
+                "quality": payload.quality,
+            },
+        )
+        return PageResponse(
+            id=id,
+            status="queued",
+            task_id=async_result.id,
+            status_url=f"/tasks/{async_result.id}",
+        )
+    except Exception as exc:  # pragma: no cover - external IO
+        logger.exception("Failed to enqueue document image generation: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to enqueue image generation") from exc
+
+
 @router.get("/doc/{id}")
 def get_document(
     id: str,
@@ -146,6 +251,56 @@ def get_document(
         raise
     except Exception as exc:  # pragma: no cover - external IO
         raise HTTPException(status_code=500, detail="Failed to fetch document") from exc
+
+
+@router.get("/{id}/details", response_model=DocumentDetailsResponse)
+def get_document_details(
+    id: str,
+    svc: DocStorageService = Depends(get_doc_storage_service),
+) -> dict:
+    try:
+        doc = svc.get_document_details(id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return doc
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - external IO
+        raise HTTPException(status_code=500, detail="Failed to fetch document") from exc
+
+
+@router.get("/explorer", response_model=ExplorerDocumentsResponse)
+def list_explorer_documents(
+    limit: int = Query(24, ge=1, le=200),
+    cursor: str | None = Query(None, description="Opaque cursor for pagination"),
+    filter_topic: str | None = Query(None, description="Filter by primary topic"),
+    search: str | None = Query(None, description="Optional search query"),
+    svc: DocStorageService = Depends(get_doc_storage_service),
+) -> dict:
+    try:
+        return svc.list_explorer_documents(
+            limit=limit,
+            cursor=cursor,
+            filter_topic=filter_topic,
+            search=search,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # pragma: no cover - external IO
+        raise HTTPException(status_code=500, detail="Failed to list documents") from exc
+
+
+@router.get("/semantic-map", response_model=SemanticMapResponse)
+def get_semantic_map(
+    limit: int = Query(5000, ge=1, le=20_000),
+    refresh: bool = Query(False, description="Force recompute (bypass cache)"),
+    svc: DocStorageService = Depends(get_doc_storage_service),
+) -> dict:
+    try:
+        points = svc.get_semantic_map_points(limit=limit, force_refresh=refresh)
+        return {"points": points}
+    except Exception as exc:  # pragma: no cover - external IO
+        raise HTTPException(status_code=500, detail="Failed to build semantic map") from exc
 
 
 @router.get("/search")

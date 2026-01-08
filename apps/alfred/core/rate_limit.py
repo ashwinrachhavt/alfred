@@ -19,15 +19,6 @@ class RateLimitPolicy:
 
 
 DEFAULT_POLICIES: dict[str, RateLimitPolicy] = {
-    # DuckDuckGo (unofficial): be conservative.
-    "ddg": RateLimitPolicy(max_per_minute=15, min_interval_s=2.0),
-    # Brave: paid API, but still avoid bursts (and pagination multiplies calls).
-    "brave": RateLimitPolicy(max_per_minute=60, min_interval_s=1.0),
-    # Tavily / Exa / You / Langsearch: conservative defaults.
-    "tavily": RateLimitPolicy(max_per_minute=60, min_interval_s=1.0),
-    "exa": RateLimitPolicy(max_per_minute=60, min_interval_s=1.0),
-    "you": RateLimitPolicy(max_per_minute=30, min_interval_s=1.0),
-    "langsearch": RateLimitPolicy(max_per_minute=60, min_interval_s=1.0),
     # Self-hosted SearxNG typically can handle more; keep a mild throttle.
     "searx": RateLimitPolicy(max_per_minute=120, min_interval_s=0.25),
     # Public sites that may gate content; keep conservative.

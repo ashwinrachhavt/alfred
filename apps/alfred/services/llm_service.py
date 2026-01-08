@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import importlib.util
 from typing import Iterable, Optional, Type, TypeVar
 
@@ -400,3 +401,37 @@ class LLMService:
         )
         raw = resp.choices[0].message.content
         return schema.model_validate_json(raw or "{}")
+
+    # ---------- Images (OpenAI only) ----------
+
+    def generate_image_png(
+        self,
+        *,
+        prompt: str,
+        model: str = "gpt-image-1",
+        size: str = "1024x1024",
+        quality: str = "high",
+    ) -> tuple[bytes, str | None]:
+        """Generate a PNG image using OpenAI and return raw bytes.
+
+        Returns a tuple: (image_bytes, revised_prompt).
+        """
+
+        resp = self.openai_client.images.generate(
+            model=model,
+            prompt=prompt,
+            size=size,
+            quality=quality,
+            output_format="png",
+            response_format="b64_json",
+        )
+        if not resp.data:
+            raise RuntimeError("OpenAI did not return any image data")
+
+        first = resp.data[0]
+        b64 = getattr(first, "b64_json", None)
+        if not isinstance(b64, str) or not b64.strip():
+            raise RuntimeError("OpenAI did not return base64 image content")
+
+        revised_prompt = getattr(first, "revised_prompt", None)
+        return base64.b64decode(b64), revised_prompt if isinstance(revised_prompt, str) else None

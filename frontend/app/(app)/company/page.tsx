@@ -2,15 +2,15 @@ import { CompanyResearchClient } from "@/app/(app)/company/_components/company-r
 import { Page } from "@/components/layout/page";
 
 type CompanyPageProps = {
-  searchParams?: {
+  searchParams?: Promise<{
     reportId?: string | string[];
-  };
+  }>;
 };
 
-export default function CompanyPage({ searchParams }: CompanyPageProps) {
-  const reportId = Array.isArray(searchParams?.reportId)
-    ? searchParams?.reportId[0]
-    : searchParams?.reportId;
+export default async function CompanyPage({ searchParams }: CompanyPageProps) {
+  const resolvedSearchParams = await searchParams;
+  const reportIdValue = resolvedSearchParams?.reportId;
+  const reportId = Array.isArray(reportIdValue) ? reportIdValue[0] : reportIdValue;
 
   return (
     <Page>

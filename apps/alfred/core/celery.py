@@ -21,6 +21,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             "alfred.tasks.company_insights",
             "alfred.tasks.company_interviews",
             "alfred.tasks.document_enrichment",
+            "alfred.tasks.document_title_image",
             "alfred.tasks.gmail_interviews",
             "alfred.tasks.interview_prep",
             "alfred.tasks.interviews_unified",
@@ -57,6 +58,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             "alfred.tasks.company_insights.*": {"queue": "default"},
             "alfred.tasks.company_interviews.*": {"queue": "default"},
             "alfred.tasks.document_enrichment.*": {"queue": "default"},
+            "alfred.tasks.document_title_image.*": {"queue": "default"},
             "alfred.tasks.gmail_interviews.*": {"queue": "default"},
             "alfred.tasks.interview_prep.*": {"queue": "default"},
             "alfred.tasks.interviews_unified.*": {"queue": "agent"},
@@ -97,6 +99,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
         import alfred.tasks.company_interviews  # noqa: F401
         import alfred.tasks.company_research  # noqa: F401
         import alfred.tasks.document_enrichment  # noqa: F401
+        import alfred.tasks.document_title_image  # noqa: F401
         import alfred.tasks.gmail_interviews  # noqa: F401
         import alfred.tasks.interview_prep  # noqa: F401
         import alfred.tasks.interviews_unified  # noqa: F401

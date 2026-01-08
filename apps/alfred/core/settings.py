@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
@@ -24,9 +25,10 @@ class Settings(BaseSettings):
     """
 
     _app_env = (os.getenv("APP_ENV") or "").strip().lower()
+    _is_test_like_env = _app_env in {"test", "ci"} or "pytest" in sys.modules
     _env_files = (
         []
-        if _app_env in {"test", "ci"}
+        if _is_test_like_env
         else [
             str((Path(__file__).resolve().parents[1] / ".env")),  # apps/alfred/.env
             str((Path(__file__).resolve().parents[3] / ".env")),  # repo root .env
@@ -121,21 +123,6 @@ class Settings(BaseSettings):
         alias="OPENWEB_NINJA_BASE_URL",
     )
 
-    # LangSearch
-    langsearch_api_key: Optional[str] = Field(default=None, alias="LANGSEARCH_API_KEY")
-    langsearch_base_url: str = Field(
-        default="https://api.langsearch.com/v1/web-search",
-        alias="LANGSEARCH_BASE_URL",
-    )
-    langsearch_rerank_url: Optional[str] = Field(
-        default="https://api.langsearch.com/v1/semantic-rerank",
-        alias="LANGSEARCH_RERANK_URL",
-    )
-    langsearch_db_path: str = Field(
-        default=".alfred_data/langsearch.json",
-        alias="LANGSEARCH_DB_PATH",
-    )
-
     # Langfuse (observability)
     langfuse_public_key: Optional[str] = Field(default=None, alias="LANGFUSE_PUBLIC_KEY")
     langfuse_secret_key: SecretStr | None = Field(default=None, alias="LANGFUSE_SECRET_KEY")
@@ -156,7 +143,7 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default=(
             f"sqlite:///{DEFAULT_DB_PATH}"
-            if _app_env in {"test", "ci"}
+            if _is_test_like_env
             else "postgresql+psycopg://localhost:5432/alfred"
         ),
         alias="DATABASE_URL",
@@ -170,13 +157,6 @@ class Settings(BaseSettings):
     # Firecrawl
     firecrawl_base_url: str = Field(default="http://localhost:8010", alias="FIRECRAWL_BASE_URL")
     firecrawl_timeout: int = Field(default=30, alias="FIRECRAWL_TIMEOUT")
-
-    # Web search performance (multi-provider + fallbacks)
-    web_ddg_timeout_s: float = Field(default=3.0, alias="WEB_DDG_TIMEOUT_S", ge=0.5, le=30.0)
-    web_ddg_retries: int = Field(default=0, alias="WEB_DDG_RETRIES", ge=0, le=5)
-    web_langsearch_timeout_s: float = Field(
-        default=4.0, alias="WEB_LANGSEARCH_TIMEOUT_S", ge=0.5, le=30.0
-    )
 
     # Interview performance guards (scraping can dominate latency)
     interview_scrape_budget_max: int = Field(
@@ -238,11 +218,6 @@ class Settings(BaseSettings):
         description="0 disables freshness checks (always recompute).",
     )
 
-    # Culture fit
-    culture_fit_profiles_collection: str = Field(
-        default="culture_fit_profiles",
-        alias="CULTURE_FIT_PROFILES_COLLECTION",
-    )
     job_applications_collection: str = Field(
         default="job_applications",
         alias="JOB_APPLICATIONS_COLLECTION",
@@ -350,12 +325,19 @@ class Settings(BaseSettings):
     ollama_embed_model: str = Field(default="nomic-embed-text", alias="ALFRED_OLLAMA_EMBED_MODEL")
 
     # Search providers / connectors
-    brave_search_api_key: str | None = Field(default=None, alias="BRAVE_SEARCH_API_KEY")
-    exa_api_key: str | None = Field(default=None, alias="EXA_API_KEY")
-    tavily_api_key: str | None = Field(default=None, alias="TAVILY_API_KEY")
-    ydc_api_key: str | None = Field(default=None, alias="YDC_API_KEY")
     searxng_host: str | None = Field(default=None, alias="SEARXNG_HOST")
     searx_host: str | None = Field(default=None, alias="SEARX_HOST")
+    langsearch_api_key: str | None = Field(default=None, alias="LANGSEARCH_API_KEY")
+    langsearch_base_url: str = Field(
+        default="https://api.langsearch.com/v1/web-search",
+        alias="LANGSEARCH_BASE_URL",
+    )
+    web_langsearch_timeout_s: float = Field(
+        default=12.0,
+        alias="WEB_LANGSEARCH_TIMEOUT_S",
+        ge=1.0,
+        le=120.0,
+    )
     user_agent: str = Field(
         default="Mozilla/5.0 (compatible; AlfredBot/1.0; +https://github.com/alfred)",
         alias="USER_AGENT",

@@ -5,10 +5,10 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 
+from alfred.agents.interviews_unified.agent import UnifiedInterviewAgent
 from alfred.core.celery_client import get_celery_client
 from alfred.core.dependencies import get_unified_interview_agent
 from alfred.schemas.unified_interview import UnifiedInterviewRequest, UnifiedInterviewResponse
-from alfred.services.interview_service import UnifiedInterviewAgent
 
 logger = logging.getLogger(__name__)
 

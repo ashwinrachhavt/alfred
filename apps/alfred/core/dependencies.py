@@ -10,10 +10,10 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from alfred.core.exceptions import ConfigurationError
 from alfred.core.settings import settings
 
 if TYPE_CHECKING:
+    from alfred.agents.interviews_unified.agent import UnifiedInterviewAgent
     from alfred.connectors.firecrawl_connector import FirecrawlClient
     from alfred.connectors.web_connector import WebConnector
     from alfred.services.agents.mind_palace_agent import KnowledgeAgentService
@@ -22,7 +22,6 @@ if TYPE_CHECKING:
         CompanyInterviewsService,
         CompanyResearchService,
     )
-    from alfred.services.culture_fit_profiles import CultureFitProfileService
     from alfred.services.datastore import DataStoreService
     from alfred.services.doc_storage_pg import DocStorageService
     from alfred.services.extraction_service import ExtractionService
@@ -30,7 +29,6 @@ if TYPE_CHECKING:
     from alfred.services.interview_service import (
         InterviewPrepService,
         InterviewQuestionsService,
-        UnifiedInterviewAgent,
     )
     from alfred.services.job_hunt_service import JobApplicationService, JobHuntService
     from alfred.services.llm_service import LLMService
@@ -84,12 +82,14 @@ def get_extraction_service() -> ExtractionService | None:
 
 @lru_cache(maxsize=1)
 def get_doc_storage_service() -> DocStorageService:
+    from alfred.core.redis_client import get_redis_client
     from alfred.services.doc_storage_pg import DocStorageService as PgDocStorageService
 
     return PgDocStorageService(
         session=None,
         graph_service=get_graph_service(),
         extraction_service=get_extraction_service(),
+        redis_client=get_redis_client(),
     )
 
 
@@ -108,13 +108,6 @@ def get_job_application_service() -> JobApplicationService:
 
 
 @lru_cache(maxsize=1)
-def get_culture_fit_profile_service() -> CultureFitProfileService:
-    from alfred.services.culture_fit_profiles import CultureFitProfileService
-
-    return CultureFitProfileService(database=None)
-
-
-@lru_cache(maxsize=1)
 def get_firecrawl_client() -> FirecrawlClient:
     from alfred.connectors.firecrawl_connector import FirecrawlClient
 
@@ -125,12 +118,7 @@ def get_firecrawl_client() -> FirecrawlClient:
 def get_primary_web_search_connector() -> WebConnector:
     from alfred.connectors.web_connector import WebConnector
 
-    if not (settings.searxng_host or settings.searx_host):
-        if settings.app_env not in {"test", "ci"}:
-            raise ConfigurationError(
-                "SearxNG is required for web search. Set SEARXNG_HOST (or SEARX_HOST)."
-            )
-    return WebConnector(mode="searx", searx_k=8)
+    return WebConnector(searx_k=8)
 
 
 @lru_cache(maxsize=1)
@@ -189,7 +177,7 @@ def get_thread_service():
 
 @lru_cache(maxsize=1)
 def get_unified_interview_agent() -> UnifiedInterviewAgent:
-    from alfred.services.interview_service import UnifiedInterviewAgent
+    from alfred.agents.interviews_unified.agent import UnifiedInterviewAgent
 
     return UnifiedInterviewAgent(
         questions_service=get_interview_questions_service(),
@@ -212,12 +200,7 @@ def get_system_design_service() -> SystemDesignService:
 def get_web_service() -> WebService:
     from alfred.services.web_service import WebService
 
-    if not (settings.searxng_host or settings.searx_host):
-        if settings.app_env not in {"test", "ci"}:
-            raise ConfigurationError(
-                "SearxNG is required for web search. Set SEARXNG_HOST (or SEARX_HOST)."
-            )
-    return WebService(mode="searx", searx_k=10)
+    return WebService(searx_k=10)
 
 
 @lru_cache(maxsize=1)

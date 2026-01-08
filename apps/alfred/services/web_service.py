@@ -6,41 +6,23 @@ This is the canonical module for the "web" feature.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
-from alfred.connectors.web_connector import WebConnector
 from alfred.core.tracing import lf_update_span, observe
 
 
 @observe(name="web_search", as_type="tool")
 def search_web(
     q: str,
-    mode: str = "searx",
     *,
-    brave_pages: int = 10,
-    ddg_max_results: int = 50,
-    exa_num_results: int = 100,
-    tavily_max_results: int = 20,
-    tavily_topic: str = "general",
-    you_num_results: int = 20,
     searx_k: int = 10,
-) -> dict:
-    # For searx mode, prefer the process-scoped connector for better cold-start behavior.
-    if mode == "searx":
-        from alfred.core.dependencies import get_primary_web_search_connector
+    categories: str | None = None,
+    time_range: str | None = None,
+) -> dict[str, Any]:
+    from alfred.core.dependencies import get_primary_web_search_connector
 
-        conn = get_primary_web_search_connector()
-    else:
-        conn = WebConnector(
-            mode=mode,  # type: ignore[arg-type]
-            brave_pages=brave_pages,
-            ddg_max_results=ddg_max_results,
-            exa_num_results=exa_num_results,
-            tavily_max_results=tavily_max_results,
-            tavily_topic=tavily_topic,  # type: ignore[arg-type]
-            you_num_results=you_num_results,
-            searx_k=searx_k,
-        )
-    resp = conn.search(q)
+    conn = get_primary_web_search_connector()
+    resp = conn.search(q, num_results=searx_k, categories=categories, time_range=time_range)
     payload = {
         "provider": resp.provider,
         "query": resp.query,
@@ -50,19 +32,15 @@ def search_web(
             for h in resp.hits
         ],
     }
-    # Best-effort span update with input/output metadata
-    try:
-        lf_update_span(
-            input={
-                "q": q,
-                "mode": mode,
-                "searx_k": searx_k,
-            },
-            output={"hits_count": len(resp.hits), "provider": resp.provider},
-            metadata={"web_search": True},
-        )
-    except Exception:
-        pass
+    # Best-effort span update with input/output metadata (safe: lf_update_span no-ops on failure).
+    lf_update_span(
+        input={
+            "q": q,
+            "searx_k": searx_k,
+        },
+        output={"hits_count": len(resp.hits), "provider": resp.provider},
+        metadata={"web_search": True},
+    )
     return payload
 
 
@@ -70,14 +48,13 @@ def search_web(
 class WebService:
     """High-level wrapper around Alfred's web search capability."""
 
-    mode: str = "searx"
     searx_k: int = 10
 
-    def search(self, query: str, **kwargs):
+    def search(self, query: str, **kwargs: Any) -> dict[str, Any]:
         query = (query or "").strip()
         if not query:
             raise ValueError("query must be non-empty")
-        return search_web(query, mode=self.mode, searx_k=self.searx_k, **kwargs)
+        return search_web(query, searx_k=self.searx_k, **kwargs)
 
 
 __all__ = ["WebService", "search_web"]

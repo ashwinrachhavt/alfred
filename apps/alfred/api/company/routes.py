@@ -5,8 +5,8 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select
 from sqlalchemy.exc import ProgrammingError
+from sqlmodel import select
 from starlette.concurrency import run_in_threadpool
 
 from alfred.core.celery_client import get_celery_client

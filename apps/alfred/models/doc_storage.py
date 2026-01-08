@@ -142,6 +142,7 @@ class DocumentRow(SQLModel, table=True):
     )
     lang: str | None = Field(default=None, sa_column=sa.Column(sa.String(length=24), nullable=True))
     raw_markdown: str | None = Field(default=None, sa_column=sa.Column(sa.Text, nullable=True))
+    image: bytes | None = Field(default=None, sa_column=sa.Column(sa.LargeBinary, nullable=True))
     cleaned_text: str = Field(sa_column=sa.Column(sa.Text, nullable=False))
     tokens: int | None = Field(default=None, sa_column=sa.Column(sa.Integer, nullable=True))
     hash: str = Field(sa_column=sa.Column(sa.String(length=128), nullable=False))

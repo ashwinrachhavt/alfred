@@ -19,84 +19,18 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, TypedDict
 
 import requests
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
-from langchain_core.tools import BaseTool
-from langgraph.graph import END, START, StateGraph
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from sqlmodel import Session, select
 
+from alfred.agents.company_outreach.agent import build_company_outreach_graph
 from alfred.connectors import ApolloClient, HunterClient
 from alfred.core.database import get_session
-from alfred.core.dependencies import get_company_research_service
 from alfred.core.settings import LLMProvider, settings
 from alfred.prompts import load_prompt
 from alfred.schemas.outreach import OutreachContact, OutreachMessage, OutreachRun
-from alfred.services.agentic_rag import create_retriever_tool, make_llm, make_retriever
 from alfred.services.web_service import search_web
 
 logger = logging.getLogger(__name__)
-
-
-def _summarize_company_report(doc: dict[str, Any]) -> str:
-    report = doc.get("report") or {}
-    lines: list[str] = []
-    exec_summary = report.get("executive_summary")
-    if exec_summary:
-        lines.append(f"Executive summary:\n{exec_summary}")
-    sections = report.get("sections") or []
-    for section in sections:
-        name = section.get("name", "Untitled section")
-        summary = section.get("summary", "")
-        insights = section.get("insights") or []
-        lines.append(f"\n## {name}\n{summary}")
-        for insight in insights:
-            lines.append(f"- {insight}")
-    if report.get("risks"):
-        lines.append("\nRisks:")
-        for item in report["risks"]:
-            lines.append(f"- {item}")
-    if report.get("opportunities"):
-        lines.append("\nOpportunities:")
-        for item in report["opportunities"]:
-            lines.append(f"- {item}")
-    if report.get("recommended_actions"):
-        lines.append("\nRecommended actions:")
-        for item in report["recommended_actions"]:
-            lines.append(f"- {item}")
-    if report.get("references"):
-        lines.append("\nReferences:")
-        for ref in report["references"]:
-            lines.append(f"- {ref}")
-    return "\n".join(lines).strip() or "(empty report)"
-
-
-class CompanyResearchTool(BaseTool):
-    name: str = "company_research"
-    description: str = (
-        "Call the in-house company research agent. Input should be the exact company name. "
-        "It returns a structured research report covering mission, products, GTM, funding, and risks."
-    )
-
-    def _run(self, company: str) -> str:  # type: ignore[override]
-        try:
-            doc = get_company_research_service().generate_report(company)
-            return _summarize_company_report(doc)
-        except Exception as exc:  # pragma: no cover - propagate friendly error
-            return f"(error) company research failed: {exc}"
-
-    async def _arun(self, *args: Any, **kwargs: Any) -> str:  # pragma: no cover
-        return self._run(*args, **kwargs)
-
-
-def make_tools(k: int = 6):
-    retriever = create_retriever_tool(
-        make_retriever(k=k),
-        name="profile_search",
-        description=(
-            "Search Ashwin's personal notes and resume for background, accomplishments, and skills. "
-            "Use this before drafting outreach or tailoring the pitch."
-        ),
-    )
-    return [retriever, CompanyResearchTool()]
 
 
 OUTREACH_SYSTEM_PROMPT = load_prompt("company_outreach", "system.md")
@@ -252,92 +186,11 @@ def _format_job_search_results(hits: list[dict], *, limit: int = 5) -> str:
 def _load_job_description_context(company: str, role: str) -> str:
     query = f"{company} {role} job description"
     try:
-        result = search_web(query, mode="auto")
+        result = search_web(query)
     except Exception as exc:  # pragma: no cover - network/runtime guard
         return f"(job search failed: {exc})"
 
     return _format_job_search_results(result.get("hits", []))
-
-
-def build_company_outreach_graph(company: str, role: str, personal_context: str, k: int = 6):
-    tools = make_tools(k=k)
-    planner = make_llm(temperature=0.0).bind_tools(tools)
-
-    def agent_node(state: OutreachState):
-        return {"messages": [*state["messages"], planner.invoke(state["messages"])]}
-
-    def finalize_node(state: OutreachState):
-        synth = make_llm(temperature=0.2)
-        final_prompt = _FINAL_PROMPT_TEMPLATE.format(
-            company=company,
-            role=role,
-            personal_context=personal_context or "(none provided)",
-        )
-        convo = [
-            SystemMessage(content=OUTREACH_SYSTEM_PROMPT),
-            *state["messages"],
-            HumanMessage(content=final_prompt),
-        ]
-        msg = synth.invoke(convo)
-        return {"messages": [*state["messages"], msg]}
-
-    def tools_condition_local(state: OutreachState):
-        msgs = state.get("messages", [])
-        if not msgs:
-            return END
-        last = msgs[-1]
-        if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
-            return "tools"
-        return END
-
-    def tools_node(state: OutreachState):
-        msgs = state.get("messages", [])
-        if not msgs:
-            return {"messages": msgs}
-        last = msgs[-1]
-        if not isinstance(last, AIMessage):
-            return {"messages": msgs}
-        name_to_tool = {t.name: t for t in tools}
-        out: list[ToolMessage] = []
-        for call in getattr(last, "tool_calls", []) or []:
-            name = getattr(call, "name", None) or (
-                call.get("name") if isinstance(call, dict) else None
-            )
-            args = (
-                getattr(call, "args", None)
-                or (call.get("args") if isinstance(call, dict) else None)
-                or ""
-            )
-            call_id = getattr(call, "id", None) or (
-                call.get("id") if isinstance(call, dict) else name
-            )
-            tool = name_to_tool.get(name or "")
-            if tool is None:
-                out.append(
-                    ToolMessage(content=f"(tool not found: {name})", tool_call_id=str(call_id))
-                )
-                continue
-            try:
-                result = tool.invoke(args)
-            except Exception:
-                try:
-                    result = tool.run(args)
-                except Exception as exc:
-                    result = f"(error) {exc}"
-            out.append(ToolMessage(content=str(result), tool_call_id=str(call_id)))
-        return {"messages": [*msgs, *out]}
-
-    graph = StateGraph(OutreachState)
-    graph.add_node("agent", agent_node)
-    graph.add_node("tools", tools_node)
-    graph.add_node("finalize", finalize_node)
-
-    graph.add_edge(START, "agent")
-    graph.add_conditional_edges("agent", tools_condition_local, {"tools": "tools", END: "finalize"})
-    graph.add_edge("tools", "agent")
-    graph.add_edge("finalize", END)
-
-    return graph.compile()
 
 
 TARGET_TITLES = [

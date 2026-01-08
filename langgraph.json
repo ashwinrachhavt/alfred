@@ -1,0 +1,10 @@
+{
+  "dependencies": ["./"],
+  "graphs": {
+    "agentic_rag": "./apps/alfred/agents/agentic_rag/agent.py:agent",
+    "company_outreach": "./apps/alfred/agents/company_outreach/agent.py:agent",
+    "writer": "./apps/alfred/agents/writer/agent.py:agent",
+    "interviews_unified": "./apps/alfred/agents/interviews_unified/agent.py:agent"
+  }
+}
+

@@ -2,15 +2,15 @@ import { Page } from "@/components/layout/page";
 import { TasksClient } from "@/app/(app)/tasks/_components/tasks-client";
 
 type TasksPageProps = {
-  searchParams?: {
+  searchParams?: Promise<{
     taskId?: string | string[];
-  };
+  }>;
 };
 
-export default function TasksPage({ searchParams }: TasksPageProps) {
-  const taskId = Array.isArray(searchParams?.taskId)
-    ? searchParams?.taskId[0]
-    : searchParams?.taskId;
+export default async function TasksPage({ searchParams }: TasksPageProps) {
+  const resolvedSearchParams = await searchParams;
+  const taskIdValue = resolvedSearchParams?.taskId;
+  const taskId = Array.isArray(taskIdValue) ? taskIdValue[0] : taskIdValue;
   return (
     <Page>
       <TasksClient initialTaskId={taskId} />

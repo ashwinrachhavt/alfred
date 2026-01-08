@@ -197,7 +197,7 @@ class CompanyResearchService:
                 raise ConfigurationError(
                     "SearxNG is required for company research. Set SEARXNG_HOST (or SEARX_HOST)."
                 )
-            self._primary_search = WebConnector(mode="searx", searx_k=self.search_results)
+            self._primary_search = WebConnector(searx_k=self.search_results)
         return self._primary_search
 
     def _get_fallback_search(self) -> WebConnector:
@@ -471,8 +471,11 @@ class CompanyInsightsService:
             self.glassdoor_service = GlassdoorService()
 
         if self.blind_service is None or self.levels_service is None:
-            mode = "searx" if (settings.searxng_host or settings.searx_host) else "multi"
-            web = WebConnector(mode=mode, searx_k=6)
+            if not (settings.searxng_host or settings.searx_host):
+                raise ConfigurationError(
+                    "SearxNG is required for company insights. Set SEARXNG_HOST (or SEARX_HOST)."
+                )
+            web = WebConnector(searx_k=6)
             firecrawl = FirecrawlClient(
                 base_url=settings.firecrawl_base_url,
                 timeout=settings.firecrawl_timeout,
@@ -783,7 +786,7 @@ class CompanyInterviewsService:
                 raise ConfigurationError(
                     "SearxNG is required for Blind interview collection. Set SEARXNG_HOST (or SEARX_HOST)."
                 )
-            web = WebConnector(mode="searx", searx_k=10)
+            web = WebConnector(searx_k=10)
             firecrawl = FirecrawlClient(
                 base_url=settings.firecrawl_base_url,
                 timeout=settings.firecrawl_timeout,

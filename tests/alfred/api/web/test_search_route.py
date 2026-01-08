@@ -12,7 +12,7 @@ def create_app() -> FastAPI:
 def test_web_search_route_respects_payload(monkeypatch):
     def fake_search_web(**kwargs):
         return {
-            "provider": "exa",
+            "provider": "searx",
             "query": kwargs.get("q"),
             "hits": [{"title": "A", "url": "http://a", "snippet": "s", "source": "exa"}],
             "meta": {"ok": True},
@@ -22,11 +22,11 @@ def test_web_search_route_respects_payload(monkeypatch):
     client = TestClient(create_app())
     resp = client.get(
         "/api/web/search",
-        params={"q": "hello", "provider": "exa", "ddg_max_results": 5, "searx_k": 7},
+        params={"q": "hello", "searx_k": 7, "categories": "general"},
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["provider"] == "exa"
+    assert data["provider"] == "searx"
     assert data["query"] == "hello"
     assert data["meta"]["ok"] is True
     assert data["hits"] and data["hits"][0]["url"] == "http://a"

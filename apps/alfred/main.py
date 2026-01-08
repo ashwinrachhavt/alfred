@@ -11,6 +11,8 @@ from alfred.core.settings import settings
 
 # Bytecode disabling is controlled via environment (Makefile/Docker) or settings.
 
+logger = logging.getLogger(__name__)
+
 # Initialize logging early so all modules inherit the handlers/level
 setup_logging()
 
@@ -41,7 +43,7 @@ def _shutdown() -> None:
         if graph is not None:
             graph.close()
     except Exception:
-        pass
+        logger.debug("Best-effort shutdown: failed to close GraphService", exc_info=True)
 
     try:
         from alfred.core.redis_client import get_redis_client
@@ -51,8 +53,7 @@ def _shutdown() -> None:
         if callable(close):
             close()
     except Exception:
-        pass
+        logger.debug("Best-effort shutdown: failed to close Redis client", exc_info=True)
 
 
-logger = logging.getLogger(__name__)
 logger.info("Alfred API initialized")

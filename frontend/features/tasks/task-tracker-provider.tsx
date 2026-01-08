@@ -57,6 +57,52 @@ function nextTaskLabel(source: TaskSource, label: string): string {
   return "Background task";
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+function extractCompanyResearchReportId(result: unknown): string | null {
+  if (!isRecord(result)) return null;
+  const id = typeof result.id === "string" ? result.id.trim() : "";
+  if (!id) return null;
+  return isRecord(result.report) ? id : null;
+}
+
+function extractCompanyResearchCompanyName(result: unknown): string | null {
+  if (!isRecord(result)) return null;
+
+  if (typeof result.company === "string" && result.company.trim()) {
+    return result.company.trim();
+  }
+
+  const report = isRecord(result.report) ? result.report : null;
+  if (report && typeof report.company === "string" && report.company.trim()) {
+    return report.company.trim();
+  }
+
+  return null;
+}
+
+function deriveTaskHref(task: TrackedTask, status: TaskStatusResponse | undefined): string | null {
+  if (!status?.ready || !status.successful) return null;
+  if (!status.result) return null;
+  if (task.source !== "company_research") return null;
+
+  const reportId = extractCompanyResearchReportId(status.result);
+  if (!reportId) return null;
+  return `/company?reportId=${encodeURIComponent(reportId)}`;
+}
+
+function deriveTaskLabel(task: TrackedTask, status: TaskStatusResponse | undefined): string | null {
+  if (!status?.ready || !status.successful) return null;
+  if (!status.result) return null;
+  if (task.source !== "company_research") return null;
+
+  const company = extractCompanyResearchCompanyName(status.result);
+  if (!company) return null;
+  return `Company research: ${company}`;
+}
+
 function mergeTask(existing: TrackedTask, next: TrackedTask): TrackedTask {
   return {
     ...existing,
@@ -173,6 +219,36 @@ export function TaskTrackerProvider({ children }: { children: React.ReactNode })
   const clearCompleted = React.useCallback(() => {
     persistTasks((prev) => prev.filter((task) => !statusById[task.id]?.ready));
   }, [persistTasks, statusById]);
+
+  React.useEffect(() => {
+    const patches: Record<string, Partial<TrackedTask>> = {};
+
+    tasks.forEach((task) => {
+      const isDefaultHref = (task.href ?? "") === defaultTaskHref(task.id);
+      if (!isDefaultHref) return;
+      const status = statusById[task.id];
+
+      const href = deriveTaskHref(task, status);
+      const label = deriveTaskLabel(task, status);
+
+      if (!href && !label) return;
+      const patch: Partial<TrackedTask> = {};
+      if (href) patch.href = href;
+      if (label) patch.label = label;
+      patches[task.id] = patch;
+    });
+
+    const patchIds = Object.keys(patches);
+    if (!patchIds.length) return;
+
+    persistTasks((prev) =>
+      prev.map((task) => {
+        const patch = patches[task.id];
+        if (!patch) return task;
+        return { ...task, ...patch };
+      }),
+    );
+  }, [persistTasks, statusById, tasks]);
 
   React.useEffect(() => {
     tasks.forEach((task) => {

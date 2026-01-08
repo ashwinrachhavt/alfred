@@ -12,6 +12,13 @@ export const apiRoutes = {
     researchReportsRecent: "/api/company/research-reports/recent",
     researchReportById: (reportId: string) => `/api/company/research-reports/${reportId}`,
   },
+  documents: {
+    explorer: "/api/documents/explorer",
+    semanticMap: "/api/documents/semantic-map",
+    documentDetails: (id: string) => `/api/documents/${id}/details`,
+    documentImage: (id: string) => `/api/documents/${id}/image`,
+    documentImageAsync: (id: string) => `/api/documents/${id}/image/async`,
+  },
   threads: {
     list: "/api/threads",
     create: "/api/threads",

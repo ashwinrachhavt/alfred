@@ -138,6 +138,40 @@ def _init_mlflow() -> bool:
     return _mlflow_ready
 
 
+def _mlflow_has_active_run() -> bool:
+    """Return True if MLflow is initialized and inside an active run.
+
+    This helper is intentionally best-effort: it must never raise.
+    """
+
+    try:
+        return bool(_init_mlflow() and _mlflow is not None and _mlflow.active_run() is not None)
+    except Exception:  # pragma: no cover - defensive
+        return False
+
+
+def _mlflow_set_tag_best_effort(key: str, value: object) -> None:
+    """Best-effort wrapper for MLflow tags (never raises)."""
+
+    if _mlflow is None:
+        return
+    try:
+        _mlflow.set_tag(key, value)
+    except Exception:
+        return
+
+
+def _mlflow_log_param_best_effort(key: str, value: object) -> None:
+    """Best-effort wrapper for MLflow params (never raises)."""
+
+    if _mlflow is None:
+        return
+    try:
+        _mlflow.log_param(key, value)
+    except Exception:
+        return
+
+
 def _mlflow_observe(name: Optional[str] = None, as_type: Optional[str] = None):
     """Return a decorator that logs a single function call as an MLflow run.
 
@@ -242,25 +276,14 @@ def lf_update_span(
         client = lf_get_client()
         if not client:
             # If Langfuse is unavailable, attempt a minimal MLflow annotation
-            if _init_mlflow() and _mlflow is not None:
-                # Only log if there is an active run (i.e., inside @observe)
-                if _mlflow.active_run() is not None:  # type: ignore[attr-defined]
-                    if metadata:
-                        for k, v in metadata.items():
-                            try:
-                                _mlflow.log_param(f"span_meta.{k}", v)
-                            except Exception:
-                                pass
-                    if input is not None:
-                        try:
-                            _mlflow.log_param("span.input", str(input)[:1000])
-                        except Exception:
-                            pass
-                    if output is not None:
-                        try:
-                            _mlflow.log_param("span.output", str(output)[:1000])
-                        except Exception:
-                            pass
+            if _mlflow_has_active_run():
+                if metadata:
+                    for k, v in metadata.items():
+                        _mlflow_log_param_best_effort(f"span_meta.{k}", v)
+                if input is not None:
+                    _mlflow_log_param_best_effort("span.input", str(input)[:1000])
+                if output is not None:
+                    _mlflow_log_param_best_effort("span.output", str(output)[:1000])
             return
         client.update_current_span(
             input=input,  # type: ignore[arg-type]
@@ -288,34 +311,18 @@ def lf_update_trace(
         client = lf_get_client()
         if not client:
             # Minimal MLflow fallback when inside an active run
-            if _init_mlflow() and _mlflow is not None:
-                if _mlflow.active_run() is not None:  # type: ignore[attr-defined]
-                    if name:
-                        try:
-                            _mlflow.set_tag("trace.name", name)
-                        except Exception:
-                            pass
-                    if user_id:
-                        try:
-                            _mlflow.set_tag("trace.user_id", user_id)
-                        except Exception:
-                            pass
-                    if session_id:
-                        try:
-                            _mlflow.set_tag("trace.session_id", session_id)
-                        except Exception:
-                            pass
-                    if tags:
-                        try:
-                            _mlflow.set_tag("trace.tags", ",".join(tags))
-                        except Exception:
-                            pass
-                    if metadata:
-                        for k, v in metadata.items():
-                            try:
-                                _mlflow.log_param(f"trace_meta.{k}", v)
-                            except Exception:
-                                pass
+            if _mlflow_has_active_run():
+                if name:
+                    _mlflow_set_tag_best_effort("trace.name", name)
+                if user_id:
+                    _mlflow_set_tag_best_effort("trace.user_id", user_id)
+                if session_id:
+                    _mlflow_set_tag_best_effort("trace.session_id", session_id)
+                if tags:
+                    _mlflow_set_tag_best_effort("trace.tags", ",".join(tags))
+                if metadata:
+                    for k, v in metadata.items():
+                        _mlflow_log_param_best_effort(f"trace_meta.{k}", v)
             return
         client.update_current_trace(
             name=name,

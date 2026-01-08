@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -198,16 +198,95 @@ class MindPalaceDocumentRecord(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+class DocumentDetailsResponse(BaseModel):
+    """Detailed document payload used by 'Quick Look' and deep inspection views."""
+
+    id: str
+    source_url: str
+    canonical_url: Optional[str] = None
+    domain: Optional[str] = None
+    title: Optional[str] = None
+    cover_image_url: str | None = Field(
+        default=None, description="Optional cover image URL (generated or extracted)."
+    )
+    content_type: str = "web"
+    lang: Optional[str] = None
+    raw_markdown: Optional[str] = None
+    cleaned_text: str
+    tokens: Optional[int] = None
+    summary: Optional[Dict[str, Any]] = None
+    topics: Optional[Dict[str, Any]] = None
+    entities: Optional[Dict[str, Any]] = None
+    tags: List[str] = Field(default_factory=list)
+    captured_at: datetime
+    day_bucket: date
+    created_at: datetime
+    updated_at: datetime
+    session_id: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    enrichment: Optional[Dict[str, Any]] = None
+
+
+class ExplorerDocumentItem(BaseModel):
+    """A lightweight document summary for explorer views (Shelf/Stream)."""
+
+    id: str
+    title: str = Field(..., description="Display title (best-effort).")
+    cover_image_url: str | None = Field(
+        default=None, description="Optional cover/thumbnail URL (if available)."
+    )
+    summary: str | None = Field(default=None, description="Short summary (optional).")
+    created_at: datetime
+    day_bucket: date
+    primary_topic: str | None = None
+    source_url: str | None = None
+    canonical_url: str | None = None
+
+
+class ExplorerDocumentsResponse(BaseModel):
+    """Cursor-paginated documents list for explorer views (Atheneum)."""
+
+    items: List[ExplorerDocumentItem]
+    next_cursor: str | None = Field(
+        default=None,
+        description="Opaque cursor for the next page; omit/None when there is no next page.",
+    )
+    limit: int
+    filter_topic: str | None = None
+    search: str | None = None
+
+
+class SemanticMapPoint(BaseModel):
+    """A single point (document) in the semantic map."""
+
+    id: str
+    pos: List[float] = Field(..., min_length=3, max_length=3, description="XYZ position.")
+    color: str = Field(..., description="Hex color derived from primary topic.")
+    label: str = Field(..., description="Display label (best-effort title).")
+    primary_topic: str | None = None
+
+
+class SemanticMapResponse(BaseModel):
+    """3D semantic map payload for the Galaxy view."""
+
+    points: List[SemanticMapPoint]
+
+
 __all__ = [
     "DocChunkRecord",
     "DocSummary",
     "DocumentIngest",
     "DocumentIngestChunk",
+    "DocumentDetailsResponse",
     "DocumentRecord",
+    "ExplorerDocumentItem",
+    "ExplorerDocumentsResponse",
     "MindPalaceDocumentRecord",
     "NoteCreate",
     "NoteCreateRequest",
     "NoteRecord",
     "NoteResponse",
     "NotesListResponse",
+    "SemanticMapPoint",
+    "SemanticMapResponse",
 ]

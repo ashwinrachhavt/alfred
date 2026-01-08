@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
+from alfred.agents.interviews_unified.agent import UnifiedInterviewAgent
 from alfred.api.interviews_unified import router as interviews_unified_router
 from alfred.core.dependencies import get_unified_interview_agent
 from alfred.core.exceptions import register_exception_handlers
@@ -23,7 +25,6 @@ from alfred.schemas.panel_interview import (
     PanelTurnRequest,
     PanelTurnResponse,
 )
-from alfred.services.interview_service import UnifiedInterviewAgent
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -146,6 +147,40 @@ class StubPanelInterviewService:
         return PanelTurnResponse(session=session, events=events)
 
 
+class StubThread:
+    def __init__(self, thread_id: uuid.UUID) -> None:
+        self.id = thread_id
+
+
+class StubThreadService:
+    def __init__(self) -> None:
+        self.upserted_ids: list[uuid.UUID | None] = []
+
+    def upsert_thread(
+        self,
+        *,
+        thread_id: uuid.UUID | None = None,
+        kind: str,
+        title: str | None = None,
+        user_id: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> StubThread:
+        _ = (kind, title, user_id, metadata)
+        self.upserted_ids.append(thread_id)
+        return StubThread(thread_id or uuid.uuid4())
+
+    def append_message(
+        self,
+        *,
+        thread_id: uuid.UUID | str,
+        role: str,
+        content: str | None = None,
+        data: dict[str, Any] | None = None,
+        created_at: Any | None = None,
+    ) -> None:
+        _ = (thread_id, role, content, data, created_at)
+
+
 def _make_client(agent: UnifiedInterviewAgent) -> TestClient:
     app = FastAPI()
     register_exception_handlers(app)
@@ -154,11 +189,12 @@ def _make_client(agent: UnifiedInterviewAgent) -> TestClient:
     return TestClient(app)
 
 
-def _make_agent() -> UnifiedInterviewAgent:
+def _make_agent(*, thread_service: Any | None = None) -> UnifiedInterviewAgent:
     return UnifiedInterviewAgent(
         questions_service=StubInterviewQuestionsService(),  # type: ignore[arg-type]
         company_research_service=StubCompanyResearchService(),  # type: ignore[arg-type]
         panel_service=StubPanelInterviewService(),  # type: ignore[arg-type]
+        thread_service=thread_service,  # type: ignore[arg-type]
     )
 
 
@@ -216,3 +252,45 @@ def test_unified_practice_session_returns_next_question_after_answer() -> None:
     data = res.json()
     assert data["session_id"] == session_id
     assert "bug" in (data["interviewer_response"] or "").lower()
+
+
+def test_unified_interview_ignores_blank_thread_id_when_persisting() -> None:
+    thread_service = StubThreadService()
+    client = _make_client(_make_agent(thread_service=thread_service))
+    res = client.post(
+        "/api/interviews-unified/process",
+        json={
+            "operation": "deep_research",
+            "company": "Acme",
+            "role": "Software Engineer",
+            "target_length_words": 500,
+            "thread_id": "",
+        },
+    )
+    assert res.status_code == 200
+    data = res.json()
+    thread_id = data.get("metadata", {}).get("thread_id")
+    assert isinstance(thread_id, str) and thread_id
+    uuid.UUID(thread_id)
+    assert thread_service.upserted_ids == [None]
+
+
+def test_unified_interview_ignores_invalid_thread_id_when_persisting() -> None:
+    thread_service = StubThreadService()
+    client = _make_client(_make_agent(thread_service=thread_service))
+    res = client.post(
+        "/api/interviews-unified/process",
+        json={
+            "operation": "deep_research",
+            "company": "Acme",
+            "role": "Software Engineer",
+            "target_length_words": 500,
+            "thread_id": "not-a-uuid",
+        },
+    )
+    assert res.status_code == 200
+    data = res.json()
+    thread_id = data.get("metadata", {}).get("thread_id")
+    assert isinstance(thread_id, str) and thread_id
+    uuid.UUID(thread_id)
+    assert thread_service.upserted_ids == [None]
