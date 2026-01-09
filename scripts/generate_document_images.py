@@ -1,6 +1,35 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+Generate and persist document cover images (OpenAI image generation).
+
+Prerequisites
+-------------
+- Database access via `DATABASE_URL`.
+- OpenAI access via `OPENAI_API_KEY` (and optionally `OPENAI_BASE_URL`, `OPENAI_ORG`).
+
+Common usage
+------------
+- Generate cover images for the most recent documents that are missing them:
+  `python scripts/generate_document_images.py --limit 25`
+
+- Generate images for specific documents (repeatable):
+  `python scripts/generate_document_images.py --doc-id <uuid> --doc-id <uuid>`
+
+- Force regeneration even if an image already exists:
+  `python scripts/generate_document_images.py --force --doc-id <uuid>`
+
+- Debug the prompt without calling OpenAI:
+  `python scripts/generate_document_images.py --print-prompt --doc-id <uuid>`
+
+Notes
+-----
+- This script uses Alfred's internal `DocStorageService`, which delegates image generation to
+  `LLMService.generate_image_png(...)` (OpenAI Images API).
+- No servers are started; this is a one-off CLI utility.
+"""
+
 import argparse
 import logging
 import uuid
@@ -36,6 +65,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--size", default="1024x1024", help="Requested image size.")
     p.add_argument("--quality", default="high", help="Requested image quality.")
     p.add_argument(
+        "--print-prompt",
+        action="store_true",
+        help="Print the prompt for each document and exit (no OpenAI call, no DB writes).",
+    )
+    p.add_argument(
         "--enqueue",
         action="store_true",
         help="Enqueue per-document Celery tasks instead of generating inline.",
@@ -45,7 +79,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enqueue a single Celery batch task that selects docs missing images.",
     )
-    p.add_argument("--dry-run", action="store_true", help="Print what would run without saving.")
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would run without calling OpenAI or saving.",
+    )
     return p.parse_args()
 
 
@@ -91,6 +129,10 @@ def main() -> int:
         return 0
 
     logger.info("Processing %d document(s).", len(ids))
+
+    if args.print_prompt and (args.enqueue or args.batch):
+        logger.error("--print-prompt cannot be combined with --enqueue/--batch")
+        return 2
 
     if args.batch:
         if args.dry_run:
@@ -145,6 +187,16 @@ def main() -> int:
     failures = 0
 
     for doc_id in ids:
+        if args.print_prompt:
+            try:
+                payload = svc.build_document_title_image_prompt(doc_id)
+                prompt = payload.get("prompt") or ""
+                logger.info("Prompt for %s:\n%s", doc_id, prompt)
+            except Exception as exc:
+                failures += 1
+                logger.exception("Failed to build prompt for %s: %s", doc_id, exc)
+            continue
+
         if args.dry_run:
             logger.info("[dry-run] Would generate image for %s", doc_id)
             continue

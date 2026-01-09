@@ -475,6 +475,14 @@ class LLMService:
         Returns a tuple: (image_bytes, revised_prompt).
         """
 
+        if self._openai_client is None and not (
+            settings.openai_api_key and settings.openai_api_key.get_secret_value()
+        ):
+            raise RuntimeError(
+                "OpenAI image generation requires `OPENAI_API_KEY` (or another configured OpenAI "
+                "credential mechanism)."
+            )
+
         kwargs: dict[str, object] = {
             "model": model,
             "prompt": prompt,
