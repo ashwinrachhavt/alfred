@@ -1215,6 +1215,60 @@ class DocStorageService:
                 return None
             return bytes(doc.image)
 
+    @staticmethod
+    def build_document_title_image_prompt(self, doc_id: str) -> dict[str, Any]:
+        """Build the OpenAI image prompt for a document cover image.
+
+        This is useful for debugging and for dry-runs of image generation.
+        """
+
+        uid = _parse_uuid(doc_id)
+        if uid is None:
+            raise ValueError("Invalid id")
+
+        with _session_scope(self.session) as s:
+            row = s.exec(
+                select(
+                    DocumentRow.meta,
+                    DocumentRow.title,
+                    DocumentRow.topics,
+                    DocumentRow.summary,
+                    DocumentRow.domain,
+                    DocumentRow.raw_markdown,
+                    DocumentRow.cleaned_text,
+                ).where(DocumentRow.id == uid)
+            ).one_or_none()
+            if row is None:
+                raise ValueError("Document not found")
+
+            meta, title_raw, topics, summary, domain, raw_markdown, cleaned_text = row
+            meta = meta or {}
+            title = _best_effort_title(row_title=title_raw, meta=meta)
+            primary_topic = _best_effort_primary_topic(topics, meta)
+
+            summary_short = None
+            if isinstance(summary, dict):
+                summary_short = _first_str(summary.get("short"), summary.get("summary"))
+
+            source_text = (raw_markdown or cleaned_text or "").strip()
+            excerpt = _excerpt_for_cover_prompt(source_text, max_chars=900)
+            prompt = _build_title_image_prompt(
+                title=title,
+                summary=summary_short,
+                primary_topic=primary_topic,
+                domain=domain,
+                excerpt=excerpt,
+                visual_brief=None,
+            )
+
+            return {
+                "id": doc_id,
+                "title": title,
+                "primary_topic": primary_topic,
+                "summary_short": summary_short,
+                "prompt": prompt,
+            }
+
     def generate_document_title_image(
         self,
         doc_id: str,
@@ -1284,6 +1338,8 @@ class DocStorageService:
                 excerpt=excerpt,
                 visual_brief=visual_brief,
             )
+
+            llm = self._ensure_llm_service()
 
             model_used = model
             tried_models = [model]
