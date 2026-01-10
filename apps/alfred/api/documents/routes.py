@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from alfred.core.celery_client import get_celery_client
 from alfred.core.dependencies import get_doc_storage_service
+from alfred.core.exceptions import AlfredException
 from alfred.schemas.documents import (
     DocumentDetailsResponse,
     DocumentIngest,
@@ -39,8 +40,8 @@ def create_note(
         note_id = svc.create_note(
             NoteCreate(text=payload.text, source_url=payload.source_url, metadata=payload.metadata)
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except AlfredException:
+        raise
     except Exception as exc:  # pragma: no cover - external IO
         raise HTTPException(status_code=500, detail="Failed to create note") from exc
 
@@ -62,6 +63,8 @@ def list_notes(
 ) -> NotesListResponse:
     try:
         data = svc.list_notes(q=q, skip=skip, limit=limit)
+    except AlfredException:
+        raise
     except Exception as exc:  # pragma: no cover - external IO
         raise HTTPException(status_code=500, detail="Failed to list notes") from exc
 
@@ -134,8 +137,8 @@ def create_page(
         except Exception:  # pragma: no cover - external IO
             logger.exception("Failed to enqueue document processing for %s", res["id"])
             return PageResponse(id=res["id"], status="stored")
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except AlfredException:
+        raise
     except Exception as exc:  # pragma: no cover - external IO
         logger.exception("Page extract ingestion failed: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to ingest page") from exc
@@ -183,6 +186,8 @@ def get_document_image(
         )
     except HTTPException:
         raise
+    except AlfredException:
+        raise
     except Exception as exc:  # pragma: no cover - external IO
         logger.exception("Failed to fetch document image: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to fetch image") from exc
@@ -205,8 +210,8 @@ def generate_document_image(
             size=payload.size,
             quality=payload.quality,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except AlfredException:
+        raise
     except Exception as exc:  # pragma: no cover - external IO
         logger.exception("Failed to generate document image: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to generate image") from exc
@@ -264,6 +269,8 @@ def get_document(
         return doc
     except HTTPException:
         raise
+    except AlfredException:
+        raise
     except Exception as exc:  # pragma: no cover - external IO
         raise HTTPException(status_code=500, detail="Failed to fetch document") from exc
 
@@ -279,6 +286,8 @@ def get_document_details(
             raise HTTPException(status_code=404, detail="Document not found")
         return doc
     except HTTPException:
+        raise
+    except AlfredException:
         raise
     except Exception as exc:  # pragma: no cover - external IO
         raise HTTPException(status_code=500, detail="Failed to fetch document") from exc
@@ -300,8 +309,8 @@ def update_document_text(
         if not updated:
             raise HTTPException(status_code=404, detail="Document not found")
         return updated
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except AlfredException:
+        raise
     except HTTPException:
         raise
     except Exception as exc:  # pragma: no cover - external IO
@@ -323,8 +332,8 @@ def list_explorer_documents(
             filter_topic=filter_topic,
             search=search,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except AlfredException:
+        raise
     except Exception as exc:  # pragma: no cover - external IO
         raise HTTPException(status_code=500, detail="Failed to list documents") from exc
 
@@ -338,6 +347,8 @@ def get_semantic_map(
     try:
         points = svc.get_semantic_map_points(limit=limit, force_refresh=refresh)
         return {"points": points}
+    except AlfredException:
+        raise
     except Exception as exc:  # pragma: no cover - external IO
         raise HTTPException(status_code=500, detail="Failed to build semantic map") from exc
 
@@ -353,5 +364,7 @@ def search_documents(
     try:
         data = svc.list_documents(q=q, topic=topic, limit=limit)
         return {"items": data["items"]}
+    except AlfredException:
+        raise
     except Exception as exc:  # pragma: no cover - external IO
         raise HTTPException(status_code=500, detail="Failed to search documents") from exc

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import socket
+import sys
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -10,6 +12,12 @@ import pytest
 # This prevents optional LLM modules (e.g. DSPy/OpenAI) from being enabled via a
 # developer's local environment variables during unit tests.
 os.environ.setdefault("APP_ENV", "test")
+
+# Ensure local `apps/` package directory is importable before any installed `alfred` package.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_APPS_DIR = _REPO_ROOT / "apps"
+if _APPS_DIR.exists():
+    sys.path.insert(0, str(_APPS_DIR))
 
 
 class NetworkBlockedError(RuntimeError):

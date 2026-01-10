@@ -6,6 +6,8 @@ import { usePathname } from "next/navigation";
 import { Sparkles } from "lucide-react";
 
 import { appNavItems } from "@/lib/navigation";
+import { useFollowUps } from "@/features/follow-ups/follow-up-provider";
+import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 
 import {
   Sidebar,
@@ -25,6 +27,8 @@ const developerNavKeys = new Set(["design-system"]);
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname();
+  const { dueNowCount } = useFollowUps();
+  const { activeCount } = useTaskTracker();
 
   const primaryNavItems = appNavItems.filter(
     (item) => item.key !== "home" && !developerNavKeys.has(item.key),
@@ -61,6 +65,16 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                     <Link href={item.href}>
                       <item.icon className="size-4" aria-hidden="true" />
                       <span>{item.title}</span>
+                      {item.key === "tasks" && activeCount ? (
+                        <div className="bg-destructive text-destructive-foreground ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-medium">
+                          {activeCount}
+                        </div>
+                      ) : null}
+                      {item.key === "follow-ups" && dueNowCount ? (
+                        <div className="bg-destructive text-destructive-foreground ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-medium">
+                          {dueNowCount}
+                        </div>
+                      ) : null}
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from alfred.api.documents import routes as doc_routes
+from alfred.core.exceptions import register_exception_handlers
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -29,6 +30,7 @@ class _FakeDocStorage:
 
 def _app_with_fake_service(fake: _FakeDocStorage) -> TestClient:
     app = FastAPI()
+    register_exception_handlers(app)
     app.include_router(doc_routes.router)
     app.dependency_overrides[doc_routes.get_doc_storage_service] = lambda: fake
     return TestClient(app)
@@ -103,6 +105,7 @@ def test_page_extract_duplicate_short_circuits(monkeypatch) -> None:
 
 def test_enqueue_document_enrichment(monkeypatch) -> None:
     app = FastAPI()
+    register_exception_handlers(app)
     app.include_router(doc_routes.router)
     client = TestClient(app)
 

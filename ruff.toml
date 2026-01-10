@@ -9,9 +9,13 @@ select = [
   "E",   # pycodestyle errors
   "F",   # pyflakes
   "I",   # isort
+  "PLR2004",  # pylint: magic-value-comparison
 ]
 # E501 (line length) is treated as a soft limit in this repo; ignore to reduce noise.
 ignore = ["E501"]
+
+[lint.per-file-ignores]
+"tests/**" = ["PLR2004"]
 
 [format]
 quote-style = "double"

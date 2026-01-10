@@ -26,6 +26,10 @@ from alfred.services.graph_service import GraphService
 from alfred.services.llm_service import LLMService
 from alfred.services.spaced_repetition import compute_next_review_schedule
 
+PROGRESS_COMPLETE = 100
+QUIZ_SOURCE_TEXT_CHAR_BUDGET = 8000
+RETENTION_METRIC_30D_STAGE = 3
+
 
 @dataclass
 class LearningService:
@@ -89,7 +93,7 @@ class LearningService:
         if "status" in fields and fields["status"] is not None:
             topic.status = str(fields["status"])
         if "progress" in fields and fields["progress"] is not None:
-            topic.progress = clamp_int(int(fields["progress"]), lo=0, hi=100)
+            topic.progress = clamp_int(int(fields["progress"]), lo=0, hi=PROGRESS_COMPLETE)
         if "interview_at" in fields:
             topic.interview_at = fields["interview_at"]
         topic.updated_at = _utcnow()
@@ -296,7 +300,7 @@ class LearningService:
                         chunk = ""
                     if chunk.strip():
                         chunks.append(chunk)
-                    if sum(len(c) for c in chunks) >= 8000:
+                    if sum(len(c) for c in chunks) >= QUIZ_SOURCE_TEXT_CHAR_BUDGET:
                         break
                 text = "\n\n".join(chunks).strip()
 
@@ -631,9 +635,15 @@ class LearningService:
             ]
         }
 
-        # Aggregate topic->entity weights and compute topic-topic links via shared entities
+        # Aggregate topic->entity weights and compute topic-topic links via shared entities.
+        #
+        # Naively generating all topic-topic pairs for high-degree entities is O(n²) per entity
+        # and can dominate response times once the learning graph grows. We cap the number of
+        # topics considered per entity to keep the work bounded while still surfacing useful
+        # "shared concept" links.
         topic_entity_weight: dict[tuple[int, str], int] = {}
         entity_to_topics: dict[str, set[int]] = {}
+        entity_topic_weight: dict[str, dict[int, int]] = {}
         entity_meta: dict[str, dict] = {}
         for r in rows:
             eid = f"entity:{r.entity_id}"
@@ -642,6 +652,8 @@ class LearningService:
             tid = int(r.topic_id)
             topic_entity_weight[(tid, eid)] = topic_entity_weight.get((tid, eid), 0) + 1
             entity_to_topics.setdefault(eid, set()).add(tid)
+            entity_topic_weight.setdefault(eid, {})
+            entity_topic_weight[eid][tid] = entity_topic_weight[eid].get(tid, 0) + 1
             entity_meta[eid] = {
                 "label": r.entity_name,
                 "entity_type": r.entity_type,
@@ -664,13 +676,22 @@ class LearningService:
         for (tid, eid), w in topic_entity_weight.items():
             edges.append({"source": f"topic:{tid}", "target": eid, "type": "MENTIONS", "weight": w})
 
-        shared: dict[tuple[int, int], int] = {}
-        for tids in entity_to_topics.values():
-            tlist = sorted(tids)
-            for i in range(len(tlist)):
-                for j in range(i + 1, len(tlist)):
-                    key = (tlist[i], tlist[j])
-                    shared[key] = shared.get(key, 0) + 1
+        from collections import Counter
+        from heapq import nlargest
+        from itertools import combinations
+
+        max_topics_per_entity_for_links = 25
+        shared: Counter[tuple[int, int]] = Counter()
+        for topics in entity_topic_weight.values():
+            if len(topics) < 2:
+                continue
+            top = nlargest(
+                max_topics_per_entity_for_links,
+                topics.items(),
+                key=lambda kv: (kv[1], -kv[0]),
+            )
+            tlist = sorted(tid for tid, _w in top)
+            shared.update(combinations(tlist, 2))
         for (a, b), w in sorted(shared.items(), key=lambda kv: kv[1], reverse=True)[:200]:
             edges.append(
                 {
@@ -732,7 +753,7 @@ class LearningService:
         topics = list(self.session.exec(t_stmt))
 
         def _priority(t: LearningTopic) -> float:
-            base = 1.0 + (100 - int(t.progress or 0)) / 100.0
+            base = 1.0 + (PROGRESS_COMPLETE - int(t.progress or 0)) / float(PROGRESS_COMPLETE)
             if t.interview_at:
                 days = max(0.0, (t.interview_at - now).total_seconds() / 86400.0)
                 urgency = 1.0 / max(1.0, days)
@@ -745,7 +766,7 @@ class LearningService:
         for t in topics:
             if remaining <= 0:
                 break
-            if int(t.progress or 0) >= 100:
+            if int(t.progress or 0) >= PROGRESS_COMPLETE:
                 continue
             minutes = min(30, remaining)
             remaining -= minutes
@@ -766,7 +787,7 @@ class LearningService:
         # Stage 3 reviews approximate 30-day recall checks.
         stmt = (
             select(LearningReview)
-            .where(LearningReview.stage == 3)
+            .where(LearningReview.stage == RETENTION_METRIC_30D_STAGE)
             .where(LearningReview.completed_at.is_not(None))
         )
         reviews = list(self.session.exec(stmt))
