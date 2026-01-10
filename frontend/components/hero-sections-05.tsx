@@ -12,7 +12,10 @@ export default function HeroSection() {
     <section className="mx-auto w-full max-w-7xl px-4 py-14 lg:py-20">
       <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2">
         <div className="space-y-8">
-          <Badge variant="outline" className="inline-flex items-center gap-2 rounded-full px-2 py-1">
+          <Badge
+            variant="outline"
+            className="inline-flex items-center gap-2 rounded-full px-2 py-1"
+          >
             <Sparkles className="size-4" />
             Second brain, not second tab.
           </Badge>
@@ -23,7 +26,8 @@ export default function HeroSection() {
             </h1>
 
             <p className="text-muted-foreground text-lg leading-relaxed">
-              Alfred turns scattered notes, research, and practice into durable knowledge — with context preserved.
+              Alfred turns scattered notes, research, and practice into durable knowledge — with
+              context preserved.
             </p>
           </div>
 
@@ -63,7 +67,9 @@ export default function HeroSection() {
             <Card className="bg-muted aspect-[4/3] border-none shadow-none">
               <CardContent className="flex h-full flex-col justify-end">
                 <div>
-                  <div className="mb-2 text-3xl font-medium tracking-tight sm:text-4xl">Citations</div>
+                  <div className="mb-2 text-3xl font-medium tracking-tight sm:text-4xl">
+                    Citations
+                  </div>
                   <div className="text-muted-foreground">Know where every claim comes from.</div>
                 </div>
               </CardContent>
@@ -84,8 +90,12 @@ export default function HeroSection() {
 
             <Card className="aspect-[4/3] border-none bg-amber-50 shadow-none dark:bg-amber-950">
               <CardContent className="flex h-full flex-col justify-end">
-                <div className="mb-2 text-3xl font-medium tracking-tight sm:text-4xl">Workbenches</div>
-                <div className="text-muted-foreground mb-4">Deep work modes when you need them.</div>
+                <div className="mb-2 text-3xl font-medium tracking-tight sm:text-4xl">
+                  Workbenches
+                </div>
+                <div className="text-muted-foreground mb-4">
+                  Deep work modes when you need them.
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="secondary">Company</Badge>
                   <Badge variant="secondary">Documents</Badge>
@@ -101,4 +111,3 @@ export default function HeroSection() {
     </section>
   );
 }
-

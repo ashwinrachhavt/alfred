@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
@@ -11,6 +14,14 @@ from alfred.core.settings import settings
 
 DEFAULT_USER_ID = "default"
 DEFAULT_NAMESPACE = None
+
+_TOKEN_FRAGMENT_PATTERN = re.compile(r"[^a-z0-9_-]+")
+
+
+def _sanitize_token_fragment(value: str, *, fallback: str) -> str:
+    cleaned = (value or "").strip().lower()
+    cleaned = _TOKEN_FRAGMENT_PATTERN.sub("_", cleaned).strip("_-")
+    return cleaned or fallback
 
 
 def _client_config() -> dict[str, Any]:
@@ -38,8 +49,8 @@ def _token_store_dir() -> Path:
 
 
 def token_path(user_id: str | None = None, *, namespace: str | None = DEFAULT_NAMESPACE) -> Path:
-    uid = user_id or DEFAULT_USER_ID
-    ns = (namespace or "").strip().lower()
+    uid = _sanitize_token_fragment(user_id or DEFAULT_USER_ID, fallback=DEFAULT_USER_ID)
+    ns = _sanitize_token_fragment(namespace or "", fallback="")
     if ns:
         return _token_store_dir() / f"google_{ns}_{uid}.json"
     return _token_store_dir() / f"google_{uid}.json"
@@ -86,7 +97,14 @@ def persist_credentials(
     namespace: str | None = DEFAULT_NAMESPACE,
 ) -> None:
     p = token_path(user_id, namespace=namespace)
-    p.write_text(creds.to_json())
+    tmp = p.with_name(f".{p.name}.{uuid.uuid4().hex}.tmp")
+    tmp.write_text(creds.to_json(), encoding="utf-8")
+    os.replace(tmp, p)
+    try:
+        os.chmod(p, 0o600)
+    except OSError:
+        # Best-effort only: permissions can fail on Windows or restrictive filesystems.
+        pass
 
 
 def load_credentials(
@@ -97,7 +115,10 @@ def load_credentials(
     p = token_path(user_id, namespace=namespace)
     if not p.exists():
         return None
-    data = json.loads(p.read_text())
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Invalid Google credentials file: {p}") from exc
     # Ensure client fields are present (some dumps omit them)
     data.setdefault("client_id", settings.google_client_id)
     data.setdefault("client_secret", settings.google_client_secret)

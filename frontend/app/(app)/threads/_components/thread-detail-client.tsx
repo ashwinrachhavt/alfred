@@ -10,7 +10,10 @@ import { toast } from "sonner";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { ApiError } from "@/lib/api/client";
 import type { ThreadMessage, ThreadMessageRole } from "@/lib/api/types/threads";
-import type { UnifiedInterviewRequest, UnifiedInterviewResponse } from "@/lib/api/types/interviews-unified";
+import type {
+  UnifiedInterviewRequest,
+  UnifiedInterviewResponse,
+} from "@/lib/api/types/interviews-unified";
 import { useAppendThreadMessage } from "@/features/threads/mutations";
 import { useThreadMessages } from "@/features/threads/queries";
 
@@ -75,7 +78,9 @@ function coerceString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function isUnifiedInterviewOperation(value: unknown): value is UnifiedInterviewResponse["operation"] {
+function isUnifiedInterviewOperation(
+  value: unknown,
+): value is UnifiedInterviewResponse["operation"] {
   return value === "collect_questions" || value === "deep_research" || value === "practice_session";
 }
 
@@ -119,7 +124,7 @@ function renderStructuredMessage(message: ThreadMessage): ReactNode | null {
           </div>
         </div>
         <details>
-          <summary className="cursor-pointer select-none text-muted-foreground text-xs">
+          <summary className="text-muted-foreground cursor-pointer text-xs select-none">
             Raw payload
           </summary>
           <pre className="bg-muted/30 mt-2 max-h-[320px] overflow-auto rounded-md border p-3 text-xs leading-relaxed">
@@ -144,7 +149,7 @@ function renderStructuredMessage(message: ThreadMessage): ReactNode | null {
               <div className="space-y-2">
                 {(payload.questions ?? []).map((q, idx) => (
                   <div key={`${idx}:${q.question}`} className="rounded-md border p-3">
-                    <p className="text-xs text-muted-foreground">Q{idx + 1}</p>
+                    <p className="text-muted-foreground text-xs">Q{idx + 1}</p>
                     <p className="whitespace-pre-wrap">{q.question}</p>
                     {q.categories?.length ? (
                       <p className="text-muted-foreground mt-1 text-xs">
@@ -190,12 +195,14 @@ function renderStructuredMessage(message: ThreadMessage): ReactNode | null {
         {payload.operation === "practice_session" ? (
           <div className="space-y-2">
             <p className="font-medium">Interviewer response</p>
-            <p className="text-muted-foreground whitespace-pre-wrap">{payload.interviewer_response || "—"}</p>
+            <p className="text-muted-foreground whitespace-pre-wrap">
+              {payload.interviewer_response || "—"}
+            </p>
           </div>
         ) : null}
 
         <details>
-          <summary className="cursor-pointer select-none text-muted-foreground text-xs">
+          <summary className="text-muted-foreground cursor-pointer text-xs select-none">
             Raw payload
           </summary>
           <pre className="bg-muted/30 mt-2 max-h-[420px] overflow-auto rounded-md border p-3 text-xs leading-relaxed">
@@ -209,7 +216,7 @@ function renderStructuredMessage(message: ThreadMessage): ReactNode | null {
   if (isRecord(data) && Object.keys(data).length) {
     return (
       <details>
-        <summary className="cursor-pointer select-none text-muted-foreground text-xs">
+        <summary className="text-muted-foreground cursor-pointer text-xs select-none">
           Structured data
         </summary>
         <pre className="bg-muted/30 mt-2 max-h-[420px] overflow-auto rounded-md border p-3 text-xs leading-relaxed">
@@ -392,7 +399,7 @@ export function ThreadDetailClient({ threadId }: { threadId: string }) {
                   <div className="mt-3 text-sm leading-relaxed whitespace-pre-wrap">
                     {message.content?.trim()
                       ? message.content
-                      : renderStructuredMessage(message) ?? "—"}
+                      : (renderStructuredMessage(message) ?? "—")}
                   </div>
                 </div>
               ))}

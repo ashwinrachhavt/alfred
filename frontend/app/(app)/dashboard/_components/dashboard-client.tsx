@@ -33,8 +33,16 @@ export function DashboardClient() {
     return items
       .slice()
       .sort((a, b) => {
-        const aTime = a.updated_at ? Date.parse(a.updated_at) : a.created_at ? Date.parse(a.created_at) : 0;
-        const bTime = b.updated_at ? Date.parse(b.updated_at) : b.created_at ? Date.parse(b.created_at) : 0;
+        const aTime = a.updated_at
+          ? Date.parse(a.updated_at)
+          : a.created_at
+            ? Date.parse(a.created_at)
+            : 0;
+        const bTime = b.updated_at
+          ? Date.parse(b.updated_at)
+          : b.created_at
+            ? Date.parse(b.created_at)
+            : 0;
         return bTime - aTime;
       })
       .slice(0, 6);
@@ -72,29 +80,29 @@ export function DashboardClient() {
             <CardTitle className="text-base">Recent documents</CardTitle>
             <p className="text-muted-foreground text-sm">Your latest notes and captures.</p>
           </CardHeader>
-            <CardContent className="space-y-3">
-              {recentDocuments.isLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-5 w-5/6" />
-                  <Skeleton className="h-5 w-2/3" />
-                </div>
-              ) : recentDocuments.isError ? (
-                <div className="space-y-2">
-                  <p className="text-muted-foreground text-sm">
-                    Couldn&apos;t load documents. Is the API running?
-                  </p>
-                  <Button size="sm" variant="outline" onClick={() => void recentDocuments.refetch()}>
-                    Retry
-                  </Button>
-                </div>
-              ) : recentDocuments.data?.items?.length ? (
-                <ul className="space-y-2">
-                  {recentDocuments.data.items.slice(0, 6).map((doc) => (
-                    <li key={doc.id} className="flex items-start justify-between gap-3">
-                      <Link
+          <CardContent className="space-y-3">
+            {recentDocuments.isLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-5 w-3/4" />
+                <Skeleton className="h-5 w-5/6" />
+                <Skeleton className="h-5 w-2/3" />
+              </div>
+            ) : recentDocuments.isError ? (
+              <div className="space-y-2">
+                <p className="text-muted-foreground text-sm">
+                  Couldn&apos;t load documents. Is the API running?
+                </p>
+                <Button size="sm" variant="outline" onClick={() => void recentDocuments.refetch()}>
+                  Retry
+                </Button>
+              </div>
+            ) : recentDocuments.data?.items?.length ? (
+              <ul className="space-y-2">
+                {recentDocuments.data.items.slice(0, 6).map((doc) => (
+                  <li key={doc.id} className="flex items-start justify-between gap-3">
+                    <Link
                       href={`/documents/${doc.id}`}
-                      className="hover:text-foreground text-sm font-medium leading-snug underline-offset-4 hover:underline"
+                      className="hover:text-foreground text-sm leading-snug font-medium underline-offset-4 hover:underline"
                     >
                       {doc.title || "Untitled document"}
                     </Link>
@@ -121,30 +129,30 @@ export function DashboardClient() {
             <CardTitle className="text-base">Company research</CardTitle>
             <p className="text-muted-foreground text-sm">Recent briefs and executive summaries.</p>
           </CardHeader>
-            <CardContent className="space-y-3">
-              {recentReports.isLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-5 w-4/5" />
-                  <Skeleton className="h-5 w-2/3" />
-                  <Skeleton className="h-5 w-3/4" />
-                </div>
-              ) : recentReports.isError ? (
-                <div className="space-y-2">
-                  <p className="text-muted-foreground text-sm">
-                    Couldn&apos;t load reports. Is the API running?
-                  </p>
-                  <Button size="sm" variant="outline" onClick={() => void recentReports.refetch()}>
-                    Retry
-                  </Button>
-                </div>
-              ) : recentReports.data?.length ? (
-                <ul className="space-y-2">
-                  {recentReports.data.slice(0, 6).map((report) => (
-                    <li key={report.id} className="space-y-1">
-                      <div className="flex items-start justify-between gap-3">
+          <CardContent className="space-y-3">
+            {recentReports.isLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-5 w-4/5" />
+                <Skeleton className="h-5 w-2/3" />
+                <Skeleton className="h-5 w-3/4" />
+              </div>
+            ) : recentReports.isError ? (
+              <div className="space-y-2">
+                <p className="text-muted-foreground text-sm">
+                  Couldn&apos;t load reports. Is the API running?
+                </p>
+                <Button size="sm" variant="outline" onClick={() => void recentReports.refetch()}>
+                  Retry
+                </Button>
+              </div>
+            ) : recentReports.data?.length ? (
+              <ul className="space-y-2">
+                {recentReports.data.slice(0, 6).map((report) => (
+                  <li key={report.id} className="space-y-1">
+                    <div className="flex items-start justify-between gap-3">
                       <Link
                         href={`/company?reportId=${encodeURIComponent(report.id)}`}
-                        className="hover:text-foreground text-sm font-medium leading-snug underline-offset-4 hover:underline"
+                        className="hover:text-foreground text-sm leading-snug font-medium underline-offset-4 hover:underline"
                       >
                         {report.company}
                       </Link>
@@ -178,29 +186,29 @@ export function DashboardClient() {
             <CardTitle className="text-base">Threads</CardTitle>
             <p className="text-muted-foreground text-sm">Recent conversations and notes.</p>
           </CardHeader>
-            <CardContent className="space-y-3">
-              {threads.isLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-5 w-2/3" />
-                  <Skeleton className="h-5 w-5/6" />
-                  <Skeleton className="h-5 w-3/5" />
-                </div>
-              ) : threads.isError ? (
-                <div className="space-y-2">
-                  <p className="text-muted-foreground text-sm">
-                    Couldn&apos;t load threads. Is the API running?
-                  </p>
-                  <Button size="sm" variant="outline" onClick={() => void threads.refetch()}>
-                    Retry
-                  </Button>
-                </div>
-              ) : sortedThreads.length ? (
-                <ul className="space-y-2">
-                  {sortedThreads.map((thread) => (
-                    <li key={thread.id} className="flex items-start justify-between gap-3">
-                      <Link
+          <CardContent className="space-y-3">
+            {threads.isLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-5 w-2/3" />
+                <Skeleton className="h-5 w-5/6" />
+                <Skeleton className="h-5 w-3/5" />
+              </div>
+            ) : threads.isError ? (
+              <div className="space-y-2">
+                <p className="text-muted-foreground text-sm">
+                  Couldn&apos;t load threads. Is the API running?
+                </p>
+                <Button size="sm" variant="outline" onClick={() => void threads.refetch()}>
+                  Retry
+                </Button>
+              </div>
+            ) : sortedThreads.length ? (
+              <ul className="space-y-2">
+                {sortedThreads.map((thread) => (
+                  <li key={thread.id} className="flex items-start justify-between gap-3">
+                    <Link
                       href={`/threads/${thread.id}`}
-                      className="hover:text-foreground text-sm font-medium leading-snug underline-offset-4 hover:underline"
+                      className="hover:text-foreground text-sm leading-snug font-medium underline-offset-4 hover:underline"
                     >
                       {thread.title || thread.kind || "Untitled thread"}
                     </Link>

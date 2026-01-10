@@ -9,6 +9,7 @@ import base64
 import hashlib
 import json
 import logging
+import threading
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -423,6 +424,7 @@ class DocStorageService:
     llm_service: Any | None = None
     redis_client: Any | None = None
     semantic_map_cache_ttl_seconds: int = 600
+    semantic_map_cache_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     semantic_map_cache: TTLCache[str, dict[str, Any]] = field(
         default_factory=lambda: TTLCache(maxsize=8, ttl=600),
         repr=False,
@@ -1844,7 +1846,8 @@ class DocStorageService:
             except Exception:
                 logger.exception("Failed reading semantic map cache from Redis")
 
-        cached = self.semantic_map_cache.get(cache_key)
+        with self.semantic_map_cache_lock:
+            cached = self.semantic_map_cache.get(cache_key)
         if cached and cached.get("version") == version and isinstance(cached.get("items"), list):
             return cached["items"]
         return None
@@ -1862,7 +1865,8 @@ class DocStorageService:
             except Exception:
                 logger.exception("Failed writing semantic map cache to Redis")
 
-        self.semantic_map_cache[cache_key] = payload
+        with self.semantic_map_cache_lock:
+            self.semantic_map_cache[cache_key] = payload
 
     def list_documents(
         self,

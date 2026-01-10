@@ -36,11 +36,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              size="lg"
-              className="data-[slot=sidebar-menu-button]:!p-1.5"
-            >
+            <SidebarMenuButton asChild size="lg" className="data-[slot=sidebar-menu-button]:!p-1.5">
               <Link href="/dashboard" className="gap-2">
                 <Sparkles className="size-5" aria-hidden="true" />
                 <span className="text-base font-semibold tracking-tight">Alfred</span>

@@ -9,8 +9,9 @@ export default function SignInPage() {
         <div className="bg-background text-foreground w-full max-w-md rounded-lg border p-6 shadow-sm">
           <h1 className="text-lg font-semibold tracking-tight">Authentication not configured</h1>
           <p className="text-muted-foreground mt-2 text-sm">
-            Set <code className="bg-muted rounded px-1 py-0.5">NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</code> to enable
-            Clerk sign-in.
+            Set{" "}
+            <code className="bg-muted rounded px-1 py-0.5">NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</code>{" "}
+            to enable Clerk sign-in.
           </p>
         </div>
       </main>
