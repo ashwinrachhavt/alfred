@@ -6,6 +6,7 @@ import logging
 import uuid
 from typing import Iterable
 
+from alfred.core.celery_client import get_celery_client
 from alfred.core.database import SessionLocal
 from alfred.models.doc_storage import DocumentRow
 from alfred.services.doc_storage_pg import DocStorageService
@@ -16,7 +17,7 @@ logger = logging.getLogger("scripts.generate_document_images")
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Generate and persist OpenAI cover images for stored documents."
+        description="Generate and persist cover images for stored documents."
     )
     p.add_argument(
         "--doc-id",
@@ -34,6 +35,16 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--model", default="gpt-image-1", help="OpenAI image model.")
     p.add_argument("--size", default="1024x1024", help="Requested image size.")
     p.add_argument("--quality", default="high", help="Requested image quality.")
+    p.add_argument(
+        "--enqueue",
+        action="store_true",
+        help="Enqueue per-document Celery tasks instead of generating inline.",
+    )
+    p.add_argument(
+        "--batch",
+        action="store_true",
+        help="Enqueue a single Celery batch task that selects docs missing images.",
+    )
     p.add_argument("--dry-run", action="store_true", help="Print what would run without saving.")
     return p.parse_args()
 
@@ -80,6 +91,55 @@ def main() -> int:
         return 0
 
     logger.info("Processing %d document(s).", len(ids))
+
+    if args.batch:
+        if args.dry_run:
+            logger.info(
+                "[dry-run] Would enqueue batch task for up to %s doc(s) (force=%s)",
+                args.limit,
+                bool(args.force),
+            )
+            return 0
+
+        celery = get_celery_client()
+        async_result = celery.send_task(
+            "alfred.tasks.document_title_image.batch_generate",
+            kwargs={
+                "limit": int(args.limit),
+                "min_age_hours": 0,
+                "force": bool(args.force),
+                "enqueue_only": True,
+                "model": str(args.model),
+                "size": str(args.size),
+                "quality": str(args.quality),
+            },
+        )
+        logger.info("Enqueued batch task %s", async_result.id)
+        return 0
+
+    if args.enqueue:
+        if args.dry_run:
+            for doc_id in ids:
+                logger.info("[dry-run] Would enqueue image task for %s", doc_id)
+            return 0
+
+        celery = get_celery_client()
+        task_ids: list[str] = []
+        for doc_id in ids:
+            async_result = celery.send_task(
+                "alfred.tasks.document_title_image.generate",
+                kwargs={
+                    "doc_id": doc_id,
+                    "force": bool(args.force),
+                    "model": str(args.model),
+                    "size": str(args.size),
+                    "quality": str(args.quality),
+                },
+            )
+            task_ids.append(async_result.id)
+            logger.info("Enqueued %s -> %s", doc_id, async_result.id)
+        logger.info("Enqueued %d task(s).", len(task_ids))
+        return 0
 
     svc = DocStorageService()
     failures = 0

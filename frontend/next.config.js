@@ -1,5 +1,8 @@
 /** @type {import("next").NextConfig} */
 const nextConfig = {
+  turbopack: {
+    root: __dirname,
+  },
   async rewrites() {
     const normalizeApiBaseUrl = (raw) => raw.trim().replace(/\/+$/, "");
 

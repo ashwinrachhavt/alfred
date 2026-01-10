@@ -17,6 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
+import { DocumentEditor } from "./document-editor";
+
 function coerceString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
@@ -38,9 +40,8 @@ export function DocumentReaderClient({ docId }: { docId: string }) {
   const title = details?.title?.trim() || "Untitled document";
   const coverUrl = details?.cover_image_url?.trim() || null;
   const summary = extractSummary(details);
-  const contentText = useMemo(() => {
-    const text = (details?.cleaned_text || details?.raw_markdown || "").trim();
-    return text;
+  const initialMarkdown = useMemo(() => {
+    return details?.raw_markdown ?? details?.cleaned_text ?? "";
   }, [details?.cleaned_text, details?.raw_markdown]);
 
   const topic = useMemo(() => {
@@ -114,7 +115,9 @@ export function DocumentReaderClient({ docId }: { docId: string }) {
                     toast.message("Cover image generation queued.");
                   }
                 } catch (err) {
-                  toast.error(err instanceof Error ? err.message : "Failed to queue image generation.");
+                  toast.error(
+                    err instanceof Error ? err.message : "Failed to queue image generation.",
+                  );
                 }
               }}
             >
@@ -125,7 +128,9 @@ export function DocumentReaderClient({ docId }: { docId: string }) {
 
         <div className="space-y-1">
           <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
-          <p className="text-muted-foreground text-sm">{details?.domain || details?.source_url || "—"}</p>
+          <p className="text-muted-foreground text-sm">
+            {details?.domain || details?.source_url || "—"}
+          </p>
         </div>
 
         {topic ? (
@@ -173,7 +178,7 @@ export function DocumentReaderClient({ docId }: { docId: string }) {
               src={coverUrl}
               alt={title}
               loading="lazy"
-              className="w-full max-h-[420px] rounded-2xl border object-cover"
+              className="max-h-[420px] w-full rounded-2xl border object-cover"
             />
           ) : null}
 
@@ -186,16 +191,9 @@ export function DocumentReaderClient({ docId }: { docId: string }) {
 
           <Separator />
 
-          {contentText ? (
-            <article className="prose dark:prose-invert max-w-none whitespace-pre-wrap">
-              {contentText}
-            </article>
-          ) : (
-            <p className="text-muted-foreground text-sm">No text available for this document.</p>
-          )}
+          <DocumentEditor docId={docId} initialMarkdown={initialMarkdown} />
         </div>
       )}
     </div>
   );
 }
-

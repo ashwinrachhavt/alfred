@@ -284,6 +284,43 @@ class Settings(BaseSettings):
         default=None, alias="CLASSIFICATION_TAXONOMY_PATH"
     )
 
+    # Learning concept extraction (batch, Celery)
+    enable_learning_concept_extraction_nightly: bool = Field(
+        default=False, alias="ENABLE_LEARNING_CONCEPT_EXTRACTION_NIGHTLY"
+    )
+    learning_concept_extraction_nightly_hour: int = Field(
+        default=2, alias="LEARNING_CONCEPT_EXTRACTION_NIGHTLY_HOUR", ge=0, le=23
+    )
+    learning_concept_extraction_nightly_minute: int = Field(
+        default=15, alias="LEARNING_CONCEPT_EXTRACTION_NIGHTLY_MINUTE", ge=0, le=59
+    )
+    learning_concept_extraction_batch_limit: int = Field(
+        default=50, alias="LEARNING_CONCEPT_EXTRACTION_BATCH_LIMIT", ge=1, le=500
+    )
+    learning_concept_extraction_min_age_hours: int = Field(
+        default=6, alias="LEARNING_CONCEPT_EXTRACTION_MIN_AGE_HOURS", ge=0, le=168
+    )
+
+    # Document concept extraction (batch, Celery)
+    enable_document_concept_extraction_nightly: bool = Field(
+        default=False, alias="ENABLE_DOCUMENT_CONCEPT_EXTRACTION_NIGHTLY"
+    )
+    document_concept_extraction_nightly_hour: int = Field(
+        default=2, alias="DOCUMENT_CONCEPT_EXTRACTION_NIGHTLY_HOUR", ge=0, le=23
+    )
+    document_concept_extraction_nightly_minute: int = Field(
+        default=30, alias="DOCUMENT_CONCEPT_EXTRACTION_NIGHTLY_MINUTE", ge=0, le=59
+    )
+    document_concept_extraction_batch_limit: int = Field(
+        default=100, alias="DOCUMENT_CONCEPT_EXTRACTION_BATCH_LIMIT", ge=1, le=500
+    )
+    document_concept_extraction_min_age_hours: int = Field(
+        default=6, alias="DOCUMENT_CONCEPT_EXTRACTION_MIN_AGE_HOURS", ge=0, le=168
+    )
+
+    # Admin API (visibility)
+    enable_admin_api_schema: bool = Field(default=False, alias="ENABLE_ADMIN_API_SCHEMA")
+
     # --- LLM unified ---
     llm_provider: LLMProvider = Field(default=LLMProvider.openai, alias="ALFRED_LLM_PROVIDER")
     llm_model: str = Field(default="gpt-4.1-mini", alias="ALFRED_LLM_MODEL")

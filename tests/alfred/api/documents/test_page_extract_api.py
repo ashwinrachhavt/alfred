@@ -13,7 +13,7 @@ class _FakeDocStorage:
         self.last_ingest: Dict[str, Any] | None = None
         self.duplicate_next = False
 
-    def ingest_document_basic(self, ingest) -> Dict[str, Any]:  # noqa: ANN001 - schema type from app
+    def ingest_document_store_only(self, ingest) -> Dict[str, Any]:  # noqa: ANN001 - schema type from app
         self.last_ingest = {
             "source_url": ingest.source_url,
             "title": ingest.title,
@@ -38,10 +38,20 @@ def test_page_extract_stores_only(monkeypatch) -> None:
     fake = _FakeDocStorage()
     client = _app_with_fake_service(fake)
 
-    def _celery_called() -> None:
-        raise AssertionError("get_celery_client should not be called during /page/extract")
+    class _FakeAsyncResult:
+        def __init__(self, task_id: str) -> None:
+            self.id = task_id
 
-    monkeypatch.setattr(doc_routes, "get_celery_client", _celery_called)
+    class _FakeCelery:
+        def __init__(self) -> None:
+            self.calls: list[Dict[str, Any]] = []
+
+        def send_task(self, name: str, *, kwargs: Dict[str, Any]) -> _FakeAsyncResult:
+            self.calls.append({"name": name, "kwargs": kwargs})
+            return _FakeAsyncResult("task-123")
+
+    fake_celery = _FakeCelery()
+    monkeypatch.setattr(doc_routes, "get_celery_client", lambda: fake_celery)
 
     resp = client.post(
         "/api/documents/page/extract",
@@ -54,10 +64,16 @@ def test_page_extract_stores_only(monkeypatch) -> None:
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["status"] == "stored"
+    assert data["status"] == "queued"
     assert data["id"] == "1"
-    assert data["task_id"] is None
-    assert data["status_url"] is None
+    assert data["task_id"] == "task-123"
+    assert data["status_url"] == "/tasks/task-123"
+    assert fake_celery.calls == [
+        {
+            "name": "alfred.tasks.document_processing.process",
+            "kwargs": {"doc_id": "1", "force": False},
+        }
+    ]
 
     assert fake.last_ingest is not None
     assert fake.last_ingest["source_url"] == "https://example.com"

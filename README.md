@@ -145,6 +145,15 @@ curl -sS -X POST 'http://localhost:8000/api/mind-palace/agent/query?background=t
 # curl -sS http://localhost:8000/tasks/<task_id>
 ```
 
+Enqueue document cover image generation:
+```bash
+# Enqueue one task per doc (recent docs missing images)
+python scripts/generate_document_images.py --enqueue --limit 25
+
+# Or enqueue a single batch task (which then enqueues per-doc tasks)
+python scripts/generate_document_images.py --batch --limit 100
+```
+
 ## Environment & Imports
 
 - The project is an installable package (editable mode). Run `make install` and then use `uv run …` targets.

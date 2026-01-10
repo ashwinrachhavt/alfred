@@ -65,7 +65,10 @@ export function ThreadsClient() {
   async function onCreateThread() {
     const nextTitle = title.trim();
     try {
-      const created = await createThreadMutation.mutateAsync({ title: nextTitle || null });
+      const created = await createThreadMutation.mutateAsync({
+        kind: "generic",
+        title: nextTitle || null,
+      });
       setTitle("");
       toast.success("Thread created");
       // Navigate optimistically via Link (user can click), but also keep list fresh.
@@ -185,9 +188,7 @@ export function ThreadsClient() {
           ) : (
             <EmptyState
               title={threads.length ? "No matches" : "No threads yet"}
-              description={
-                threads.length ? "Try a different filter." : "Create a thread to begin."
-              }
+              description={threads.length ? "Try a different filter." : "Create a thread to begin."}
               icon={MessageSquareText}
             />
           )}

@@ -2,11 +2,16 @@ import { Page } from "@/components/layout/page";
 
 import { DocumentReaderClient } from "./_components/document-reader-client";
 
-export default function DocumentReaderPage({ params }: { params: { id: string } }) {
+type DocumentReaderPageProps = {
+  params: { id: string } | Promise<{ id: string }>;
+};
+
+export default async function DocumentReaderPage({ params }: DocumentReaderPageProps) {
+  const resolvedParams = await Promise.resolve(params);
+
   return (
     <Page size="comfortable">
-      <DocumentReaderClient docId={params.id} />
+      <DocumentReaderClient docId={resolvedParams.id} />
     </Page>
   );
 }
-

@@ -136,4 +136,3 @@ def agent():
     """LangGraph entrypoint for deployment."""
 
     return build_writer_graph()
-

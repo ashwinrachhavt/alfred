@@ -40,4 +40,3 @@ def test_recent_company_research_reports_returns_executive_summary(
     results = company_routes.recent_company_research_reports(limit=10)
     assert len(results) == 1
     assert results[0].executive_summary == "Hello"
-

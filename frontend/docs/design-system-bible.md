@@ -176,4 +176,3 @@ Before merging UI work:
 - Focus rings are visible
 - Copy is short and specific
 - Layout holds up on small screens
-

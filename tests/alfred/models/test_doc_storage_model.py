@@ -26,6 +26,16 @@ def test_document_embedding_column_is_float_array() -> None:
     assert isinstance(embedding_type.item_type, sa.Float)
 
 
+def test_document_concepts_column_is_jsonb_on_postgres() -> None:
+    concepts_type = DocumentRow.__table__.c.concepts.type.load_dialect_impl(postgresql.dialect())
+    assert isinstance(concepts_type, postgresql.JSONB)
+
+
+def test_document_concepts_column_is_json_on_sqlite() -> None:
+    concepts_type = DocumentRow.__table__.c.concepts.type.load_dialect_impl(sqlite.dialect())
+    assert isinstance(concepts_type, sa.JSON)
+
+
 def test_document_insert_does_not_cast_tags_to_json() -> None:
     stmt = insert(DocumentRow.__table__).values(
         id=uuid.uuid4(),

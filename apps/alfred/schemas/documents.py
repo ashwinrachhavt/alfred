@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 # -----------------
@@ -225,6 +225,27 @@ class DocumentDetailsResponse(BaseModel):
     session_id: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
     enrichment: Optional[Dict[str, Any]] = None
+
+
+class DocumentTextUpdateRequest(BaseModel):
+    """Patch payload for editing a document's text content.
+
+    Notes
+    -----
+    - `cleaned_text` is treated as the canonical plain-text version used for search.
+    - `raw_markdown` can store a richer representation (e.g. TipTap Markdown).
+    - `tiptap_json` is optionally persisted into the document `metadata` for future rich editing.
+    """
+
+    raw_markdown: Optional[str] = None
+    cleaned_text: Optional[str] = None
+    tiptap_json: Optional[Dict[str, Any]] = None
+
+    @model_validator(mode="after")
+    def _must_include_a_field(self) -> "DocumentTextUpdateRequest":
+        if self.raw_markdown is None and self.cleaned_text is None and self.tiptap_json is None:
+            raise ValueError("At least one of raw_markdown, cleaned_text, tiptap_json must be set")
+        return self
 
 
 class ExplorerDocumentItem(BaseModel):

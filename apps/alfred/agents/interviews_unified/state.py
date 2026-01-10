@@ -28,4 +28,3 @@ class InterviewAgentState(TypedDict):
 
     practice_events: list[dict[str, Any]]
     errors: list[str]
-

@@ -12,7 +12,13 @@ import { enqueueDocumentImage } from "@/lib/api/documents";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 
@@ -60,7 +66,7 @@ export function QuickLookSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="sm:max-w-xl overflow-y-auto">
+      <SheetContent side="right" className="overflow-y-auto sm:max-w-xl">
         <SheetHeader>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -132,7 +138,9 @@ export function QuickLookSheet({
                       toast.message("Cover image generation queued.");
                     }
                   } catch (err) {
-                    toast.error(err instanceof Error ? err.message : "Failed to queue image generation.");
+                    toast.error(
+                      err instanceof Error ? err.message : "Failed to queue image generation.",
+                    );
                   }
                 }}
               >
@@ -157,7 +165,9 @@ export function QuickLookSheet({
                   <p className="text-muted-foreground text-sm whitespace-pre-wrap">{summary}</p>
                 </div>
               ) : (
-                <p className="text-muted-foreground text-sm">{loading ? "Fetching details…" : "No summary yet."}</p>
+                <p className="text-muted-foreground text-sm">
+                  {loading ? "Fetching details…" : "No summary yet."}
+                </p>
               )}
             </TabsContent>
 
@@ -167,11 +177,13 @@ export function QuickLookSheet({
                   {contentText}
                 </div>
               ) : (
-                <p className="text-muted-foreground text-sm">{loading ? "Fetching content…" : "No text yet."}</p>
+                <p className="text-muted-foreground text-sm">
+                  {loading ? "Fetching content…" : "No text yet."}
+                </p>
               )}
             </TabsContent>
 
-            <TabsContent value="meta" className="pt-4 space-y-4">
+            <TabsContent value="meta" className="space-y-4 pt-4">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-muted-foreground text-xs">Captured</p>

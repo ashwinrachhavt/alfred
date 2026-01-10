@@ -3,12 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { Clock } from "lucide-react";
+import { Sparkles } from "lucide-react";
 
 import { appNavItems } from "@/lib/navigation";
 
-import { CompanyResearchHistorySheet } from "@/components/company-research-history-sheet";
-import { InterviewPrepSessionHistorySheet } from "@/components/interview-prep-session-history-sheet";
 import {
   Sidebar,
   SidebarContent,
@@ -16,32 +14,57 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
+  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarSeparator,
 } from "@/components/ui/sidebar";
 
-export function AppSidebar() {
+const developerNavKeys = new Set(["design-system"]);
+
+export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname();
-  const isCompanyRoute = pathname === "/company" || pathname.startsWith("/company/");
-  const isInterviewPrepRoute =
-    pathname === "/interview-prep" || pathname.startsWith("/interview-prep/");
+
+  const primaryNavItems = appNavItems.filter(
+    (item) => item.key !== "home" && !developerNavKeys.has(item.key),
+  );
+  const developerNavItems = appNavItems.filter((item) => developerNavKeys.has(item.key));
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="offcanvas" {...props}>
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              size="lg"
+              className="data-[slot=sidebar-menu-button]:!p-1.5"
+            >
+              <Link href="/dashboard" className="gap-2">
+                <Sparkles className="size-5" aria-hidden="true" />
+                <span className="text-base font-semibold tracking-tight">Alfred</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
+
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Alfred</SidebarGroupLabel>
+          <SidebarGroupLabel>Workspace</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {appNavItems.map((item) => (
+              {primaryNavItems.map((item) => (
                 <SidebarMenuItem key={item.key}>
-                  <SidebarMenuButton asChild isActive={pathname === item.href}>
+                  <SidebarMenuButton
+                    asChild
+                    tooltip={item.title}
+                    isActive={pathname === item.href || pathname.startsWith(`${item.href}/`)}
+                  >
                     <Link href={item.href}>
-                      <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                      <span className="truncate group-data-[state=collapsed]:hidden">
-                        {item.title}
-                      </span>
+                      <item.icon className="size-4" aria-hidden="true" />
+                      <span>{item.title}</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -50,52 +73,40 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {isCompanyRoute ? (
-          <SidebarGroup>
-            <SidebarGroupLabel>Company</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <CompanyResearchHistorySheet
-                    trigger={
-                      <SidebarMenuButton type="button">
-                        <Clock className="h-4 w-4 shrink-0" aria-hidden="true" />
-                        <span className="truncate group-data-[state=collapsed]:hidden">
-                          Recent research
-                        </span>
+        {developerNavItems.length ? (
+          <>
+            <SidebarSeparator />
+            <SidebarGroup>
+              <SidebarGroupLabel>Developer</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {developerNavItems.map((item) => (
+                    <SidebarMenuItem key={item.key}>
+                      <SidebarMenuButton
+                        asChild
+                        tooltip={item.title}
+                        isActive={pathname === item.href || pathname.startsWith(`${item.href}/`)}
+                      >
+                        <Link href={item.href}>
+                          <item.icon className="size-4" aria-hidden="true" />
+                          <span>{item.title}</span>
+                        </Link>
                       </SidebarMenuButton>
-                    }
-                  />
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ) : null}
-
-        {isInterviewPrepRoute ? (
-          <SidebarGroup>
-            <SidebarGroupLabel>Interview prep</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <InterviewPrepSessionHistorySheet
-                    trigger={
-                      <SidebarMenuButton type="button">
-                        <Clock className="h-4 w-4 shrink-0" aria-hidden="true" />
-                        <span className="truncate group-data-[state=collapsed]:hidden">
-                          Recent sessions
-                        </span>
-                      </SidebarMenuButton>
-                    }
-                  />
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
         ) : null}
       </SidebarContent>
 
-      <SidebarFooter className="space-y-2" />
+      <SidebarFooter>
+        <div className="text-muted-foreground px-2 py-1 text-xs">
+          <span className="hidden md:inline">Search: ⌘K / Ctrl K</span>
+          <span className="md:hidden">⌘K</span>
+        </div>
+      </SidebarFooter>
     </Sidebar>
   );
 }

@@ -11,6 +11,7 @@ import { TaskCenterTrigger } from "@/components/task-center-sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { isClerkEnabled } from "@/lib/auth";
 
 export function AppShell({
   children,
@@ -19,6 +20,8 @@ export function AppShell({
   children: React.ReactNode;
   defaultSidebarOpen: boolean;
 }) {
+  const clerkEnabled = isClerkEnabled();
+
   return (
     <SidebarProvider defaultOpen={defaultSidebarOpen}>
       <AppSidebar />
@@ -42,19 +45,23 @@ export function AppShell({
               <AppCommandPaletteTrigger className="hidden md:flex" />
               <TaskCenterTrigger />
               <ThemeToggle />
-              <SignedOut>
-                <SignInButton mode="modal">
-                  <Button size="sm" variant="ghost">
-                    Sign in
-                  </Button>
-                </SignInButton>
-                <SignUpButton mode="modal">
-                  <Button size="sm">Sign up</Button>
-                </SignUpButton>
-              </SignedOut>
-              <SignedIn>
-                <UserButton />
-              </SignedIn>
+              {clerkEnabled ? (
+                <>
+                  <SignedOut>
+                    <SignInButton mode="modal">
+                      <Button size="sm" variant="ghost">
+                        Sign in
+                      </Button>
+                    </SignInButton>
+                    <SignUpButton mode="modal">
+                      <Button size="sm">Sign up</Button>
+                    </SignUpButton>
+                  </SignedOut>
+                  <SignedIn>
+                    <UserButton />
+                  </SignedIn>
+                </>
+              ) : null}
             </div>
           </div>
         </header>

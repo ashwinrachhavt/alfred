@@ -1,2 +1,1 @@
 """Company outreach LangGraph agent."""
-

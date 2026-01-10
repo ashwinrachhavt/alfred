@@ -40,7 +40,9 @@ type InterviewPrepSessionHistorySheetProps = {
   trigger?: React.ReactElement;
 };
 
-export function InterviewPrepSessionHistorySheet({ trigger }: InterviewPrepSessionHistorySheetProps) {
+export function InterviewPrepSessionHistorySheet({
+  trigger,
+}: InterviewPrepSessionHistorySheetProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const visibleSessions = useMemo<PracticeSessionSummary[]>(

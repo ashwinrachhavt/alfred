@@ -4,10 +4,12 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from alfred.api.dependencies import get_db_session
+from alfred.core.celery_client import get_celery_client
 from alfred.core.settings import settings
 from alfred.models.learning import LearningQuiz, LearningReview, LearningTopic
 from alfred.schemas.learning import (
@@ -31,6 +33,14 @@ from alfred.services.graph_service import GraphService
 from alfred.services.learning_service import LearningService
 
 router = APIRouter(prefix="/api/learning", tags=["learning"], include_in_schema=False)
+
+
+class EnqueueResponse(BaseModel):
+    status: str
+    task_id: str
+    status_url: str
+    resource_id: int | None = None
+    queued: int | None = None
 
 
 def _topic_out(t: LearningTopic) -> TopicOut:
@@ -332,6 +342,49 @@ def extract_resource(resource_id: int, session: Session = Depends(get_db_session
         return {"ok": True, "graph": graph}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/resources/{resource_id}/extract/async", response_model=EnqueueResponse)
+def enqueue_extract_resource(resource_id: int, force: bool = False) -> EnqueueResponse:
+    """Enqueue asynchronous concept extraction for a learning resource."""
+    celery_client = get_celery_client()
+    async_result = celery_client.send_task(
+        "alfred.tasks.learning_concepts.extract_resource",
+        kwargs={"resource_id": int(resource_id), "force": bool(force)},
+    )
+    return EnqueueResponse(
+        status="queued",
+        task_id=async_result.id,
+        status_url=f"/tasks/{async_result.id}",
+        resource_id=int(resource_id),
+        queued=1,
+    )
+
+
+class BatchExtractRequest(BaseModel):
+    limit: int = Field(default=50, ge=1, le=500)
+    topic_id: int | None = None
+    min_age_hours: int = Field(default=0, ge=0, le=168)
+    force: bool = False
+
+
+@router.post("/resources/extract/batch/async", response_model=EnqueueResponse)
+def enqueue_batch_extract(payload: BatchExtractRequest) -> EnqueueResponse:
+    """Enqueue a batch job that selects and extracts concepts for resources."""
+    celery_client = get_celery_client()
+    async_result = celery_client.send_task(
+        "alfred.tasks.learning_concepts.batch_extract",
+        kwargs={
+            "limit": int(payload.limit),
+            "topic_id": int(payload.topic_id) if payload.topic_id is not None else None,
+            "min_age_hours": int(payload.min_age_hours),
+            "force": bool(payload.force),
+            "enqueue_only": True,
+        },
+    )
+    return EnqueueResponse(
+        status="queued", task_id=async_result.id, status_url=f"/tasks/{async_result.id}"
+    )
 
 
 @router.get("/metrics/retention", response_model=RetentionMetric)

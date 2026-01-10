@@ -1,12 +1,35 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
+const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+
 const isPublicRoute = createRouteMatcher(["/", "/sign-in(.*)", "/sign-up(.*)"]);
 
-export default clerkMiddleware(async (auth, req) => {
-  if (!isPublicRoute(req)) {
-    await auth.protect();
-  }
-});
+/**
+ * Backend API routes are served by FastAPI and reached via Next.js rewrites.
+ *
+ * We intentionally do not guard these with Clerk middleware in Next.js to avoid
+ * local/dev auth misconfiguration breaking core app functionality (the backend
+ * should enforce auth if/when required).
+ *
+ * Note: Keep this list aligned with `frontend/next.config.js` rewrites.
+ */
+const isBackendApiRoute = createRouteMatcher([
+  "/api/company(.*)",
+  "/api/documents(.*)",
+  "/api/rag(.*)",
+  "/api/tasks(.*)",
+  "/api/threads(.*)",
+]);
+
+export default clerkEnabled
+  ? clerkMiddleware(async (auth, req) => {
+      if (isBackendApiRoute(req)) return;
+
+      if (!isPublicRoute(req)) {
+        await auth.protect();
+      }
+    })
+  : function middleware() {};
 
 export const config = {
   matcher: [

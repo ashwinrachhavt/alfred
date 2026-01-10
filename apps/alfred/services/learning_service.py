@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Iterable
 
 from sqlalchemy import func
@@ -162,6 +162,34 @@ class LearningService:
 
     def get_resource(self, resource_id: int) -> LearningResource | None:
         return self.session.get(LearningResource, resource_id)
+
+    def list_resources_needing_extraction(
+        self,
+        *,
+        limit: int = 50,
+        topic_id: int | None = None,
+        min_age_hours: int = 0,
+        force: bool = False,
+    ) -> list[LearningResource]:
+        """Return learning resources that are candidates for concept extraction.
+
+        By default, returns resources that:
+        - have a non-empty `document_id`
+        - have not been extracted yet (`extracted_at IS NULL`)
+
+        `force=True` includes already-extracted resources (useful for reprocessing).
+        """
+        now = _utcnow()
+        stmt = select(LearningResource).where(LearningResource.document_id.is_not(None))
+        stmt = stmt.where(func.length(func.trim(LearningResource.document_id)) > 0)
+        if topic_id is not None:
+            stmt = stmt.where(LearningResource.topic_id == int(topic_id))
+        if not force:
+            stmt = stmt.where(LearningResource.extracted_at.is_(None))
+        if min_age_hours and min_age_hours > 0:
+            stmt = stmt.where(LearningResource.added_at <= (now - timedelta(hours=min_age_hours)))
+        stmt = stmt.order_by(LearningResource.added_at.asc()).limit(clamp_int(limit, lo=1, hi=500))
+        return list(self.session.exec(stmt))
 
     # -----------------
     # Reviews (spaced repetition)

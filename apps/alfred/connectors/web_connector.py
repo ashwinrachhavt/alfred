@@ -189,9 +189,7 @@ class LangsearchClient:
             try:
                 import httpx  # type: ignore
             except ImportError as exc:  # pragma: no cover
-                raise RuntimeError(
-                    "Langsearch requires the optional dependency 'httpx'."
-                ) from exc
+                raise RuntimeError("Langsearch requires the optional dependency 'httpx'.") from exc
             self._httpx = httpx
 
         url = self._base_url

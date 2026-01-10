@@ -16,6 +16,7 @@ export const apiRoutes = {
     explorer: "/api/documents/explorer",
     semanticMap: "/api/documents/semantic-map",
     documentDetails: (id: string) => `/api/documents/${id}/details`,
+    documentText: (id: string) => `/api/documents/${id}/text`,
     documentImage: (id: string) => `/api/documents/${id}/image`,
     documentImageAsync: (id: string) => `/api/documents/${id}/image/async`,
   },

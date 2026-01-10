@@ -1,4 +1,4 @@
-import { apiFetch, apiPostJson } from "@/lib/api/client";
+import { apiFetch, apiPatchJson, apiPostJson } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
 import type {
   DocumentDetailsResponse,
@@ -42,9 +42,13 @@ function buildSemanticMapQuery(params: GetSemanticMapParams): string {
   return query.toString();
 }
 
-export async function getSemanticMap(params: GetSemanticMapParams = {}): Promise<SemanticMapResponse> {
+export async function getSemanticMap(
+  params: GetSemanticMapParams = {},
+): Promise<SemanticMapResponse> {
   const query = buildSemanticMapQuery(params);
-  const url = query ? `${apiRoutes.documents.semanticMap}?${query}` : apiRoutes.documents.semanticMap;
+  const url = query
+    ? `${apiRoutes.documents.semanticMap}?${query}`
+    : apiRoutes.documents.semanticMap;
   return apiFetch<SemanticMapResponse>(url, { cache: "no-store" });
 }
 
@@ -52,6 +56,23 @@ export async function getDocumentDetails(id: string): Promise<DocumentDetailsRes
   return apiFetch<DocumentDetailsResponse>(apiRoutes.documents.documentDetails(id), {
     cache: "no-store",
   });
+}
+
+export type UpdateDocumentTextRequest = {
+  raw_markdown?: string | null;
+  cleaned_text?: string | null;
+  tiptap_json?: Record<string, unknown> | null;
+};
+
+export async function updateDocumentText(
+  id: string,
+  body: UpdateDocumentTextRequest,
+): Promise<DocumentDetailsResponse> {
+  return apiPatchJson<DocumentDetailsResponse, UpdateDocumentTextRequest>(
+    apiRoutes.documents.documentText(id),
+    body,
+    { cache: "no-store" },
+  );
 }
 
 export type GenerateDocumentImageRequest = {
@@ -91,7 +112,9 @@ export async function generateDocumentImage(
   body: GenerateDocumentImageRequest = {},
 ): Promise<GenerateDocumentImageResponse> {
   const query = buildForceQuery(params);
-  const url = query ? `${apiRoutes.documents.documentImage(id)}?${query}` : apiRoutes.documents.documentImage(id);
+  const url = query
+    ? `${apiRoutes.documents.documentImage(id)}?${query}`
+    : apiRoutes.documents.documentImage(id);
   return apiPostJson<GenerateDocumentImageResponse, GenerateDocumentImageRequest>(url, body, {
     cache: "no-store",
   });
@@ -103,7 +126,9 @@ export async function enqueueDocumentImage(
   body: GenerateDocumentImageRequest = {},
 ): Promise<EnqueueDocumentImageResponse> {
   const query = buildForceQuery(params);
-  const url = query ? `${apiRoutes.documents.documentImageAsync(id)}?${query}` : apiRoutes.documents.documentImageAsync(id);
+  const url = query
+    ? `${apiRoutes.documents.documentImageAsync(id)}?${query}`
+    : apiRoutes.documents.documentImageAsync(id);
   return apiPostJson<EnqueueDocumentImageResponse, GenerateDocumentImageRequest>(url, body, {
     cache: "no-store",
   });

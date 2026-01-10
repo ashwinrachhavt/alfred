@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 
 from alfred.agents.interviews_unified.agent import UnifiedInterviewAgent
@@ -21,28 +22,45 @@ class EnqueueUnifiedInterviewTaskResponse(BaseModel):
     status: str = "queued"
 
 
+def _enqueue_unified_interview_task(*, task_id: str, payload: dict) -> None:
+    """Publish the unified interview task to Celery.
+
+    This is executed via FastAPI BackgroundTasks so the HTTP request can return
+    quickly even if the broker connection is slow or temporarily unavailable.
+    """
+
+    celery_client = get_celery_client()
+    celery_client.send_task(
+        "alfred.tasks.interviews_unified.process",
+        task_id=task_id,
+        kwargs={"payload": payload},
+        queue="agent",
+    )
+
+
 @router.post(
     "/process", response_model=UnifiedInterviewResponse | EnqueueUnifiedInterviewTaskResponse
 )
 async def unified_interview_process(
     payload: UnifiedInterviewRequest,
     response: Response,
+    background_tasks: BackgroundTasks,
     background: bool = Query(False, description="Enqueue a background task instead of blocking"),
     agent: UnifiedInterviewAgent = Depends(get_unified_interview_agent),
 ) -> UnifiedInterviewResponse | EnqueueUnifiedInterviewTaskResponse:
     """Unified endpoint for question collection, deep research, and practice sessions."""
 
     if background:
-        celery_client = get_celery_client()
-        async_result = celery_client.send_task(
-            "alfred.tasks.interviews_unified.process",
-            kwargs={"payload": payload.model_dump(mode="json")},
-            queue="agent",
+        task_id = str(uuid.uuid4())
+        background_tasks.add_task(
+            _enqueue_unified_interview_task,
+            task_id=task_id,
+            payload=payload.model_dump(mode="json"),
         )
         response.status_code = status.HTTP_202_ACCEPTED
         return EnqueueUnifiedInterviewTaskResponse(
-            task_id=async_result.id,
-            status_url=f"/tasks/{async_result.id}",
+            task_id=task_id,
+            status_url=f"/tasks/{task_id}",
         )
 
     try:

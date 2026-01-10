@@ -12,4 +12,3 @@ class WriterState(TypedDict, total=False):
     voice_examples: str
     cache_hit: bool
     output: str
-

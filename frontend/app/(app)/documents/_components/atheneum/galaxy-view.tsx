@@ -144,7 +144,11 @@ export function GalaxyView({
         <div className="pointer-events-auto flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-white/85 backdrop-blur">
           <div className="min-w-0">
             <p className="truncate">
-              {hovered ? hovered.label : focused ? focused.label : "Hover a star to reveal its title."}
+              {hovered
+                ? hovered.label
+                : focused
+                  ? focused.label
+                  : "Hover a star to reveal its title."}
             </p>
             <p className="text-white/60">Drag to orbit • Scroll to zoom • Click to focus</p>
           </div>
@@ -154,7 +158,12 @@ export function GalaxyView({
               <Badge variant="secondary" className="bg-white/10 text-white">
                 {focused.primary_topic || "untagged"}
               </Badge>
-              <Button type="button" size="sm" className="pointer-events-auto" onClick={() => onOpenDocument(focused.id)}>
+              <Button
+                type="button"
+                size="sm"
+                className="pointer-events-auto"
+                onClick={() => onOpenDocument(focused.id)}
+              >
                 Quick Look
               </Button>
             </div>
@@ -175,4 +184,3 @@ export function GalaxyView({
     </div>
   );
 }
-

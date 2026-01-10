@@ -30,7 +30,13 @@ function coverGradientStyle(seed: string): CSSProperties {
   };
 }
 
-export function ShelfCard({ item, onSelect }: { item: ExplorerDocumentItem; onSelect: (id: string) => void }) {
+export function ShelfCard({
+  item,
+  onSelect,
+}: {
+  item: ExplorerDocumentItem;
+  onSelect: (id: string) => void;
+}) {
   const topic = item.primary_topic?.trim() || null;
   const coverSeed = topic || item.title || item.id;
   const coverUrl = item.cover_image_url?.trim() || null;
@@ -71,10 +77,11 @@ export function ShelfCard({ item, onSelect }: { item: ExplorerDocumentItem; onSe
           ) : null}
         </div>
         {item.summary ? (
-          <p className="text-muted-foreground line-clamp-2 text-xs leading-relaxed">{item.summary}</p>
+          <p className="text-muted-foreground line-clamp-2 text-xs leading-relaxed">
+            {item.summary}
+          </p>
         ) : null}
       </div>
     </button>
   );
 }
-

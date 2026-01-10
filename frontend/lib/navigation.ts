@@ -3,6 +3,7 @@ import {
   Calendar,
   Command,
   FileText,
+  Home,
   LayoutGrid,
   MessageCircle,
   MessageSquareText,
@@ -26,7 +27,14 @@ export type AppNavItem = {
 };
 
 export const appNavItems: AppNavItem[] = [
-  { key: "home", title: "Home", href: "/", icon: LayoutGrid, keywords: ["home", "dashboard"] },
+  {
+    key: "dashboard",
+    title: "Dashboard",
+    href: "/dashboard",
+    icon: LayoutGrid,
+    keywords: ["dashboard", "overview", "home"],
+  },
+  { key: "home", title: "Home", href: "/", icon: Home, keywords: ["home", "landing"] },
   {
     key: "company",
     title: "Company",

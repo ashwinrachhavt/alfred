@@ -305,15 +305,15 @@ export function TaskCenterTrigger({
       className={className}
       aria-label="Open task center"
       onClick={() => setTaskCenterOpen(true)}
-  >
-    <span className="relative">
-      <ListChecks className="h-4 w-4" aria-hidden="true" />
-      {hasMounted && activeCount ? (
-        <span className="bg-destructive text-destructive-foreground absolute -top-1.5 -right-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-medium">
-          {activeCount}
-        </span>
-      ) : null}
-    </span>
-  </Button>
+    >
+      <span className="relative">
+        <ListChecks className="h-4 w-4" aria-hidden="true" />
+        {hasMounted && activeCount ? (
+          <span className="bg-destructive text-destructive-foreground absolute -top-1.5 -right-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-medium">
+            {activeCount}
+          </span>
+        ) : null}
+      </span>
+    </Button>
   );
 }

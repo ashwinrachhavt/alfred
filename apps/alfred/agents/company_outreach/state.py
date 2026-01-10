@@ -7,4 +7,3 @@ from langchain_core.messages import BaseMessage
 
 class OutreachState(TypedDict):
     messages: list[BaseMessage]
-

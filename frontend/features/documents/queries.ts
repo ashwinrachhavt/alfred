@@ -18,7 +18,23 @@ export function documentDetailsQueryKey(docId: string) {
   return ["documents", "details", docId] as const;
 }
 
-export function useExplorerDocuments(params: { limit?: number; filterTopic?: string; search?: string } = {}) {
+export function recentDocumentsQueryKey(limit: number) {
+  return ["documents", "recent", limit] as const;
+}
+
+export function useRecentDocuments(limit = 6) {
+  const cappedLimit = Math.max(1, Math.min(50, limit));
+
+  return useQuery({
+    queryKey: recentDocumentsQueryKey(cappedLimit),
+    queryFn: () => listExplorerDocuments({ limit: cappedLimit }),
+    staleTime: 10_000,
+  });
+}
+
+export function useExplorerDocuments(
+  params: { limit?: number; filterTopic?: string; search?: string } = {},
+) {
   const limit = Math.max(1, Math.min(200, params.limit ?? 24));
   const filterTopic = (params.filterTopic ?? "").trim();
   const search = (params.search ?? "").trim();
@@ -57,4 +73,3 @@ export function useDocumentDetails(docId: string | null) {
     staleTime: 0,
   });
 }
-

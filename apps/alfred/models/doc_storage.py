@@ -88,6 +88,24 @@ class _FloatListType(TypeDecorator[list[float] | None]):
         return [float(x) for x in value]
 
 
+class _JsonObjectType(TypeDecorator[dict[str, Any] | None]):
+    """Cross-database JSON object column type.
+
+    - Postgres: `jsonb`
+    - SQLite/others: `JSON`
+    """
+
+    impl = sa.JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect: sa.engine.Dialect) -> sa.types.TypeEngine:  # type: ignore[name-defined]
+        if dialect.name == "postgresql":
+            from sqlalchemy.dialects import postgresql
+
+            return dialect.type_descriptor(postgresql.JSONB(astext_type=sa.Text()))
+        return dialect.type_descriptor(sa.JSON)
+
+
 class NoteRow(SQLModel, table=True):
     """Lightweight note record."""
 
@@ -214,6 +232,15 @@ class DocumentRow(SQLModel, table=True):
     enrichment: dict[str, Any] | None = Field(
         default=None, sa_column=sa.Column(sa.JSON, nullable=True)
     )
+
+    # Concept extraction (graph-like entities/relations for all documents)
+    concepts: dict[str, Any] | None = Field(
+        default=None, sa_column=sa.Column(_JsonObjectType(), nullable=True)
+    )
+    concepts_extracted_at: datetime | None = Field(
+        default=None, sa_column=sa.Column(sa.DateTime(timezone=True), nullable=True)
+    )
+    concepts_error: str | None = Field(default=None, sa_column=sa.Column(sa.Text, nullable=True))
 
 
 class DocChunkRow(SQLModel, table=True):

@@ -71,4 +71,3 @@ export function ShelfView({
     </div>
   );
 }
-

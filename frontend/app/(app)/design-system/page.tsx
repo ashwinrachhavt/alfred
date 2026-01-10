@@ -33,7 +33,9 @@ function TokenSwatch({ name, className, description }: TokenSwatchProps) {
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <code className="bg-muted/40 rounded-md px-2 py-1 text-xs">{name}</code>
-          {description ? <span className="text-muted-foreground text-xs">{description}</span> : null}
+          {description ? (
+            <span className="text-muted-foreground text-xs">{description}</span>
+          ) : null}
         </div>
       </div>
       <div className={`h-10 w-16 rounded-lg border shadow-xs ${className}`} aria-hidden="true" />
@@ -109,11 +111,19 @@ export default function DesignSystemPage() {
                 <TokenSwatch name="bg-secondary" className="bg-secondary" />
                 <TokenSwatch name="bg-accent" className="bg-accent" />
                 <TokenSwatch name="bg-destructive" className="bg-destructive" />
-                <TokenSwatch name="border-border" className="bg-border" description="Border color" />
+                <TokenSwatch
+                  name="border-border"
+                  className="bg-border"
+                  description="Border color"
+                />
               </div>
               <p className="text-muted-foreground text-sm">
-                Source of truth: <code className="bg-muted/40 rounded px-1.5 py-0.5">frontend/app/globals.css</code>
-                . See <code className="bg-muted/40 rounded px-1.5 py-0.5">frontend/docs/design-system-bible.md</code>{" "}
+                Source of truth:{" "}
+                <code className="bg-muted/40 rounded px-1.5 py-0.5">frontend/app/globals.css</code>.
+                See{" "}
+                <code className="bg-muted/40 rounded px-1.5 py-0.5">
+                  frontend/docs/design-system-bible.md
+                </code>{" "}
                 for how to add tokens.
               </p>
             </Section>
@@ -129,11 +139,15 @@ export default function DesignSystemPage() {
                 <CardContent className="space-y-3">
                   <div className="space-y-1">
                     <div className="text-4xl font-semibold tracking-tight">Heading 1</div>
-                    <div className="text-muted-foreground text-xs">text-4xl font-semibold tracking-tight</div>
+                    <div className="text-muted-foreground text-xs">
+                      text-4xl font-semibold tracking-tight
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <div className="text-2xl font-semibold tracking-tight">Heading 2</div>
-                    <div className="text-muted-foreground text-xs">text-2xl font-semibold tracking-tight</div>
+                    <div className="text-muted-foreground text-xs">
+                      text-2xl font-semibold tracking-tight
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <div className="text-base">
@@ -145,28 +159,33 @@ export default function DesignSystemPage() {
                     <div className="text-muted-foreground text-sm">
                       Secondary text uses muted foreground to reduce visual noise.
                     </div>
-                    <div className="text-muted-foreground text-xs">text-sm text-muted-foreground</div>
+                    <div className="text-muted-foreground text-xs">
+                      text-sm text-muted-foreground
+                    </div>
                   </div>
                 </CardContent>
               </Card>
             </Section>
 
-            <Section title="Radius" description="Roundness is tokenized; keep it consistent across UI.">
+            <Section
+              title="Radius"
+              description="Roundness is tokenized; keep it consistent across UI."
+            >
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-2 rounded-xl border p-4">
-                  <div className="h-12 w-full rounded-sm bg-muted/30" />
+                  <div className="bg-muted/30 h-12 w-full rounded-sm" />
                   <div className="text-xs">
                     <code className="bg-muted/40 rounded px-1.5 py-0.5">rounded-sm</code>
                   </div>
                 </div>
                 <div className="space-y-2 rounded-xl border p-4">
-                  <div className="h-12 w-full rounded-lg bg-muted/30" />
+                  <div className="bg-muted/30 h-12 w-full rounded-lg" />
                   <div className="text-xs">
                     <code className="bg-muted/40 rounded px-1.5 py-0.5">rounded-lg</code>
                   </div>
                 </div>
                 <div className="space-y-2 rounded-xl border p-4">
-                  <div className="h-12 w-full rounded-3xl bg-muted/30" />
+                  <div className="bg-muted/30 h-12 w-full rounded-3xl" />
                   <div className="text-xs">
                     <code className="bg-muted/40 rounded px-1.5 py-0.5">rounded-3xl</code>{" "}
                     <span className="text-muted-foreground">for hero surfaces</span>
@@ -204,7 +223,10 @@ export default function DesignSystemPage() {
               </Card>
             </Section>
 
-            <Section title="Form controls" description="Always pair inputs with labels and visible focus.">
+            <Section
+              title="Form controls"
+              description="Always pair inputs with labels and visible focus."
+            >
               <Card>
                 <CardContent className="space-y-6 pt-6">
                   <div className="grid gap-4 md:grid-cols-2">
@@ -215,7 +237,9 @@ export default function DesignSystemPage() {
                     <div className="flex items-center justify-between rounded-lg border p-4">
                       <div className="space-y-1">
                         <div className="text-sm font-medium">Toggle</div>
-                        <div className="text-muted-foreground text-xs">Use for binary preferences.</div>
+                        <div className="text-muted-foreground text-xs">
+                          Use for binary preferences.
+                        </div>
                       </div>
                       <Switch aria-label="Example toggle" />
                     </div>
@@ -224,7 +248,10 @@ export default function DesignSystemPage() {
               </Card>
             </Section>
 
-            <Section title="Dialogs" description="Use for focused tasks; keep them short and scannable.">
+            <Section
+              title="Dialogs"
+              description="Use for focused tasks; keep them short and scannable."
+            >
               <Card>
                 <CardContent className="pt-6">
                   <Dialog>
@@ -299,7 +326,10 @@ export default function DesignSystemPage() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <p className="text-muted-foreground text-sm">
-                      Use <code className="bg-muted/40 rounded px-1.5 py-0.5">text-muted-foreground</code>{" "}
+                      Use{" "}
+                      <code className="bg-muted/40 rounded px-1.5 py-0.5">
+                        text-muted-foreground
+                      </code>{" "}
                       for descriptions and helper text.
                     </p>
                     <div className="rounded-lg border p-4">
@@ -318,4 +348,3 @@ export default function DesignSystemPage() {
     </Page>
   );
 }
-

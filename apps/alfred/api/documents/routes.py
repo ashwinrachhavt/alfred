@@ -12,6 +12,7 @@ from alfred.core.dependencies import get_doc_storage_service
 from alfred.schemas.documents import (
     DocumentDetailsResponse,
     DocumentIngest,
+    DocumentTextUpdateRequest,
     ExplorerDocumentsResponse,
     NoteCreate,
     NoteCreateRequest,
@@ -115,10 +116,24 @@ def create_page(
             cleaned_text=cleaned_text,
             content_type="web",
         )
-        res = svc.ingest_document_basic(ingest)
+        res = svc.ingest_document_store_only(ingest)
         if res.get("duplicate"):
             return PageResponse(id=res["id"], status="duplicate")
-        return PageResponse(id=res["id"], status="stored")
+        try:
+            celery_client = get_celery_client()
+            async_result = celery_client.send_task(
+                "alfred.tasks.document_processing.process",
+                kwargs={"doc_id": res["id"], "force": False},
+            )
+            return PageResponse(
+                id=res["id"],
+                status="queued",
+                task_id=async_result.id,
+                status_url=f"/tasks/{async_result.id}",
+            )
+        except Exception:  # pragma: no cover - external IO
+            logger.exception("Failed to enqueue document processing for %s", res["id"])
+            return PageResponse(id=res["id"], status="stored")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # pragma: no cover - external IO
@@ -267,6 +282,30 @@ def get_document_details(
         raise
     except Exception as exc:  # pragma: no cover - external IO
         raise HTTPException(status_code=500, detail="Failed to fetch document") from exc
+
+
+@router.patch("/{id}/text", response_model=DocumentDetailsResponse)
+def update_document_text(
+    id: str,
+    payload: DocumentTextUpdateRequest,
+    svc: DocStorageService = Depends(get_doc_storage_service),
+) -> dict:
+    try:
+        updated = svc.update_document_text(
+            id,
+            cleaned_text=payload.cleaned_text,
+            raw_markdown=payload.raw_markdown,
+            tiptap_json=payload.tiptap_json,
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return updated
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - external IO
+        raise HTTPException(status_code=500, detail="Failed to update document") from exc
 
 
 @router.get("/explorer", response_model=ExplorerDocumentsResponse)

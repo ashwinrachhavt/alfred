@@ -83,4 +83,3 @@ def agent():
 
     # Default placeholder; callers should use `build_company_outreach_graph(...)`.
     return build_company_outreach_graph(company="(company)", role="(role)", personal_context="")
-

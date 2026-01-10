@@ -65,7 +65,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Tooltip } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type AutosaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 
@@ -399,75 +399,87 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
           </Button>
 
           <div className="bg-background/70 flex items-center rounded-xl border p-1 shadow-sm backdrop-blur-sm">
-            <Tooltip content={showDiagram ? "Hide diagram" : "Show diagram"}>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className={cn(
-                  "rounded-lg",
-                  showDiagram ? "bg-accent text-accent-foreground hover:bg-accent/80" : "",
-                )}
-                onClick={() => setShowDiagram((prev) => !prev)}
-              >
-                {showDiagram ? (
-                  <PanelLeftClose className="size-4" />
-                ) : (
-                  <PanelLeftOpen className="size-4" />
-                )}
-              </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className={cn(
+                    "rounded-lg",
+                    showDiagram ? "bg-accent text-accent-foreground hover:bg-accent/80" : "",
+                  )}
+                  onClick={() => setShowDiagram((prev) => !prev)}
+                >
+                  {showDiagram ? (
+                    <PanelLeftClose className="size-4" />
+                  ) : (
+                    <PanelLeftOpen className="size-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{showDiagram ? "Hide diagram" : "Show diagram"}</TooltipContent>
             </Tooltip>
 
             <div className="bg-border mx-1 h-6 w-px" />
 
-            <Tooltip content={showEditor ? "Hide editor" : "Show editor"}>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className={cn(
-                  "rounded-lg",
-                  showEditor ? "bg-accent text-accent-foreground hover:bg-accent/80" : "",
-                )}
-                onClick={() => setShowEditor((prev) => !prev)}
-              >
-                {showEditor ? (
-                  <PanelRightClose className="size-4" />
-                ) : (
-                  <PanelRightOpen className="size-4" />
-                )}
-              </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className={cn(
+                    "rounded-lg",
+                    showEditor ? "bg-accent text-accent-foreground hover:bg-accent/80" : "",
+                  )}
+                  onClick={() => setShowEditor((prev) => !prev)}
+                >
+                  {showEditor ? (
+                    <PanelRightClose className="size-4" />
+                  ) : (
+                    <PanelRightOpen className="size-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{showEditor ? "Hide editor" : "Show editor"}</TooltipContent>
             </Tooltip>
 
             <div className="bg-border mx-1 h-6 w-px" />
 
-            <Tooltip content={showCoach ? "Hide coach" : "Show coach"}>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className={cn(
-                  "rounded-lg",
-                  showCoach ? "bg-accent text-accent-foreground hover:bg-accent/80" : "",
-                )}
-                onClick={() => setShowCoach((prev) => !prev)}
-              >
-                {showCoach ? (
-                  <PanelRightClose className="size-4" />
-                ) : (
-                  <PanelRightOpen className="size-4" />
-                )}
-              </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className={cn(
+                    "rounded-lg",
+                    showCoach ? "bg-accent text-accent-foreground hover:bg-accent/80" : "",
+                  )}
+                  onClick={() => setShowCoach((prev) => !prev)}
+                >
+                  {showCoach ? (
+                    <PanelRightClose className="size-4" />
+                  ) : (
+                    <PanelRightOpen className="size-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{showCoach ? "Hide coach" : "Show coach"}</TooltipContent>
             </Tooltip>
           </div>
 
           {shareUrl ? (
             <>
-              <Tooltip content="Copy share link">
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  onClick={() => void copyToClipboard(shareUrl)}
-                >
-                  <Share2 className="size-4" />
-                </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    onClick={() => void copyToClipboard(shareUrl)}
+                  >
+                    <Share2 className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Copy share link</TooltipContent>
               </Tooltip>
             </>
           ) : null}

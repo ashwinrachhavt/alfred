@@ -57,7 +57,9 @@ function formatErrorMessage(error: unknown): string {
   return "Something went wrong.";
 }
 
-function extractThreadIdFromMetadata(metadata: Record<string, unknown> | null | undefined): string | null {
+function extractThreadIdFromMetadata(
+  metadata: Record<string, unknown> | null | undefined,
+): string | null {
   if (!metadata) return null;
   const value = metadata.thread_id;
   if (typeof value !== "string") return null;
@@ -614,7 +616,6 @@ export function PracticeSessionDrill({
               </Button>
             </div>
           </div>
-
         </aside>
       </div>
     </div>

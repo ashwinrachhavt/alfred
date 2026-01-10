@@ -51,4 +51,3 @@ class CompanyResearchTool(BaseTool):
 
     async def _arun(self, *args: Any, **kwargs: Any) -> str:  # pragma: no cover
         return self._run(*args, **kwargs)
-

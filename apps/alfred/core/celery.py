@@ -21,10 +21,13 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             "alfred.tasks.company_insights",
             "alfred.tasks.company_interviews",
             "alfred.tasks.document_enrichment",
+            "alfred.tasks.document_processing",
             "alfred.tasks.document_title_image",
             "alfred.tasks.gmail_interviews",
             "alfred.tasks.interview_prep",
             "alfred.tasks.interviews_unified",
+            "alfred.tasks.learning_concepts",
+            "alfred.tasks.document_concepts",
             "alfred.tasks.paraform_company_report",
         ]
         if include_tasks
@@ -58,10 +61,13 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             "alfred.tasks.company_insights.*": {"queue": "default"},
             "alfred.tasks.company_interviews.*": {"queue": "default"},
             "alfred.tasks.document_enrichment.*": {"queue": "default"},
+            "alfred.tasks.document_processing.*": {"queue": "default"},
             "alfred.tasks.document_title_image.*": {"queue": "default"},
             "alfred.tasks.gmail_interviews.*": {"queue": "default"},
             "alfred.tasks.interview_prep.*": {"queue": "default"},
             "alfred.tasks.interviews_unified.*": {"queue": "agent"},
+            "alfred.tasks.learning_concepts.*": {"queue": "default"},
+            "alfred.tasks.document_concepts.*": {"queue": "default"},
             "alfred.tasks.paraform_company_report.*": {"queue": "default"},
         },
     )
@@ -88,6 +94,42 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             }
         }
 
+    if settings.enable_learning_concept_extraction_nightly:
+        beat_schedule |= {
+            "learning-concepts-nightly": {
+                "task": "alfred.tasks.learning_concepts.batch_extract",
+                "schedule": crontab(
+                    minute=int(settings.learning_concept_extraction_nightly_minute),
+                    hour=int(settings.learning_concept_extraction_nightly_hour),
+                ),
+                "kwargs": {
+                    "limit": int(settings.learning_concept_extraction_batch_limit),
+                    "min_age_hours": int(settings.learning_concept_extraction_min_age_hours),
+                    "enqueue_only": True,
+                    "force": False,
+                },
+                "options": {"queue": "default"},
+            }
+        }
+
+    if settings.enable_document_concept_extraction_nightly:
+        beat_schedule |= {
+            "document-concepts-nightly": {
+                "task": "alfred.tasks.document_concepts.batch_extract",
+                "schedule": crontab(
+                    minute=int(settings.document_concept_extraction_nightly_minute),
+                    hour=int(settings.document_concept_extraction_nightly_hour),
+                ),
+                "kwargs": {
+                    "limit": int(settings.document_concept_extraction_batch_limit),
+                    "min_age_hours": int(settings.document_concept_extraction_min_age_hours),
+                    "enqueue_only": True,
+                    "force": False,
+                },
+                "options": {"queue": "default"},
+            }
+        }
+
     if beat_schedule:
         celery_app.conf.beat_schedule = beat_schedule
 
@@ -98,11 +140,14 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
         import alfred.tasks.company_insights  # noqa: F401
         import alfred.tasks.company_interviews  # noqa: F401
         import alfred.tasks.company_research  # noqa: F401
+        import alfred.tasks.document_concepts  # noqa: F401
         import alfred.tasks.document_enrichment  # noqa: F401
+        import alfred.tasks.document_processing  # noqa: F401
         import alfred.tasks.document_title_image  # noqa: F401
         import alfred.tasks.gmail_interviews  # noqa: F401
         import alfred.tasks.interview_prep  # noqa: F401
         import alfred.tasks.interviews_unified  # noqa: F401
+        import alfred.tasks.learning_concepts  # noqa: F401
         import alfred.tasks.mind_palace_agent  # noqa: F401
         import alfred.tasks.paraform_company_report  # noqa: F401
 

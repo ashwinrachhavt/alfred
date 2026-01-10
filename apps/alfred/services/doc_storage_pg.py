@@ -12,12 +12,13 @@ import logging
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from cachetools import TTLCache
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy.orm import load_only
 from sqlmodel import Session
 
 from alfred.core.database import SessionLocal
@@ -74,6 +75,25 @@ def _read_text_file_best_effort(path: str | None) -> str | None:
 
 def _sha256_hex(text: str) -> str:
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+def _excerpt_for_cover_prompt(text: str | None, *, max_chars: int = 900) -> str | None:
+    """Return a compact excerpt suitable for an image prompt.
+
+    This is used for "visual grounding" so the cover reflects the actual document.
+    Keep it short to reduce prompt size and limit accidental prompt injection surface.
+    """
+
+    if not text:
+        return None
+    s = " ".join((text or "").strip().split())
+    if not s:
+        return None
+    max_chars = max(120, min(int(max_chars), 4000))
+    if len(s) <= max_chars:
+        return s
+    # Reserve space for an ellipsis.
+    return (s[: max_chars - 1].rstrip() + "…") if max_chars > 1 else "…"
 
 
 def _start_of_day_utc(dt: datetime) -> date:
@@ -162,6 +182,8 @@ def _build_title_image_prompt(
     summary: str | None,
     primary_topic: str | None,
     domain: str | None,
+    excerpt: str | None = None,
+    visual_brief: str | None = None,
 ) -> str:
     """Build an image-generation prompt for a document cover.
 
@@ -172,6 +194,8 @@ def _build_title_image_prompt(
     summary = (summary or "").strip() or None
     primary_topic = (primary_topic or "").strip() or None
     domain = (domain or "").strip() or None
+    excerpt = (excerpt or "").strip() or None
+    visual_brief = (visual_brief or "").strip() or None
 
     context_parts: list[str] = []
     if primary_topic:
@@ -180,6 +204,10 @@ def _build_title_image_prompt(
         context_parts.append(f"Source domain: {domain}.")
     if summary:
         context_parts.append(f"Summary: {summary}.")
+    if excerpt:
+        context_parts.append(f"Excerpt (for visual grounding): {excerpt}.")
+    if visual_brief:
+        context_parts.append(f"Visual brief: {visual_brief}.")
 
     context = "\n".join(context_parts)
     if context:
@@ -553,6 +581,81 @@ class DocStorageService:
             payload, do_enrichment=False, do_classification=False, do_graph=False
         )
 
+    def ingest_document_store_only(self, payload: DocumentIngest) -> Dict[str, Any]:
+        """Persist a document quickly without chunking or enrichment.
+
+        This is intended for latency-sensitive ingestion paths (e.g., browser extension
+        page saves) where chunking/enrichment can be performed asynchronously.
+        """
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        captured_at = payload.captured_at or now
+        if captured_at.tzinfo is None:
+            captured_at = captured_at.replace(tzinfo=timezone.utc)
+        day_bucket = _start_of_day_utc(captured_at)
+        captured_hour = captured_at.astimezone(timezone.utc).hour
+
+        cleaned_text = payload.cleaned_text
+        content_hash = payload.hash or _sha256_hex(cleaned_text)
+        tokens = payload.tokens if payload.tokens is not None else _token_count(cleaned_text)
+        canonical = payload.canonical_url or payload.source_url
+        domain = _domain_from_url(canonical)
+
+        enrichment_block = None
+        try:
+            if (payload.metadata or {}).get("enrichment"):
+                enrichment_block = normalize_enrichment(
+                    payload.metadata.get("enrichment")
+                ).model_dump()
+        except Exception:
+            enrichment_block = None
+
+        doc_record = DocumentRow(
+            source_url=payload.source_url,
+            canonical_url=canonical,
+            domain=domain,
+            title=payload.title,
+            content_type=payload.content_type or "web",
+            lang=payload.lang,
+            raw_markdown=payload.raw_markdown,
+            cleaned_text=cleaned_text,
+            tokens=tokens,
+            hash=content_hash,
+            summary=(payload.summary.model_dump() if payload.summary else None),
+            topics=payload.topics,
+            entities=None,
+            tags=payload.tags or [],
+            embedding=payload.embedding,
+            captured_at=captured_at,
+            captured_hour=captured_hour,
+            day_bucket=day_bucket,
+            published_at=payload.published_at,
+            processed_at=payload.processed_at or now,
+            created_at=now,
+            updated_at=now,
+            session_id=payload.session_id,
+            agent_run_id=None,
+            meta=payload.metadata or {},
+            enrichment=enrichment_block,
+        )
+
+        with _session_scope(self.session) as s:
+            existing = s.exec(
+                select(DocumentRow.id).where(DocumentRow.hash == content_hash)
+            ).first()
+            if existing:
+                return {
+                    "id": str(existing),
+                    "duplicate": True,
+                }
+
+            s.add(doc_record)
+            s.commit()
+            s.refresh(doc_record)
+            return {
+                "id": str(doc_record.id),
+                "duplicate": False,
+            }
+
     def _ingest_document(
         self,
         payload: DocumentIngest,
@@ -729,13 +832,223 @@ class DocStorageService:
                 "chunk_ids": chunk_ids,
             }
 
+    def process_document(self, doc_id: str, *, force: bool = False) -> Dict[str, Any]:
+        """Generate missing chunks and (optionally) enrich/classify an existing document."""
+        uid = _parse_uuid(doc_id)
+        if uid is None:
+            raise ValueError("Invalid id")
+
+        do_enrichment = bool(settings.enable_ingest_enrichment)
+        do_classification = bool(settings.enable_ingest_classification)
+        if do_enrichment or do_classification:
+            self._ensure_extraction_service()
+
+        with _session_scope(self.session) as s:
+            doc = s.get(
+                DocumentRow,
+                uid,
+                options=(
+                    load_only(
+                        DocumentRow.id,
+                        DocumentRow.raw_markdown,
+                        DocumentRow.cleaned_text,
+                        DocumentRow.tokens,
+                        DocumentRow.content_type,
+                        DocumentRow.captured_at,
+                        DocumentRow.captured_hour,
+                        DocumentRow.day_bucket,
+                        DocumentRow.created_at,
+                        DocumentRow.lang,
+                        DocumentRow.summary,
+                        DocumentRow.topics,
+                        DocumentRow.tags,
+                        DocumentRow.entities,
+                        DocumentRow.embedding,
+                        DocumentRow.enrichment,
+                        DocumentRow.processed_at,
+                        DocumentRow.updated_at,
+                        DocumentRow.meta,
+                    ),
+                ),
+            )
+            if not doc:
+                raise ValueError("Document not found")
+
+            # ----------------- chunking -----------------
+            existing_chunks = s.exec(
+                select(func.count()).select_from(DocChunkRow).where(DocChunkRow.doc_id == uid)
+            ).one()
+            created_chunks = 0
+            if int(existing_chunks or 0) == 0:
+                src_text = (doc.raw_markdown or doc.cleaned_text or "").strip()
+                if src_text:
+                    tokens = int(doc.tokens or 0) or _token_count(src_text)
+                    chunk_payloads = _CHUNKING_SERVICE.chunk(
+                        src_text,
+                        max_tokens=tokens if tokens > 0 else 500,
+                        overlap=min(100, int((tokens or 500) * 0.2)),
+                        content_type=(
+                            "markdown" if doc.raw_markdown else (doc.content_type or "web")
+                        ),
+                        mode="auto",
+                    )
+                    if chunk_payloads:
+                        day_bucket = doc.day_bucket or _start_of_day_utc(doc.captured_at)
+                        captured_hour = (
+                            int(doc.captured_hour)
+                            if doc.captured_hour is not None
+                            else doc.captured_at.astimezone(timezone.utc).hour
+                        )
+                        chunk_rows: list[DocChunkRow] = []
+                        for ch in chunk_payloads:
+                            ctokens = ch.tokens if ch.tokens is not None else _token_count(ch.text)
+                            chunk_rows.append(
+                                DocChunkRow(
+                                    doc_id=uid,
+                                    idx=ch.idx,
+                                    text=ch.text,
+                                    tokens=ctokens,
+                                    section=ch.section,
+                                    char_start=ch.char_start,
+                                    char_end=ch.char_end,
+                                    embedding=ch.embedding,
+                                    topics=None,
+                                    captured_at=doc.captured_at,
+                                    captured_hour=captured_hour,
+                                    day_bucket=day_bucket,
+                                )
+                            )
+                        s.add_all(chunk_rows)
+                        s.commit()
+                        created_chunks = len(chunk_rows)
+
+            # ----------------- enrichment + classification -----------------
+            ran_enrichment = False
+            ran_classification = False
+            if (do_enrichment or do_classification) and self.extraction_service:
+                has_classification = bool(
+                    isinstance(doc.topics, dict) and (doc.topics or {}).get("classification")
+                )
+                if (not force) and doc.enrichment and (not do_classification or has_classification):
+                    return {
+                        "id": doc_id,
+                        "chunks_created": created_chunks,
+                        "enrichment_skipped": True,
+                    }
+
+                now = datetime.utcnow().replace(tzinfo=timezone.utc)
+                cleaned_text = (doc.cleaned_text or "").strip()
+                raw_markdown = doc.raw_markdown
+                metadata = doc.meta or {}
+
+                enrich: dict[str, Any] = {}
+                if do_enrichment:
+                    try:
+                        enrich = self.extraction_service.extract_all(
+                            cleaned_text=cleaned_text,
+                            raw_markdown=raw_markdown,
+                            metadata=metadata,
+                            include_graph=(self.graph_service is None),
+                        )
+                        ran_enrichment = True
+                    except Exception:
+                        enrich = {}
+
+                topics_obj: dict[str, Any] | None = None
+                if isinstance(enrich.get("topics"), dict):
+                    topics_obj = dict(enrich.get("topics") or {})
+                elif isinstance(doc.topics, dict):
+                    topics_obj = dict(doc.topics or {})
+
+                if do_classification:
+                    try:
+                        taxonomy_ctx = _read_text_file_best_effort(
+                            settings.classification_taxonomy_path
+                        )
+                        cls = self.extraction_service.classify_taxonomy(
+                            text=raw_markdown or cleaned_text,
+                            taxonomy_context=taxonomy_ctx,
+                        )
+                        if cls:
+                            topics_obj = dict(topics_obj or {})
+                            topics_obj["classification"] = cls
+                            ran_classification = True
+                    except Exception:
+                        pass
+
+                if enrich.get("lang") and (force or not doc.lang):
+                    doc.lang = enrich.get("lang")
+                if enrich.get("summary") and (force or not doc.summary):
+                    sdata = enrich.get("summary") or {}
+                    short = sdata.get("short") or ""
+                    long = sdata.get("long") or None
+                    doc.summary = {"short": short, "long": long} if (short or long) else None
+                if topics_obj and (force or not doc.topics):
+                    doc.topics = topics_obj
+                tags = enrich.get("tags") or []
+                if isinstance(tags, list) and tags and (force or not (doc.tags or [])):
+                    doc.tags = tags
+                if enrich.get("entities") and (force or not doc.entities):
+                    doc.entities = {"items": enrich.get("entities") or []}
+                if enrich.get("embedding") is not None and (force or not doc.embedding):
+                    doc.embedding = enrich.get("embedding")
+
+                enrichment_block = None
+                try:
+                    summary_dict = enrich.get("summary") or {}
+                    enrichment_block = normalize_enrichment(
+                        {
+                            "summary": summary_dict,
+                            "bullets": summary_dict.get("bullets") or [],
+                            "key_points": summary_dict.get("key_points") or [],
+                            "topics": topics_obj,
+                            "tags": tags if isinstance(tags, list) else [],
+                        }
+                    ).model_dump()
+                except Exception:
+                    enrichment_block = None
+
+                doc.updated_at = now
+                doc.processed_at = now
+                if enrichment_block is not None:
+                    doc.enrichment = enrichment_block
+                s.add(doc)
+                s.commit()
+
+            return {
+                "id": doc_id,
+                "chunks_created": created_chunks,
+                "ran_enrichment": ran_enrichment,
+                "ran_classification": ran_classification,
+                "has_graph": bool(self.graph_service),
+            }
+
     def enrich_document(self, doc_id: str, *, force: bool = False) -> Dict[str, Any]:
         uid = _parse_uuid(doc_id)
         if uid is None:
             raise ValueError("Invalid id")
 
         with _session_scope(self.session) as s:
-            doc = s.get(DocumentRow, uid)
+            doc = s.get(
+                DocumentRow,
+                uid,
+                options=(
+                    load_only(
+                        DocumentRow.id,
+                        DocumentRow.cleaned_text,
+                        DocumentRow.raw_markdown,
+                        DocumentRow.meta,
+                        DocumentRow.enrichment,
+                        DocumentRow.summary,
+                        DocumentRow.topics,
+                        DocumentRow.tags,
+                        DocumentRow.entities,
+                        DocumentRow.embedding,
+                        DocumentRow.updated_at,
+                        DocumentRow.processed_at,
+                    ),
+                ),
+            )
             if not doc:
                 raise ValueError("Document not found")
 
@@ -774,7 +1087,7 @@ class DocStorageService:
             updates: Dict[str, Any] = {
                 "updated_at": now,
                 "processed_at": now,
-                "meta": {**metadata, "enrichment": enrich.get("metadata", {})},
+                "meta": metadata,
             }
             if summary_obj is not None:
                 updates["summary"] = summary_obj
@@ -787,6 +1100,23 @@ class DocStorageService:
             if entities_obj is not None:
                 updates["entities"] = entities_obj
 
+            enrichment_block = None
+            try:
+                summary_dict = enrich.get("summary") or {}
+                enrichment_block = normalize_enrichment(
+                    {
+                        "summary": summary_dict,
+                        "bullets": summary_dict.get("bullets") or [],
+                        "key_points": summary_dict.get("key_points") or [],
+                        "topics": topics_obj,
+                        "tags": tags,
+                    }
+                ).model_dump()
+            except Exception:
+                enrichment_block = None
+            if enrichment_block is not None:
+                updates["enrichment"] = enrichment_block
+
             for key, val in updates.items():
                 setattr(doc, key, val)
             s.add(doc)
@@ -797,13 +1127,169 @@ class DocStorageService:
                 "has_graph": bool(self.graph_service),
             }
 
+    def list_documents_needing_concepts_extraction(
+        self,
+        *,
+        limit: int = 100,
+        min_age_hours: int = 0,
+        force: bool = False,
+    ) -> list[DocumentRow]:
+        """Return documents that are candidates for concept extraction.
+
+        By default, returns documents that:
+        - have non-empty text (cleaned_text)
+        - have not been extracted yet (`concepts_extracted_at IS NULL`)
+
+        `force=True` includes already-extracted documents (useful for reprocessing).
+        """
+
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        # Use SQLModel's select so `Session.exec()` yields model instances (not Row tuples).
+        from sqlmodel import select as sql_select  # noqa: PLC0415
+
+        stmt = sql_select(DocumentRow).where(func.length(func.trim(DocumentRow.cleaned_text)) > 0)
+        if not force:
+            stmt = stmt.where(DocumentRow.concepts_extracted_at.is_(None))
+        if min_age_hours and min_age_hours > 0:
+            cutoff = now - timedelta(hours=int(min_age_hours))
+            stmt = stmt.where(DocumentRow.created_at <= cutoff)
+        stmt = stmt.order_by(DocumentRow.created_at.asc()).limit(clamp_int(limit, lo=1, hi=500))
+        with _session_scope(self.session) as s:
+            return s.exec(stmt).all()
+
+    def list_documents_needing_title_images(
+        self,
+        *,
+        limit: int = 100,
+        min_age_hours: int = 0,
+        force: bool = False,
+    ) -> list[DocumentRow]:
+        """Return documents that are candidates for title/cover image generation.
+
+        By default, returns documents that:
+        - do not have an image yet (`image IS NULL`)
+
+        `force=True` includes documents that already have images (useful for reprocessing).
+        """
+
+        limit = clamp_int(limit, lo=1, hi=500)
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+
+        from sqlmodel import select as sql_select  # noqa: PLC0415
+
+        stmt = sql_select(DocumentRow)
+        if not force:
+            stmt = stmt.where(DocumentRow.image.is_(None))
+        if min_age_hours and min_age_hours > 0:
+            cutoff = now - timedelta(hours=int(min_age_hours))
+            stmt = stmt.where(DocumentRow.created_at <= cutoff)
+        stmt = stmt.order_by(DocumentRow.created_at.desc()).limit(limit)
+
+        with _session_scope(self.session) as s:
+            return s.exec(stmt).all()
+
+    def extract_document_concepts(self, doc_id: str, *, force: bool = False) -> Dict[str, Any]:
+        """Extract and persist a lightweight concept graph for a stored document.
+
+        This is intentionally separate from document enrichment. The output is stored
+        on the document row under `concepts`, plus `concepts_extracted_at` for ops/backlog.
+        """
+
+        uid = _parse_uuid(doc_id)
+        if uid is None:
+            raise ValueError("Invalid id")
+
+        with _session_scope(self.session) as s:
+            doc = s.get(DocumentRow, uid)
+            if not doc:
+                raise ValueError("Document not found")
+
+            if (not force) and doc.concepts_extracted_at:
+                return {"id": doc_id, "skipped": True}
+
+            text = (doc.raw_markdown or doc.cleaned_text or "").strip()
+            if not text:
+                raise ValueError("Document has no text")
+
+            now = datetime.utcnow().replace(tzinfo=timezone.utc)
+            extractor = self.extraction_service or ExtractionService(
+                llm_service=self._ensure_llm_service()
+            )
+
+            try:
+                graph = extractor.extract_graph(text=text, metadata={"doc_id": doc_id})
+                payload = {
+                    "entities": graph.get("entities") or [],
+                    "relations": graph.get("relations") or [],
+                    "topics": graph.get("topics") or [],
+                }
+                doc.concepts = payload
+                doc.concepts_extracted_at = now
+                doc.concepts_error = None
+                doc.updated_at = now
+                s.add(doc)
+                s.commit()
+            except Exception as exc:
+                # Persist the error for operational inspection, but keep the exception visible.
+                doc.concepts_error = str(exc)[:8000]
+                doc.updated_at = now
+                s.add(doc)
+                s.commit()
+                raise
+
+            gs = self.graph_service or self._ensure_graph_service()
+            if gs is not None:
+                try:
+                    gs.upsert_document_node(
+                        doc_id=str(doc.id), title=doc.title, source_url=doc.source_url
+                    )
+                    for ent in payload["entities"]:
+                        name = (ent.get("name") or "").strip() if isinstance(ent, dict) else ""
+                        if not name:
+                            continue
+                        gs.upsert_entity(
+                            name=name, type_=ent.get("type") if isinstance(ent, dict) else None
+                        )
+                        gs.link_doc_to_entity(doc_id=str(doc.id), name=name)
+                    for rel in payload["relations"]:
+                        if not isinstance(rel, dict):
+                            continue
+                        from_name = (rel.get("from") or "").strip()
+                        to_name = (rel.get("to") or "").strip()
+                        if from_name and to_name:
+                            gs.link_entities(
+                                from_name=from_name,
+                                to_name=to_name,
+                                rel_type=str(rel.get("type") or "RELATED_TO"),
+                            )
+                except Exception:
+                    # Graph syncing is best-effort; do not fail concept extraction if Neo4j is flaky.
+                    pass
+
+            return {
+                "id": doc_id,
+                "skipped": False,
+                "entities": len(payload["entities"]),
+                "relations": len(payload["relations"]),
+            }
+
     # --------------- Queries ---------------
     def get_document_text(self, doc_id: str) -> Optional[str]:
         uid = _parse_uuid(doc_id)
         if uid is None:
             return None
         with _session_scope(self.session) as s:
-            doc = s.get(DocumentRow, uid)
+            doc = s.get(
+                DocumentRow,
+                uid,
+                options=(
+                    load_only(
+                        DocumentRow.id,
+                        DocumentRow.raw_markdown,
+                        DocumentRow.cleaned_text,
+                    ),
+                ),
+            )
             if not doc:
                 return None
             return doc.raw_markdown or doc.cleaned_text or ""
@@ -813,7 +1299,22 @@ class DocStorageService:
         if uid is None:
             return None
         with _session_scope(self.session) as s:
-            doc = s.get(DocumentRow, uid)
+            doc = s.get(
+                DocumentRow,
+                uid,
+                options=(
+                    load_only(
+                        DocumentRow.id,
+                        DocumentRow.title,
+                        DocumentRow.source_url,
+                        DocumentRow.canonical_url,
+                        DocumentRow.topics,
+                        DocumentRow.captured_at,
+                        DocumentRow.tokens,
+                        DocumentRow.summary,
+                    ),
+                ),
+            )
             if not doc:
                 return None
             return {
@@ -837,7 +1338,36 @@ class DocStorageService:
             return None
 
         with _session_scope(self.session) as s:
-            doc = s.get(DocumentRow, uid)
+            doc = s.get(
+                DocumentRow,
+                uid,
+                options=(
+                    load_only(
+                        DocumentRow.id,
+                        DocumentRow.source_url,
+                        DocumentRow.canonical_url,
+                        DocumentRow.domain,
+                        DocumentRow.title,
+                        DocumentRow.content_type,
+                        DocumentRow.lang,
+                        DocumentRow.raw_markdown,
+                        DocumentRow.image,
+                        DocumentRow.cleaned_text,
+                        DocumentRow.tokens,
+                        DocumentRow.summary,
+                        DocumentRow.topics,
+                        DocumentRow.entities,
+                        DocumentRow.tags,
+                        DocumentRow.captured_at,
+                        DocumentRow.day_bucket,
+                        DocumentRow.created_at,
+                        DocumentRow.updated_at,
+                        DocumentRow.session_id,
+                        DocumentRow.meta,
+                        DocumentRow.enrichment,
+                    ),
+                ),
+            )
             if not doc:
                 return None
 
@@ -872,6 +1402,56 @@ class DocStorageService:
                 "enrichment": doc.enrichment,
             }
 
+    def update_document_text(
+        self,
+        doc_id: str,
+        *,
+        cleaned_text: str | None = None,
+        raw_markdown: str | None = None,
+        tiptap_json: dict[str, Any] | None = None,
+    ) -> Dict[str, Any] | None:
+        """Update a document's editable text payload.
+
+        This is intentionally lightweight:
+        - Keeps the document identity stable (does not change hash/source_url).
+        - Updates `updated_at` and refreshes `tokens` when plain-text changes.
+        - Optionally stores TipTap editor JSON under metadata.
+        """
+
+        uid = _parse_uuid(doc_id)
+        if uid is None:
+            raise ValueError("Invalid id")
+
+        now = datetime.now(timezone.utc)
+
+        with _session_scope(self.session) as s:
+            doc = s.get(DocumentRow, uid)
+            if not doc:
+                return None
+
+            if cleaned_text is not None:
+                doc.cleaned_text = cleaned_text
+                doc.tokens = _token_count(cleaned_text)
+
+            if raw_markdown is not None:
+                doc.raw_markdown = raw_markdown
+
+            if tiptap_json is not None:
+                meta = dict(doc.meta or {})
+                editor_meta = meta.get("editor")
+                if not isinstance(editor_meta, dict):
+                    editor_meta = {}
+                editor_meta = dict(editor_meta)
+                editor_meta.update({"provider": "tiptap", "tiptap_json": tiptap_json})
+                meta["editor"] = editor_meta
+                doc.meta = meta
+
+            doc.updated_at = now
+            s.add(doc)
+            s.commit()
+
+        return self.get_document_details(doc_id)
+
     def get_document_image_bytes(self, doc_id: str) -> bytes | None:
         """Return the stored document cover image bytes, if present."""
 
@@ -880,7 +1460,11 @@ class DocStorageService:
             return None
 
         with _session_scope(self.session) as s:
-            doc = s.get(DocumentRow, uid)
+            doc = s.get(
+                DocumentRow,
+                uid,
+                options=(load_only(DocumentRow.id, DocumentRow.image),),
+            )
             if not doc or not doc.image:
                 return None
             return bytes(doc.image)
@@ -901,57 +1485,128 @@ class DocStorageService:
             raise ValueError("Invalid id")
 
         with _session_scope(self.session) as s:
-            doc = s.get(DocumentRow, uid)
-            if not doc:
+            row = s.exec(
+                select(
+                    DocumentRow.image,
+                    DocumentRow.meta,
+                    DocumentRow.title,
+                    DocumentRow.topics,
+                    DocumentRow.summary,
+                    DocumentRow.domain,
+                    DocumentRow.raw_markdown,
+                    DocumentRow.cleaned_text,
+                ).where(DocumentRow.id == uid)
+            ).one_or_none()
+            if row is None:
                 raise ValueError("Document not found")
 
-            if (not force) and doc.image:
+            image_existing, meta, title_raw, topics, summary, domain, raw_markdown, cleaned_text = (
+                row
+            )
+            if (not force) and image_existing:
                 return {"id": doc_id, "skipped": True, "reason": "image_already_present"}
 
-            meta = doc.meta or {}
-            title = _best_effort_title(row_title=doc.title, meta=meta)
-            primary_topic = _best_effort_primary_topic(doc.topics, meta)
+            meta = meta or {}
+            title = _best_effort_title(row_title=title_raw, meta=meta)
+            primary_topic = _best_effort_primary_topic(topics, meta)
 
             summary_short = None
-            if isinstance(doc.summary, dict):
-                summary_short = _first_str(doc.summary.get("short"), doc.summary.get("summary"))
+            if isinstance(summary, dict):
+                summary_short = _first_str(summary.get("short"), summary.get("summary"))
+
+            source_text = (raw_markdown or cleaned_text or "").strip()
+            excerpt = _excerpt_for_cover_prompt(source_text, max_chars=900)
+            visual_brief = None
+            try:
+                if excerpt:
+                    llm = self._ensure_llm_service()
+                    visual_brief = llm.build_cover_visual_brief(
+                        title=title,
+                        primary_topic=primary_topic,
+                        domain=domain,
+                        excerpt=excerpt,
+                        summary=summary_short,
+                    )
+            except Exception:
+                visual_brief = None
 
             prompt = _build_title_image_prompt(
                 title=title,
                 summary=summary_short,
                 primary_topic=primary_topic,
-                domain=doc.domain,
+                domain=domain,
+                excerpt=excerpt,
+                visual_brief=visual_brief,
             )
 
-            llm = self._ensure_llm_service()
-            image_bytes, revised_prompt = llm.generate_image_png(
-                prompt=prompt,
-                model=model,
-                size=size,
-                quality=quality,
-            )
+            model_used = model
+            tried_models = [model]
+            if model == "gpt-image-1":
+                tried_models = ["gpt-image-1", "dall-e-3", "dall-e-2"]
+
+            image_bytes: bytes | None = None
+            revised_prompt: str | None = None
+            last_exc: Exception | None = None
+
+            for candidate in tried_models:
+                try:
+                    image_bytes, revised_prompt = llm.generate_image_png(
+                        prompt=prompt,
+                        model=candidate,
+                        size=size,
+                        quality=quality,
+                    )
+                    model_used = candidate
+                    last_exc = None
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    # If gpt-image-1 is blocked due to org verification, fall back to DALL·E.
+                    if candidate == "gpt-image-1":
+                        msg = str(exc)
+                        if (
+                            "must be verified" in msg.lower()
+                            or "verify organization" in msg.lower()
+                            or "403" in msg
+                        ):
+                            last_exc = exc
+                            continue
+                    raise
+
+            if image_bytes is None:
+                raise last_exc or RuntimeError("Failed to generate image")
 
             now = datetime.utcnow().replace(tzinfo=timezone.utc)
-            doc.image = image_bytes
-            doc.updated_at = now
 
             generated_meta = {
-                "model": model,
+                "model": model_used,
+                "requested_model": model,
                 "size": size,
                 "quality": quality,
                 "prompt": prompt,
+                "prompt_strategy": "content_excerpt",
+                "content_hash": _sha256_hex(source_text) if source_text else None,
                 "revised_prompt": revised_prompt,
                 "generated_at": now.isoformat(),
             }
-            doc.meta = {**meta, "generated_cover_image": generated_meta}
+            new_meta = {**meta, "generated_cover_image": generated_meta}
 
-            s.add(doc)
+            s.exec(
+                update(DocumentRow)
+                .where(DocumentRow.id == uid)
+                .values(
+                    {
+                        DocumentRow.__table__.c.image: image_bytes,
+                        DocumentRow.__table__.c.updated_at: now,
+                        DocumentRow.__table__.c.metadata: new_meta,
+                    }
+                )
+            )
             s.commit()
 
             return {
                 "id": doc_id,
                 "skipped": False,
-                "model": model,
+                "model": model_used,
                 "size": size,
                 "quality": quality,
             }

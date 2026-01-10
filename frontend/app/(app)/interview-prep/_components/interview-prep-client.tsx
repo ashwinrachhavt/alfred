@@ -62,7 +62,9 @@ function formatErrorMessage(error: unknown): string {
   return "Something went wrong.";
 }
 
-function extractThreadIdFromMetadata(metadata: Record<string, unknown> | null | undefined): string | null {
+function extractThreadIdFromMetadata(
+  metadata: Record<string, unknown> | null | undefined,
+): string | null {
   if (!metadata) return null;
   const value = metadata.thread_id;
   if (typeof value !== "string") return null;
@@ -174,7 +176,7 @@ export function InterviewPrepClient() {
     [pathname, router, searchParams],
   );
 
-  const [runInBackground, setRunInBackground] = useState(false);
+  const [runInBackground, setRunInBackground] = useState(true);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -589,7 +591,9 @@ export function InterviewPrepClient() {
               ) : null}
               {threadId.trim() ? (
                 <Button asChild variant="ghost" size="sm">
-                  <Link href={`/threads/${threadId.trim()}`}>thread: {threadId.trim().slice(0, 8)}</Link>
+                  <Link href={`/threads/${threadId.trim()}`}>
+                    thread: {threadId.trim().slice(0, 8)}
+                  </Link>
                 </Button>
               ) : null}
             </div>

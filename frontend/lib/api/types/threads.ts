@@ -1,7 +1,10 @@
 export type Thread = {
   id: string;
+  kind: string;
   title?: string | null;
-  created_at?: string;
+  user_id?: number | null;
+  metadata: Record<string, unknown>;
+  created_at?: string | null;
   updated_at?: string | null;
 };
 
@@ -11,17 +14,21 @@ export type ThreadMessage = {
   id: string;
   thread_id: string;
   role: ThreadMessageRole;
-  content: string;
-  created_at?: string;
-  metadata?: Record<string, unknown> | null;
+  content?: string | null;
+  data: Record<string, unknown>;
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
 export type CreateThreadRequest = {
+  kind: string;
   title?: string | null;
+  user_id?: number | null;
+  metadata?: Record<string, unknown>;
 };
 
 export type AppendThreadMessageRequest = {
   role: ThreadMessageRole;
-  content: string;
-  metadata?: Record<string, unknown> | null;
+  content?: string | null;
+  data?: Record<string, unknown>;
 };

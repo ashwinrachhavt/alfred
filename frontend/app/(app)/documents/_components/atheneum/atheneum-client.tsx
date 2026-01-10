@@ -82,9 +82,7 @@ export function AtheneumClient() {
         </TabsContent>
 
         <TabsContent value="galaxy" className="pt-4">
-          {view === "galaxy" ? (
-            <GalaxyView active onOpenDocument={setSelectedDocumentId} />
-          ) : null}
+          {view === "galaxy" ? <GalaxyView active onOpenDocument={setSelectedDocumentId} /> : null}
         </TabsContent>
 
         <TabsContent value="stream" className="pt-4">
@@ -105,4 +103,3 @@ export function AtheneumClient() {
     </div>
   );
 }
-
