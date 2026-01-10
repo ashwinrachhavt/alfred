@@ -13,7 +13,9 @@ from google.oauth2.credentials import Credentials
 
 
 @pytest.mark.asyncio
-async def test_google_oauth_session_refresh_is_single_flight(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_google_oauth_session_refresh_is_single_flight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     refresh_calls = 0
     refresh_calls_lock = threading.Lock()
 

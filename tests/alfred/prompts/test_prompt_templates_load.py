@@ -18,4 +18,3 @@ def test_all_prompt_templates_load_and_are_non_empty() -> None:
         rel_parts = path.relative_to(prompts_root).parts
         content = load_prompt(*rel_parts)
         assert content.strip(), f"Prompt template is empty: {path}"
-

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+from alfred.api.notes import routes as notes_routes
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel
-
-from alfred.api.notes import routes as notes_routes
 
 
 def _client() -> TestClient:

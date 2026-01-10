@@ -138,4 +138,3 @@ def downgrade() -> None:
     op.drop_index("ix_quick_notes_created_at_desc", table_name="quick_notes")
     op.create_index("ix_notes_created_at_desc", "quick_notes", ["created_at"])
     op.rename_table("quick_notes", "notes")
-

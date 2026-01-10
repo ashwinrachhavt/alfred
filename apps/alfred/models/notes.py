@@ -131,4 +131,3 @@ class NoteRow(SQLModel, table=True):
 
 
 __all__ = ["NoteRow", "WorkspaceRow"]
-

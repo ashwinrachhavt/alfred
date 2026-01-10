@@ -384,9 +384,7 @@ class LearningService:
                 "- Answers (when included) are short (1–3 sentences) and correct.\n"
                 "\n"
                 "STUDY TEXT:\n"
-                "<<<BEGIN_STUDY_TEXT>>>\n"
-                + text[:8000]
-                + "\n<<<END_STUDY_TEXT>>>"
+                "<<<BEGIN_STUDY_TEXT>>>\n" + text[:8000] + "\n<<<END_STUDY_TEXT>>>"
             )
             res = LLMService().structured(
                 [

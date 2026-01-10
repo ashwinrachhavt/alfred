@@ -74,7 +74,9 @@ class NotesService:
         return row
 
     def list_workspaces(self, *, user_id: int | None = None) -> list[WorkspaceRow]:
-        stmt = select(WorkspaceRow).order_by(sa.desc(WorkspaceRow.updated_at), WorkspaceRow.id.asc())
+        stmt = select(WorkspaceRow).order_by(
+            sa.desc(WorkspaceRow.updated_at), WorkspaceRow.id.asc()
+        )
         if user_id is not None:
             stmt = stmt.where(WorkspaceRow.user_id == user_id)
         return list(self.session.exec(stmt).all())
@@ -396,7 +398,9 @@ class NotesService:
                     note.position = idx
                     self.session.add(note)
 
-            new_siblings = self._siblings(workspace_id=workspace_id, parent_id=new_parent_uuid, include_archived=False)
+            new_siblings = self._siblings(
+                workspace_id=workspace_id, parent_id=new_parent_uuid, include_archived=False
+            )
             insert_at = clamp_int(
                 position if position is not None else len(new_siblings),
                 lo=0,

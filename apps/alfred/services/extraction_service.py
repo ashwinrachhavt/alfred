@@ -137,9 +137,7 @@ class ExtractionService:
             ' "topics": ["..."] }\n'
             "\n"
             "TEXT:\n"
-            "<<<BEGIN_TEXT>>>\n"
-            + text[:5000]
-            + "\n<<<END_TEXT>>>"
+            "<<<BEGIN_TEXT>>>\n" + text[:5000] + "\n<<<END_TEXT>>>"
         )
         result = ls.structured(
             [
