@@ -6,6 +6,7 @@ import {
   LayoutGrid,
   MessageCircle,
   MessageSquareText,
+  Palette,
   Shapes,
   Sparkles,
   type LucideIcon,
@@ -69,6 +70,13 @@ export const appNavItems: AppNavItem[] = [
     href: "/tasks",
     icon: Command,
     keywords: ["tasks", "jobs", "queue"],
+  },
+  {
+    key: "design-system",
+    title: "Design System",
+    href: "/design-system",
+    icon: Palette,
+    keywords: ["design system", "ui", "components", "tokens"],
   },
 ];
 

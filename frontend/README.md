@@ -13,6 +13,11 @@ The rule of thumb:
 
 - A feature should depend on `lib/` and `components/`, but not on other features (or only through explicit public APIs).
 
+## Design System
+
+- Bible: `frontend/docs/design-system-bible.md`
+- In-app showcase (requires auth): `/design-system`
+
 ## Getting Started
 
 First, run the development server:
