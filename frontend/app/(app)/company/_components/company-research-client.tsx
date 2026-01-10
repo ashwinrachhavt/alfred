@@ -8,12 +8,14 @@ import type {
   CompanyResearchPayload,
   CompanyResearchQueuedResponse,
 } from "@/lib/api/types/company";
-import { useStartCompanyResearch } from "@/features/company/mutations";
-import { useCompanyResearchReport } from "@/features/company/queries";
+import { useDiscoverCompanyContacts, useStartCompanyResearch } from "@/features/company/mutations";
+import { useCompanyContactsFromDb, useCompanyResearchReport } from "@/features/company/queries";
 import { useTaskStatus } from "@/features/tasks/queries";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -133,8 +135,10 @@ export function CompanyResearchClient({ reportId }: CompanyResearchClientProps) 
   const [companyName, setCompanyName] = useState("");
   const [hasEditedCompanyName, setHasEditedCompanyName] = useState(false);
   const [refresh, setRefresh] = useState(false);
+  const [contactsRole, setContactsRole] = useState("");
 
   const startResearch = useStartCompanyResearch();
+  const discoverContacts = useDiscoverCompanyContacts();
   const { trackTask } = useTaskTracker();
   const [taskId, setTaskId] = useState<string | null>(null);
   const taskQuery = useTaskStatus(taskId);
@@ -148,6 +152,13 @@ export function CompanyResearchClient({ reportId }: CompanyResearchClientProps) 
   const effectiveCompanyName = hasEditedCompanyName
     ? companyName
     : companyName || companyFromReport;
+  const trimmedCompanyName = effectiveCompanyName.trim();
+
+  const contactsQuery = useCompanyContactsFromDb({
+    name: trimmedCompanyName,
+    role: contactsRole || undefined,
+    limit: 20,
+  });
 
   const payload = useMemo(() => {
     if (startResearch.data && !isQueuedResponse(startResearch.data)) {
@@ -194,9 +205,9 @@ export function CompanyResearchClient({ reportId }: CompanyResearchClientProps) 
             </div>
             <Button
               type="button"
-              disabled={!effectiveCompanyName.trim() || startResearch.isPending}
+              disabled={!trimmedCompanyName || startResearch.isPending}
               onClick={async () => {
-                const name = effectiveCompanyName.trim();
+                const name = trimmedCompanyName;
                 setTaskId(null);
                 try {
                   const result = await startResearch.mutateAsync({ name, refresh });
@@ -264,6 +275,127 @@ export function CompanyResearchClient({ reportId }: CompanyResearchClientProps) 
                 ? startResearch.error.message
                 : "Request failed."}
             </p>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <CardTitle>Contacts</CardTitle>
+            <p className="text-muted-foreground text-sm">
+              Contacts saved in the database for this company.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={discoverContacts.isPending || !trimmedCompanyName}
+            onClick={async () => {
+              if (!trimmedCompanyName) return;
+              try {
+                await discoverContacts.mutateAsync({
+                  name: trimmedCompanyName,
+                  role: contactsRole || undefined,
+                });
+                await contactsQuery.refetch();
+                toast.success("Contact discovery complete.");
+              } catch (err) {
+                toast.error(
+                  err instanceof Error ? err.message : "Failed to discover contacts from providers.",
+                );
+              }
+            }}
+          >
+            {discoverContacts.isPending ? "Discovering…" : "Discover contacts"}
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+            <div className="space-y-2">
+              <Label htmlFor="contactsRole">Role filter</Label>
+              <Input
+                id="contactsRole"
+                placeholder="e.g. engineering"
+                value={contactsRole}
+                disabled={!trimmedCompanyName}
+                onChange={(event) => setContactsRole(event.target.value)}
+              />
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={contactsQuery.isFetching || !trimmedCompanyName}
+              onClick={() => contactsQuery.refetch()}
+            >
+              {contactsQuery.isFetching ? "Refreshing…" : "Refresh list"}
+            </Button>
+          </div>
+
+          {!trimmedCompanyName ? (
+            <EmptyState
+              title="Enter a company to load contacts"
+              description="Type a company name above, then refresh or discover contacts."
+            />
+          ) : null}
+
+          {contactsQuery.isError ? (
+            <p className="text-destructive text-sm">
+              {contactsQuery.error instanceof Error
+                ? contactsQuery.error.message
+                : "Failed to load contacts."}
+            </p>
+          ) : null}
+
+          {contactsQuery.isFetching && !contactsQuery.data ? (
+            <p className="text-muted-foreground text-sm">Loading contacts…</p>
+          ) : null}
+
+          {contactsQuery.data?.items?.length ? (
+            <div className="overflow-hidden rounded-lg border">
+              <div className="bg-muted/30 grid grid-cols-[1fr_1fr_1fr_auto] gap-3 px-3 py-2 text-xs font-medium">
+                <span>Name</span>
+                <span>Title</span>
+                <span>Email</span>
+                <span className="text-right">Meta</span>
+              </div>
+              <div className="divide-y">
+                {contactsQuery.data.items.map((item) => {
+                  const confidencePct = Math.round((item.confidence ?? 0) * 100);
+                  const createdAt = item.created_at ? new Date(item.created_at) : null;
+                  return (
+                    <div
+                      key={`${item.id ?? "row"}-${item.email}`}
+                      className="grid grid-cols-[1fr_1fr_1fr_auto] gap-3 px-3 py-3 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{item.name || "—"}</p>
+                        <p className="text-muted-foreground truncate text-xs">{item.company}</p>
+                      </div>
+                      <p className="text-muted-foreground line-clamp-2">{item.title || "—"}</p>
+                      <a
+                        className="text-primary truncate underline-offset-2 hover:underline"
+                        href={`mailto:${item.email}`}
+                      >
+                        {item.email || "—"}
+                      </a>
+                      <div className="flex items-center justify-end gap-2">
+                        <Badge variant="outline">{item.source || "unknown"}</Badge>
+                        <Badge variant="secondary">{confidencePct}%</Badge>
+                        <span className="text-muted-foreground hidden text-xs sm:inline">
+                          {createdAt ? createdAt.toLocaleDateString() : "—"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : contactsQuery.data && trimmedCompanyName ? (
+            <EmptyState
+              title="No saved contacts yet"
+              description="Discover contacts (if provider keys are configured) or run outreach to populate the table."
+            />
           ) : null}
         </CardContent>
       </Card>
