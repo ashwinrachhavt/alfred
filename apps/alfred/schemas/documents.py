@@ -55,6 +55,10 @@ class NoteRecord(BaseModel):
 # -----------------
 # Documents
 # -----------------
+CAPTURED_HOUR_MIN = 0
+CAPTURED_HOUR_MAX = 23
+
+
 class DocSummary(BaseModel):
     short: Optional[str] = None
     bullets: Optional[List[str]] = None
@@ -153,8 +157,10 @@ class DocumentRecord(BaseModel):
     @field_validator("captured_hour")
     @classmethod
     def hour_bounds(cls, v: int) -> int:
-        if v < 0 or v > 23:
-            raise ValueError("captured_hour must be within 0-23")
+        if v < CAPTURED_HOUR_MIN or v > CAPTURED_HOUR_MAX:
+            raise ValueError(
+                f"captured_hour must be within {CAPTURED_HOUR_MIN}-{CAPTURED_HOUR_MAX}"
+            )
         return v
 
 
