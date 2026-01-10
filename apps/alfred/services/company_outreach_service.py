@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from email.message import EmailMessage
 from enum import Enum
 from functools import lru_cache
+from http import HTTPStatus
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, TypedDict
 
@@ -409,12 +410,13 @@ class ContactDiscoveryService:
 
         try:
             status, data = client.mixed_people_search(payload)
-            if status >= 400:
-                raise Exception(f"status {status}")
-            return self._parse_apollo_people(data)
         except Exception as exc:  # pragma: no cover - network path
             logger.warning("Apollo lookup failed: %s", exc)
             return []
+        if status >= HTTPStatus.BAD_REQUEST:
+            logger.warning("Apollo lookup failed: status %s", status)
+            return []
+        return self._parse_apollo_people(data)
 
     @staticmethod
     def _parse_apollo_people(data: dict[str, Any]) -> list[Contact]:

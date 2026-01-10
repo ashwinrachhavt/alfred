@@ -26,6 +26,10 @@ from alfred.services.graph_service import GraphService
 from alfred.services.llm_service import LLMService
 from alfred.services.spaced_repetition import compute_next_review_schedule
 
+PROGRESS_COMPLETE = 100
+QUIZ_SOURCE_TEXT_CHAR_BUDGET = 8000
+RETENTION_METRIC_30D_STAGE = 3
+
 
 @dataclass
 class LearningService:
@@ -89,7 +93,7 @@ class LearningService:
         if "status" in fields and fields["status"] is not None:
             topic.status = str(fields["status"])
         if "progress" in fields and fields["progress"] is not None:
-            topic.progress = clamp_int(int(fields["progress"]), lo=0, hi=100)
+            topic.progress = clamp_int(int(fields["progress"]), lo=0, hi=PROGRESS_COMPLETE)
         if "interview_at" in fields:
             topic.interview_at = fields["interview_at"]
         topic.updated_at = _utcnow()
@@ -296,7 +300,7 @@ class LearningService:
                         chunk = ""
                     if chunk.strip():
                         chunks.append(chunk)
-                    if sum(len(c) for c in chunks) >= 8000:
+                    if sum(len(c) for c in chunks) >= QUIZ_SOURCE_TEXT_CHAR_BUDGET:
                         break
                 text = "\n\n".join(chunks).strip()
 
@@ -732,7 +736,7 @@ class LearningService:
         topics = list(self.session.exec(t_stmt))
 
         def _priority(t: LearningTopic) -> float:
-            base = 1.0 + (100 - int(t.progress or 0)) / 100.0
+            base = 1.0 + (PROGRESS_COMPLETE - int(t.progress or 0)) / float(PROGRESS_COMPLETE)
             if t.interview_at:
                 days = max(0.0, (t.interview_at - now).total_seconds() / 86400.0)
                 urgency = 1.0 / max(1.0, days)
@@ -745,7 +749,7 @@ class LearningService:
         for t in topics:
             if remaining <= 0:
                 break
-            if int(t.progress or 0) >= 100:
+            if int(t.progress or 0) >= PROGRESS_COMPLETE:
                 continue
             minutes = min(30, remaining)
             remaining -= minutes
@@ -766,7 +770,7 @@ class LearningService:
         # Stage 3 reviews approximate 30-day recall checks.
         stmt = (
             select(LearningReview)
-            .where(LearningReview.stage == 3)
+            .where(LearningReview.stage == RETENTION_METRIC_30D_STAGE)
             .where(LearningReview.completed_at.is_not(None))
         )
         reviews = list(self.session.exec(stmt))

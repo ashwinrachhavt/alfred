@@ -36,6 +36,14 @@ from alfred.services.llm_service import LLMService
 _CHUNKING_SERVICE = ChunkingService()
 logger = logging.getLogger(__name__)
 
+HSL_LIGHTNESS_MIDPOINT = 0.5
+
+SEMANTIC_MAP_DIMENSIONS = 3
+MIN_PROJECTABLE_ITEMS = 3
+PAIR_ITEM_COUNT = 2
+MATRIX_EXPECTED_NDIM = 2
+MIN_TFIDF_FEATURES = 2
+
 
 def _token_count(text: str) -> int:
     return len((text or "").split())
@@ -252,7 +260,7 @@ def _hsl_to_hex(*, hue: float, saturation: float, lightness: float) -> str:
     if s == 0:
         r = g = b = light
     else:
-        q = light * (1 + s) if light < 0.5 else light + s - light * s
+        q = light * (1 + s) if light < HSL_LIGHTNESS_MIDPOINT else light + s - light * s
         p = 2 * light - q
         r = _hue_to_rgb(p, q, h + 1 / 3)
         g = _hue_to_rgb(p, q, h)
@@ -294,32 +302,41 @@ def _extract_embedding(row_embedding: Any, row_enrichment: Any) -> list[float] |
     return None
 
 
+def _trivial_3d_projection(count: int) -> list[list[float]] | None:
+    """Return deterministic 3D coordinates for very small collections."""
+
+    if count == 1:
+        return [[0.0, 0.0, 0.0]]
+    if count == PAIR_ITEM_COUNT:
+        return [[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
+    return None
+
+
 def _project_vectors_to_3d(vectors: list[list[float]]) -> list[list[float]]:
     """Reduce high-dimensional vectors to 3D coordinates."""
 
     if not vectors:
         return []
 
-    if len(vectors) == 1:
-        return [[0.0, 0.0, 0.0]]
-    if len(vectors) == 2:
-        return [[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
+    trivial = _trivial_3d_projection(len(vectors))
+    if trivial is not None:
+        return trivial
 
     import numpy as np
     from sklearn.decomposition import PCA
 
     dim = len(vectors[0])
     same_dim = [v for v in vectors if isinstance(v, list) and len(v) == dim]
-    if len(same_dim) < 3:
+    if len(same_dim) < MIN_PROJECTABLE_ITEMS:
         return [[0.0, 0.0, 0.0] for _ in vectors]
 
     mat = np.asarray(same_dim, dtype=np.float32)
-    if mat.ndim != 2 or mat.shape[0] < 3:
+    if mat.ndim != MATRIX_EXPECTED_NDIM or mat.shape[0] < MIN_PROJECTABLE_ITEMS:
         return [[0.0, 0.0, 0.0] for _ in vectors]
 
     mat = np.where(np.isfinite(mat), mat, 0.0).astype(np.float32, copy=False)
 
-    pca = PCA(n_components=3)
+    pca = PCA(n_components=SEMANTIC_MAP_DIMENSIONS)
     coords = pca.fit_transform(mat)
     coords = coords - np.mean(coords, axis=0, keepdims=True)
 
@@ -336,10 +353,10 @@ def _project_texts_to_3d(texts: list[str]) -> list[list[float]]:
 
     if not texts:
         return []
-    if len(texts) == 1:
-        return [[0.0, 0.0, 0.0]]
-    if len(texts) == 2:
-        return [[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
+
+    trivial = _trivial_3d_projection(len(texts))
+    if trivial is not None:
+        return trivial
 
     import numpy as np
     from sklearn.decomposition import TruncatedSVD
@@ -347,10 +364,10 @@ def _project_texts_to_3d(texts: list[str]) -> list[list[float]]:
 
     vectorizer = TfidfVectorizer(max_features=2048, stop_words="english")
     mat = vectorizer.fit_transform([t or "" for t in texts])
-    if mat.shape[0] < 3 or mat.shape[1] < 2:
+    if mat.shape[0] < MIN_PROJECTABLE_ITEMS or mat.shape[1] < MIN_TFIDF_FEATURES:
         return [[0.0, 0.0, 0.0] for _ in texts]
 
-    max_components = min(3, mat.shape[0] - 1, mat.shape[1] - 1)
+    max_components = min(SEMANTIC_MAP_DIMENSIONS, mat.shape[0] - 1, mat.shape[1] - 1)
     if max_components < 1:
         return [[0.0, 0.0, 0.0] for _ in texts]
 
@@ -363,8 +380,11 @@ def _project_texts_to_3d(texts: list[str]) -> list[list[float]]:
     if max_norm > 0:
         coords = coords / max_norm
 
-    if coords.shape[1] < 3:
-        pad = np.zeros((coords.shape[0], 3 - coords.shape[1]), dtype=coords.dtype)
+    if coords.shape[1] < SEMANTIC_MAP_DIMENSIONS:
+        pad = np.zeros(
+            (coords.shape[0], SEMANTIC_MAP_DIMENSIONS - coords.shape[1]),
+            dtype=coords.dtype,
+        )
         coords = np.concatenate([coords, pad], axis=1)
 
     return [[float(row[0]), float(row[1]), float(row[2])] for row in coords]
@@ -1754,7 +1774,7 @@ class DocStorageService:
 
         items: list[dict[str, Any]] = []
 
-        if len(vectors) >= 3:
+        if len(vectors) >= MIN_PROJECTABLE_ITEMS:
             coords = _project_vectors_to_3d(vectors)
             for d, pos in zip(embedded_docs, coords, strict=False):
                 topic = d.get("primary_topic")

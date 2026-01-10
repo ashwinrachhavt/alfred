@@ -24,6 +24,8 @@ from alfred.services.thread_service import ThreadService
 
 logger = logging.getLogger(__name__)
 
+MIN_VALIDATION_CONFIDENCE = 0.7
+
 
 class InterviewQuestionsServiceProtocol(Protocol):
     def generate_report(
@@ -367,7 +369,7 @@ class UnifiedInterviewAgent:
                 is_valid = bool(getattr(result, "is_valid", False))
                 confidence = float(getattr(result, "confidence", 0.0) or 0.0)
                 reasoning = _safe_text(getattr(result, "reasoning", "")) or ""
-                if is_valid and confidence >= 0.7:
+                if is_valid and confidence >= MIN_VALIDATION_CONFIDENCE:
                     validated.append(
                         {
                             **q,
