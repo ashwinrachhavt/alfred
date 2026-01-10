@@ -575,8 +575,6 @@ function SidebarMenuBadge({ className, ...props }: React.ComponentProps<"div">) 
   );
 }
 
-const SIDEBAR_MENU_SKELETON_WIDTHS = ["50%", "60%", "70%", "80%", "90%"] as const;
-
 function SidebarMenuSkeleton({
   className,
   showIcon = false,
