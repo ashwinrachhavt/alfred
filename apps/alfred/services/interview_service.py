@@ -46,6 +46,11 @@ from alfred.services.utils import (
     normalize_question,
 )
 
+MIN_VALID_INTERVIEW_YEAR = 2000
+
+MIN_EXTRACTED_QUESTIONS_BEFORE_SKIP_JS_RENDER = 4
+MIN_MARKDOWN_CHARS_BEFORE_JS_RENDER = 400
+
 
 @dataclass(frozen=True, slots=True)
 class InterviewDetection:
@@ -225,7 +230,7 @@ class InterviewDetectionService:
             return None
 
         # Avoid returning clearly incorrect parses (e.g., year 1900 from missing year).
-        if dt.year < 2000:
+        if dt.year < MIN_VALID_INTERVIEW_YEAR:
             return None
         return dt
 
@@ -441,7 +446,7 @@ def _score_source_url(url: str, *, seed_query: str | None) -> float:
 
 
 def _should_try_render_js(*, url: str, extracted_questions: int, markdown: str | None) -> bool:
-    if extracted_questions >= 4:
+    if extracted_questions >= MIN_EXTRACTED_QUESTIONS_BEFORE_SKIP_JS_RENDER:
         return False
     host = _url_host(url)
     js_heavy_hosts = (
@@ -451,7 +456,7 @@ def _should_try_render_js(*, url: str, extracted_questions: int, markdown: str |
     )
     if any(h in host for h in js_heavy_hosts):
         return True
-    if not markdown or len(markdown) < 400:
+    if not markdown or len(markdown) < MIN_MARKDOWN_CHARS_BEFORE_JS_RENDER:
         return True
     return False
 

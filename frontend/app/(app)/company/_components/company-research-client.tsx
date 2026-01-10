@@ -129,12 +129,18 @@ function ResearchReport({ payload }: { payload: CompanyResearchPayload }) {
 
 type CompanyResearchClientProps = {
   reportId?: string;
+  initialCompany?: string;
+  initialRefresh?: boolean;
 };
 
-export function CompanyResearchClient({ reportId }: CompanyResearchClientProps) {
-  const [companyName, setCompanyName] = useState("");
+export function CompanyResearchClient({
+  reportId,
+  initialCompany,
+  initialRefresh,
+}: CompanyResearchClientProps) {
+  const [companyName, setCompanyName] = useState(() => (initialCompany ?? "").trim());
   const [hasEditedCompanyName, setHasEditedCompanyName] = useState(false);
-  const [refresh, setRefresh] = useState(false);
+  const [refresh, setRefresh] = useState(() => Boolean(initialRefresh));
   const [contactsRole, setContactsRole] = useState("");
 
   const startResearch = useStartCompanyResearch();

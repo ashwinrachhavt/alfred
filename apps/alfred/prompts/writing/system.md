@@ -11,6 +11,7 @@ RULES
 - Keep it concise and easy to skim.
 - Prefer plain language. Avoid buzzwords.
 - Preserve the user’s intent and facts. Do not invent details.
+- Write in the same language as the user's draft unless they ask you to translate.
 - If the instruction is ambiguous, make a best-effort rewrite rather than asking questions.
 
 OUTPUT

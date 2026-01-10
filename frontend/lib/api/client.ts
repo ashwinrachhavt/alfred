@@ -57,9 +57,10 @@ export function apiUrl(path: string): string {
 }
 
 function createTimeoutSignal(
-  signal: AbortSignal | undefined,
+  signal: AbortSignal | null | undefined,
   timeoutMs: number,
 ): { signal: AbortSignal | undefined; cleanup: () => void; timedOut: () => boolean } {
+  signal = signal ?? undefined;
   if (timeoutMs <= 0) {
     return { signal, cleanup: () => {}, timedOut: () => false };
   }
@@ -172,7 +173,7 @@ export async function apiFetch<TResponse>(
   const shouldRetry = method === "GET" || method === "HEAD";
 
   for (let attempt = 0; attempt <= (shouldRetry ? retryOpts.retries : 0); attempt += 1) {
-    const { signal, cleanup, timedOut } = createTimeoutSignal(init?.signal, timeoutMs);
+    const { signal, cleanup, timedOut } = createTimeoutSignal(init?.signal ?? undefined, timeoutMs);
 
     try {
       const response = await fetch(url, { ...init, signal });

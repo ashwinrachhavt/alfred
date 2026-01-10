@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 
-def render_oauth_callback_page(*, ok: bool, message: str) -> str:
+def render_oauth_callback_page(*, ok: bool, message: str, provider: str = "google") -> str:
     """Render a minimal HTML page for OAuth callback windows.
 
     Intended for popup-based OAuth flows where the backend receives the callback
     and should notify the opener before closing itself.
     """
 
+    provider_safe = (provider or "oauth").strip().lower()
     status = "success" if ok else "error"
-    heading = "Google connected" if ok else "Google connection failed"
+    label = provider_safe.capitalize()
+    heading = f"{label} connected" if ok else f"{label} connection failed"
     body = (message or "").replace("<", "&lt;").replace(">", "&gt;")
 
     # Inline CSS/JS to keep this endpoint dependency-free.
@@ -40,7 +42,7 @@ def render_oauth_callback_page(*, ok: bool, message: str) -> str:
     <script>
       try {{
         if (window.opener && !window.opener.closed) {{
-          window.opener.postMessage({{ type: "alfred:google_oauth", ok: {str(ok).lower()} }}, "*");
+          window.opener.postMessage({{ type: "alfred:{provider_safe}_oauth", ok: {str(ok).lower()} }}, "*");
         }}
       }} catch (e) {{}}
       setTimeout(() => {{

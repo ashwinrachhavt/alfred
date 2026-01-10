@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useFollowUps } from "@/features/follow-ups/follow-up-provider";
 import {
   useFetchCalendarEvents,
   useFetchGmailMessage,
@@ -60,6 +61,7 @@ export function CalendarEmailClient() {
   const queryClient = useQueryClient();
   const statusQuery = useGoogleStatus();
   const profileQuery = useGmailProfile(Boolean(statusQuery.data?.gmail_token_present));
+  const { addFollowUp, setFollowUpCenterOpen } = useFollowUps();
 
   const authUrlMutation = useGoogleAuthUrl();
   const revokeMutation = useGoogleRevoke();
@@ -186,6 +188,36 @@ export function CalendarEmailClient() {
 
   const closeMessageDialog = () => {
     setSelectedMessageId(null);
+  };
+
+  const createFollowUpForSelectedMessage = () => {
+    if (!selectedMessage) return;
+
+    const subject = selectedMessage.headers?.Subject?.trim() || "Email follow-up";
+    const from = selectedMessage.headers?.From?.trim() || undefined;
+    const receivedAt = selectedMessage.internal_date ?? selectedMessage.headers?.Date ?? undefined;
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const href = selectedMessage.id
+      ? `https://mail.google.com/mail/u/0/#all/${selectedMessage.id}`
+      : undefined;
+
+    const created = addFollowUp({
+      title: `Reply: ${subject}`,
+      dueAt,
+      href,
+      notes: from ? `From: ${from}` : null,
+      source: "gmail",
+      meta: {
+        gmail_message_id: selectedMessage.id,
+        gmail_from: from,
+        gmail_received_at: receivedAt,
+      },
+      templateLabel: "From Gmail",
+    });
+
+    if (!created) return;
+    toast.success("Follow-up created.");
+    setFollowUpCenterOpen(true);
   };
 
   return (
@@ -374,12 +406,45 @@ export function CalendarEmailClient() {
                     start?: { dateTime?: string; date?: string };
                   };
                   const startRaw = e.start?.dateTime ?? e.start?.date;
+                  const summary = e.summary ?? "Untitled event";
                   return (
                     <div key={`${idx}-${e.summary ?? "event"}`} className="rounded-lg border p-3">
-                      <p className="text-sm font-medium">{e.summary ?? "Untitled event"}</p>
-                      <p className="text-muted-foreground mt-1 text-xs">
-                        {formatMaybeDate(startRaw)}
-                      </p>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">{summary}</p>
+                          <p className="text-muted-foreground mt-1 text-xs">
+                            {formatMaybeDate(startRaw)}
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const start = startRaw ? new Date(startRaw) : null;
+                            const dueAt =
+                              start && !Number.isNaN(start.valueOf())
+                                ? new Date(start.getTime() - 24 * 60 * 60 * 1000).toISOString()
+                                : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+                            const created = addFollowUp({
+                              title: `Prep: ${summary}`,
+                              dueAt,
+                              source: "calendar",
+                              templateLabel: "From Calendar",
+                              meta: {
+                                calendar_event_summary: summary,
+                                calendar_event_start: startRaw ?? null,
+                              },
+                            });
+                            if (!created) return;
+                            toast.success("Follow-up created.");
+                            setFollowUpCenterOpen(true);
+                          }}
+                        >
+                          Follow-up
+                        </Button>
+                      </div>
                     </div>
                   );
                 })}
@@ -423,6 +488,16 @@ export function CalendarEmailClient() {
             </div>
           ) : selectedMessage ? (
             <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={createFollowUpForSelectedMessage}
+                >
+                  Create follow-up
+                </Button>
+              </div>
               <div className="text-muted-foreground text-xs">
                 {selectedMessage.headers.Date ? (
                   <div>Date: {selectedMessage.headers.Date}</div>
