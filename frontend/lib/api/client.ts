@@ -165,7 +165,7 @@ export async function apiFetch<TResponse>(
   const shouldRetry = method === "GET" || method === "HEAD";
 
   for (let attempt = 0; attempt <= (shouldRetry ? retryOpts.retries : 0); attempt += 1) {
-    const { signal, cleanup, timedOut } = createTimeoutSignal(init?.signal, timeoutMs);
+    const { signal, cleanup, timedOut } = createTimeoutSignal(init?.signal ?? undefined, timeoutMs);
 
     try {
       const response = await fetch(url, { ...init, signal });

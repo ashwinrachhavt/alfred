@@ -7,6 +7,7 @@ import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from "@cl
 import { AppCommandPaletteTrigger } from "@/components/app-command-palette";
 import { AppNavigationMenu } from "@/components/app-navigation-menu";
 import { AppSidebar } from "@/components/app-sidebar";
+import { FollowUpCenterTrigger } from "@/components/follow-up-center-sheet";
 import { TaskCenterTrigger } from "@/components/task-center-sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ export function AppShell({
               <AppCommandPaletteTrigger className="md:hidden" variant="icon" />
               <AppCommandPaletteTrigger className="hidden md:flex" />
               <TaskCenterTrigger />
+              <FollowUpCenterTrigger />
               <ThemeToggle />
               {clerkEnabled ? (
                 <>
