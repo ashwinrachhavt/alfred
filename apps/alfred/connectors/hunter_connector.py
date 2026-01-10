@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from http import HTTPStatus
 from typing import Any
 
 import requests
@@ -70,10 +71,10 @@ class HunterClient:
             return None
 
         params = {"api_key": self.api_key, "email": email}
-        resp = requests.get(
+        response = requests.get(
             f"{HUNTER_BASE_URL}/email-verifier", params=params, timeout=self.timeout_seconds
         )
-        if resp.status_code == 202:
+        if response.status_code == HTTPStatus.ACCEPTED:
             return None  # verification still running; skip
-        resp.raise_for_status()
-        return (resp.json() or {}).get("data") or {}
+        response.raise_for_status()
+        return (response.json() or {}).get("data") or {}

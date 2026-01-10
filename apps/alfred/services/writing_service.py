@@ -224,6 +224,9 @@ class WriterCacheHit:
     score: Optional[float] = None
 
 
+MIN_REDISEARCH_VERSION = 20400
+
+
 class WriterSemanticCache:
     """
     Semantic cache for writer outputs using Redis Stack (RediSearch + vectors).
@@ -314,7 +317,7 @@ class WriterSemanticCache:
             ver = int(search.get("ver") or "0")
         except Exception:
             ver = 0
-        if ver and ver < 20400:
+        if ver and ver < MIN_REDISEARCH_VERSION:
             return (
                 f"RediSearch version is too old (ver={ver}); need >= 2.4. "
                 "Upgrade Redis Stack Server."

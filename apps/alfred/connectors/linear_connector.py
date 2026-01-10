@@ -6,15 +6,18 @@ Allows fetching issue lists and their comments with date range filtering.
 """
 
 from datetime import datetime
+from http import HTTPStatus
 from typing import Any
 
 import requests
+
+LINEAR_GRAPHQL_API_URL = "https://api.linear.app/graphql"
 
 
 class LinearConnector:
     """Class for retrieving issues and comments from Linear."""
 
-    def __init__(self, token: str | None = None):
+    def __init__(self, token: str | None = None) -> None:
         """
         Initialize the LinearConnector class.
 
@@ -22,7 +25,7 @@ class LinearConnector:
             token: Linear API token (optional, can be set later with set_token)
         """
         self.token = token
-        self.api_url = "https://api.linear.app/graphql"
+        self.api_url = LINEAR_GRAPHQL_API_URL
 
     def set_token(self, token: str) -> None:
         """
@@ -76,7 +79,7 @@ class LinearConnector:
 
         response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)
 
-        if response.status_code != 200:
+        if response.status_code != HTTPStatus.OK:
             raise RuntimeError(
                 f"Query failed with status code {response.status_code}: {response.text}"
             )
