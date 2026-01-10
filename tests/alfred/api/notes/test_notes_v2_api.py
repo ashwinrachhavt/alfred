@@ -45,7 +45,7 @@ def test_tree_and_move_reorders_root_notes():
     client = _client()
 
     a = client.post("/api/v1/notes", params={"user_id": 1}, json={"title": "A"}).json()
-    b = client.post("/api/v1/notes", params={"user_id": 1}, json={"title": "B"}).json()
+    client.post("/api/v1/notes", params={"user_id": 1}, json={"title": "B"}).json()
     c = client.post("/api/v1/notes", params={"user_id": 1}, json={"title": "C"}).json()
 
     workspace_id = a["workspace_id"]
