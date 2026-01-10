@@ -97,6 +97,14 @@ from alfred.services.llm_service import LLMService
 _CHUNKING_SERVICE = ChunkingService()
 logger = logging.getLogger(__name__)
 
+HSL_LIGHTNESS_MIDPOINT = 0.5
+
+SEMANTIC_MAP_DIMENSIONS = 3
+MIN_PROJECTABLE_ITEMS = 3
+PAIR_ITEM_COUNT = 2
+MATRIX_EXPECTED_NDIM = 2
+MIN_TFIDF_FEATURES = 2
+
 
 def _chunk_payloads_for_text(
     *,
@@ -1474,7 +1482,7 @@ class DocStorageService:
 
         items: list[dict[str, Any]] = []
 
-        if len(vectors) >= 3:
+        if len(vectors) >= MIN_PROJECTABLE_ITEMS:
             coords = _project_vectors_to_3d(vectors)
             for d, pos in zip(embedded_docs, coords, strict=False):
                 topic = d.get("primary_topic")

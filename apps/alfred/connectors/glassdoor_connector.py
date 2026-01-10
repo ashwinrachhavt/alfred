@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import time
+from http import HTTPStatus
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import urljoin
 
@@ -83,7 +84,7 @@ class GlassdoorClient:
         backoff_base: float = 0.5,
         user_agent: str = "gd-client/1.0",
         default_domain: str = "www.glassdoor.com",
-    ):
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key or settings.openweb_ninja_api_key
         self.timeout = timeout
@@ -122,28 +123,31 @@ class GlassdoorClient:
         while True:
             attempt += 1
             try:
-                r = requests.request(
+                response = requests.request(
                     method, url, headers=self._headers(), params=params, timeout=self.timeout
                 )
                 # success path
                 try:
-                    raw: Any = r.json()
+                    raw: Any = response.json()
                 except ValueError:
-                    raw = r.text
+                    raw = response.text
 
-                if 200 <= r.status_code < 300:
+                if HTTPStatus.OK <= response.status_code < HTTPStatus.MULTIPLE_CHOICES:
                     if isinstance(raw, dict):
                         ok, unwrapped = _unwrap(raw)
                         return GlassdoorResponse(
-                            success=ok, data=unwrapped, status_code=r.status_code
+                            success=ok, data=unwrapped, status_code=response.status_code
                         )
                     return GlassdoorResponse(
-                        success=True, data={"raw": raw}, status_code=r.status_code
+                        success=True, data={"raw": raw}, status_code=response.status_code
                     )
 
                 # handle retryable errors (429/5xx)
-                if r.status_code in (429, 500, 502, 503, 504) and attempt <= self.max_retries:
-                    retry_after = r.headers.get("Retry-After")
+                if (
+                    response.status_code in (429, 500, 502, 503, 504)
+                    and attempt <= self.max_retries
+                ):
+                    retry_after = response.headers.get("Retry-After")
                     if retry_after:
                         try:
                             sleep_s = float(retry_after)
@@ -156,7 +160,9 @@ class GlassdoorClient:
 
                 # non-OK final
                 err_msg = raw if isinstance(raw, str) else json.dumps(raw)
-                return GlassdoorResponse(success=False, error=err_msg, status_code=r.status_code)
+                return GlassdoorResponse(
+                    success=False, error=err_msg, status_code=response.status_code
+                )
 
             except requests.RequestException as exc:
                 if attempt <= self.max_retries:
