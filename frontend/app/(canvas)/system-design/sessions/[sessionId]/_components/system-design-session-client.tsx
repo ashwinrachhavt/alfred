@@ -262,7 +262,6 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
     setIsExportOpen(false);
     setSelectedElementIds([]);
   }, [showDiagram]);
-  }, [connectSourceId, isConnectMode, selectedElementIds]);
 
   useEffect(() => {
     if (!session) return;
@@ -498,6 +497,30 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
 
   function downloadTextFile(text: string, filename: string, mimeType: string) {
     downloadBlob(new Blob([text], { type: mimeType }), filename);
+  }
+
+  async function copyToClipboard(text: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {}
+
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "true");
+    textarea.style.position = "fixed";
+    textarea.style.top = "0";
+    textarea.style.left = "0";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand("copy");
+    } catch {
+      // Ignore clipboard failures.
+    } finally {
+      textarea.remove();
+    }
   }
 
   if (isLoading) {
@@ -913,112 +936,110 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
             {/* Overlay during resize to prevent event trapping */}
             {isResizing && <div className="absolute inset-0 z-50 bg-transparent" />}
 
-            <div className="min-h-0 flex-1 p-0">
-              <div
-                className="relative h-full w-full"
-                onDoubleClick={() => {
-                  if (!canvasSelection) return;
-                  setPropertiesTarget(canvasSelection);
-                  setPropertiesName(canvasSelection.name);
-                  setIsPropertiesOpen(true);
-                }}
-              >
-                <ExcalidrawCanvas
-                  ref={canvasRef}
-                  initialDiagram={session.diagram}
-                  onDiagramChange={queueAutosave}
-                  onSelectionChange={setSelectedElementIds}
-                  onSelectionDetailsChange={(selection) => {
-                    setCanvasSelection(selection);
+            <div
+              className="relative min-h-0 flex-1"
+              onDoubleClick={() => {
+                if (!canvasSelection) return;
+                setPropertiesTarget(canvasSelection);
+                setPropertiesName(canvasSelection.name);
+                setIsPropertiesOpen(true);
+              }}
+            >
+              <ExcalidrawCanvas
+                ref={canvasRef}
+                initialDiagram={session.diagram}
+                onDiagramChange={queueAutosave}
+                onSelectionChange={setSelectedElementIds}
+                onSelectionDetailsChange={(selection) => {
+                  setCanvasSelection(selection);
 
-                    if (!isPropertiesOpen) return;
-                    if (!selection) {
-                      setIsPropertiesOpen(false);
-                      setPropertiesTarget(null);
-                      return;
+                  if (!isPropertiesOpen) return;
+                  if (!selection) {
+                    setIsPropertiesOpen(false);
+                    setPropertiesTarget(null);
+                    return;
+                  }
+
+                  setPropertiesTarget((prev) => {
+                    if (!prev || prev.elementId !== selection.elementId) {
+                      setPropertiesName(selection.name);
+                      return selection;
                     }
+                    return prev;
+                  });
+                }}
+                framed={false}
+                viewportScale={1}
+              />
 
-                    setPropertiesTarget((prev) => {
-                      if (!prev || prev.elementId !== selection.elementId) {
-                        setPropertiesName(selection.name);
-                        return selection;
-                      }
-                      return prev;
-                    });
-                  }}
-                  framed={false}
-                  viewportScale={1}
-                />
+              {isPropertiesOpen && propertiesTarget ? (
+                <Card
+                  className="bg-background/95 absolute top-3 right-3 z-20 w-80 border shadow-lg backdrop-blur"
+                  onDoubleClick={(event) => event.stopPropagation()}
+                >
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 py-3">
+                    <CardTitle className="text-sm">Properties</CardTitle>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => {
+                        setIsPropertiesOpen(false);
+                      }}
+                    >
+                      <X className="size-4" />
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="space-y-4 px-4 pb-4">
+                    <div className="flex flex-wrap gap-2">
+                      {propertiesTarget.category ? (
+                        <Badge variant="secondary">
+                          {propertiesTarget.category.replaceAll("_", " ")}
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary">component</Badge>
+                      )}
+                      <Badge variant="outline">id: {propertiesTarget.elementId}</Badge>
+                    </div>
 
-                {isPropertiesOpen && propertiesTarget ? (
-                  <Card
-                    className="bg-background/95 absolute top-3 right-3 z-20 w-80 border shadow-lg backdrop-blur"
-                    onDoubleClick={(event) => event.stopPropagation()}
-                  >
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 py-3">
-                      <CardTitle className="text-sm">Properties</CardTitle>
+                    <div className="space-y-2">
+                      <Label htmlFor="sd-component-name">Name</Label>
+                      <Input
+                        id="sd-component-name"
+                        value={propertiesName}
+                        onChange={(e) => setPropertiesName(e.target.value)}
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key !== "Enter") return;
+                          const nextName = propertiesName.trim();
+                          if (!nextName) return;
+                          canvasRef.current?.updateComponentLabel(propertiesTarget.elementId, nextName);
+                        }}
+                      />
+                    </div>
+
+                    <div className="flex justify-end gap-2">
                       <Button
-                        variant="ghost"
-                        size="icon-sm"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsPropertiesOpen(false)}
+                      >
+                        Close
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={!propertiesName.trim()}
                         onClick={() => {
-                          setIsPropertiesOpen(false);
+                          const nextName = propertiesName.trim();
+                          if (!nextName) return;
+                          canvasRef.current?.updateComponentLabel(propertiesTarget.elementId, nextName);
                         }}
                       >
-                        <X className="size-4" />
+                        Apply
                       </Button>
-                    </CardHeader>
-                    <CardContent className="space-y-4 px-4 pb-4">
-                      <div className="flex flex-wrap gap-2">
-                        {propertiesTarget.category ? (
-                          <Badge variant="secondary">
-                            {propertiesTarget.category.replaceAll("_", " ")}
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary">component</Badge>
-                        )}
-                        <Badge variant="outline">id: {propertiesTarget.elementId}</Badge>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="sd-component-name">Name</Label>
-                        <Input
-                          id="sd-component-name"
-                          value={propertiesName}
-                          onChange={(e) => setPropertiesName(e.target.value)}
-                          autoFocus
-                          onKeyDown={(e) => {
-                            if (e.key !== "Enter") return;
-                            const nextName = propertiesName.trim();
-                            if (!nextName) return;
-                            canvasRef.current?.updateComponentLabel(propertiesTarget.elementId, nextName);
-                          }}
-                        />
-                      </div>
-
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setIsPropertiesOpen(false)}
-                        >
-                          Close
-                        </Button>
-                        <Button
-                          size="sm"
-                          disabled={!propertiesName.trim()}
-                          onClick={() => {
-                            const nextName = propertiesName.trim();
-                            if (!nextName) return;
-                            canvasRef.current?.updateComponentLabel(propertiesTarget.elementId, nextName);
-                          }}
-                        >
-                          Apply
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ) : null}
-              </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
             </div>
           </div>
         )}

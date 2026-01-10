@@ -277,6 +277,17 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
 
     const handleChange = useCallback(
       (elements: unknown, appState: unknown, files: unknown) => {
+        if (onSelectionDetailsChange) {
+          const selection = readSelection(elements, appState);
+          const key = selection
+            ? `${selection.elementId}:${selection.name}:${selection.category ?? ""}`
+            : "";
+          if (lastSelectionKeyRef.current !== key) {
+            lastSelectionKeyRef.current = key || null;
+            onSelectionDetailsChange(selection);
+          }
+        }
+
         if (onSelectionChange) {
           const selectedIds = new Set<string>();
           if (appState && typeof appState === "object") {
@@ -314,7 +325,7 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
         if (metadataRef.current) next.metadata = metadataRef.current;
         onDiagramChange(next);
       },
-      [onDiagramChange, onSelectionChange],
+      [onDiagramChange, onSelectionChange, onSelectionDetailsChange, readSelection],
     );
 
     const handleSelectionDetails = useCallback(
@@ -335,12 +346,17 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
       const serialize = serializeRef.current;
       if (!api || !serialize) return null;
 
+      const apiHelpers = api as unknown as {
+        getSceneElements: () => unknown;
+        getSceneElementsIncludingDeleted?: () => unknown;
+        getFiles?: () => unknown;
+      };
+
       const elements =
-        "getSceneElementsIncludingDeleted" in api
-          ? (api as unknown as { getSceneElementsIncludingDeleted: () => unknown }).getSceneElementsIncludingDeleted()
-          : api.getSceneElements();
-      const files =
-        "getFiles" in api ? (api as unknown as { getFiles: () => unknown }).getFiles() : {};
+        typeof apiHelpers.getSceneElementsIncludingDeleted === "function"
+          ? apiHelpers.getSceneElementsIncludingDeleted()
+          : apiHelpers.getSceneElements();
+      const files = typeof apiHelpers.getFiles === "function" ? apiHelpers.getFiles() : {};
 
       const next = toPersistedDiagram(serialize, elements, api.getAppState(), files);
       if (metadataRef.current) next.metadata = metadataRef.current;
