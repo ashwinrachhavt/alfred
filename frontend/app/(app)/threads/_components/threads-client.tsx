@@ -47,11 +47,15 @@ function formatErrorMessage(error: unknown): string {
   return "Something went wrong.";
 }
 
-export function ThreadsClient() {
+type ThreadsClientProps = {
+  initialTitle?: string;
+};
+
+export function ThreadsClient({ initialTitle = "" }: ThreadsClientProps) {
   const threadsQuery = useThreads();
   const createThreadMutation = useCreateThread();
 
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(() => initialTitle.trim());
   const [filter, setFilter] = useState("");
 
   const threads = threadsQuery.data ?? EMPTY_THREADS;

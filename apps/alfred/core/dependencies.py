@@ -89,6 +89,7 @@ def get_doc_storage_service() -> DocStorageService:
         session=None,
         graph_service=get_graph_service(),
         extraction_service=get_extraction_service(),
+        llm_service=get_llm_service(),
         redis_client=get_redis_client(),
     )
 
@@ -218,3 +219,46 @@ def get_knowledge_agent_service() -> KnowledgeAgentService:
     from alfred.services.agents.mind_palace_agent import KnowledgeAgentService
 
     return KnowledgeAgentService(doc_service=get_doc_storage_service())
+
+
+@lru_cache(maxsize=1)
+def get_planning_service():
+    from alfred.services.planning_service import PlanningService
+
+    return PlanningService(llm_service=get_llm_service())
+
+
+@lru_cache(maxsize=1)
+def get_memory_service():
+    from alfred.services.memory_service import MemoryService
+
+    return MemoryService(
+        doc_storage=get_doc_storage_service(),
+        thread_service=get_thread_service(),
+        llm_service=get_llm_service(),
+    )
+
+
+@lru_cache(maxsize=1)
+def get_language_service():
+    from alfred.services.language_service import LanguageService
+
+    return LanguageService()
+
+
+@lru_cache(maxsize=1)
+def get_text_assist_service():
+    from alfred.services.text_assist_service import TextAssistService
+
+    return TextAssistService(llm_service=get_llm_service(), language_service=get_language_service())
+
+
+@lru_cache(maxsize=1)
+def get_summarization_service():
+    from alfred.services.summarization_service import SummarizationService
+
+    return SummarizationService(
+        doc_storage=get_doc_storage_service(),
+        llm_service=get_llm_service(),
+        language_service=get_language_service(),
+    )

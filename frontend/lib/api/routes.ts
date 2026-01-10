@@ -30,4 +30,8 @@ export const apiRoutes = {
   tasks: {
     status: (taskId: string) => `/api/tasks/${taskId}`,
   },
+  intelligence: {
+    autocomplete: "/api/intelligence/autocomplete",
+    edit: "/api/intelligence/edit",
+  },
 } as const;

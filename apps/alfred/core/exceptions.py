@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -49,6 +50,13 @@ class AlfredException(Exception):
         self.status_code = status_code if status_code is not None else self.status_code
         self.details = details
         super().__init__(message)
+
+
+class BadRequestError(AlfredException):
+    """Raised when a request is invalid or cannot be processed as provided."""
+
+    status_code = 400
+    default_code = "bad_request"
 
 
 class ConfigurationError(AlfredException):
@@ -98,13 +106,16 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def _validation_exception_handler(
         _request: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        # Pydantic v2 can embed non-JSON-serializable objects (e.g. `ValueError`) inside
+        # `ctx`; normalize through FastAPI's encoder.
+        details = jsonable_encoder(exc.errors())
         return JSONResponse(
             status_code=HTTP_422_UNPROCESSABLE_ENTITY,
             content=_error_payload(
                 error="Validation error",
                 code="validation_error",
                 type_=exc.__class__.__name__,
-                details=exc.errors(),
+                details=details,
             ),
         )
 

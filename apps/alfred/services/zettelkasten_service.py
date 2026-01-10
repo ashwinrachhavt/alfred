@@ -41,6 +41,10 @@ def _temporal_proximity_days(a: datetime | None, b: datetime | None) -> float | 
     return abs((a - b).days)
 
 
+LINK_QUALITY_HIGH_CONFIDENCE_THRESHOLD = 0.8
+LINK_QUALITY_MEDIUM_CONFIDENCE_THRESHOLD = 0.6
+
+
 @dataclass
 class ZettelkastenService:
     """Domain service for Zettelkasten cards and reviews."""
@@ -378,9 +382,9 @@ class ZettelkastenService:
             + 0.05 * temporal_weight
         )
 
-        if composite >= 0.8:
+        if composite >= LINK_QUALITY_HIGH_CONFIDENCE_THRESHOLD:
             confidence = "high"
-        elif composite >= 0.6:
+        elif composite >= LINK_QUALITY_MEDIUM_CONFIDENCE_THRESHOLD:
             confidence = "medium"
         else:
             confidence = "low"

@@ -28,6 +28,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             "alfred.tasks.interviews_unified",
             "alfred.tasks.learning_concepts",
             "alfred.tasks.document_concepts",
+            "alfred.tasks.notion_import",
             "alfred.tasks.paraform_company_report",
         ]
         if include_tasks
@@ -68,6 +69,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             "alfred.tasks.interviews_unified.*": {"queue": "agent"},
             "alfred.tasks.learning_concepts.*": {"queue": "default"},
             "alfred.tasks.document_concepts.*": {"queue": "default"},
+            "alfred.tasks.notion_import.*": {"queue": "default"},
             "alfred.tasks.paraform_company_report.*": {"queue": "default"},
         },
     )
@@ -149,6 +151,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
         import alfred.tasks.interviews_unified  # noqa: F401
         import alfred.tasks.learning_concepts  # noqa: F401
         import alfred.tasks.mind_palace_agent  # noqa: F401
+        import alfred.tasks.notion_import  # noqa: F401
         import alfred.tasks.paraform_company_report  # noqa: F401
 
     return celery_app

@@ -96,12 +96,25 @@ function toRecentSession(session: SystemDesignSession): RecentSystemDesignSessio
   };
 }
 
-export function SystemDesignStartClient() {
+type SystemDesignStartClientProps = {
+  initialTitle?: string;
+  initialProblemStatement?: string;
+  initialTemplateId?: string;
+};
+
+export function SystemDesignStartClient({
+  initialTitle = "",
+  initialProblemStatement = "",
+  initialTemplateId = "",
+}: SystemDesignStartClientProps) {
   const router = useRouter();
 
-  const [title, setTitle] = useState("");
-  const [problemStatement, setProblemStatement] = useState("");
-  const [templateId, setTemplateId] = useState<string | null>(null);
+  const [title, setTitle] = useState(() => initialTitle.trim());
+  const [problemStatement, setProblemStatement] = useState(() => initialProblemStatement.trim());
+  const [templateId, setTemplateId] = useState<string | null>(() => {
+    const trimmed = initialTemplateId.trim();
+    return trimmed ? trimmed : null;
+  });
 
   const templatesQuery = useSystemDesignTemplates();
   const templates = templatesQuery.data ?? [];

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import {
+  Bell,
   CheckCircle2,
   CircleDashed,
   ExternalLink,
@@ -12,8 +13,10 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
+import { useFollowUps } from "@/features/follow-ups/follow-up-provider";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -89,6 +92,7 @@ function formatRelativeTimestamp(value: string): string {
 
 export function TaskCenterSheet() {
   const router = useRouter();
+  const { addFollowUp, setFollowUpCenterOpen } = useFollowUps();
   const {
     tasks,
     statusById,
@@ -240,6 +244,36 @@ export function TaskCenterSheet() {
                           }}
                         >
                           View
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Create follow-up"
+                          onClick={() => {
+                            const dueAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+                            const href =
+                              task.href ?? `/tasks?taskId=${encodeURIComponent(task.id)}`;
+
+                            const created = addFollowUp({
+                              title: `Review: ${task.label}`,
+                              dueAt,
+                              href,
+                              source: "task",
+                              templateLabel: "From Task Center",
+                              meta: {
+                                task_id: task.id,
+                                task_source: task.source,
+                                task_label: task.label,
+                              },
+                            });
+
+                            if (!created) return;
+                            toast.success("Follow-up created.");
+                            setFollowUpCenterOpen(true);
+                          }}
+                        >
+                          <Bell className="h-4 w-4" aria-hidden="true" />
                         </Button>
                         <Button
                           type="button"
