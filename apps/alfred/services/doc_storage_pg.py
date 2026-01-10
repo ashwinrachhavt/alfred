@@ -5,8 +5,6 @@ This mirrors the Mongo DocStorageService API but persists to Postgres via SQLMod
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import json
 import logging
 import threading
@@ -15,7 +13,6 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
 
 from cachetools import TTLCache
 from sqlalchemy import and_, func, or_, select, update
@@ -23,12 +20,76 @@ from sqlalchemy.orm import load_only
 from sqlmodel import Session
 
 from alfred.core.database import SessionLocal
+from alfred.core.exceptions import BadRequestError, NotFoundError
 from alfred.core.settings import settings
 from alfred.core.utils import clamp_int
 from alfred.models.doc_storage import DocChunkRow, DocumentRow, QuickNoteRow
 from alfred.schemas.documents import DocumentIngest, NoteCreate
 from alfred.schemas.enrichment import normalize_enrichment
 from alfred.services.chunking import ChunkingService
+from alfred.services.doc_storage.semantic_map import (
+    extract_embedding as _extract_embedding,
+)
+from alfred.services.doc_storage.semantic_map import (
+    project_texts_to_3d as _project_texts_to_3d,
+)
+from alfred.services.doc_storage.semantic_map import (
+    project_vectors_to_3d as _project_vectors_to_3d,
+)
+from alfred.services.doc_storage.semantic_map import (
+    topic_to_color as _topic_to_color,
+)
+from alfred.services.doc_storage.utils import (
+    apply_offset_limit as _apply_offset_limit,
+)
+from alfred.services.doc_storage.utils import (
+    best_effort_cover_url as _best_effort_cover_url,
+)
+from alfred.services.doc_storage.utils import (
+    best_effort_primary_topic as _best_effort_primary_topic,
+)
+from alfred.services.doc_storage.utils import (
+    best_effort_title as _best_effort_title,
+)
+from alfred.services.doc_storage.utils import (
+    build_title_image_prompt as _build_title_image_prompt,
+)
+from alfred.services.doc_storage.utils import (
+    decode_cursor as _decode_cursor,
+)
+from alfred.services.doc_storage.utils import (
+    domain_from_url as _domain_from_url,
+)
+from alfred.services.doc_storage.utils import (
+    encode_cursor as _encode_cursor,
+)
+from alfred.services.doc_storage.utils import (
+    excerpt_for_cover_prompt as _excerpt_for_cover_prompt,
+)
+from alfred.services.doc_storage.utils import (
+    first_str as _first_str,
+)
+from alfred.services.doc_storage.utils import (
+    parse_iso_date as _parse_iso_date,
+)
+from alfred.services.doc_storage.utils import (
+    parse_iso_datetime as _parse_iso_datetime,
+)
+from alfred.services.doc_storage.utils import (
+    parse_uuid as _parse_uuid,
+)
+from alfred.services.doc_storage.utils import (
+    read_text_file_best_effort as _read_text_file_best_effort,
+)
+from alfred.services.doc_storage.utils import (
+    sha256_hex as _sha256_hex,
+)
+from alfred.services.doc_storage.utils import (
+    start_of_day_utc as _start_of_day_utc,
+)
+from alfred.services.doc_storage.utils import (
+    token_count as _token_count,
+)
 from alfred.services.extraction_service import ExtractionService
 from alfred.services.graph_service import GraphService
 from alfred.services.llm_service import LLMService
@@ -45,384 +106,59 @@ MATRIX_EXPECTED_NDIM = 2
 MIN_TFIDF_FEATURES = 2
 
 
-def _token_count(text: str) -> int:
-    return len((text or "").split())
-
-
-def _parse_uuid(value: str | None) -> uuid.UUID | None:
-    if not value:
-        return None
-    try:
-        return uuid.UUID(value)
-    except (ValueError, AttributeError, TypeError):
-        return None
-
-
-def _parse_iso_datetime(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
-
-
-def _parse_iso_date(value: str | None) -> date | None:
-    dt = _parse_iso_datetime(value)
-    return dt.date() if dt else None
-
-
-def _read_text_file_best_effort(path: str | None) -> str | None:
-    if not path:
-        return None
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            return fh.read()
-    except OSError:
-        return None
-
-
-def _sha256_hex(text: str) -> str:
-    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
-
-
-def _excerpt_for_cover_prompt(text: str | None, *, max_chars: int = 900) -> str | None:
-    """Return a compact excerpt suitable for an image prompt.
-
-    This is used for "visual grounding" so the cover reflects the actual document.
-    Keep it short to reduce prompt size and limit accidental prompt injection surface.
-    """
-
-    if not text:
-        return None
-    s = " ".join((text or "").strip().split())
-    if not s:
-        return None
-    max_chars = max(120, min(int(max_chars), 4000))
-    if len(s) <= max_chars:
-        return s
-    # Reserve space for an ellipsis.
-    return (s[: max_chars - 1].rstrip() + "…") if max_chars > 1 else "…"
-
-
-def _start_of_day_utc(dt: datetime) -> date:
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).date()
-
-
-def _domain_from_url(url: Optional[str]) -> Optional[str]:
-    if not url:
-        return None
-    try:
-        return urlparse(url).netloc or None
-    except Exception:
-        return None
-
-
-def _apply_offset_limit(stmt, *, skip: int, limit: int, max_limit: int = 200):  # noqa: ANN001
-    return stmt.offset(int(skip)).limit(clamp_int(limit, lo=1, hi=max_limit))
-
-
-def _first_str(*candidates: Any) -> str | None:
-    for c in candidates:
-        if isinstance(c, str):
-            s = c.strip()
-            if s:
-                return s
-    return None
-
-
-def _best_effort_title(*, row_title: str | None, meta: dict[str, Any] | None) -> str:
-    meta = meta or {}
-    title = _first_str(
-        meta.get("title"),
-        meta.get("page_title"),
-        meta.get("name"),
-        row_title,
-    )
-    return title or "Untitled"
-
-
-def _best_effort_cover_url(meta: dict[str, Any] | None) -> str | None:
-    meta = meta or {}
-    return _first_str(
-        meta.get("image"),
-        meta.get("image_url"),
-        meta.get("cover"),
-        meta.get("cover_image"),
-        meta.get("thumbnail"),
-        meta.get("thumbnail_url"),
-    )
-
-
-def _best_effort_primary_topic(
-    topics: dict[str, Any] | None,
-    meta: dict[str, Any] | None,
-) -> str | None:
-    topics = topics or {}
-    meta = meta or {}
-
-    primary = topics.get("primary")
-    if isinstance(primary, str) and primary.strip():
-        return primary.strip()
-
-    cls = topics.get("classification")
-    if isinstance(cls, dict):
-        for key in ("primary_topic", "primary", "topic", "category"):
-            val = cls.get(key)
-            if isinstance(val, str) and val.strip():
-                return val.strip()
-
-    enrichment = meta.get("enrichment")
-    if isinstance(enrichment, dict):
-        topics2 = enrichment.get("topics")
-        if isinstance(topics2, dict):
-            val = topics2.get("primary")
-            if isinstance(val, str) and val.strip():
-                return val.strip()
-
-    return None
-
-
-def _build_title_image_prompt(
+def _chunk_payloads_for_text(
     *,
-    title: str,
-    summary: str | None,
-    primary_topic: str | None,
-    domain: str | None,
-    excerpt: str | None = None,
-    visual_brief: str | None = None,
-) -> str:
-    """Build an image-generation prompt for a document cover.
+    src_text: str,
+    max_tokens: int | None,
+    content_type: str,
+) -> list[Any]:
+    """Chunk text into model-friendly sections for storage.
 
-    The goal is a timeless, clean cover image that works well in a library UI.
+    Uses a conservative overlap based on the token budget.
     """
 
-    title = (title or "").strip() or "Untitled"
-    summary = (summary or "").strip() or None
-    primary_topic = (primary_topic or "").strip() or None
-    domain = (domain or "").strip() or None
-    excerpt = (excerpt or "").strip() or None
-    visual_brief = (visual_brief or "").strip() or None
-
-    context_parts: list[str] = []
-    if primary_topic:
-        context_parts.append(f"Primary topic: {primary_topic}.")
-    if domain:
-        context_parts.append(f"Source domain: {domain}.")
-    if summary:
-        context_parts.append(f"Summary: {summary}.")
-    if excerpt:
-        context_parts.append(f"Excerpt (for visual grounding): {excerpt}.")
-    if visual_brief:
-        context_parts.append(f"Visual brief: {visual_brief}.")
-
-    context = "\n".join(context_parts)
-    if context:
-        context = f"\n{context}\n"
-
-    return (
-        "Create a high-quality, modern editorial illustration to be used as a cover image for a saved article.\n"
-        f"Article title: {title}\n"
-        f"{context}"
-        "Constraints:\n"
-        "- Do not include any text, lettering, watermarks, logos, or UI.\n"
-        "- Avoid clutter; keep the composition minimal and readable at small sizes.\n"
-        "- Use a tasteful color palette and crisp shapes; slightly abstract is fine.\n"
-        "Output: a single image.\n"
+    token_budget = int(max_tokens or 0)
+    budget = token_budget if token_budget > 0 else 500
+    overlap = min(100, int(budget * 0.2))
+    return _CHUNKING_SERVICE.chunk(
+        src_text,
+        max_tokens=budget,
+        overlap=overlap,
+        content_type=content_type,
+        mode="auto",
     )
 
 
-def _hsl_to_hex(*, hue: float, saturation: float, lightness: float) -> str:
-    """Convert HSL (0-360, 0-1, 0-1) to hex RGB string."""
+def _build_doc_chunk_rows(
+    *,
+    doc_id: uuid.UUID,
+    chunk_payloads: list[Any],
+    captured_at: datetime,
+    captured_hour: int,
+    day_bucket: date,
+) -> list[DocChunkRow]:
+    """Convert chunk payloads into persisted `DocChunkRow` records."""
 
-    def _clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
-        return max(lo, min(hi, float(v)))
-
-    h = (float(hue) % 360.0) / 360.0
-    s = _clamp(saturation)
-    light = _clamp(lightness)
-
-    def _hue_to_rgb(p: float, q: float, t: float) -> float:
-        if t < 0:
-            t += 1
-        if t > 1:
-            t -= 1
-        if t < 1 / 6:
-            return p + (q - p) * 6 * t
-        if t < 1 / 2:
-            return q
-        if t < 2 / 3:
-            return p + (q - p) * (2 / 3 - t) * 6
-        return p
-
-    if s == 0:
-        r = g = b = light
-    else:
-        q = light * (1 + s) if light < HSL_LIGHTNESS_MIDPOINT else light + s - light * s
-        p = 2 * light - q
-        r = _hue_to_rgb(p, q, h + 1 / 3)
-        g = _hue_to_rgb(p, q, h)
-        b = _hue_to_rgb(p, q, h - 1 / 3)
-
-    return "#{:02x}{:02x}{:02x}".format(
-        int(round(r * 255)),
-        int(round(g * 255)),
-        int(round(b * 255)),
-    )
-
-
-def _topic_to_color(topic: str | None) -> str:
-    """Deterministically map a topic string to a restrained, stable color."""
-
-    topic_norm = (topic or "unknown").strip().lower()
-    digest = hashlib.sha1(topic_norm.encode("utf-8")).digest()
-    hue = int.from_bytes(digest[:2], "big") % 360
-    return _hsl_to_hex(hue=float(hue), saturation=0.62, lightness=0.52)
-
-
-def _extract_embedding(row_embedding: Any, row_enrichment: Any) -> list[float] | None:
-    """Best-effort extraction of a float embedding from known shapes."""
-
-    if isinstance(row_embedding, list) and row_embedding:
-        try:
-            return [float(x) for x in row_embedding]
-        except Exception:
-            return None
-
-    if isinstance(row_enrichment, dict):
-        emb = row_enrichment.get("embedding")
-        if isinstance(emb, list) and emb:
-            try:
-                return [float(x) for x in emb]
-            except Exception:
-                return None
-
-    return None
-
-
-def _trivial_3d_projection(count: int) -> list[list[float]] | None:
-    """Return deterministic 3D coordinates for very small collections."""
-
-    if count == 1:
-        return [[0.0, 0.0, 0.0]]
-    if count == PAIR_ITEM_COUNT:
-        return [[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
-    return None
-
-
-def _project_vectors_to_3d(vectors: list[list[float]]) -> list[list[float]]:
-    """Reduce high-dimensional vectors to 3D coordinates."""
-
-    if not vectors:
-        return []
-
-    trivial = _trivial_3d_projection(len(vectors))
-    if trivial is not None:
-        return trivial
-
-    import numpy as np
-    from sklearn.decomposition import PCA
-
-    dim = len(vectors[0])
-    same_dim = [v for v in vectors if isinstance(v, list) and len(v) == dim]
-    if len(same_dim) < MIN_PROJECTABLE_ITEMS:
-        return [[0.0, 0.0, 0.0] for _ in vectors]
-
-    mat = np.asarray(same_dim, dtype=np.float32)
-    if mat.ndim != MATRIX_EXPECTED_NDIM or mat.shape[0] < MIN_PROJECTABLE_ITEMS:
-        return [[0.0, 0.0, 0.0] for _ in vectors]
-
-    mat = np.where(np.isfinite(mat), mat, 0.0).astype(np.float32, copy=False)
-
-    pca = PCA(n_components=SEMANTIC_MAP_DIMENSIONS)
-    coords = pca.fit_transform(mat)
-    coords = coords - np.mean(coords, axis=0, keepdims=True)
-
-    norms = np.linalg.norm(coords, axis=1)
-    max_norm = float(np.max(norms)) if coords.shape[0] else 1.0
-    if max_norm > 0:
-        coords = coords / max_norm
-
-    return [[float(row[0]), float(row[1]), float(row[2])] for row in coords]
-
-
-def _project_texts_to_3d(texts: list[str]) -> list[list[float]]:
-    """Project a list of text snippets into 3D space (no embeddings required)."""
-
-    if not texts:
-        return []
-
-    trivial = _trivial_3d_projection(len(texts))
-    if trivial is not None:
-        return trivial
-
-    import numpy as np
-    from sklearn.decomposition import TruncatedSVD
-    from sklearn.feature_extraction.text import TfidfVectorizer
-
-    vectorizer = TfidfVectorizer(max_features=2048, stop_words="english")
-    mat = vectorizer.fit_transform([t or "" for t in texts])
-    if mat.shape[0] < MIN_PROJECTABLE_ITEMS or mat.shape[1] < MIN_TFIDF_FEATURES:
-        return [[0.0, 0.0, 0.0] for _ in texts]
-
-    max_components = min(SEMANTIC_MAP_DIMENSIONS, mat.shape[0] - 1, mat.shape[1] - 1)
-    if max_components < 1:
-        return [[0.0, 0.0, 0.0] for _ in texts]
-
-    svd = TruncatedSVD(n_components=max_components, random_state=42)
-    coords = svd.fit_transform(mat)
-    coords = coords - np.mean(coords, axis=0, keepdims=True)
-
-    norms = np.linalg.norm(coords, axis=1)
-    max_norm = float(np.max(norms)) if coords.shape[0] else 1.0
-    if max_norm > 0:
-        coords = coords / max_norm
-
-    if coords.shape[1] < SEMANTIC_MAP_DIMENSIONS:
-        pad = np.zeros(
-            (coords.shape[0], SEMANTIC_MAP_DIMENSIONS - coords.shape[1]),
-            dtype=coords.dtype,
+    rows: list[DocChunkRow] = []
+    for ch in chunk_payloads:
+        ctokens = ch.tokens if ch.tokens is not None else _token_count(ch.text)
+        rows.append(
+            DocChunkRow(
+                doc_id=doc_id,
+                idx=ch.idx,
+                text=ch.text,
+                tokens=ctokens,
+                section=ch.section,
+                char_start=ch.char_start,
+                char_end=ch.char_end,
+                embedding=ch.embedding,
+                topics=None,
+                captured_at=captured_at,
+                captured_hour=captured_hour,
+                day_bucket=day_bucket,
+            )
         )
-        coords = np.concatenate([coords, pad], axis=1)
-
-    return [[float(row[0]), float(row[1]), float(row[2])] for row in coords]
-
-
-def _encode_cursor(*, created_at: datetime, doc_id: str) -> str:
-    payload = {"created_at": created_at.isoformat(), "id": doc_id}
-    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    return base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
-
-
-def _decode_cursor(cursor: str) -> tuple[datetime, str]:
-    if not cursor:
-        raise ValueError("cursor must not be empty")
-
-    padded = cursor + "=" * (-len(cursor) % 4)
-    try:
-        raw = base64.urlsafe_b64decode(padded.encode("utf-8"))
-        payload = json.loads(raw.decode("utf-8"))
-    except Exception as exc:
-        raise ValueError("Invalid cursor") from exc
-
-    if not isinstance(payload, dict):
-        raise ValueError("Invalid cursor")
-
-    created_at_raw = payload.get("created_at")
-    doc_id = payload.get("id")
-    if not isinstance(created_at_raw, str) or not isinstance(doc_id, str):
-        raise ValueError("Invalid cursor")
-
-    try:
-        created_at = datetime.fromisoformat(created_at_raw)
-    except Exception as exc:
-        raise ValueError("Invalid cursor") from exc
-    if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=timezone.utc)
-
-    return created_at, doc_id
+    return rows
 
 
 @contextmanager
@@ -486,7 +222,7 @@ class DocStorageService:
         )
         if not needs_extraction:
             return None
-        self.extraction_service = ExtractionService()
+        self.extraction_service = ExtractionService(llm_service=self._ensure_llm_service())
         return self.extraction_service
 
     def _ensure_llm_service(self) -> LLMService:
@@ -814,35 +550,21 @@ class DocStorageService:
             chunk_payloads = payload.chunks
             if (not chunk_payloads) and (cleaned_text or (payload.raw_markdown or "").strip()):
                 src_text = payload.raw_markdown or cleaned_text
-                chunk_payloads = _CHUNKING_SERVICE.chunk(
-                    src_text,
-                    max_tokens=tokens if tokens and tokens > 0 else 500,
-                    overlap=min(100, int((tokens or 500) * 0.2)),
+                chunk_payloads = _chunk_payloads_for_text(
+                    src_text=src_text,
+                    max_tokens=tokens,
                     content_type=(
                         "markdown" if payload.raw_markdown else (payload.content_type or "web")
                     ),
-                    mode="auto",
                 )
             if chunk_payloads:
-                chunk_rows: list[DocChunkRow] = []
-                for ch in chunk_payloads:
-                    ctokens = ch.tokens if ch.tokens is not None else _token_count(ch.text)
-                    chunk_rows.append(
-                        DocChunkRow(
-                            doc_id=doc_record.id,
-                            idx=ch.idx,
-                            text=ch.text,
-                            tokens=ctokens,
-                            section=ch.section,
-                            char_start=ch.char_start,
-                            char_end=ch.char_end,
-                            embedding=ch.embedding,
-                            topics=None,
-                            captured_at=captured_at,
-                            captured_hour=captured_hour,
-                            day_bucket=day_bucket,
-                        )
-                    )
+                chunk_rows = _build_doc_chunk_rows(
+                    doc_id=doc_record.id,
+                    chunk_payloads=list(chunk_payloads),
+                    captured_at=captured_at,
+                    captured_hour=captured_hour,
+                    day_bucket=day_bucket,
+                )
                 s.add_all(chunk_rows)
                 s.commit()
                 chunk_ids = [str(c.id) for c in chunk_rows]
@@ -858,7 +580,7 @@ class DocStorageService:
         """Generate missing chunks and (optionally) enrich/classify an existing document."""
         uid = _parse_uuid(doc_id)
         if uid is None:
-            raise ValueError("Invalid id")
+            raise BadRequestError("Invalid id", code="invalid_id")
 
         do_enrichment = bool(settings.enable_ingest_enrichment)
         do_classification = bool(settings.enable_ingest_classification)
@@ -894,7 +616,7 @@ class DocStorageService:
                 ),
             )
             if not doc:
-                raise ValueError("Document not found")
+                raise NotFoundError("Document not found", code="document_not_found")
 
             # ----------------- chunking -----------------
             existing_chunks = s.exec(
@@ -905,14 +627,12 @@ class DocStorageService:
                 src_text = (doc.raw_markdown or doc.cleaned_text or "").strip()
                 if src_text:
                     tokens = int(doc.tokens or 0) or _token_count(src_text)
-                    chunk_payloads = _CHUNKING_SERVICE.chunk(
-                        src_text,
-                        max_tokens=tokens if tokens > 0 else 500,
-                        overlap=min(100, int((tokens or 500) * 0.2)),
+                    chunk_payloads = _chunk_payloads_for_text(
+                        src_text=src_text,
+                        max_tokens=tokens,
                         content_type=(
                             "markdown" if doc.raw_markdown else (doc.content_type or "web")
                         ),
-                        mode="auto",
                     )
                     if chunk_payloads:
                         day_bucket = doc.day_bucket or _start_of_day_utc(doc.captured_at)
@@ -921,25 +641,13 @@ class DocStorageService:
                             if doc.captured_hour is not None
                             else doc.captured_at.astimezone(timezone.utc).hour
                         )
-                        chunk_rows: list[DocChunkRow] = []
-                        for ch in chunk_payloads:
-                            ctokens = ch.tokens if ch.tokens is not None else _token_count(ch.text)
-                            chunk_rows.append(
-                                DocChunkRow(
-                                    doc_id=uid,
-                                    idx=ch.idx,
-                                    text=ch.text,
-                                    tokens=ctokens,
-                                    section=ch.section,
-                                    char_start=ch.char_start,
-                                    char_end=ch.char_end,
-                                    embedding=ch.embedding,
-                                    topics=None,
-                                    captured_at=doc.captured_at,
-                                    captured_hour=captured_hour,
-                                    day_bucket=day_bucket,
-                                )
-                            )
+                        chunk_rows = _build_doc_chunk_rows(
+                            doc_id=uid,
+                            chunk_payloads=list(chunk_payloads),
+                            captured_at=doc.captured_at,
+                            captured_hour=captured_hour,
+                            day_bucket=day_bucket,
+                        )
                         s.add_all(chunk_rows)
                         s.commit()
                         created_chunks = len(chunk_rows)
@@ -1048,7 +756,7 @@ class DocStorageService:
     def enrich_document(self, doc_id: str, *, force: bool = False) -> Dict[str, Any]:
         uid = _parse_uuid(doc_id)
         if uid is None:
-            raise ValueError("Invalid id")
+            raise BadRequestError("Invalid id", code="invalid_id")
 
         with _session_scope(self.session) as s:
             doc = s.get(
@@ -1072,7 +780,7 @@ class DocStorageService:
                 ),
             )
             if not doc:
-                raise ValueError("Document not found")
+                raise NotFoundError("Document not found", code="document_not_found")
 
             if (not force) and doc.enrichment:
                 return {"id": doc_id, "skipped": True}
@@ -1219,19 +927,19 @@ class DocStorageService:
 
         uid = _parse_uuid(doc_id)
         if uid is None:
-            raise ValueError("Invalid id")
+            raise BadRequestError("Invalid id", code="invalid_id")
 
         with _session_scope(self.session) as s:
             doc = s.get(DocumentRow, uid)
             if not doc:
-                raise ValueError("Document not found")
+                raise NotFoundError("Document not found", code="document_not_found")
 
             if (not force) and doc.concepts_extracted_at:
                 return {"id": doc_id, "skipped": True}
 
             text = (doc.raw_markdown or doc.cleaned_text or "").strip()
             if not text:
-                raise ValueError("Document has no text")
+                raise BadRequestError("Document has no text", code="missing_document_text")
 
             now = datetime.utcnow().replace(tzinfo=timezone.utc)
             extractor = self.extraction_service or ExtractionService(
@@ -1445,7 +1153,7 @@ class DocStorageService:
 
         uid = _parse_uuid(doc_id)
         if uid is None:
-            raise ValueError("Invalid id")
+            raise BadRequestError("Invalid id", code="invalid_id")
 
         now = datetime.now(timezone.utc)
 
@@ -1520,7 +1228,7 @@ class DocStorageService:
 
         uid = _parse_uuid(doc_id)
         if uid is None:
-            raise ValueError("Invalid id")
+            raise BadRequestError("Invalid id", code="invalid_id")
 
         with _session_scope(self.session) as s:
             row = s.exec(
@@ -1536,7 +1244,7 @@ class DocStorageService:
                 ).where(DocumentRow.id == uid)
             ).one_or_none()
             if row is None:
-                raise ValueError("Document not found")
+                raise NotFoundError("Document not found", code="document_not_found")
 
             image_existing, meta, title_raw, topics, summary, domain, raw_markdown, cleaned_text = (
                 row
@@ -1670,7 +1378,7 @@ class DocStorageService:
             cursor_created_at, cursor_id = _decode_cursor(cursor)
             cursor_uuid = _parse_uuid(cursor_id)
             if cursor_uuid is None:
-                raise ValueError("Invalid cursor")
+                raise BadRequestError("Invalid cursor", code="invalid_cursor")
 
         with _session_scope(self.session) as s:
             has_image = (DocumentRow.image.isnot(None)).label("has_image")
@@ -1916,7 +1624,22 @@ class DocStorageService:
         limit: int = 20,
     ) -> Dict[str, Any]:
         with _session_scope(self.session) as s:
-            stmt = select(DocumentRow).order_by(DocumentRow.captured_at.desc())
+            stmt = (
+                select(DocumentRow)
+                .options(
+                    load_only(
+                        DocumentRow.id,
+                        DocumentRow.title,
+                        DocumentRow.source_url,
+                        DocumentRow.canonical_url,
+                        DocumentRow.topics,
+                        DocumentRow.captured_at,
+                        DocumentRow.tokens,
+                        DocumentRow.summary,
+                    )
+                )
+                .order_by(DocumentRow.captured_at.desc())
+            )
             count_stmt = select(func.count()).select_from(DocumentRow)
 
             conditions = []
@@ -1971,12 +1694,26 @@ class DocStorageService:
         limit: int = 20,
     ) -> Dict[str, Any]:
         with _session_scope(self.session) as s:
-            stmt = select(DocChunkRow).order_by(DocChunkRow.captured_at.desc())
+            stmt = (
+                select(DocChunkRow)
+                .options(
+                    load_only(
+                        DocChunkRow.id,
+                        DocChunkRow.doc_id,
+                        DocChunkRow.idx,
+                        DocChunkRow.section,
+                        DocChunkRow.text,
+                        DocChunkRow.captured_at,
+                        DocChunkRow.day_bucket,
+                    )
+                )
+                .order_by(DocChunkRow.captured_at.desc())
+            )
             count_stmt = select(func.count()).select_from(DocChunkRow)
 
             uid = _parse_uuid(doc_id) if doc_id else None
             if doc_id and uid is None:
-                raise ValueError("Invalid doc_id")
+                raise BadRequestError("Invalid doc_id", code="invalid_id")
 
             conditions = []
             if uid is not None:
