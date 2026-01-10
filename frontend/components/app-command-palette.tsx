@@ -3,10 +3,11 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { ListChecks, Moon, Search, Sun } from "lucide-react";
+import { Bell, ListChecks, Moon, Search, Sun } from "lucide-react";
 
 import { appNavItems } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
+import { useFollowUps } from "@/features/follow-ups/follow-up-provider";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 
 import { Button } from "@/components/ui/button";
@@ -78,6 +79,7 @@ function AppCommandPaletteDialog({
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
   const { activeCount, setTaskCenterOpen } = useTaskTracker();
+  const { dueNowCount, setFollowUpCenterOpen } = useFollowUps();
   const platformShortcut = usePlatformShortcut();
   const themeShortcut = useThemeToggleShortcut();
   const [query, setQuery] = React.useState("");
@@ -131,6 +133,22 @@ function AppCommandPaletteDialog({
             <ListChecks className="h-4 w-4" aria-hidden="true" />
             <span>Task center</span>
             {activeCount ? <CommandShortcut>{activeCount} active</CommandShortcut> : null}
+          </CommandItem>
+        </CommandGroup>
+
+        <CommandSeparator />
+
+        <CommandGroup heading="Follow-ups">
+          <CommandItem
+            value="follow ups followups reminders"
+            onSelect={() => {
+              setFollowUpCenterOpen(true);
+              onOpenChange(false);
+            }}
+          >
+            <Bell className="h-4 w-4" aria-hidden="true" />
+            <span>Follow-up center</span>
+            {dueNowCount ? <CommandShortcut>{dueNowCount} due</CommandShortcut> : null}
           </CommandItem>
         </CommandGroup>
 

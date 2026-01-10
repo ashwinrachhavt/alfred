@@ -1,4 +1,5 @@
 import {
+  Bell,
   BookOpen,
   Calendar,
   Command,
@@ -57,7 +58,13 @@ export const appNavItems: AppNavItem[] = [
     icon: NotepadText,
     keywords: ["notion", "integration", "sync", "import"],
   },
-  { key: "calendar", title: "Calendar", href: "/calendar", icon: Calendar, keywords: ["calendar"] },
+  {
+    key: "calendar",
+    title: "Calendar",
+    href: "/calendar",
+    icon: Calendar,
+    keywords: ["calendar", "email", "gmail", "scan", "inbox"],
+  },
   {
     key: "system-design",
     title: "System Design",
@@ -80,6 +87,13 @@ export const appNavItems: AppNavItem[] = [
     keywords: ["threads", "history", "messages", "conversation"],
   },
   { key: "rag", title: "RAG", href: "/rag", icon: MessageCircle, keywords: ["rag", "chat", "qa"] },
+  {
+    key: "follow-ups",
+    title: "Follow-ups",
+    href: "/follow-ups",
+    icon: Bell,
+    keywords: ["follow ups", "follow-ups", "reminders", "pending", "nudge"],
+  },
   {
     key: "tasks",
     title: "Tasks",
