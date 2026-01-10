@@ -2,10 +2,13 @@
 Airtable connector for fetching records from Airtable bases.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import re
 import time
+from http import HTTPStatus
 from typing import Any
 
 import httpx
@@ -15,6 +18,13 @@ from alfred.schemas.airtable_auth_credentials import AirtableAuthCredentialsBase
 
 logger = logging.getLogger(__name__)
 
+AIRTABLE_API_BASE_URL = "https://api.airtable.com/v0"
+AIRTABLE_API_DEFAULT_TIMEOUT_S = 30.0
+AIRTABLE_API_MAX_PAGE_SIZE = 100
+AIRTABLE_API_MAX_RETRIES = 3
+AIRTABLE_API_INITIAL_RETRY_DELAY_S = 1
+AIRTABLE_API_PAGINATION_SLEEP_S = 0.1
+
 
 class AirtableConnector:
     """
@@ -23,16 +33,16 @@ class AirtableConnector:
 
     _DATE_ONLY_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
-    def __init__(self, credentials: AirtableAuthCredentialsBase):
+    def __init__(self, credentials: AirtableAuthCredentialsBase) -> None:
         """
         Initialize the AirtableConnector with OAuth credentials.
 
         Args:
             credentials: Airtable OAuth credentials
         """
-        self.credentials = credentials
-        self.base_url = "https://api.airtable.com/v0"
-        self._client = None
+        self.credentials: AirtableAuthCredentialsBase = credentials
+        self.base_url: str = AIRTABLE_API_BASE_URL
+        self._client: httpx.Client | None = None
 
     def _get_client(self) -> httpx.Client:
         """
@@ -48,13 +58,13 @@ class AirtableConnector:
             }
             self._client = httpx.Client(
                 headers=headers,
-                timeout=30.0,
+                timeout=AIRTABLE_API_DEFAULT_TIMEOUT_S,
                 follow_redirects=True,
             )
         return self._client
 
     def _make_request(
-        self, method: str, url: str, **kwargs
+        self, method: str, url: str, **kwargs: Any
     ) -> tuple[dict[str, Any] | None, str | None]:
         """
         Make an HTTP request with error handling and retry logic.
@@ -68,34 +78,36 @@ class AirtableConnector:
             Tuple of (response_data, error_message)
         """
         client = self._get_client()
-        max_retries = 3
-        retry_delay = 1
+        max_retries = AIRTABLE_API_MAX_RETRIES
+        retry_delay = AIRTABLE_API_INITIAL_RETRY_DELAY_S
 
         for attempt in range(max_retries):
             try:
                 response = client.request(method, url, **kwargs)
 
-                if response.status_code == 429:
+                if response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
                     # Rate limited - wait and retry
                     retry_after = int(response.headers.get("Retry-After", retry_delay))
                     logger.warning(
-                        f"Rate limited by Airtable API. Waiting {retry_after} seconds. "
-                        f"Attempt {attempt + 1}/{max_retries}"
+                        "Rate limited by Airtable API. Waiting %s seconds. Attempt %s/%s",
+                        retry_after,
+                        attempt + 1,
+                        max_retries,
                     )
                     time.sleep(retry_after)
                     retry_delay *= 2
                     continue
 
-                if response.status_code == 401:
+                if response.status_code == HTTPStatus.UNAUTHORIZED:
                     return None, "Authentication failed. Please check your credentials."
 
-                if response.status_code == 403:
+                if response.status_code == HTTPStatus.FORBIDDEN:
                     return (
                         None,
                         "Access forbidden. Please check your permissions and scopes.",
                     )
 
-                if response.status_code >= 400:
+                if response.status_code >= HTTPStatus.BAD_REQUEST:
                     error_detail = response.text
                     try:
                         error_json = response.json()
@@ -109,15 +121,20 @@ class AirtableConnector:
             except httpx.TimeoutException:
                 if attempt == max_retries - 1:
                     return None, "Request timeout. Please try again later."
-                logger.warning(f"Request timeout. Retrying... Attempt {attempt + 1}/{max_retries}")
+                logger.warning(
+                    "Request timeout. Retrying... Attempt %s/%s", attempt + 1, max_retries
+                )
                 time.sleep(retry_delay)
                 retry_delay *= 2
 
-            except Exception as e:
+            except Exception as exc:
                 if attempt == max_retries - 1:
-                    return None, f"Request failed: {e!s}"
+                    return None, f"Request failed: {exc!s}"
                 logger.warning(
-                    f"Request failed: {e!s}. Retrying... Attempt {attempt + 1}/{max_retries}"
+                    "Request failed: %s. Retrying... Attempt %s/%s",
+                    exc,
+                    attempt + 1,
+                    max_retries,
                 )
                 time.sleep(retry_delay)
                 retry_delay *= 2
@@ -184,7 +201,7 @@ class AirtableConnector:
 
         params = {}
         if max_records:
-            params["maxRecords"] = min(max_records, 100)  # Airtable max is 100
+            params["maxRecords"] = min(max_records, AIRTABLE_API_MAX_PAGE_SIZE)
         if offset:
             params["offset"] = offset
         if filter_by_formula:
@@ -265,7 +282,7 @@ class AirtableConnector:
             offset = next_offset
 
             # Small delay to be respectful to the API
-            time.sleep(0.1)
+            time.sleep(AIRTABLE_API_PAGINATION_SLEEP_S)
 
         return all_records, None
 
