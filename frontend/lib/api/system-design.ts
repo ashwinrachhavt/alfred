@@ -14,6 +14,7 @@ import type {
   SystemDesignPublishResponse,
   SystemDesignSession,
   SystemDesignSessionCreate,
+  SystemDesignSessionSummary,
   SystemDesignSessionUpdate,
   TemplateDefinition,
 } from "@/lib/api/types/system-design";
@@ -28,6 +29,15 @@ export async function createSystemDesignSession(
       cache: "no-store",
     },
   );
+}
+
+export async function listSystemDesignSessions(
+  limit = 20,
+): Promise<SystemDesignSessionSummary[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  return apiFetch<SystemDesignSessionSummary[]>(`/api/system-design/sessions?${params.toString()}`, {
+    cache: "no-store",
+  });
 }
 
 export async function getSystemDesignSession(sessionId: string): Promise<SystemDesignSession> {

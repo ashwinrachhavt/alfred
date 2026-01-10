@@ -103,9 +103,16 @@ async function safeReadJson(response: Response): Promise<unknown> {
 function coerceErrorMessage(payload: unknown, fallback: string): string {
   if (!payload) return fallback;
   if (typeof payload === "string") return payload;
-  if (typeof payload === "object" && "detail" in payload) {
-    const detail = (payload as { detail?: unknown }).detail;
-    if (typeof detail === "string") return detail;
+  if (typeof payload === "object") {
+    if ("detail" in payload) {
+      const detail = (payload as { detail?: unknown }).detail;
+      if (typeof detail === "string") return detail;
+    }
+
+    if ("error" in payload) {
+      const error = (payload as { error?: unknown }).error;
+      if (typeof error === "string") return error;
+    }
   }
   return fallback;
 }

@@ -106,6 +106,11 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
 
   const autosaveTimerRef = useRef<number | null>(null);
   const latestDiagramRef = useRef<ExcalidrawData | null>(null);
+  const autosaveInFlightRef = useRef<Promise<void> | null>(null);
+  const autosaveFlushRef = useRef<Promise<void> | null>(null);
+  const diagramRevisionRef = useRef(0);
+  const lastSavedRevisionRef = useRef(0);
+  const sessionVersionRef = useRef<number>(1);
 
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -182,6 +187,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
       try {
         const next = await getSystemDesignSession(sessionId);
         setSession(next);
+        sessionVersionRef.current = next.version;
         setProblemStatement(next.problem_statement);
         if (!notesInitializedRef.current) {
           const initialNotes = next.notes_markdown ?? "";
@@ -276,22 +282,61 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
       window.clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = null;
     }
-    setAutosaveState("saving");
-    try {
-      const next = await autosaveSystemDesignDiagram(sessionId, {
-        diagram: latestDiagramRef.current,
-        label: null,
-      });
-      setSession((prev) => (prev ? { ...prev, updated_at: next.updated_at } : prev));
-      setAutosaveState("saved");
-    } catch (err) {
-      setAutosaveState("error");
-      throw err;
+
+    if (autosaveFlushRef.current) {
+      return autosaveFlushRef.current;
     }
+
+    const flushPromise = (async () => {
+      while (latestDiagramRef.current && lastSavedRevisionRef.current < diagramRevisionRef.current) {
+        if (autosaveInFlightRef.current) {
+          await autosaveInFlightRef.current;
+          continue;
+        }
+
+        const diagramToSave = latestDiagramRef.current;
+        const expectedVersion = sessionVersionRef.current;
+        const revisionToSave = diagramRevisionRef.current;
+
+        setAutosaveState("saving");
+        const savePromise = autosaveSystemDesignDiagram(sessionId, {
+          diagram: diagramToSave,
+          label: null,
+          expected_version: expectedVersion,
+        })
+          .then((next) => {
+            sessionVersionRef.current = next.version;
+            lastSavedRevisionRef.current = revisionToSave;
+            setSession((prev) =>
+              prev ? { ...prev, updated_at: next.updated_at, version: next.version } : prev,
+            );
+            setAutosaveState("saved");
+          })
+          .catch((err) => {
+            setAutosaveState("error");
+            if (err instanceof ApiError && err.status === 409) {
+              setActionError(formatErrorMessage(err));
+            }
+            throw err;
+          })
+          .finally(() => {
+            autosaveInFlightRef.current = null;
+          });
+
+        autosaveInFlightRef.current = savePromise;
+        await savePromise;
+      }
+    })().finally(() => {
+      autosaveFlushRef.current = null;
+    });
+
+    autosaveFlushRef.current = flushPromise;
+    return flushPromise;
   }
 
   function queueAutosave(diagram: ExcalidrawData) {
     latestDiagramRef.current = diagram;
+    diagramRevisionRef.current += 1;
     setAutosaveState("dirty");
 
     if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
