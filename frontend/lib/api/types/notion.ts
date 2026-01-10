@@ -10,4 +10,3 @@ export type NotionHistoryResponse = {
   count: number;
   pages: NotionHistoryPage[];
 };
-

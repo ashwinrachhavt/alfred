@@ -22,7 +22,6 @@ function formatErrorMessage(error: unknown): string {
 }
 
 function toDateInputValue(iso: string): string {
-  // Accepts ISO strings like "2026-01-10T14:30:00Z" and returns "2026-01-10".
   const match = iso.match(/^(\d{4}-\d{2}-\d{2})/);
   return match ? match[1] : "";
 }

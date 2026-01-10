@@ -52,3 +52,30 @@ export type CompanyResearchReportSummary = {
 export type CompanyResearchReportPayloadResponse = CompanyResearchPayload & {
   id: string;
 };
+
+export type CompanyInsightsResponse = Record<string, unknown>;
+
+export type CompanyOutreachResponse = Record<string, unknown>;
+
+export type ContactProvider = "hunter" | "apollo" | "snov";
+
+export type CompanyContactsResponse = Record<string, unknown>;
+
+export type OutreachRequest = {
+  name: string;
+  role?: string | null;
+  context?: string | null;
+  k?: number | null;
+};
+
+export type OutreachSendRequest = {
+  company: string;
+  contact_email: string;
+  contact_name?: string | null;
+  contact_title?: string | null;
+  subject: string;
+  body: string;
+  dry_run?: boolean;
+};
+
+export type OutreachSendResponse = Record<string, unknown>;

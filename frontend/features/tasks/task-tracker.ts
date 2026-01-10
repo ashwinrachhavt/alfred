@@ -1,6 +1,12 @@
 import type { TaskStatusResponse } from "@/lib/api/types/tasks";
 
-export type TaskSource = "company_research" | "interview_prep" | "generic";
+export type TaskSource =
+  | "company_research"
+  | "company_insights"
+  | "interview_prep"
+  | "mind_palace"
+  | "admin"
+  | "generic";
 
 export type TrackedTask = {
   id: string;

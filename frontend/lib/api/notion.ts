@@ -23,6 +23,7 @@ function buildQuery(params: GetNotionHistoryParams): string {
 export async function getNotionHistory(
   params: GetNotionHistoryParams = {},
 ): Promise<NotionHistoryResponse> {
-  return apiFetch(`/api/notion/history${buildQuery(params)}`);
+  return apiFetch<NotionHistoryResponse>(`/api/notion/history${buildQuery(params)}`, {
+    cache: "no-store",
+  });
 }
-
