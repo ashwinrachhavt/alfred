@@ -57,9 +57,10 @@ export function apiUrl(path: string): string {
 }
 
 function createTimeoutSignal(
-  signal: AbortSignal | undefined,
+  signal: AbortSignal | null | undefined,
   timeoutMs: number,
 ): { signal: AbortSignal | undefined; cleanup: () => void; timedOut: () => boolean } {
+  signal = signal ?? undefined;
   if (timeoutMs <= 0) {
     return { signal, cleanup: () => {}, timedOut: () => false };
   }
