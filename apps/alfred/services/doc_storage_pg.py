@@ -1408,9 +1408,11 @@ class DocStorageService:
         self,
         doc_id: str,
         *,
+        title: str | None = None,
         cleaned_text: str | None = None,
         raw_markdown: str | None = None,
         tiptap_json: dict[str, Any] | None = None,
+        metadata_update: dict[str, Any] | None = None,
     ) -> Dict[str, Any] | None:
         """Update a document's editable text payload.
 
@@ -1418,6 +1420,7 @@ class DocStorageService:
         - Keeps the document identity stable (does not change hash/source_url).
         - Updates `updated_at` and refreshes `tokens` when plain-text changes.
         - Optionally stores TipTap editor JSON under metadata.
+        - Optionally merges additional metadata onto the document record.
         """
 
         uid = _parse_uuid(doc_id)
@@ -1430,6 +1433,9 @@ class DocStorageService:
             doc = s.get(DocumentRow, uid)
             if not doc:
                 return None
+
+            if title is not None:
+                doc.title = title
 
             if cleaned_text is not None:
                 doc.cleaned_text = cleaned_text
@@ -1446,6 +1452,16 @@ class DocStorageService:
                 editor_meta = dict(editor_meta)
                 editor_meta.update({"provider": "tiptap", "tiptap_json": tiptap_json})
                 meta["editor"] = editor_meta
+                doc.meta = meta
+
+            if metadata_update is not None:
+                meta = dict(doc.meta or {})
+                updates = dict(metadata_update)
+                if isinstance(updates.get("notion"), dict) and isinstance(meta.get("notion"), dict):
+                    merged = dict(meta["notion"])
+                    merged.update(updates["notion"])
+                    updates["notion"] = merged
+                meta.update(updates)
                 doc.meta = meta
 
             doc.updated_at = now

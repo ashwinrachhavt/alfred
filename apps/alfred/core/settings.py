@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     notion_clients_db_id: str | None = Field(default=None, alias="NOTION_CLIENTS_DB_ID")
     notion_notes_db_id: str | None = Field(default=None, alias="NOTION_NOTES_DB_ID")
 
+    # Notion OAuth (optional)
+    notion_client_id: str | None = Field(default=None, alias="NOTION_CLIENT_ID")
+    notion_client_secret: SecretStr | None = Field(default=None, alias="NOTION_CLIENT_SECRET")
+    notion_redirect_uri: Optional[AnyHttpUrl] = Field(default=None, alias="NOTION_REDIRECT_URI")
+
     # Qdrant
     qdrant_url: str | None = Field(default=None, alias="QDRANT_URL")
     qdrant_api_key: SecretStr | None = Field(default=None, alias="QDRANT_API_KEY")
