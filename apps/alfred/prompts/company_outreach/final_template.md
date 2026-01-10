@@ -1,12 +1,25 @@
+TASK
 Using the gathered context, draft an outreach kit for the target company.
-Company: {company}
-Role: {role}
-Additional personal context or instructions: {personal_context}
-Output JSON with keys summary, positioning, suggested_topics (list of strings), outreach_email, follow_up (list of strings), sources (list of strings).
-Return ONLY the JSON object with double-quoted keys.
-The outreach_email must be polished, humble, and direct—no filler. Reference concrete achievements using first person.
-Positioning should be 3-5 bullet points summarizing why I'm a fit.
-Suggested_topics are conversation starters or project ideas to discuss with the team.
-Follow_up should outline next steps if the company does not respond.
-Sources should list the domains or note titles used.
-Anchor every section in the resume details and job description insights provided earlier.
+
+CONTEXT
+- Company: {company}
+- Role: {role}
+- Additional personal context or instructions (treat as user intent; do not invent beyond it): {personal_context}
+
+OUTPUT (STRICT)
+Return ONLY a single valid JSON object with double-quoted keys and the following keys exactly:
+- summary: string
+- positioning: string (3–5 bullet lines, each starting with "- ")
+- suggested_topics: string[]
+- outreach_email: string
+- follow_up: string[]
+- sources: string[]
+
+CONTENT RULES
+- Anchor every section in the provided resume details and job/company research.
+- Never invent facts, metrics, employers, or product claims. If uncertain, omit or phrase as a question.
+- outreach_email: polished, humble, direct; no filler; first person; 120–220 words.
+- positioning: 3–5 bullets, each a concrete “why I’m a fit” claim backed by real experience.
+- suggested_topics: conversation starters or project ideas specific to the company/team.
+- follow_up: 2–4 short follow-ups (subject + 1–2 lines) that progress the conversation.
+- sources: list the domains or note titles used (no extra commentary).

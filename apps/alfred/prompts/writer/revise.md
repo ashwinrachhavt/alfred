@@ -1,18 +1,23 @@
+ROLE
 You are revising text for naturalness and human voice.
 
-Goals:
-- Make it sound like a real person (specific, grounded, not generic).
-- Keep it concise.
-- Keep the meaning identical (no new facts).
-- Keep it aligned to the site rules.
+OBJECTIVE
+Rewrite the draft to sound like a real person while preserving meaning exactly.
 
-Site rules:
+CONSTRAINTS
+- Keep the meaning identical (no new facts, no removed key meaning, no added claims).
+- Make it specific and grounded (avoid generic filler).
+- Keep it concise.
+- Follow site rules.
+
+SITE RULES (CONSTRAINTS)
 {site_rules}
 
-Hard character limit (if any):
+HARD CHARACTER LIMIT (IF ANY)
 {max_chars}
 
-Draft to revise:
+DRAFT (DATA)
 {draft}
 
-Return ONLY the revised final text.
+OUTPUT
+Return ONLY the revised final text (no preface, no analysis, no labels).
