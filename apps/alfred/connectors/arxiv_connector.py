@@ -32,6 +32,21 @@ logger = logging.getLogger(__name__)
 VALID_SORT_BY = {"relevance", "lastUpdatedDate", "submittedDate"}
 VALID_SORT_ORDER = {"ascending", "descending"}
 
+ARXIV_QUERY_DATE_DIGITS_LEN = 8
+ARXIV_ISO_DATE_LEN = 10
+ARXIV_ISO_DATE_SEP_POSITIONS = (4, 7)
+ARXIV_ISO_DATE_SEPARATORS = {"-", "/"}
+ARXIV_ISO_DATE_FORMAT = "%Y-%m-%d"
+
+
+def _looks_like_iso_date(text: str) -> bool:
+    if len(text) != ARXIV_ISO_DATE_LEN:
+        return False
+    return (
+        text[ARXIV_ISO_DATE_SEP_POSITIONS[0]] in ARXIV_ISO_DATE_SEPARATORS
+        and text[ARXIV_ISO_DATE_SEP_POSITIONS[1]] in ARXIV_ISO_DATE_SEPARATORS
+    )
+
 
 def _normalize_date(value: date | datetime | str) -> str:
     """Normalize date-like inputs into the YYYYMMDD format expected by arXiv queries."""
@@ -39,11 +54,12 @@ def _normalize_date(value: date | datetime | str) -> str:
         return value.strftime("%Y%m%d")
     text = str(value).strip()
     digits = [c for c in text if c.isdigit()]
-    if len(digits) == 8:
+    if len(digits) == ARXIV_QUERY_DATE_DIGITS_LEN:
         return "".join(digits)
-    if len(text) == 10 and text[4] in {"-", "/"} and text[7] in {"-", "/"}:
+    if _looks_like_iso_date(text):
         try:
-            return datetime.strptime(text, "%Y-%m-%d").strftime("%Y%m%d")
+            normalized = text.replace("/", "-")
+            return datetime.strptime(normalized, ARXIV_ISO_DATE_FORMAT).strftime("%Y%m%d")
         except Exception:  # pragma: no cover - fallback to raw
             return "".join(digits)
     return "".join(digits)
