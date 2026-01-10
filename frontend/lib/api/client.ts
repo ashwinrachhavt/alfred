@@ -60,9 +60,9 @@ function createTimeoutSignal(
   signal: AbortSignal | null | undefined,
   timeoutMs: number,
 ): { signal: AbortSignal | undefined; cleanup: () => void; timedOut: () => boolean } {
-  signal = signal ?? undefined;
+  const upstreamSignal = signal ?? undefined;
   if (timeoutMs <= 0) {
-    return { signal, cleanup: () => {}, timedOut: () => false };
+    return { signal: upstreamSignal, cleanup: () => {}, timedOut: () => false };
   }
 
   const controller = new AbortController();
@@ -70,13 +70,13 @@ function createTimeoutSignal(
 
   const cleanupFns: Array<() => void> = [];
 
-  if (signal) {
-    if (signal.aborted) {
-      controller.abort(signal.reason);
+  if (upstreamSignal) {
+    if (upstreamSignal.aborted) {
+      controller.abort(upstreamSignal.reason);
     } else {
-      const onAbort = () => controller.abort(signal.reason);
-      signal.addEventListener("abort", onAbort, { once: true });
-      cleanupFns.push(() => signal.removeEventListener("abort", onAbort));
+      const onAbort = () => controller.abort(upstreamSignal.reason);
+      upstreamSignal.addEventListener("abort", onAbort, { once: true });
+      cleanupFns.push(() => upstreamSignal.removeEventListener("abort", onAbort));
     }
   }
 
