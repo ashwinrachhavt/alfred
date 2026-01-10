@@ -5,6 +5,13 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
+HSL_LIGHTNESS_MIDPOINT = 0.5
+TRIVIAL_PAIR_COUNT = 2
+MIN_PROJECTABLE_ITEMS = 3
+MATRIX_EXPECTED_NDIM = 2
+SEMANTIC_MAP_DIMENSIONS = 3
+MIN_TFIDF_FEATURES = 2
+
 
 def _hsl_to_hex(*, hue: float, saturation: float, lightness: float) -> str:
     """Convert HSL (0-360, 0-1, 0-1) to hex RGB string."""
@@ -32,7 +39,7 @@ def _hsl_to_hex(*, hue: float, saturation: float, lightness: float) -> str:
     if s == 0:
         r = g = b = light
     else:
-        q = light * (1 + s) if light < 0.5 else light + s - light * s
+        q = light * (1 + s) if light < HSL_LIGHTNESS_MIDPOINT else light + s - light * s
         p = 2 * light - q
         r = _hue_to_rgb(p, q, h + 1 / 3)
         g = _hue_to_rgb(p, q, h)
@@ -82,7 +89,7 @@ def project_vectors_to_3d(vectors: list[list[float]]) -> list[list[float]]:
 
     if len(vectors) == 1:
         return [[0.0, 0.0, 0.0]]
-    if len(vectors) == 2:
+    if len(vectors) == TRIVIAL_PAIR_COUNT:
         return [[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
 
     import numpy as np
@@ -90,16 +97,16 @@ def project_vectors_to_3d(vectors: list[list[float]]) -> list[list[float]]:
 
     dim = len(vectors[0])
     same_dim = [v for v in vectors if isinstance(v, list) and len(v) == dim]
-    if len(same_dim) < 3:
+    if len(same_dim) < MIN_PROJECTABLE_ITEMS:
         return [[0.0, 0.0, 0.0] for _ in vectors]
 
     mat = np.asarray(same_dim, dtype=np.float32)
-    if mat.ndim != 2 or mat.shape[0] < 3:
+    if mat.ndim != MATRIX_EXPECTED_NDIM or mat.shape[0] < MIN_PROJECTABLE_ITEMS:
         return [[0.0, 0.0, 0.0] for _ in vectors]
 
     mat = np.where(np.isfinite(mat), mat, 0.0).astype(np.float32, copy=False)
 
-    pca = PCA(n_components=3)
+    pca = PCA(n_components=SEMANTIC_MAP_DIMENSIONS)
     coords = pca.fit_transform(mat)
     coords = coords - np.mean(coords, axis=0, keepdims=True)
 
@@ -118,7 +125,7 @@ def project_texts_to_3d(texts: list[str]) -> list[list[float]]:
         return []
     if len(texts) == 1:
         return [[0.0, 0.0, 0.0]]
-    if len(texts) == 2:
+    if len(texts) == TRIVIAL_PAIR_COUNT:
         return [[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
 
     import numpy as np
@@ -127,10 +134,10 @@ def project_texts_to_3d(texts: list[str]) -> list[list[float]]:
 
     vectorizer = TfidfVectorizer(max_features=2048, stop_words="english")
     mat = vectorizer.fit_transform([t or "" for t in texts])
-    if mat.shape[0] < 3 or mat.shape[1] < 2:
+    if mat.shape[0] < MIN_PROJECTABLE_ITEMS or mat.shape[1] < MIN_TFIDF_FEATURES:
         return [[0.0, 0.0, 0.0] for _ in texts]
 
-    max_components = min(3, mat.shape[0] - 1, mat.shape[1] - 1)
+    max_components = min(SEMANTIC_MAP_DIMENSIONS, mat.shape[0] - 1, mat.shape[1] - 1)
     if max_components < 1:
         return [[0.0, 0.0, 0.0] for _ in texts]
 
@@ -143,8 +150,11 @@ def project_texts_to_3d(texts: list[str]) -> list[list[float]]:
     if max_norm > 0:
         coords = coords / max_norm
 
-    if coords.shape[1] < 3:
-        pad = np.zeros((coords.shape[0], 3 - coords.shape[1]), dtype=coords.dtype)
+    if coords.shape[1] < SEMANTIC_MAP_DIMENSIONS:
+        pad = np.zeros(
+            (coords.shape[0], SEMANTIC_MAP_DIMENSIONS - coords.shape[1]),
+            dtype=coords.dtype,
+        )
         coords = np.concatenate([coords, pad], axis=1)
 
     return [[float(row[0]), float(row[1]), float(row[2])] for row in coords]
