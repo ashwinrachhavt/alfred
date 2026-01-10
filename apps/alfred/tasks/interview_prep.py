@@ -6,7 +6,12 @@ from typing import Any
 
 from celery import shared_task
 
-from alfred.core.dependencies import get_interview_prep_service
+from alfred.core.dependencies import (
+    get_company_research_service,
+    get_doc_storage_service,
+    get_interview_prep_service,
+    get_llm_service,
+)
 from alfred.core.settings import settings
 from alfred.core.utils import clamp_int
 from alfred.core.utils import utcnow as _utcnow
@@ -62,13 +67,20 @@ def generate_interview_prep_task(*, interview_id: str, force: bool = False) -> d
     )
 
     logger.info("Generating interview prep for %s (%s)", company, role)
-    prep_doc = InterviewPrepDocGenerator().generate_prep_doc(
+    llm = get_llm_service()
+    prep_doc = InterviewPrepDocGenerator(
+        llm=llm,
+        company_research_service=get_company_research_service(),
+        doc_storage=get_doc_storage_service(),
+    ).generate_prep_doc(
         company=company,
         role=role,
         interview_type=interview_type,
         interview_date=interview_date,
     )
-    quiz = InterviewQuizGenerator().generate_quiz(company=company, role=role, prep_doc=prep_doc)
+    quiz = InterviewQuizGenerator(llm=llm).generate_quiz(
+        company=company, role=role, prep_doc=prep_doc
+    )
     md = InterviewPrepRenderer().render(company=company, role=role, doc=prep_doc)
 
     svc.update(

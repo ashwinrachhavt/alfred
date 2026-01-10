@@ -89,6 +89,7 @@ def get_doc_storage_service() -> DocStorageService:
         session=None,
         graph_service=get_graph_service(),
         extraction_service=get_extraction_service(),
+        llm_service=get_llm_service(),
         redis_client=get_redis_client(),
     )
 

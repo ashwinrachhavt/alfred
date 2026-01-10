@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from alfred.api.documents import routes as doc_routes
+from alfred.core.exceptions import register_exception_handlers
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -42,6 +43,7 @@ class _FakeDocStorage:
 
 def _app_with_fake_service() -> TestClient:
     app = FastAPI()
+    register_exception_handlers(app)
     app.include_router(doc_routes.router)
 
     fake = _FakeDocStorage()
