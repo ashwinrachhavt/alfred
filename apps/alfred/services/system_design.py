@@ -4,6 +4,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from alfred.core.exceptions import AlfredException
 from alfred.core.settings import settings
 from alfred.core.utils import utcnow as _utcnow
 from alfred.schemas.system_design import (
@@ -24,6 +25,7 @@ from alfred.schemas.system_design import (
     SystemDesignKnowledgeDraft,
     SystemDesignSession,
     SystemDesignSessionCreate,
+    SystemDesignSessionSummary,
     SystemDesignSessionUpdate,
     TemplateDefinition,
 )
@@ -35,6 +37,24 @@ from alfred.services.system_design_interviewer import SystemDesignInterviewer
 
 def _new_id() -> str:
     return uuid.uuid4().hex
+
+
+MAX_AUTOSAVE_RETRIES = 5
+
+
+class SystemDesignSessionVersionConflictError(AlfredException):
+    """Raised when a client attempts to update a stale diagram version."""
+
+    status_code = 409
+    default_code = "system_design_session_version_conflict"
+
+
+def _coerce_version(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except Exception:
+        return 1
+    return parsed if parsed >= 1 else 1
 
 
 @dataclass
@@ -71,6 +91,7 @@ class SystemDesignService:
             "template_id": payload.template_id,
             "notes_markdown": "",
             "diagram": diagram.model_dump(by_alias=True),
+            "version": 1,
             "versions": [],
             "exports": [],
             "artifacts": SystemDesignArtifacts().model_dump(),
@@ -86,6 +107,14 @@ class SystemDesignService:
         if not doc:
             return None
         return self._to_session(str(doc["_id"]), doc)
+
+    def list_sessions(self, *, limit: int = 20) -> list[SystemDesignSessionSummary]:
+        docs = self._collection.find_many(
+            {},
+            sort=[("updated_at", -1)],
+            limit=limit,
+        )
+        return [self._to_session_summary(str(doc.get("_id", "")), doc) for doc in docs]
 
     def update_session(
         self, session_id: str, payload: SystemDesignSessionUpdate
@@ -114,24 +143,61 @@ class SystemDesignService:
 
     def autosave(self, session_id: str, payload: AutosaveRequest) -> Optional[SystemDesignSession]:
         now = _utcnow()
-        version = DiagramVersion(
-            id=_new_id(),
-            created_at=now,
-            label=payload.label,
-            diagram=payload.diagram,
+        attempts = 0
+        while attempts < MAX_AUTOSAVE_RETRIES:
+            attempts += 1
+            doc = self._collection.find_one({"_id": session_id})
+            if not doc:
+                return None
+
+            current_version = _coerce_version(doc.get("version", 1))
+            if payload.expected_version is not None and payload.expected_version != current_version:
+                raise SystemDesignSessionVersionConflictError(
+                    "Session has been updated since you last loaded it.",
+                    details={
+                        "expected_version": payload.expected_version,
+                        "actual_version": current_version,
+                    },
+                )
+
+            next_version = current_version + 1
+            update: Dict[str, Any] = {
+                "diagram": payload.diagram.model_dump(by_alias=True),
+                "updated_at": now,
+                "version": next_version,
+            }
+            ops: Dict[str, Any] = {"$set": update}
+            if payload.label:
+                snapshot = DiagramVersion(
+                    id=_new_id(),
+                    created_at=now,
+                    label=payload.label,
+                    diagram=payload.diagram,
+                )
+                ops["$push"] = {"versions": snapshot.model_dump()}
+
+            result = self._collection.update_one(
+                {"_id": session_id, "version": current_version},
+                ops,
+            )
+            if result.get("matched_count") == 1:
+                saved = self._collection.find_one({"_id": session_id})
+                if not saved:
+                    return None
+                return self._to_session(str(saved.get("_id", session_id)), saved)
+
+            if payload.expected_version is not None:
+                raise SystemDesignSessionVersionConflictError(
+                    "Session has been updated since you last saved it.",
+                    details={
+                        "expected_version": payload.expected_version,
+                        "actual_version": current_version,
+                    },
+                )
+
+        raise SystemDesignSessionVersionConflictError(
+            "Failed to save diagram due to concurrent updates. Please retry.",
         )
-        update = {
-            "diagram": payload.diagram.model_dump(by_alias=True),
-            "updated_at": now,
-        }
-        self._collection.update_one(
-            {"_id": session_id},
-            {"$set": update, "$push": {"versions": version.model_dump()}},
-        )
-        doc = self._collection.find_one({"_id": session_id})
-        if not doc:
-            return None
-        return self._to_session(str(doc["_id"]), doc)
 
     def update_notes(self, session_id: str, notes_markdown: str) -> Optional[SystemDesignSession]:
         now = _utcnow()
@@ -218,6 +284,7 @@ class SystemDesignService:
 
     def _to_session(self, session_id: str, doc: Dict[str, Any]) -> SystemDesignSession:
         diagram = ExcalidrawData.model_validate(doc.get("diagram") or {})
+        version = _coerce_version(doc.get("version", 1))
         versions = [
             DiagramVersion.model_validate(v)
             for v in (doc.get("versions") or [])
@@ -237,10 +304,25 @@ class SystemDesignService:
             template_id=doc.get("template_id"),
             notes_markdown=doc.get("notes_markdown"),
             diagram=diagram,
+            version=version,
             versions=versions,
             exports=exports,
             artifacts=artifacts,
             created_at=doc.get("created_at") or _utcnow(),
             updated_at=doc.get("updated_at") or _utcnow(),
             metadata=doc.get("metadata") or {},
+        )
+
+    def _to_session_summary(
+        self, session_id: str, doc: Dict[str, Any]
+    ) -> SystemDesignSessionSummary:
+        return SystemDesignSessionSummary(
+            id=session_id,
+            share_id=doc.get("share_id", ""),
+            title=doc.get("title"),
+            problem_statement=doc.get("problem_statement", ""),
+            template_id=doc.get("template_id"),
+            version=_coerce_version(doc.get("version", 1)),
+            created_at=doc.get("created_at") or _utcnow(),
+            updated_at=doc.get("updated_at") or _utcnow(),
         )

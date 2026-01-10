@@ -43,6 +43,7 @@ export type SystemDesignSession = {
   template_id?: string | null;
   notes_markdown?: string | null;
   diagram: ExcalidrawData;
+  version: number;
   versions: DiagramVersion[];
   exports: DiagramExport[];
   artifacts: SystemDesignArtifacts;
@@ -54,6 +55,18 @@ export type SystemDesignSession = {
 export type AutosaveRequest = {
   diagram: ExcalidrawData;
   label?: string | null;
+  expected_version?: number | null;
+};
+
+export type SystemDesignSessionSummary = {
+  id: string;
+  share_id: string;
+  title?: string | null;
+  problem_statement: string;
+  template_id?: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
 };
 
 export type SystemDesignSessionUpdate = {

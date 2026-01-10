@@ -89,6 +89,7 @@ class SystemDesignSession(BaseModel):
     template_id: Optional[str] = None
     notes_markdown: Optional[str] = None
     diagram: ExcalidrawData
+    version: int = 1
     versions: List[DiagramVersion] = Field(default_factory=list)
     exports: List[DiagramExport] = Field(default_factory=list)
     artifacts: SystemDesignArtifacts = Field(default_factory=SystemDesignArtifacts)
@@ -100,6 +101,18 @@ class SystemDesignSession(BaseModel):
 class AutosaveRequest(BaseModel):
     diagram: ExcalidrawData
     label: Optional[str] = None
+    expected_version: Optional[int] = None
+
+
+class SystemDesignSessionSummary(BaseModel):
+    id: str
+    share_id: str
+    title: Optional[str] = None
+    problem_statement: str
+    template_id: Optional[str] = None
+    version: int = 1
+    created_at: datetime
+    updated_at: datetime
 
 
 class SystemDesignSessionUpdate(BaseModel):
