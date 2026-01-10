@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
-import { ArrowLeft, Copy, RefreshCw, Send } from "lucide-react";
+import { ArrowLeft, Copy, Mic, RefreshCw, Send, Sparkles, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { ApiError } from "@/lib/api/client";
+import { autocompleteText, editText } from "@/lib/api/intelligence";
 import type { ThreadMessage, ThreadMessageRole } from "@/lib/api/types/threads";
 import type {
   UnifiedInterviewRequest,
@@ -25,8 +26,40 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+
+type SpeechRecognitionAlternativeLike = {
+  transcript?: string;
+};
+
+type SpeechRecognitionResultLike = {
+  0?: SpeechRecognitionAlternativeLike;
+  length: number;
+};
+
+type SpeechRecognitionResultListLike = {
+  length: number;
+  [index: number]: SpeechRecognitionResultLike;
+};
+
+type SpeechRecognitionEventLike = {
+  results: SpeechRecognitionResultListLike;
+};
+
+type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: unknown) => void) | null;
+  onend: (() => void) | null;
+};
+
+type SpeechRecognitionConstructorLike = new () => SpeechRecognitionLike;
 
 function formatMaybeDate(raw?: string | null): string {
   if (!raw) return "—";
@@ -235,11 +268,51 @@ export function ThreadDetailClient({ threadId }: { threadId: string }) {
   const appendMutation = useAppendThreadMessage(safeThreadId);
 
   const [role, setRole] = useState<ThreadMessageRole>("user");
+  const [tone, setTone] = useState<string>("match");
   const [content, setContent] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const [isAutocompleting, setIsAutocompleting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   const errorMessage = messagesQuery.isError ? formatErrorMessage(messagesQuery.error) : null;
 
   const messages = useMemo(() => sortMessages(messagesQuery.data ?? []), [messagesQuery.data]);
+
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const dictationBaseRef = useRef<string>("");
+
+  useEffect(() => {
+    const SpeechRecognition =
+      (window as unknown as { SpeechRecognition?: SpeechRecognitionConstructorLike }).SpeechRecognition ??
+      (window as unknown as { webkitSpeechRecognition?: SpeechRecognitionConstructorLike }).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      recognitionRef.current = null;
+      return;
+    }
+
+    try {
+      const instance = new SpeechRecognition();
+      instance.continuous = true;
+      instance.interimResults = true;
+      instance.lang = (navigator?.language ?? "en-US").toString();
+      recognitionRef.current = instance;
+    } catch {
+      recognitionRef.current = null;
+    }
+
+    return () => {
+      try {
+        recognitionRef.current?.stop();
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
+  function toneHint(): string | null {
+    if (tone === "match") return null;
+    return tone;
+  }
 
   async function copyThreadId() {
     try {
@@ -260,6 +333,100 @@ export function ThreadDetailClient({ threadId }: { threadId: string }) {
       toast.success("Message appended");
     } catch (err) {
       toast.error("Could not append", { description: formatErrorMessage(err) });
+    }
+  }
+
+  async function onAutocomplete() {
+    const base = content;
+    if (!base.trim()) return;
+
+    setIsAutocompleting(true);
+    try {
+      const result = await autocompleteText({ text: base, tone: toneHint(), max_chars: 600 });
+      const completion = result.completion ?? "";
+      if (!completion.trim()) {
+        toast.message("No suggestion", { description: "The text looks complete." });
+        return;
+      }
+      setContent((prev) => prev + completion);
+    } catch (err) {
+      toast.error("Autocomplete failed", { description: formatErrorMessage(err) });
+    } finally {
+      setIsAutocompleting(false);
+    }
+  }
+
+  async function onPolish() {
+    const base = content;
+    if (!base.trim()) return;
+
+    setIsEditing(true);
+    try {
+      const result = await editText({
+        text: base,
+        tone: toneHint(),
+        instruction:
+          "Fix grammar, punctuation, and clarity. Remove filler words and obvious speech-to-text errors. Preserve meaning.",
+      });
+      setContent(result.output ?? "");
+      toast.success("Polished");
+    } catch (err) {
+      toast.error("Edit failed", { description: formatErrorMessage(err) });
+    } finally {
+      setIsEditing(false);
+    }
+  }
+
+  async function onToggleRecording() {
+    const recognition = recognitionRef.current;
+    if (!recognition) {
+      toast.error("Voice input unavailable", { description: "Speech recognition is not supported in this browser." });
+      return;
+    }
+
+    if (isRecording) {
+      try {
+        recognition.stop();
+      } catch {
+        // ignore
+      }
+      setIsRecording(false);
+      return;
+    }
+
+    dictationBaseRef.current = content;
+
+    recognition.onresult = (event: SpeechRecognitionEventLike) => {
+      try {
+        let transcript = "";
+        for (let i = 0; i < event.results.length; i += 1) {
+          const res = event.results[i];
+          const part = res?.[0]?.transcript ?? "";
+          transcript += part;
+        }
+        const baseText = dictationBaseRef.current || "";
+        const next = `${baseText}${baseText.trim() && transcript.trim() ? " " : ""}${transcript.trim()}`;
+        setContent(next);
+      } catch {
+        // ignore
+      }
+    };
+
+    recognition.onerror = () => {
+      setIsRecording(false);
+      toast.error("Voice input failed");
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+    };
+
+    try {
+      recognition.start();
+      setIsRecording(true);
+    } catch (err) {
+      setIsRecording(false);
+      toast.error("Voice input failed", { description: formatErrorMessage(err) });
     }
   }
 
@@ -326,6 +493,21 @@ export function ThreadDetailClient({ threadId }: { threadId: string }) {
               />
             </div>
             <div className="space-y-2">
+              <Label>Tone</Label>
+              <Select value={tone} onValueChange={setTone}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Match existing tone" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="match">Match existing</SelectItem>
+                  <SelectItem value="concise">Concise</SelectItem>
+                  <SelectItem value="friendly">Friendly</SelectItem>
+                  <SelectItem value="formal">Formal</SelectItem>
+                  <SelectItem value="direct">Direct</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
               <Label>Thread</Label>
               <Input value={safeThreadId} readOnly />
             </div>
@@ -339,7 +521,16 @@ export function ThreadDetailClient({ threadId }: { threadId: string }) {
               onChange={(e) => setContent(e.target.value)}
               placeholder="Write a message…"
               rows={5}
+              onKeyDown={(e) => {
+                if (e.ctrlKey && e.code === "Space") {
+                  e.preventDefault();
+                  void onAutocomplete();
+                }
+              }}
             />
+            <p className="text-muted-foreground text-xs">
+              Shortcuts: <span className="font-mono">Ctrl+Space</span> autocomplete · Voice input uses browser speech recognition.
+            </p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -350,6 +541,32 @@ export function ThreadDetailClient({ threadId }: { threadId: string }) {
             >
               <Send className="h-4 w-4" aria-hidden="true" />
               Send
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void onAutocomplete()}
+              disabled={isAutocompleting || !content.trim()}
+            >
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+              {isAutocompleting ? "Thinking…" : "Autocomplete"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void onPolish()}
+              disabled={isEditing || !content.trim()}
+            >
+              <Wand2 className="h-4 w-4" aria-hidden="true" />
+              {isEditing ? "Editing…" : "Polish"}
+            </Button>
+            <Button
+              type="button"
+              variant={isRecording ? "destructive" : "outline"}
+              onClick={() => void onToggleRecording()}
+            >
+              <Mic className="h-4 w-4" aria-hidden="true" />
+              {isRecording ? "Stop" : "Dictate"}
             </Button>
             <Button
               type="button"

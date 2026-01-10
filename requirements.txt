@@ -861,6 +861,9 @@ langgraph-sdk==0.2.9 \
     --hash=sha256:b3bd04c6be4fa382996cd2be8fbc1e7cc94857d2bc6b6f4599a7f2a245975303 \
     --hash=sha256:fbf302edadbf0fb343596f91c597794e936ef68eebc0d3e1d358b6f9f72a1429
     # via langgraph
+langid==1.1.6 \
+    --hash=sha256:044bcae1912dab85c33d8e98f2811b8f4ff1213e5e9a9e9510137b84da2cb293
+    # via alfred
 langsmith==0.4.40 \
     --hash=sha256:1ec1a4981c39d4cee85b623ac86dd79e14b1b236ddc6357aec72a58940ecbfff \
     --hash=sha256:bd7704bd72c560dbcf5f72f81b3a02ace27ae8f15e0d5e46f9c4568b4908d0c2
@@ -1043,6 +1046,7 @@ numpy==1.26.4 \
     #   lancedb
     #   langchain-chroma
     #   langchain-community
+    #   langid
     #   matplotlib
     #   mlflow
     #   onnxruntime
@@ -1441,6 +1445,10 @@ pyparsing==3.2.5 \
     # via
     #   httplib2
     #   matplotlib
+pypdf==4.3.1 \
+    --hash=sha256:64b31da97eda0771ef22edb1bfecd5deee4b72c3d1736b7df2689805076d6418 \
+    --hash=sha256:b2f37fe9a3030aa97ca86067a56ba3f9d3565f9a791b305c7355d8392c30d91b
+    # via alfred
 pypika==0.48.9 \
     --hash=sha256:838836a61747e7c8380cd1b7ff638694b7a7335345d0f559b04b2cd832ad5378
     # via chromadb
