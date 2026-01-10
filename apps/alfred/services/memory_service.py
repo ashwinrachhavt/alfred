@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 from alfred.core.database import SessionLocal
 from alfred.core.settings import LLMProvider, settings
 from alfred.core.utils import clamp_int
-from alfred.models.doc_storage import NoteRow
+from alfred.models.doc_storage import QuickNoteRow
 from alfred.schemas.documents import NoteCreate
 from alfred.schemas.intelligence import MemoryCreateRequest, MemoryItem, MemoryListResponse
 from alfred.services.doc_storage_pg import DocStorageService
@@ -139,14 +139,14 @@ class MemoryService:
         thread_norm = (thread_id or "").strip() or None
         task_norm = (task_id or "").strip() or None
 
-        stmt = select(NoteRow).order_by(NoteRow.created_at.desc())
+        stmt = select(QuickNoteRow).order_by(QuickNoteRow.created_at.desc())
         if q_norm:
-            stmt = stmt.where(NoteRow.text.ilike(f"%{q_norm}%"))
+            stmt = stmt.where(QuickNoteRow.text.ilike(f"%{q_norm}%"))
 
         with _session_scope(self.doc_storage.session) as s:
             rows = list(s.exec(stmt).all())
 
-        filtered: list[NoteRow] = []
+        filtered: list[QuickNoteRow] = []
         for row in rows:
             meta = row.meta or {}
             if meta.get("kind") != MEMORY_NOTE_KIND:
@@ -197,11 +197,11 @@ class MemoryService:
         if not q_tokens:
             return []
 
-        stmt = select(NoteRow).order_by(NoteRow.created_at.desc()).limit(max_scan)
+        stmt = select(QuickNoteRow).order_by(QuickNoteRow.created_at.desc()).limit(max_scan)
         with _session_scope(self.doc_storage.session) as s:
             rows = list(s.exec(stmt).all())
 
-        scored: list[tuple[float, NoteRow]] = []
+        scored: list[tuple[float, QuickNoteRow]] = []
         for row in rows:
             meta = row.meta or {}
             if meta.get("kind") != MEMORY_NOTE_KIND:
