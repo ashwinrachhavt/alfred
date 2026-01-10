@@ -1,6 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { getCompanyResearchReportById, listRecentCompanyResearchReports } from "@/lib/api/company";
+import {
+  getCompanyResearchReportById,
+  listCompanyContactsFromDb,
+  listRecentCompanyResearchReports,
+} from "@/lib/api/company";
 
 export function recentCompanyResearchReportsQueryKey(limit: number) {
   return ["company", "research-reports", "recent", limit] as const;
@@ -24,5 +28,27 @@ export function useCompanyResearchReport(reportId: string | null) {
       ? companyResearchReportQueryKey(reportId)
       : ["company", "research-reports", "disabled"],
     queryFn: () => getCompanyResearchReportById(reportId!),
+  });
+}
+
+export function companyContactsDbQueryKey(params: {
+  name: string;
+  role?: string;
+  limit: number;
+}) {
+  return ["company", "contacts", "db", params.name, params.role ?? null, params.limit] as const;
+}
+
+export function useCompanyContactsFromDb(params: { name: string; role?: string; limit?: number }) {
+  const name = params.name.trim();
+  const role = params.role?.trim() || undefined;
+  const limit = params.limit ?? 20;
+
+  return useQuery({
+    enabled: Boolean(name),
+    queryKey: companyContactsDbQueryKey({ name, role, limit }),
+    queryFn: () => listCompanyContactsFromDb({ name, role, limit }),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 }

@@ -9,6 +9,8 @@ export const apiRoutes = {
     research: "/api/company/research",
     insights: "/api/company/insights",
     outreach: "/api/company/outreach",
+    contacts: "/api/company/contacts",
+    contactsDb: "/api/company/contacts/db",
     researchReportsRecent: "/api/company/research-reports/recent",
     researchReportById: (reportId: string) => `/api/company/research-reports/${reportId}`,
   },
