@@ -39,6 +39,9 @@ def _new_id() -> str:
     return uuid.uuid4().hex
 
 
+MAX_AUTOSAVE_RETRIES = 5
+
+
 class SystemDesignSessionVersionConflictError(AlfredException):
     """Raised when a client attempts to update a stale diagram version."""
 
@@ -141,7 +144,7 @@ class SystemDesignService:
     def autosave(self, session_id: str, payload: AutosaveRequest) -> Optional[SystemDesignSession]:
         now = _utcnow()
         attempts = 0
-        while attempts < 5:
+        while attempts < MAX_AUTOSAVE_RETRIES:
             attempts += 1
             doc = self._collection.find_one({"_id": session_id})
             if not doc:
