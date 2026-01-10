@@ -99,6 +99,32 @@ def test_list_contacts_filters_cache_by_provider(monkeypatch) -> None:
     assert called["providers"] == [ContactProvider.APOLLO]
 
 
+def test_list_contacts_from_db_returns_persisted_rows() -> None:
+    session = _session()
+    contact = OutreachContact(
+        run_id=1,
+        company="Stripe",
+        name="Jane Doe",
+        title="VP Product",
+        email="jane@stripe.com",
+        confidence=0.9,
+        source="hunter",
+    )
+    with session:
+        session.add(contact)
+        session.commit()
+
+    svc = OutreachService(session=session)
+    results = svc.list_contacts_from_db("Stripe", limit=5)
+
+    assert len(results) == 1
+    row = results[0]
+    assert row["company"] == "Stripe"
+    assert row["email"] == "jane@stripe.com"
+    assert row["run_id"] == 1
+    assert row["created_at"]
+
+
 def test_send_email_dry_run() -> None:
     session = _session()
     svc = OutreachService(session=session)

@@ -576,6 +576,20 @@ def _row_to_dict(contact: OutreachContact) -> dict[str, Any]:
     }
 
 
+def _row_to_db_dict(contact: OutreachContact) -> dict[str, Any]:
+    return {
+        "id": contact.id,
+        "run_id": contact.run_id,
+        "created_at": contact.created_at.isoformat() if contact.created_at else None,
+        "company": contact.company,
+        "name": contact.name,
+        "title": contact.title,
+        "email": contact.email,
+        "confidence": contact.confidence,
+        "source": contact.source,
+    }
+
+
 class OutreachService:
     """Handles contact discovery caching and outbound outreach message logging/sending."""
 
@@ -637,6 +651,46 @@ class OutreachService:
                 ]
             if role_filter:
                 role_l = role_filter.lower()
+                items = [c for c in items if role_l in (c.get("title") or "").lower()]
+            return items[:limit]
+
+    def list_contacts_from_db(
+        self,
+        company: str,
+        *,
+        limit: int = 20,
+        role_filter: str | None = None,
+        providers: Sequence[ContactProvider] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return outreach contacts stored in the database (no external provider calls)."""
+
+        company = (company or "").strip()
+        if not company:
+            return []
+
+        selected = {p.value for p in providers} if providers else None
+        role_l = role_filter.lower() if role_filter else None
+
+        sess_ctx = self.session or next(get_session())
+        with sess_ctx as db:
+            stmt = (
+                select(OutreachContact)
+                .where(OutreachContact.company == company)
+                .order_by(OutreachContact.created_at.desc())
+                .limit(limit * 2)
+            )
+            rows: Iterable[OutreachContact] = db.exec(stmt).all()
+            if not rows:
+                return []
+
+            items = [_row_to_db_dict(row) for row in rows]
+            if selected is not None:
+                items = [
+                    contact
+                    for contact in items
+                    if (contact.get("source") or "").lower().strip() in selected
+                ]
+            if role_l:
                 items = [c for c in items if role_l in (c.get("title") or "").lower()]
             return items[:limit]
 

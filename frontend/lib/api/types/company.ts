@@ -52,3 +52,35 @@ export type CompanyResearchReportSummary = {
 export type CompanyResearchReportPayloadResponse = CompanyResearchPayload & {
   id: string;
 };
+
+export type CompanyContact = {
+  name: string;
+  title: string;
+  email: string;
+  confidence: number;
+  source: string;
+};
+
+export type CompanyContactsDiscoverResponse = {
+  company: string;
+  role: string | null;
+  limit: number;
+  refresh: boolean;
+  providers: string[] | null;
+  items: CompanyContact[];
+};
+
+export type CompanyContactDbRow = CompanyContact & {
+  id: number | null;
+  run_id: number;
+  created_at: string | null;
+  company: string;
+};
+
+export type CompanyContactsDbResponse = {
+  company: string;
+  role: string | null;
+  limit: number;
+  providers: string[] | null;
+  items: CompanyContactDbRow[];
+};

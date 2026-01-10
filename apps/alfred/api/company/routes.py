@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.exc import ProgrammingError
 from sqlmodel import select
@@ -25,6 +25,10 @@ from alfred.services.company_outreach_service import (
 
 router = APIRouter(prefix="/company", tags=["company"])
 logger = logging.getLogger(__name__)
+
+
+def get_outreach_service() -> OutreachService:
+    return OutreachService()
 
 
 class CompanyResearchReportSummary(BaseModel):
@@ -219,12 +223,13 @@ async def company_contacts(
         None,
         description="Contact discovery providers to use. Repeat the parameter to select multiple.",
     ),
+    outreach_service: OutreachService = Depends(get_outreach_service),
 ):
     if not name.strip():
         raise HTTPException(status_code=422, detail="name is required")
 
     try:
-        contacts = OutreachService().list_contacts(
+        contacts = outreach_service.list_contacts(
             name, limit=limit, role_filter=role, refresh=refresh, providers=providers
         )
         return {
@@ -238,6 +243,58 @@ async def company_contacts(
     except Exception as exc:
         logger.exception("Company contacts lookup failed")
         raise ServiceUnavailableError("Company contacts lookup failed") from exc
+
+
+class OutreachContactRow(BaseModel):
+    id: int | None
+    run_id: int
+    created_at: str | None
+    company: str
+    name: str
+    title: str
+    email: str
+    confidence: float
+    source: str
+
+
+class OutreachContactsDbResponse(BaseModel):
+    company: str
+    role: str | None
+    limit: int
+    providers: list[str] | None
+    items: list[OutreachContactRow]
+
+
+@router.get("/contacts/db", response_model=OutreachContactsDbResponse)
+async def company_contacts_db(
+    name: str = Query(..., description="Company name"),
+    role: str | None = Query(None, description="Optional role/title filter, e.g. 'engineering'"),
+    limit: int = Query(20, ge=1, le=50, description="Max contacts to return"),
+    providers: list[ContactProvider] | None = Query(
+        None,
+        description="Contact sources to include. Repeat the parameter to select multiple.",
+    ),
+    outreach_service: OutreachService = Depends(get_outreach_service),
+):
+    """Return contacts already stored in the database (no external lookups)."""
+
+    if not name.strip():
+        raise HTTPException(status_code=422, detail="name is required")
+
+    try:
+        items = outreach_service.list_contacts_from_db(
+            name, limit=limit, role_filter=role, providers=providers
+        )
+        return {
+            "company": name,
+            "role": role,
+            "limit": limit,
+            "providers": [p.value for p in providers] if providers else None,
+            "items": items,
+        }
+    except Exception as exc:
+        logger.exception("Company contacts db lookup failed")
+        raise ServiceUnavailableError("Company contacts db lookup failed") from exc
 
 
 class OutreachRequest(BaseModel):
