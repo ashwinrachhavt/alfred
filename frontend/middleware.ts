@@ -16,6 +16,8 @@ const isPublicRoute = createRouteMatcher(["/", "/sign-in(.*)", "/sign-up(.*)"]);
 const isBackendApiRoute = createRouteMatcher([
   "/api/company(.*)",
   "/api/documents(.*)",
+  "/api/v1/notes(.*)",
+  "/api/v1/workspaces(.*)",
   "/api/rag(.*)",
   "/api/tasks(.*)",
   "/api/threads(.*)",

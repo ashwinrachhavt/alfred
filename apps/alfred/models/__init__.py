@@ -5,7 +5,7 @@ from sqlmodel import Field, SQLModel
 from alfred.models.base import Model, TimestampMixin
 from alfred.models.company import CompanyInterviewRow, CompanyResearchReportRow
 from alfred.models.datastore import DataStoreRow
-from alfred.models.doc_storage import DocChunkRow, DocumentRow, NoteRow
+from alfred.models.doc_storage import DocChunkRow, DocumentRow, QuickNoteRow
 from alfred.models.learning import (
     LearningEntity,
     LearningEntityRelation,
@@ -16,6 +16,7 @@ from alfred.models.learning import (
     LearningReview,
     LearningTopic,
 )
+from alfred.models.notes import NoteRow, WorkspaceRow
 from alfred.models.research import ResearchRun
 from alfred.models.system import SystemSetting
 from alfred.models.threads import ThreadMessageRow, ThreadRow
@@ -49,9 +50,11 @@ __all__ = [
     "User",
     "SQLModel",
     "Field",
-    "NoteRow",
+    "QuickNoteRow",
     "DocumentRow",
     "DocChunkRow",
+    "WorkspaceRow",
+    "NoteRow",
     "DataStoreRow",
     "CompanyInterviewRow",
     "CompanyResearchReportRow",

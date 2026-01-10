@@ -24,7 +24,7 @@ from sqlmodel import Session
 from alfred.core.database import SessionLocal
 from alfred.core.settings import settings
 from alfred.core.utils import clamp_int
-from alfred.models.doc_storage import DocChunkRow, DocumentRow, NoteRow
+from alfred.models.doc_storage import DocChunkRow, DocumentRow, QuickNoteRow
 from alfred.schemas.documents import DocumentIngest, NoteCreate
 from alfred.schemas.enrichment import normalize_enrichment
 from alfred.services.chunking import ChunkingService
@@ -489,7 +489,7 @@ class DocStorageService:
 
     # --------------- Notes ---------------
     def create_note(self, note: NoteCreate) -> str:
-        record = NoteRow(
+        record = QuickNoteRow(
             text=note.text,
             source_url=note.source_url,
             meta=note.metadata or {},
@@ -502,20 +502,20 @@ class DocStorageService:
 
     def list_notes(self, *, q: Optional[str], skip: int, limit: int) -> Dict[str, Any]:
         with _session_scope(self.session) as s:
-            stmt = select(NoteRow)
+            stmt = select(QuickNoteRow)
             if q:
-                stmt = stmt.where(NoteRow.text.ilike(f"%{q}%"))
+                stmt = stmt.where(QuickNoteRow.text.ilike(f"%{q}%"))
             stmt = _apply_offset_limit(
-                stmt.order_by(NoteRow.created_at.desc()),
+                stmt.order_by(QuickNoteRow.created_at.desc()),
                 skip=skip,
                 limit=limit,
                 max_limit=200,
             )
             items = s.exec(stmt).all()
 
-            count_stmt = select(func.count()).select_from(NoteRow)
+            count_stmt = select(func.count()).select_from(QuickNoteRow)
             if q:
-                count_stmt = count_stmt.where(NoteRow.text.ilike(f"%{q}%"))
+                count_stmt = count_stmt.where(QuickNoteRow.text.ilike(f"%{q}%"))
             total = s.exec(count_stmt).one()[0]
 
             return {
@@ -539,7 +539,7 @@ class DocStorageService:
         if uid is None:
             return None
         with _session_scope(self.session) as s:
-            note = s.get(NoteRow, uid)
+            note = s.get(QuickNoteRow, uid)
             if not note:
                 return None
             return {
@@ -555,7 +555,7 @@ class DocStorageService:
         if uid is None:
             return False
         with _session_scope(self.session) as s:
-            note = s.get(NoteRow, uid)
+            note = s.get(QuickNoteRow, uid)
             if not note:
                 return False
             s.delete(note)

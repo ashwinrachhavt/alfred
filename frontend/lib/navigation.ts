@@ -7,6 +7,7 @@ import {
   LayoutGrid,
   MessageCircle,
   MessageSquareText,
+  NotepadText,
   Palette,
   Shapes,
   Sparkles,
@@ -48,6 +49,13 @@ export const appNavItems: AppNavItem[] = [
     href: "/documents",
     icon: FileText,
     keywords: ["documents", "notes", "files"],
+  },
+  {
+    key: "notion",
+    title: "Notion",
+    href: "/notion",
+    icon: NotepadText,
+    keywords: ["notion", "integration", "sync", "import"],
   },
   { key: "calendar", title: "Calendar", href: "/calendar", icon: Calendar, keywords: ["calendar"] },
   {
