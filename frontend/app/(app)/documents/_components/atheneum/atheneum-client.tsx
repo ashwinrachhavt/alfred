@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 
+import dynamic from "next/dynamic";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,11 +11,22 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { useDocumentDetails, useExplorerDocuments } from "@/features/documents/queries";
 
-import { GalaxyView } from "./galaxy-view";
 import { QuickLookSheet } from "./quick-look-sheet";
 import { ShelfView } from "./shelf-view";
 
 type AtheneumView = "shelf" | "galaxy" | "stream";
+
+const GalaxyView = dynamic(
+  () => import("./galaxy-view").then((mod) => mod.GalaxyView),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="text-muted-foreground rounded-xl border p-6 text-sm">
+        Loading the semantic galaxy…
+      </div>
+    ),
+  },
+);
 
 export function AtheneumClient() {
   const [view, setView] = useState<AtheneumView>("shelf");

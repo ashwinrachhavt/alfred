@@ -153,6 +153,34 @@ class Settings(BaseSettings):
         ),
         alias="DATABASE_URL",
     )
+    db_pool_size: int = Field(
+        default=10,
+        alias="DB_POOL_SIZE",
+        ge=1,
+        le=200,
+        description="SQLAlchemy connection pool size (Postgres only).",
+    )
+    db_max_overflow: int = Field(
+        default=20,
+        alias="DB_MAX_OVERFLOW",
+        ge=0,
+        le=500,
+        description="Extra connections above pool size (Postgres only).",
+    )
+    db_pool_timeout: int = Field(
+        default=30,
+        alias="DB_POOL_TIMEOUT",
+        ge=1,
+        le=600,
+        description="Seconds to wait for a pooled connection (Postgres only).",
+    )
+    db_pool_recycle_seconds: int = Field(
+        default=1800,
+        alias="DB_POOL_RECYCLE_SECONDS",
+        ge=0,
+        le=24 * 60 * 60,
+        description="Recycle connections after N seconds (Postgres only).",
+    )
     doc_storage_backend: str = Field(
         default="postgres",
         alias="DOC_STORAGE_BACKEND",
@@ -221,6 +249,22 @@ class Settings(BaseSettings):
         ge=0,
         le=24 * 365,
         description="0 disables freshness checks (always recompute).",
+    )
+
+    # RAG semantic cache (Redis; best-effort)
+    rag_answer_cache_ttl_seconds: int = Field(
+        default=600,
+        alias="RAG_ANSWER_CACHE_TTL_SECONDS",
+        ge=0,
+        le=24 * 60 * 60,
+        description="0 disables caching for /rag/answer.",
+    )
+    rag_answer_cache_similarity_threshold: float = Field(
+        default=0.92,
+        alias="RAG_ANSWER_CACHE_SIMILARITY_THRESHOLD",
+        ge=0.0,
+        le=1.0,
+        description="Cosine similarity threshold for semantic cache hits.",
     )
 
     job_applications_collection: str = Field(
