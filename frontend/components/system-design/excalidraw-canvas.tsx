@@ -13,6 +13,8 @@ type ConvertToExcalidrawElements =
 type Restore = typeof import("@excalidraw/excalidraw").restore;
 type ExcalidrawAPI = import("@excalidraw/excalidraw/types").ExcalidrawImperativeAPI;
 type ExcalidrawElementSkeleton = NonNullable<Parameters<ConvertToExcalidrawElements>[0]>[number];
+type CaptureUpdateActionValue =
+  (typeof import("@excalidraw/excalidraw").CaptureUpdateAction)[keyof typeof import("@excalidraw/excalidraw").CaptureUpdateAction];
 
 const Excalidraw = dynamic(async () => (await import("@excalidraw/excalidraw")).Excalidraw, {
   ssr: false,
@@ -57,6 +59,7 @@ function toPersistedDiagram(
 export type ExcalidrawCanvasProps = {
   initialDiagram: ExcalidrawData;
   onDiagramChange?: (diagram: ExcalidrawData) => void;
+  onSelectionChange?: (selectedElementIds: string[]) => void;
   readOnly?: boolean;
   /**
    * When enabled, renders a bordered container around the Excalidraw editor.
@@ -76,6 +79,18 @@ export type ExcalidrawCanvasProps = {
 export type ExcalidrawCanvasHandle = {
   insertComponent: (component: { id: string; name: string; category?: string }) => void;
   replaceWithMermaid: (definition: string) => Promise<void>;
+  connectElements: (connection: {
+    fromElementId: string;
+    toElementId: string;
+    label?: string;
+  }) => void;
+  getDiagram: () => ExcalidrawData | null;
+  exportPng: (opts?: { maxWidthOrHeight?: number; background?: boolean }) => Promise<Blob | null>;
+  exportSvg: (opts?: {
+    embedScene?: boolean;
+    width?: number;
+    height?: number;
+  }) => Promise<string | null>;
 };
 
 export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCanvasProps>(
@@ -83,6 +98,7 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
     {
       initialDiagram,
       onDiagramChange,
+      onSelectionChange,
       readOnly,
       framed = true,
       viewportScale = 1,
@@ -92,6 +108,7 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
     const serializeRef = useRef<SerializeAsJSON | null>(null);
     const convertRef = useRef<ConvertToExcalidrawElements | null>(null);
     const restoreRef = useRef<Restore | null>(null);
+    const captureUpdateRef = useRef<CaptureUpdateActionValue | null>(null);
     const apiRef = useRef<ExcalidrawAPI | null>(null);
     const [helpersReady, setHelpersReady] = useState(false);
     const [normalizedInitialData, setNormalizedInitialData] =
@@ -131,12 +148,14 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
           serializeRef.current = mod.serializeAsJSON;
           convertRef.current = mod.convertToExcalidrawElements;
           restoreRef.current = mod.restore;
+          captureUpdateRef.current = mod.CaptureUpdateAction.IMMEDIATELY;
           setHelpersReady(true);
         })
         .catch(() => {
           serializeRef.current = null;
           convertRef.current = null;
           restoreRef.current = null;
+          captureUpdateRef.current = null;
           setHelpersReady(true);
         });
     }, []);
@@ -173,12 +192,151 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
 
     const handleChange = useCallback(
       (elements: unknown, appState: unknown, files: unknown) => {
+        if (onSelectionChange) {
+          const selectedIds = new Set<string>();
+          if (appState && typeof appState === "object") {
+            const rawSelected = (appState as Record<string, unknown>).selectedElementIds;
+            if (rawSelected && typeof rawSelected === "object") {
+              for (const [id, selected] of Object.entries(rawSelected as Record<string, unknown>)) {
+                if (selected) selectedIds.add(id);
+              }
+            }
+          }
+
+          const elementTypes = new Map<string, string>();
+          if (Array.isArray(elements)) {
+            for (const el of elements) {
+              if (!el || typeof el !== "object") continue;
+              const id = (el as Record<string, unknown>).id;
+              const type = (el as Record<string, unknown>).type;
+              if (typeof id === "string" && typeof type === "string") elementTypes.set(id, type);
+            }
+          }
+
+          const connectable = Array.from(selectedIds).filter((id) => {
+            const type = elementTypes.get(id);
+            if (!type) return false;
+            return type !== "text" && type !== "arrow" && type !== "line";
+          });
+
+          onSelectionChange(connectable);
+        }
+
         if (!onDiagramChange) return;
         const serialize = serializeRef.current;
         if (!serialize) return;
         onDiagramChange(toPersistedDiagram(serialize, elements, appState, files));
       },
-      [onDiagramChange],
+      [onDiagramChange, onSelectionChange],
+    );
+
+    const getDiagram = useCallback((): ExcalidrawData | null => {
+      const api = apiRef.current;
+      const serialize = serializeRef.current;
+      if (!api || !serialize) return null;
+      return toPersistedDiagram(serialize, api.getSceneElements(), api.getAppState(), api.getFiles());
+    }, []);
+
+    const connectElements = useCallback(
+      (connection: { fromElementId: string; toElementId: string; label?: string }) => {
+        if (readOnly) return;
+        const api = apiRef.current;
+        const convertToExcalidrawElements = convertRef.current;
+        if (!api || !convertToExcalidrawElements) return;
+
+        const elements = api.getSceneElements();
+        const from = elements.find((el) => el.id === connection.fromElementId);
+        const to = elements.find((el) => el.id === connection.toElementId);
+        if (!from || !to) return;
+
+        const fromCenter = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
+        const toCenter = { x: to.x + to.width / 2, y: to.y + to.height / 2 };
+        const dx = toCenter.x - fromCenter.x;
+        const dy = toCenter.y - fromCenter.y;
+
+        const skeleton: ExcalidrawElementSkeleton[] = [
+          {
+            type: "arrow",
+            x: Math.min(fromCenter.x, toCenter.x),
+            y: Math.min(fromCenter.y, toCenter.y),
+            width: Math.max(10, Math.abs(dx)),
+            height: Math.max(10, Math.abs(dy)),
+            start: { id: connection.fromElementId },
+            end: { id: connection.toElementId },
+            ...(connection.label
+              ? {
+                  label: {
+                    text: connection.label,
+                  },
+                }
+              : {}),
+          },
+        ];
+
+        const newElements = convertToExcalidrawElements(skeleton, { regenerateIds: true });
+        const existing = api.getSceneElementsIncludingDeleted();
+        const nextElements = [...existing, ...newElements];
+        const selectedElementIds = Object.fromEntries(
+          newElements.map((el) => [el.id, true as const]),
+        ) as Record<string, true>;
+
+        api.updateScene({
+          elements: nextElements,
+          appState: {
+            selectedElementIds,
+          },
+          captureUpdate: captureUpdateRef.current ?? undefined,
+        });
+      },
+      [readOnly],
+    );
+
+    const exportPng = useCallback(
+      async (opts?: { maxWidthOrHeight?: number; background?: boolean }): Promise<Blob | null> => {
+        const api = apiRef.current;
+        if (!api) return null;
+
+        const { exportToBlob } = await import("@excalidraw/excalidraw");
+        return exportToBlob({
+          elements: api.getSceneElements(),
+          appState: {
+            ...api.getAppState(),
+            exportWithDarkMode: false,
+            exportBackground: opts?.background ?? true,
+          },
+          files: api.getFiles(),
+          mimeType: "image/png",
+          maxWidthOrHeight: opts?.maxWidthOrHeight,
+          exportPadding: 20,
+        });
+      },
+      [],
+    );
+
+    const exportSvg = useCallback(
+      async (opts?: {
+        embedScene?: boolean;
+        width?: number;
+        height?: number;
+      }): Promise<string | null> => {
+        const api = apiRef.current;
+        if (!api) return null;
+
+        const { exportToSvg } = await import("@excalidraw/excalidraw");
+        const svg = await exportToSvg({
+          elements: api.getSceneElements(),
+          appState: {
+            ...api.getAppState(),
+            exportWithDarkMode: false,
+            exportEmbedScene: opts?.embedScene ?? true,
+            ...(opts?.width ? { width: opts.width } : {}),
+            ...(opts?.height ? { height: opts.height } : {}),
+          },
+          files: api.getFiles(),
+        });
+        return svg.outerHTML;
+      },
+      [],
     );
 
     const insertComponent = useCallback(
@@ -198,6 +356,26 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
         const width = 260;
         const height = 120;
 
+        const category = component.category ?? "other";
+        const style =
+          category === "client"
+            ? { strokeColor: "#1d4ed8", backgroundColor: "#dbeafe" }
+            : category === "load_balancer"
+              ? { strokeColor: "#a16207", backgroundColor: "#fef9c3" }
+              : category === "api_gateway"
+                ? { strokeColor: "#0f766e", backgroundColor: "#ccfbf1" }
+                : category === "microservice"
+                  ? { strokeColor: "#6d28d9", backgroundColor: "#ede9fe" }
+                  : category === "cache"
+                    ? { strokeColor: "#be185d", backgroundColor: "#fce7f3" }
+                    : category === "database"
+                      ? { strokeColor: "#b91c1c", backgroundColor: "#fee2e2" }
+                      : category === "message_queue"
+                        ? { strokeColor: "#c2410c", backgroundColor: "#ffedd5" }
+                        : category === "cdn"
+                          ? { strokeColor: "#1e40af", backgroundColor: "#e0f2fe" }
+                          : { strokeColor: "#334155", backgroundColor: "#f1f5f9" };
+
         const skeleton: ExcalidrawElementSkeleton[] = [
           {
             type: "rectangle",
@@ -205,6 +383,7 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
             y: centerY - height / 2,
             width,
             height,
+            ...style,
             label: {
               text: component.name,
               textAlign: "center",
@@ -225,6 +404,7 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
           appState: {
             selectedElementIds,
           },
+          captureUpdate: captureUpdateRef.current ?? undefined,
         });
       },
       [readOnly],
@@ -247,6 +427,7 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
             ...api.getAppState(),
             selectedElementIds: {},
           },
+          captureUpdate: captureUpdateRef.current ?? undefined,
         });
 
         api.scrollToContent(nextElements, { fitToContent: true, animate: true });
@@ -259,8 +440,12 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
       () => ({
         insertComponent,
         replaceWithMermaid,
+        connectElements,
+        getDiagram,
+        exportPng,
+        exportSvg,
       }),
-      [insertComponent, replaceWithMermaid],
+      [connectElements, exportPng, exportSvg, getDiagram, insertComponent, replaceWithMermaid],
     );
 
     return (
