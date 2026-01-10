@@ -99,6 +99,7 @@ dependencies = [
     { name = "langchain-qdrant" },
     { name = "langchain-tavily" },
     { name = "langgraph" },
+    { name = "langid" },
     { name = "mlflow" },
     { name = "notion-client" },
     { name = "ollama" },
@@ -106,6 +107,7 @@ dependencies = [
     { name = "playwright" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
+    { name = "pypdf" },
     { name = "python-dateutil" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
@@ -155,6 +157,7 @@ requires-dist = [
     { name = "langchain-qdrant", specifier = ">=0.1.4,<0.2" },
     { name = "langchain-tavily", specifier = ">=0.2.13" },
     { name = "langgraph", specifier = ">=0.3.18,<0.5" },
+    { name = "langid", specifier = ">=1.1.6,<2" },
     { name = "mlflow", specifier = ">=2.0" },
     { name = "notion-client", specifier = ">=2.2,<3" },
     { name = "ollama", specifier = ">=0.3,<0.4" },
@@ -162,6 +165,7 @@ requires-dist = [
     { name = "playwright", specifier = ">=1.46,<2" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.1,<4" },
     { name = "pydantic-settings", specifier = ">=2.4,<3" },
+    { name = "pypdf", specifier = ">=4,<5" },
     { name = "python-dateutil", specifier = ">=2.9,<3" },
     { name = "python-dotenv", specifier = ">=1.0,<2.0" },
     { name = "python-multipart", specifier = ">=0.0.21,<0.0.22" },
@@ -1916,6 +1920,15 @@ wheels = [
 ]
 
 [[package]]
+name = "langid"
+version = "1.1.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ea/4c/0fb7d900d3b0b9c8703be316fbddffecdab23c64e1b46c7a83561d78bd43/langid-1.1.6.tar.gz", hash = "sha256:044bcae1912dab85c33d8e98f2811b8f4ff1213e5e9a9e9510137b84da2cb293", size = 1925978, upload-time = "2016-04-05T22:34:15.786Z" }
+
+[[package]]
 name = "langsmith"
 version = "0.4.40"
 source = { registry = "https://pypi.org/simple" }
@@ -2918,6 +2931,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f2/a5/181488fc2b9d093e3972d2a472855aae8a03f000592dbfce716a512b3359/pyparsing-3.2.5.tar.gz", hash = "sha256:2df8d5b7b2802ef88e8d016a2eb9c7aeaa923529cd251ed0fe4608275d4105b6", size = 1099274, upload-time = "2025-09-21T04:11:06.277Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/10/5e/1aa9a93198c6b64513c9d7752de7422c06402de6600a8767da1524f9570b/pyparsing-3.2.5-py3-none-any.whl", hash = "sha256:e38a4f02064cf41fe6593d328d0512495ad1f3d8a91c4f73fc401b3079a59a5e", size = 113890, upload-time = "2025-09-21T04:11:04.117Z" },
+]
+
+[[package]]
+name = "pypdf"
+version = "4.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/65/2ed7c9e1d31d860f096061b3dd2d665f501e09faaa0409a3f0d719d2a16d/pypdf-4.3.1.tar.gz", hash = "sha256:b2f37fe9a3030aa97ca86067a56ba3f9d3565f9a791b305c7355d8392c30d91b", size = 293266, upload-time = "2024-07-21T19:35:20.207Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3c/60/eccdd92dd4af3e4bea6d6a342f7588c618a15b9bec4b968af581e498bcc4/pypdf-4.3.1-py3-none-any.whl", hash = "sha256:64b31da97eda0771ef22edb1bfecd5deee4b72c3d1736b7df2689805076d6418", size = 295825, upload-time = "2024-07-21T19:35:18.126Z" },
 ]
 
 [[package]]
