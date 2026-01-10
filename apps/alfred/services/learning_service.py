@@ -635,9 +635,15 @@ class LearningService:
             ]
         }
 
-        # Aggregate topic->entity weights and compute topic-topic links via shared entities
+        # Aggregate topic->entity weights and compute topic-topic links via shared entities.
+        #
+        # Naively generating all topic-topic pairs for high-degree entities is O(n²) per entity
+        # and can dominate response times once the learning graph grows. We cap the number of
+        # topics considered per entity to keep the work bounded while still surfacing useful
+        # "shared concept" links.
         topic_entity_weight: dict[tuple[int, str], int] = {}
         entity_to_topics: dict[str, set[int]] = {}
+        entity_topic_weight: dict[str, dict[int, int]] = {}
         entity_meta: dict[str, dict] = {}
         for r in rows:
             eid = f"entity:{r.entity_id}"
@@ -646,6 +652,8 @@ class LearningService:
             tid = int(r.topic_id)
             topic_entity_weight[(tid, eid)] = topic_entity_weight.get((tid, eid), 0) + 1
             entity_to_topics.setdefault(eid, set()).add(tid)
+            entity_topic_weight.setdefault(eid, {})
+            entity_topic_weight[eid][tid] = entity_topic_weight[eid].get(tid, 0) + 1
             entity_meta[eid] = {
                 "label": r.entity_name,
                 "entity_type": r.entity_type,
@@ -668,13 +676,22 @@ class LearningService:
         for (tid, eid), w in topic_entity_weight.items():
             edges.append({"source": f"topic:{tid}", "target": eid, "type": "MENTIONS", "weight": w})
 
-        shared: dict[tuple[int, int], int] = {}
-        for tids in entity_to_topics.values():
-            tlist = sorted(tids)
-            for i in range(len(tlist)):
-                for j in range(i + 1, len(tlist)):
-                    key = (tlist[i], tlist[j])
-                    shared[key] = shared.get(key, 0) + 1
+        from collections import Counter
+        from heapq import nlargest
+        from itertools import combinations
+
+        max_topics_per_entity_for_links = 25
+        shared: Counter[tuple[int, int]] = Counter()
+        for topics in entity_topic_weight.values():
+            if len(topics) < 2:
+                continue
+            top = nlargest(
+                max_topics_per_entity_for_links,
+                topics.items(),
+                key=lambda kv: (kv[1], -kv[0]),
+            )
+            tlist = sorted(tid for tid, _w in top)
+            shared.update(combinations(tlist, 2))
         for (a, b), w in sorted(shared.items(), key=lambda kv: kv[1], reverse=True)[:200]:
             edges.append(
                 {

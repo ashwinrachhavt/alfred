@@ -5,6 +5,8 @@ from fastapi import APIRouter, Query
 from starlette.concurrency import run_in_threadpool
 
 from alfred.core.exceptions import ServiceUnavailableError
+from alfred.core.semantic_cache import get_semantic_cache
+from alfred.core.settings import settings
 from alfred.services.agentic_rag import answer_agentic, get_context_chunks
 
 router = APIRouter(prefix="/rag", tags=["rag"])
@@ -26,7 +28,19 @@ async def rag_answer(
     """
     try:
         t0 = time.perf_counter()
-        answer = await run_in_threadpool(answer_agentic, q, k=k, mode=mode)
+        cache = get_semantic_cache(
+            namespace=f"rag:answer:v1:k:{int(k)}:mode:{mode}",
+            ttl_seconds=settings.rag_answer_cache_ttl_seconds,
+            similarity_threshold=settings.rag_answer_cache_similarity_threshold,
+        )
+        if cache is not None:
+            answer = await run_in_threadpool(
+                cache.get_or_set,
+                q,
+                lambda: answer_agentic(q, k=k, mode=mode),
+            )
+        else:
+            answer = await run_in_threadpool(answer_agentic, q, k=k, mode=mode)
         latency_ms = int((time.perf_counter() - t0) * 1000)
     except Exception as exc:
         logger.exception("RAG answer failed")
