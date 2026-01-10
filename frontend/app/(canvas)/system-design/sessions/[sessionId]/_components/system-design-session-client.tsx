@@ -3,10 +3,13 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Download,
+  Link2,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  Shapes,
   Share2,
   WandSparkles,
   X,
@@ -39,6 +42,7 @@ import type {
 } from "@/lib/api/types/system-design";
 
 import { ApiError } from "@/lib/api/client";
+import { diagramToMermaid, diagramToPlantUml } from "@/lib/system-design/code-export";
 
 import {
   ExcalidrawCanvas,
@@ -50,6 +54,7 @@ import {
   SystemDesignNotesEditor,
   type SystemDesignNotesEditorHandle,
 } from "@/components/system-design/system-design-notes-editor";
+import { SystemDesignComponentPalette } from "@/components/system-design/system-design-component-palette";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -65,6 +70,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -126,6 +139,16 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   const [showDiagram, setShowDiagram] = useState(true); // Default to showing diagram
   const [showEditor, setShowEditor] = useState(true);
   const [showCoach, setShowCoach] = useState(false);
+
+  const [isComponentPaletteOpen, setIsComponentPaletteOpen] = useState(false);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
+
+  const [isConnectMode, setIsConnectMode] = useState(false);
+  const [connectSourceId, setConnectSourceId] = useState<string | null>(null);
+
+  const [exportBackground, setExportBackground] = useState(true);
+  const [pngMaxWidthOrHeight, setPngMaxWidthOrHeight] = useState<number>(3840);
 
   const [isAiDialogOpen, setIsAiDialogOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -212,6 +235,30 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
     };
   }, []);
 
+  useEffect(() => {
+    if (!isConnectMode || !connectSourceId) return;
+    if (selectedElementIds.length !== 1) return;
+
+    const targetId = selectedElementIds[0];
+    if (targetId === connectSourceId) return;
+
+    canvasRef.current?.connectElements({
+      fromElementId: connectSourceId,
+      toElementId: targetId,
+    });
+
+    setIsConnectMode(false);
+    setConnectSourceId(null);
+  }, [connectSourceId, isConnectMode, selectedElementIds]);
+
+  useEffect(() => {
+    if (showDiagram) return;
+    setIsConnectMode(false);
+    setConnectSourceId(null);
+    setIsComponentPaletteOpen(false);
+    setIsExportOpen(false);
+    setSelectedElementIds([]);
+  }, [showDiagram]);
 
   const shareUrl = useMemo(() => (session ? toShareUrl(session.share_id) : null), [session]);
 
@@ -358,6 +405,31 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
     }
   }
 
+  function toExportBasename(title: string | null | undefined, id: string): string {
+    const base = (title ?? "").trim();
+    const raw = base.length ? base : `system-design-${id.slice(0, 8)}`;
+    return raw
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "")
+      .slice(0, 80);
+  }
+
+  function downloadBlob(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  function downloadTextFile(text: string, filename: string, mimeType: string) {
+    downloadBlob(new Blob([text], { type: mimeType }), filename);
+  }
+
   if (isLoading) {
     return (
       <div className="text-muted-foreground flex h-full w-full items-center justify-center text-sm">
@@ -405,6 +477,237 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
             <WandSparkles className="size-4" />
             Generate
           </Button>
+
+          <Sheet open={isComponentPaletteOpen} onOpenChange={setIsComponentPaletteOpen}>
+            <SheetTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                disabled={!showDiagram}
+                title={!showDiagram ? "Show Diagram to insert components." : "Open component library"}
+              >
+                <Shapes className="size-4" />
+                Components
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-[420px] sm:max-w-md">
+              <SheetHeader>
+                <SheetTitle>Component library</SheetTitle>
+                <SheetDescription>
+                  Click a component to drop it onto the canvas.
+                </SheetDescription>
+              </SheetHeader>
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <SystemDesignComponentPalette
+                  showHeader={false}
+                  onInsert={(component) => {
+                    canvasRef.current?.insertComponent(component);
+                  }}
+                />
+              </div>
+            </SheetContent>
+          </Sheet>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={isConnectMode ? "secondary" : "outline"}
+                size="sm"
+                className="gap-2"
+                disabled={!showDiagram || (!isConnectMode && selectedElementIds.length !== 1)}
+                onClick={() => {
+                  if (isConnectMode) {
+                    setIsConnectMode(false);
+                    setConnectSourceId(null);
+                    return;
+                  }
+
+                  const selected = selectedElementIds[0];
+                  if (!selected) return;
+                  setConnectSourceId(selected);
+                  setIsConnectMode(true);
+                }}
+              >
+                <Link2 className="size-4" />
+                {isConnectMode ? "Cancel connect" : "Connect"}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {isConnectMode
+                ? "Select a target component on the canvas."
+                : selectedElementIds.length === 1
+                  ? "Connect selected component to another."
+                  : "Select exactly one component to start a connection."}
+            </TooltipContent>
+          </Tooltip>
+
+          <Sheet open={isExportOpen} onOpenChange={setIsExportOpen}>
+            <SheetTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                disabled={!showDiagram}
+                title={!showDiagram ? "Show Diagram to export." : "Export diagram"}
+              >
+                <Download className="size-4" />
+                Export
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-[420px] sm:max-w-md">
+              <SheetHeader>
+                <SheetTitle>Export</SheetTitle>
+                <SheetDescription>Download images or copy diagram code.</SheetDescription>
+              </SheetHeader>
+
+              <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-medium">PNG</h3>
+                    <p className="text-muted-foreground text-xs">
+                      Exports the current canvas view as a PNG.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="sd-export-png-max">Max size</Label>
+                      <select
+                        id="sd-export-png-max"
+                        className="bg-background h-9 rounded-md border px-3 text-sm"
+                        value={pngMaxWidthOrHeight}
+                        onChange={(e) => setPngMaxWidthOrHeight(Number(e.target.value))}
+                      >
+                        <option value={0}>Default</option>
+                        <option value={1920}>1080p (max 1920px)</option>
+                        <option value={3840}>4K (max 3840px)</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label htmlFor="sd-export-background">Background</Label>
+                      <div className="flex h-9 items-center">
+                        <Switch
+                          id="sd-export-background"
+                          checked={exportBackground}
+                          onCheckedChange={setExportBackground}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        const blob = await canvasRef.current?.exportPng({
+                          maxWidthOrHeight: pngMaxWidthOrHeight || undefined,
+                          background: exportBackground,
+                        });
+                        if (!blob) return;
+                        downloadBlob(blob, `${toExportBasename(session.title, session.id)}.png`);
+                      }}
+                    >
+                      Download PNG
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        const svg = await canvasRef.current?.exportSvg({ embedScene: true });
+                        if (!svg) return;
+                        downloadTextFile(
+                          svg,
+                          `${toExportBasename(session.title, session.id)}.svg`,
+                          "image/svg+xml",
+                        );
+                      }}
+                    >
+                      Download SVG
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={async () => {
+                        const svg = await canvasRef.current?.exportSvg({ embedScene: false });
+                        if (!svg) return;
+                        const win = window.open("", "_blank", "noopener,noreferrer");
+                        if (!win) return;
+                        win.document.open();
+                        win.document.write(`<!doctype html><html><head><title>Export</title></head><body style="margin:0">${svg}</body></html>`);
+                        win.document.close();
+                        win.focus();
+                        win.print();
+                      }}
+                    >
+                      Print (PDF)
+                    </Button>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-medium">Code</h3>
+                    <p className="text-muted-foreground text-xs">
+                      Generates a basic diagram graph from bound arrows.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const diagram = canvasRef.current?.getDiagram() ?? session.diagram;
+                        void copyToClipboard(diagramToMermaid(diagram));
+                      }}
+                    >
+                      Copy Mermaid
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const diagram = canvasRef.current?.getDiagram() ?? session.diagram;
+                        void copyToClipboard(diagramToPlantUml(diagram));
+                      }}
+                    >
+                      Copy PlantUML
+                    </Button>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-medium">Raw</h3>
+                    <p className="text-muted-foreground text-xs">
+                      Downloads the persisted Excalidraw JSON for version control.
+                    </p>
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const diagram = canvasRef.current?.getDiagram() ?? session.diagram;
+                      downloadTextFile(
+                        JSON.stringify(diagram, null, 2),
+                        `${toExportBasename(session.title, session.id)}.excalidraw.json`,
+                        "application/json",
+                      );
+                    }}
+                  >
+                    Download JSON
+                  </Button>
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
 
           <div className="bg-background/70 flex items-center rounded-xl border p-1 shadow-sm backdrop-blur-sm">
             <Tooltip>
@@ -555,9 +858,14 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
             {/* Overlay during resize to prevent event trapping */}
             {isResizing && <div className="absolute inset-0 z-50 bg-transparent" />}
 
-            <div className="min-h-0 flex flex-1">
-              <SystemDesignComponentPalette
-                onInsertComponent={(component) => canvasRef.current?.insertComponent(component)}
+            <div className="min-h-0 flex-1 p-0">
+              <ExcalidrawCanvas
+                ref={canvasRef}
+                initialDiagram={session.diagram}
+                onDiagramChange={queueAutosave}
+                onSelectionChange={setSelectedElementIds}
+                framed={false}
+                viewportScale={1}
               />
 
               <div

@@ -1,180 +1,279 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { GripVertical, Search } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Search, Star } from "lucide-react";
 
-import type { ComponentDefinition } from "@/lib/api/types/system-design";
 import { useSystemDesignComponents } from "@/features/system-design/queries";
-import {
-  SYSTEM_DESIGN_COMPONENT_DND_MIME,
-  encodeSystemDesignComponentDragPayload,
-  toSystemDesignComponentDragPayload,
-} from "@/components/system-design/system-design-dnd";
+import type { ComponentDefinition } from "@/lib/api/types/system-design";
+
+import { cn } from "@/lib/utils";
+
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
+
+type StoredIds = string[];
+
+const FAVORITES_KEY = "alfred:system-design:component-favorites:v1";
+const RECENTS_KEY = "alfred:system-design:component-recents:v1";
+const RECENTS_LIMIT = 12;
+
+function readStoredIds(key: string): StoredIds {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredIds(key: string, value: StoredIds): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Ignore storage failures (private mode, quota, etc.)
+  }
+}
+
+function formatCategory(category: string): string {
+  return category
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function scoreForQuery(component: ComponentDefinition, query: string): number {
+  if (!query) return 0;
+  const haystack = `${component.name} ${component.description} ${component.category}`.toLowerCase();
+  const needle = query.toLowerCase();
+  if (component.name.toLowerCase().includes(needle)) return 3;
+  if (component.category.toLowerCase().includes(needle)) return 2;
+  if (haystack.includes(needle)) return 1;
+  return 0;
+}
 
 export type SystemDesignComponentPaletteProps = {
-  onInsertComponent: (component: Pick<ComponentDefinition, "id" | "name" | "category">) => void;
+  onInsert: (component: Pick<ComponentDefinition, "id" | "name" | "category">) => void;
+  className?: string;
+  showHeader?: boolean;
 };
 
-const CATEGORY_LABELS: Record<string, string> = {
-  client: "Client",
-  load_balancer: "Load balancer",
-  api_gateway: "API gateway",
-  microservice: "Services",
-  database: "Databases",
-  cache: "Caches",
-  message_queue: "Queues",
-  cdn: "CDN",
-  storage: "Storage",
-  other: "Other",
-};
+export function SystemDesignComponentPalette({
+  onInsert,
+  className,
+  showHeader = true,
+}: SystemDesignComponentPaletteProps) {
+  const { data: components = [], isPending, error } = useSystemDesignComponents();
 
-function categoryLabel(category: string): string {
-  return CATEGORY_LABELS[category] ?? category.replaceAll("_", " ");
-}
-
-const EMPTY_COMPONENTS: ComponentDefinition[] = [];
-
-type GroupedComponents = Array<{ category: string; label: string; items: ComponentDefinition[] }>;
-
-function groupComponents(components: ComponentDefinition[]): GroupedComponents {
-  const groups = new Map<string, ComponentDefinition[]>();
-  for (const component of components) {
-    const key = component.category;
-    const existing = groups.get(key);
-    if (existing) {
-      existing.push(component);
-    } else {
-      groups.set(key, [component]);
-    }
-  }
-
-  return [...groups.entries()]
-    .map(([category, items]) => ({
-      category,
-      label: categoryLabel(category),
-      items: items.slice().sort((a, b) => a.name.localeCompare(b.name)),
-    }))
-    .sort((a, b) => a.label.localeCompare(b.label));
-}
-
-export function SystemDesignComponentPalette({ onInsertComponent }: SystemDesignComponentPaletteProps) {
-  const componentsQuery = useSystemDesignComponents();
   const [query, setQuery] = useState("");
-  const draggingIdRef = useRef<string | null>(null);
-
-  const components = useMemo(
-    () => componentsQuery.data ?? EMPTY_COMPONENTS,
-    [componentsQuery.data],
+  const [favorites, setFavorites] = useState<Set<string>>(
+    () => new Set(readStoredIds(FAVORITES_KEY)),
   );
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return components;
+  const [recents, setRecents] = useState<string[]>(() => readStoredIds(RECENTS_KEY));
 
-    return components.filter((component) => {
-      const haystack = `${component.name} ${component.description}`.toLowerCase();
-      return haystack.includes(needle);
-    });
+  const byId = useMemo(() => {
+    return new Map(components.map((c) => [c.id, c]));
+  }, [components]);
+
+  const filtered = useMemo(() => {
+    const trimmed = query.trim();
+    if (!trimmed) return components;
+    return components
+      .map((component) => ({ component, score: scoreForQuery(component, trimmed) }))
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score || a.component.name.localeCompare(b.component.name))
+      .map((entry) => entry.component);
   }, [components, query]);
 
-  const grouped = useMemo(() => groupComponents(filtered), [filtered]);
+  const groups = useMemo(() => {
+    const grouped = new Map<string, ComponentDefinition[]>();
+    for (const component of filtered) {
+      const key = component.category || "other";
+      const existing = grouped.get(key) ?? [];
+      existing.push(component);
+      grouped.set(key, existing);
+    }
+    return Array.from(grouped.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [filtered]);
+
+  function toggleFavorite(id: string) {
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      writeStoredIds(FAVORITES_KEY, Array.from(next));
+      return next;
+    });
+  }
+
+  function registerRecent(id: string) {
+    setRecents((prev) => {
+      const next = [id, ...prev.filter((existing) => existing !== id)].slice(0, RECENTS_LIMIT);
+      writeStoredIds(RECENTS_KEY, next);
+      return next;
+    });
+  }
+
+  function handleInsert(component: ComponentDefinition) {
+    onInsert({ id: component.id, name: component.name, category: component.category });
+    registerRecent(component.id);
+  }
+
+  const favoriteComponents = useMemo(() => {
+    if (!favorites.size) return [];
+    return Array.from(favorites)
+      .map((id) => byId.get(id))
+      .filter(Boolean) as ComponentDefinition[];
+  }, [byId, favorites]);
+
+  const recentComponents = useMemo(() => {
+    if (!recents.length) return [];
+    return recents.map((id) => byId.get(id)).filter(Boolean) as ComponentDefinition[];
+  }, [byId, recents]);
+
+  const errorMessage = error instanceof Error ? error.message : error ? "Failed to load components." : null;
 
   return (
-    <aside className="bg-muted/20 flex w-60 flex-col border-r">
-      <div className="space-y-2 p-3">
-        <div className="text-xs font-semibold tracking-wide uppercase">Components</div>
-        <div className="relative">
-          <Search className="text-muted-foreground absolute top-2.5 left-2 size-4" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search…"
-            className="h-9 pl-8"
-          />
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-        {componentsQuery.isPending ? (
-          <div className="space-y-3">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-20 w-full" />
-            <Skeleton className="h-20 w-full" />
-            <Skeleton className="h-20 w-full" />
-          </div>
-        ) : componentsQuery.error ? (
-          <p className="text-muted-foreground text-sm">
-            Unable to load component library.{" "}
-            <span className="text-muted-foreground/70">
-              {(componentsQuery.error as Error).message}
-            </span>
+    <div className={cn("flex min-h-0 flex-1 flex-col gap-4 p-4", className)}>
+      {showHeader ? (
+        <div className="space-y-1">
+          <h2 className="text-base font-semibold">Components</h2>
+          <p className="text-muted-foreground text-xs">
+            Search and click to drop a component onto the canvas.
           </p>
-        ) : grouped.length === 0 ? (
-          <p className="text-muted-foreground text-sm">No matching components.</p>
-        ) : (
-          <div className="space-y-4">
-            {grouped.map((group) => (
-              <section key={group.category} className="space-y-2">
-                <div className="text-muted-foreground flex items-center justify-between text-xs font-medium">
-                  <span className="uppercase tracking-wide">{group.label}</span>
-                  <Badge variant="secondary" className="text-[10px]">
-                    {group.items.length}
-                  </Badge>
-                </div>
+        </div>
+      ) : null}
 
-                <div className="space-y-2">
-                  {group.items.map((component) => (
-                    <button
-                      key={component.id}
-                      type="button"
-                      draggable
-                      className="bg-background hover:bg-accent focus-visible:ring-ring/50 w-full rounded-lg border px-3 py-2 text-left shadow-xs transition-colors outline-none focus-visible:ring-[3px]"
-                      onClick={() => {
-                        if (draggingIdRef.current === component.id) return;
-                        onInsertComponent(component);
-                      }}
-                      onDragStart={(event) => {
-                        draggingIdRef.current = component.id;
-                        const payload = toSystemDesignComponentDragPayload(component);
-                        event.dataTransfer.effectAllowed = "copy";
-                        event.dataTransfer.setData(
-                          SYSTEM_DESIGN_COMPONENT_DND_MIME,
-                          encodeSystemDesignComponentDragPayload(payload),
-                        );
-                        event.dataTransfer.setData("text/plain", component.name);
-                      }}
-                      onDragEnd={() => {
-                        window.setTimeout(() => {
-                          if (draggingIdRef.current === component.id) draggingIdRef.current = null;
-                        }, 0);
-                      }}
-                      title="Click to insert, or drag onto the canvas"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-medium">{component.name}</div>
-                          <div className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-snug">
-                            {component.description}
-                          </div>
-                        </div>
-                        <div className="text-muted-foreground mt-0.5 flex items-center gap-1">
-                          <GripVertical className="size-4" />
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-        )}
+      <div className="relative">
+        <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search components…"
+          className="pl-9"
+          disabled={isPending}
+        />
       </div>
 
-      <div className="text-muted-foreground border-t px-3 py-2 text-xs">
-        Tip: Drag a component onto the canvas.
+      {errorMessage ? <p className="text-destructive text-sm">{errorMessage}</p> : null}
+
+      {isPending ? (
+        <p className="text-muted-foreground text-sm">Loading component library…</p>
+      ) : null}
+
+      {!isPending && !components.length ? (
+        <p className="text-muted-foreground text-sm">No components available.</p>
+      ) : null}
+
+      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto pr-1">
+        {favoriteComponents.length ? (
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium">Favorites</h3>
+              <Badge variant="secondary">{favoriteComponents.length}</Badge>
+            </div>
+            <div className="space-y-2">
+              {favoriteComponents.map((component) => (
+                <ComponentRow
+                  key={component.id}
+                  component={component}
+                  isFavorite
+                  onToggleFavorite={toggleFavorite}
+                  onInsert={handleInsert}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {recentComponents.length ? (
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium">Recent</h3>
+              <Badge variant="secondary">{recentComponents.length}</Badge>
+            </div>
+            <div className="space-y-2">
+              {recentComponents.map((component) => (
+                <ComponentRow
+                  key={component.id}
+                  component={component}
+                  isFavorite={favorites.has(component.id)}
+                  onToggleFavorite={toggleFavorite}
+                  onInsert={handleInsert}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {groups.map(([category, items]) => (
+          <section key={category} className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium">{formatCategory(category)}</h3>
+              <Badge variant="outline">{items.length}</Badge>
+            </div>
+            <div className="space-y-2">
+              {items.map((component) => (
+                <ComponentRow
+                  key={component.id}
+                  component={component}
+                  isFavorite={favorites.has(component.id)}
+                  onToggleFavorite={toggleFavorite}
+                  onInsert={handleInsert}
+                />
+              ))}
+            </div>
+          </section>
+        ))}
       </div>
-    </aside>
+    </div>
+  );
+}
+
+function ComponentRow({
+  component,
+  isFavorite,
+  onToggleFavorite,
+  onInsert,
+}: {
+  component: ComponentDefinition;
+  isFavorite: boolean;
+  onToggleFavorite: (id: string) => void;
+  onInsert: (component: ComponentDefinition) => void;
+}) {
+  return (
+    <div className="bg-background flex items-start justify-between gap-3 rounded-lg border p-3">
+      <button
+        type="button"
+        onClick={() => onInsert(component)}
+        className="min-w-0 flex-1 space-y-1 text-left"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="truncate text-sm font-medium">{component.name}</span>
+          <Badge variant="secondary" className="whitespace-nowrap">
+            {formatCategory(component.category)}
+          </Badge>
+        </div>
+        <p className="text-muted-foreground line-clamp-2 text-xs">{component.description}</p>
+      </button>
+
+      <div className="flex items-center gap-1">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground hover:text-foreground"
+          onClick={() => onToggleFavorite(component.id)}
+          title={isFavorite ? "Remove favorite" : "Add favorite"}
+        >
+          <Star className="size-4" fill={isFavorite ? "currentColor" : "none"} />
+        </Button>
+      </div>
+    </div>
   );
 }
