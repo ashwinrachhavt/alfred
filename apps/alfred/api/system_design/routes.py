@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from sqlmodel import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -26,6 +26,7 @@ from alfred.schemas.system_design import (
     SystemDesignPublishResponse,
     SystemDesignSession,
     SystemDesignSessionCreate,
+    SystemDesignSessionSummary,
     SystemDesignSessionUpdate,
     TemplateDefinition,
 )
@@ -45,6 +46,14 @@ def create_session(
     svc: SystemDesignService = Depends(get_system_design_service),
 ) -> SystemDesignSession:
     return svc.create_session(payload)
+
+
+@router.get("/sessions", response_model=list[SystemDesignSessionSummary])
+def list_sessions(
+    limit: int = Query(default=20, ge=1, le=200),
+    svc: SystemDesignService = Depends(get_system_design_service),
+) -> list[SystemDesignSessionSummary]:
+    return svc.list_sessions(limit=limit)
 
 
 @router.get("/sessions/{session_id}", response_model=SystemDesignSession)
