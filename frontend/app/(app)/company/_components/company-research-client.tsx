@@ -140,7 +140,7 @@ export function CompanyResearchClient({
 }: CompanyResearchClientProps) {
   const [companyName, setCompanyName] = useState(() => (initialCompany ?? "").trim());
   const [hasEditedCompanyName, setHasEditedCompanyName] = useState(false);
-  const [refresh, setRefresh] = useState(() => Boolean(initialRefresh));
+  const [refresh, setRefresh] = useState(false);
   const [contactsRole, setContactsRole] = useState("");
 
   const startResearch = useStartCompanyResearch();
