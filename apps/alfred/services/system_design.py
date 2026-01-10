@@ -3,8 +3,12 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
-
-from alfred.core.exceptions import AlfredException
+from alfred.core.exceptions import (
+    AlfredException,
+    NotFoundError,
+    ShareAccessDeniedError,
+    ShareExpiredError,
+)
 from alfred.core.settings import settings
 from alfred.core.utils import utcnow as _utcnow
 from alfred.schemas.system_design import (
@@ -23,14 +27,18 @@ from alfred.schemas.system_design import (
     ScaleEstimateResponse,
     SystemDesignArtifacts,
     SystemDesignKnowledgeDraft,
+    SystemDesignShareSettings,
+    SystemDesignShareUpdate,
     SystemDesignSession,
     SystemDesignSessionCreate,
     SystemDesignSessionSummary,
     SystemDesignSessionUpdate,
+    SystemDesignTemplateCreate,
     TemplateDefinition,
 )
 from alfred.services.datastore import DataStoreService
 from alfred.services.llm_service import LLMService
+from alfred.services.system_design_share import hash_password, verify_password
 from alfred.services.system_design_heuristics import component_library, template_library
 from alfred.services.system_design_interviewer import SystemDesignInterviewer
 
@@ -62,10 +70,13 @@ class SystemDesignService:
     """Postgres-backed storage and heuristics for system design interviews."""
 
     collection_name: str = settings.system_design_sessions_collection
+    templates_collection_name: str | None = None
     llm_service: LLMService | None = None
 
     def __post_init__(self) -> None:
         self._collection = DataStoreService(default_collection=self.collection_name)
+        templates_collection = self.templates_collection_name or f"{self.collection_name}_templates"
+        self._templates = DataStoreService(default_collection=templates_collection)
         self._interviewer = SystemDesignInterviewer(llm_service=self.llm_service)
 
     def ensure_indexes(self) -> None:
@@ -77,18 +88,59 @@ class SystemDesignService:
     def template_library(self) -> List[TemplateDefinition]:
         return template_library()
 
+    def list_templates(self) -> List[TemplateDefinition]:
+        """Return both built-in and user-saved templates."""
+
+        builtins = self.template_library()
+        custom_docs = self._templates.find_many({})
+        custom = [self._to_template(str(doc["_id"]), doc) for doc in custom_docs]
+        return builtins + custom
+
+    def get_template(self, template_id: str) -> TemplateDefinition | None:
+        for template in self.template_library():
+            if template.id == template_id:
+                return template
+        doc = self._templates.find_one({"_id": template_id})
+        if not doc:
+            return None
+        return self._to_template(str(doc["_id"]), doc)
+
+    def create_template(self, payload: SystemDesignTemplateCreate) -> TemplateDefinition:
+        now = _utcnow()
+        doc = {
+            "name": payload.name,
+            "description": payload.description,
+            "components": payload.components,
+            "diagram": payload.diagram.model_dump(by_alias=True),
+            "created_at": now,
+            "updated_at": now,
+        }
+        doc_id = self._templates.insert_one(doc)
+        return self._to_template(doc_id, doc | {"_id": doc_id})
+
     def present_design_problem(self, problem: str) -> DesignPrompt:
         return self._interviewer.present_design_problem(problem)
 
     def create_session(self, payload: SystemDesignSessionCreate) -> SystemDesignSession:
         now = _utcnow()
         share_id = _new_id()
+
         diagram = ExcalidrawData(elements=[], appState={}, files={}, metadata={})
+        template_id = payload.template_id
+        if template_id:
+            template = self.get_template(template_id)
+            if template is not None:
+                diagram = template.diagram
+            else:
+                template_id = None
+
         doc = {
             "share_id": share_id,
+            "share_settings": SystemDesignShareSettings().model_dump(),
+            "share_secret": {},
             "title": payload.title,
             "problem_statement": payload.problem_statement,
-            "template_id": payload.template_id,
+            "template_id": template_id,
             "notes_markdown": "",
             "diagram": diagram.model_dump(by_alias=True),
             "version": 1,
@@ -140,6 +192,71 @@ class SystemDesignService:
         if not doc:
             return None
         return self._to_session(str(doc["_id"]), doc)
+
+    def get_shared_session(self, share_id: str, *, password: str | None = None) -> SystemDesignSession:
+        doc = self._collection.find_one({"share_id": share_id})
+        if not doc:
+            raise NotFoundError("Session not found.")
+
+        share_settings = SystemDesignShareSettings.model_validate(doc.get("share_settings") or {})
+        if not share_settings.enabled:
+            raise NotFoundError("Session not found.")
+
+        now = _utcnow()
+        if share_settings.expires_at and share_settings.expires_at <= now:
+            raise ShareExpiredError("Share link has expired.")
+
+        secret = doc.get("share_secret") if isinstance(doc.get("share_secret"), dict) else {}
+        salt_hex = secret.get("password_salt")
+        digest_hex = secret.get("password_hash")
+        if isinstance(salt_hex, str) and isinstance(digest_hex, str) and digest_hex:
+            if not password:
+                raise ShareAccessDeniedError("Password required to view this diagram.")
+            if not verify_password(password, salt_hex=salt_hex, digest_hex=digest_hex):
+                raise ShareAccessDeniedError("Invalid password.")
+
+        return self._to_session(str(doc["_id"]), doc)
+
+    def update_share_settings(
+        self, session_id: str, payload: SystemDesignShareUpdate
+    ) -> Optional[SystemDesignSession]:
+        doc = self._collection.find_one({"_id": session_id})
+        if not doc:
+            return None
+
+        now = _utcnow()
+        share_settings = dict(doc.get("share_settings") or {})
+        if payload.enabled is not None:
+            share_settings["enabled"] = payload.enabled
+        if "expires_at" in payload.model_fields_set:
+            share_settings["expires_at"] = payload.expires_at
+
+        secret = dict(doc.get("share_secret") or {})
+        if payload.rotate_share_id:
+            doc["share_id"] = _new_id()
+
+        should_clear_password = payload.clear_password or (
+            "password" in payload.model_fields_set and not (payload.password or "").strip()
+        )
+        if should_clear_password:
+            secret.pop("password_salt", None)
+            secret.pop("password_hash", None)
+        elif "password" in payload.model_fields_set and payload.password:
+            hashed = hash_password(payload.password)
+            secret["password_salt"] = hashed.salt_hex
+            secret["password_hash"] = hashed.digest_hex
+
+        update: Dict[str, Any] = {
+            "share_id": doc.get("share_id"),
+            "share_settings": share_settings,
+            "share_secret": secret,
+            "updated_at": now,
+        }
+        self._collection.update_one({"_id": session_id}, {"$set": update})
+        updated = self._collection.find_one({"_id": session_id})
+        if not updated:
+            return None
+        return self._to_session(str(updated["_id"]), updated)
 
     def autosave(self, session_id: str, payload: AutosaveRequest) -> Optional[SystemDesignSession]:
         now = _utcnow()
@@ -296,9 +413,13 @@ class SystemDesignService:
             if isinstance(v, dict)
         ]
         artifacts = SystemDesignArtifacts.model_validate(doc.get("artifacts") or {})
+        share_settings = SystemDesignShareSettings.model_validate(doc.get("share_settings") or {})
+        secret = doc.get("share_secret") if isinstance(doc.get("share_secret"), dict) else {}
+        share_settings.has_password = bool(secret.get("password_hash"))
         return SystemDesignSession(
             id=session_id,
             share_id=doc.get("share_id", ""),
+            share_settings=share_settings,
             title=doc.get("title"),
             problem_statement=doc.get("problem_statement", ""),
             template_id=doc.get("template_id"),
@@ -325,4 +446,15 @@ class SystemDesignService:
             version=_coerce_version(doc.get("version", 1)),
             created_at=doc.get("created_at") or _utcnow(),
             updated_at=doc.get("updated_at") or _utcnow(),
+        )
+
+    def _to_template(self, template_id: str, doc: Dict[str, Any]) -> TemplateDefinition:
+        diagram = ExcalidrawData.model_validate(doc.get("diagram") or {})
+        components = doc.get("components") if isinstance(doc.get("components"), list) else []
+        return TemplateDefinition(
+            id=template_id,
+            name=str(doc.get("name") or "Untitled template"),
+            description=str(doc.get("description") or ""),
+            components=[str(c) for c in components if isinstance(c, (str, int))],
+            diagram=diagram,
         )

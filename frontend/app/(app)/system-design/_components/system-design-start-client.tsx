@@ -9,6 +9,7 @@ import type { SystemDesignSession } from "@/lib/api/types/system-design";
 import { ApiError } from "@/lib/api/client";
 import { useCreateSystemDesignSession } from "@/features/system-design/mutations";
 import { useSystemDesignTemplates } from "@/features/system-design/queries";
+import { SystemDesignTemplatePicker } from "@/components/system-design/system-design-template-picker";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -191,26 +192,15 @@ export function SystemDesignStartClient({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="sdTemplate">Template</Label>
-              <div className="relative">
-                <select
-                  id="sdTemplate"
-                  className="bg-background h-10 w-full rounded-md border px-3 text-sm"
-                  value={templateId ?? ""}
-                  onChange={(e) => setTemplateId(e.target.value || null)}
-                  disabled={isLoadingTemplates}
-                >
-                  <option value="">No template</option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
               {isLoadingTemplates ? (
                 <p className="text-muted-foreground text-xs">Loading templates…</p>
-              ) : null}
+              ) : (
+                <SystemDesignTemplatePicker
+                  templates={templates}
+                  selectedTemplateId={templateId}
+                  onSelectTemplateId={setTemplateId}
+                />
+              )}
             </div>
 
             {errorMessage ? (

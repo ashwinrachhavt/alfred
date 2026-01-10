@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.responses import PlainTextResponse
 from sqlmodel import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -24,15 +25,18 @@ from alfred.schemas.system_design import (
     SystemDesignNotesUpdate,
     SystemDesignPublishRequest,
     SystemDesignPublishResponse,
+    SystemDesignShareUpdate,
     SystemDesignSession,
     SystemDesignSessionCreate,
     SystemDesignSessionSummary,
     SystemDesignSessionUpdate,
+    SystemDesignTemplateCreate,
     TemplateDefinition,
 )
 from alfred.services.interview_service import InterviewPrepService
 from alfred.services.learning_service import LearningService
 from alfred.services.system_design import SystemDesignService
+from alfred.services.system_design_export import diagram_to_mermaid, diagram_to_plantuml
 from alfred.services.system_design_realtime import SystemDesignRealtimeHub
 from alfred.services.zettelkasten_service import ZettelkastenService
 
@@ -70,12 +74,10 @@ def get_session(
 @router.get("/sessions/share/{share_id}", response_model=SystemDesignSession)
 def get_shared_session(
     share_id: str,
+    share_password: str | None = Header(default=None, alias="X-Alfred-Share-Password"),
     svc: SystemDesignService = Depends(get_system_design_service),
 ) -> SystemDesignSession:
-    session = svc.get_by_share_id(share_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found.")
-    return session
+    return svc.get_shared_session(share_id, password=share_password)
 
 
 @router.patch("/sessions/{session_id}", response_model=SystemDesignSession)
@@ -126,6 +128,28 @@ def add_export(
     return session
 
 
+@router.get("/sessions/{session_id}/export/mermaid", response_class=PlainTextResponse)
+def export_mermaid(
+    session_id: str,
+    svc: SystemDesignService = Depends(get_system_design_service),
+) -> str:
+    session = svc.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return diagram_to_mermaid(session.diagram)
+
+
+@router.get("/sessions/{session_id}/export/plantuml", response_class=PlainTextResponse)
+def export_plantuml(
+    session_id: str,
+    svc: SystemDesignService = Depends(get_system_design_service),
+) -> str:
+    session = svc.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return diagram_to_plantuml(session.diagram)
+
+
 @router.get("/sessions/{session_id}/versions", response_model=list[DiagramVersion])
 def list_versions(
     session_id: str,
@@ -144,7 +168,27 @@ def get_components(svc: SystemDesignService = Depends(get_system_design_service)
 
 @router.get("/library/templates", response_model=list[TemplateDefinition])
 def get_templates(svc: SystemDesignService = Depends(get_system_design_service)):
-    return svc.template_library()
+    return svc.list_templates()
+
+
+@router.post("/library/templates", response_model=TemplateDefinition)
+def create_template(
+    payload: SystemDesignTemplateCreate,
+    svc: SystemDesignService = Depends(get_system_design_service),
+) -> TemplateDefinition:
+    return svc.create_template(payload)
+
+
+@router.patch("/sessions/{session_id}/share", response_model=SystemDesignSession)
+def update_share_settings(
+    session_id: str,
+    payload: SystemDesignShareUpdate,
+    svc: SystemDesignService = Depends(get_system_design_service),
+) -> SystemDesignSession:
+    session = svc.update_share_settings(session_id, payload)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return session
 
 
 @router.post("/sessions/{session_id}/analyze", response_model=DiagramAnalysis)

@@ -51,6 +51,19 @@ class TemplateDefinition(BaseModel):
     diagram: ExcalidrawData
 
 
+class SystemDesignShareSettings(BaseModel):
+    """Public share settings for a system design session.
+
+    Notes:
+    - We intentionally do not expose password hashes/salts.
+    - `has_password` is a hint for the UI to prompt for a password on shared views.
+    """
+
+    enabled: bool = True
+    expires_at: Optional[datetime] = None
+    has_password: bool = False
+
+
 class DiagramVersion(BaseModel):
     id: str
     created_at: datetime
@@ -84,6 +97,7 @@ class SystemDesignSessionCreate(BaseModel):
 class SystemDesignSession(BaseModel):
     id: str
     share_id: str
+    share_settings: SystemDesignShareSettings = Field(default_factory=SystemDesignShareSettings)
     title: Optional[str] = None
     problem_statement: str
     template_id: Optional[str] = None
@@ -122,6 +136,14 @@ class SystemDesignSessionUpdate(BaseModel):
 
 class SystemDesignNotesUpdate(BaseModel):
     notes_markdown: str
+
+
+class SystemDesignShareUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    expires_at: Optional[datetime] = None
+    password: Optional[str] = None
+    clear_password: bool = False
+    rotate_share_id: bool = False
 
 
 class DesignPrompt(BaseModel):
@@ -224,6 +246,13 @@ class DiagramExportRequest(BaseModel):
     format: str
     storage_url: Optional[str] = None
     notes: Optional[str] = None
+
+
+class SystemDesignTemplateCreate(BaseModel):
+    name: str = Field(min_length=1)
+    description: str = Field(default="")
+    components: List[str] = Field(default_factory=list)
+    diagram: ExcalidrawData
 
 
 class ScaleEstimateRequest(BaseModel):

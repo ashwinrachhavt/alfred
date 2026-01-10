@@ -10,7 +10,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Shapes,
-  Share2,
   WandSparkles,
   X,
 } from "lucide-react";
@@ -54,6 +53,7 @@ import {
   SystemDesignNotesEditor,
   type SystemDesignNotesEditorHandle,
 } from "@/components/system-design/system-design-notes-editor";
+import { SystemDesignShareDialog } from "@/components/system-design/system-design-share-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -88,10 +88,6 @@ function formatErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
   return "Something went wrong.";
-}
-
-function toShareUrl(shareId: string): string {
-  return `/system-design/share/${shareId}`;
 }
 
 export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) {
@@ -130,6 +126,8 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   const diagramRevisionRef = useRef(0);
   const lastSavedRevisionRef = useRef(0);
   const sessionVersionRef = useRef<number>(1);
+  const templateAppliedSessionRef = useRef<string | null>(null);
+  const isApplyingTemplateRef = useRef(false);
 
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -264,8 +262,44 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
     setIsExportOpen(false);
     setSelectedElementIds([]);
   }, [showDiagram]);
+  }, [connectSourceId, isConnectMode, selectedElementIds]);
 
-  const shareUrl = useMemo(() => (session ? toShareUrl(session.share_id) : null), [session]);
+  useEffect(() => {
+    if (!session) return;
+    if (isApplyingTemplateRef.current) return;
+    if (templateAppliedSessionRef.current === session.id) return;
+
+    const metadata = session.diagram?.metadata;
+    const mermaid =
+      metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>).mermaid : null;
+    if (typeof mermaid !== "string" || !mermaid.trim()) return;
+    if (session.diagram?.elements?.length) {
+      templateAppliedSessionRef.current = session.id;
+      return;
+    }
+
+    isApplyingTemplateRef.current = true;
+    void (async () => {
+      try {
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+          const handle = canvasRef.current;
+          if (handle) {
+            await handle.replaceWithMermaid(mermaid);
+            const nextDiagram = handle.getDiagram();
+            if (nextDiagram && nextDiagram.elements.length) {
+              queueAutosave(nextDiagram);
+              await flushAutosave().catch(() => {});
+              templateAppliedSessionRef.current = session.id;
+              break;
+            }
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 100));
+        }
+      } finally {
+        isApplyingTemplateRef.current = false;
+      }
+    })();
+  }, [session]);
 
   const mainGridTemplateColumns = useMemo(() => {
     // Account for resize handles (w-1 = 4px) in the grid columns.
@@ -438,14 +472,6 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
       setActionError(formatErrorMessage(err));
     } finally {
       setIsActionRunning(false);
-    }
-  }
-
-  async function copyToClipboard(text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // ignore; copying is optional UX sugar
     }
   }
 
@@ -822,22 +848,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
             </Tooltip>
           </div>
 
-          {shareUrl ? (
-            <>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    onClick={() => void copyToClipboard(shareUrl)}
-                  >
-                    <Share2 className="size-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Copy share link</TooltipContent>
-              </Tooltip>
-            </>
-          ) : null}
+          <SystemDesignShareDialog session={session} onSessionUpdated={setSession} />
           <Button asChild variant="ghost" size="sm">
             <Link href="/system-design">Exit</Link>
           </Button>

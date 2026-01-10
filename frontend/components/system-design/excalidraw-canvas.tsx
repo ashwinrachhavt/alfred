@@ -123,6 +123,7 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
     const restoreRef = useRef<Restore | null>(null);
     const captureUpdateRef = useRef<CaptureUpdateActionValue | null>(null);
     const apiRef = useRef<ExcalidrawAPI | null>(null);
+    const metadataRef = useRef<Record<string, unknown> | undefined>(initialDiagram.metadata);
     const [helpersReady, setHelpersReady] = useState(false);
     const [normalizedInitialData, setNormalizedInitialData] =
       useState<ExcalidrawInitialDataState | null>(null);
@@ -177,6 +178,7 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
 
     useEffect(() => {
       if (!helpersReady) return;
+      metadataRef.current = initialDiagram.metadata;
       const restore = restoreRef.current;
       if (!restore) {
         setNormalizedInitialData(normalizeFallback(initialDiagram));
@@ -308,7 +310,9 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
         if (!onDiagramChange) return;
         const serialize = serializeRef.current;
         if (!serialize) return;
-        onDiagramChange(toPersistedDiagram(serialize, elements, appState, files));
+        const next = toPersistedDiagram(serialize, elements, appState, files);
+        if (metadataRef.current) next.metadata = metadataRef.current;
+        onDiagramChange(next);
       },
       [onDiagramChange, onSelectionChange],
     );
@@ -330,7 +334,17 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
       const api = apiRef.current;
       const serialize = serializeRef.current;
       if (!api || !serialize) return null;
-      return toPersistedDiagram(serialize, api.getSceneElements(), api.getAppState(), api.getFiles());
+
+      const elements =
+        "getSceneElementsIncludingDeleted" in api
+          ? (api as unknown as { getSceneElementsIncludingDeleted: () => unknown }).getSceneElementsIncludingDeleted()
+          : api.getSceneElements();
+      const files =
+        "getFiles" in api ? (api as unknown as { getFiles: () => unknown }).getFiles() : {};
+
+      const next = toPersistedDiagram(serialize, elements, api.getAppState(), files);
+      if (metadataRef.current) next.metadata = metadataRef.current;
+      return next;
     }, []);
 
     const connectElements = useCallback(

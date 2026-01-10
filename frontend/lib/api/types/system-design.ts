@@ -5,6 +5,12 @@ export type ExcalidrawData = {
   metadata?: Record<string, unknown>;
 };
 
+export type SystemDesignShareSettings = {
+  enabled: boolean;
+  expires_at: string | null;
+  has_password: boolean;
+};
+
 export type SystemDesignSessionCreate = {
   title?: string | null;
   problem_statement: string;
@@ -38,6 +44,7 @@ export type SystemDesignArtifacts = {
 export type SystemDesignSession = {
   id: string;
   share_id: string;
+  share_settings: SystemDesignShareSettings;
   title?: string | null;
   problem_statement: string;
   template_id?: string | null;
@@ -76,6 +83,14 @@ export type SystemDesignSessionUpdate = {
 
 export type SystemDesignNotesUpdate = {
   notes_markdown: string;
+};
+
+export type SystemDesignShareUpdate = {
+  enabled?: boolean;
+  expires_at?: string | null;
+  password?: string | null;
+  clear_password?: boolean;
+  rotate_share_id?: boolean;
 };
 
 export type DesignPrompt = {
@@ -204,5 +219,12 @@ export type TemplateDefinition = {
   name: string;
   description: string;
   components: string[];
+  diagram: ExcalidrawData;
+};
+
+export type SystemDesignTemplateCreate = {
+  name: string;
+  description?: string;
+  components?: string[];
   diagram: ExcalidrawData;
 };
