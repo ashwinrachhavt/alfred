@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 
 import type { SystemDesignSession } from "@/lib/api/types/system-design";
 
@@ -26,6 +26,8 @@ type RecentSystemDesignSession = {
 };
 
 const RECENTS_KEY = "alfred:system-design:recents:v1";
+const RECENTS_EVENT = "alfred:system-design:recents-changed";
+const EMPTY_RECENTS: RecentSystemDesignSession[] = [];
 
 function safeParseRecents(raw: string | null): RecentSystemDesignSession[] {
   if (!raw) return [];
@@ -35,6 +37,47 @@ function safeParseRecents(raw: string | null): RecentSystemDesignSession[] {
   } catch {
     return [];
   }
+}
+
+let _cachedRawRecents: string | null = null;
+let _cachedParsedRecents: RecentSystemDesignSession[] = EMPTY_RECENTS;
+
+function readRecentsSnapshot(): RecentSystemDesignSession[] {
+  if (typeof window === "undefined") return [];
+
+  const raw = window.localStorage.getItem(RECENTS_KEY);
+  if (raw === _cachedRawRecents) return _cachedParsedRecents;
+
+  _cachedRawRecents = raw;
+  _cachedParsedRecents = safeParseRecents(raw) || EMPTY_RECENTS;
+  return _cachedParsedRecents;
+}
+
+function subscribeToRecents(onStoreChange: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+
+  const handler = (event: Event) => {
+    const storageEvent = event as StorageEvent;
+    // "storage" only fires on other tabs; we also listen for a same-tab custom event.
+    if (event.type === "storage" && storageEvent.key !== RECENTS_KEY) return;
+    onStoreChange();
+  };
+
+  window.addEventListener("storage", handler);
+  window.addEventListener(RECENTS_EVENT, handler);
+  return () => {
+    window.removeEventListener("storage", handler);
+    window.removeEventListener(RECENTS_EVENT, handler);
+  };
+}
+
+function notifyRecentsChanged(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(RECENTS_EVENT));
+}
+
+function useRecentSystemDesignSessions(): RecentSystemDesignSession[] {
+  return useSyncExternalStore(subscribeToRecents, readRecentsSnapshot, () => EMPTY_RECENTS);
 }
 
 function formatErrorMessage(error: unknown): string {
@@ -66,10 +109,7 @@ export function SystemDesignStartClient() {
   const createSession = useCreateSystemDesignSession();
   const [error, setError] = useState<string | null>(null);
 
-  const [recents, setRecents] = useState<RecentSystemDesignSession[]>(() => {
-    if (typeof window === "undefined") return [];
-    return safeParseRecents(window.localStorage.getItem(RECENTS_KEY));
-  });
+  const recents = useRecentSystemDesignSessions();
 
   const canCreate = useMemo(
     () => problemStatement.trim().length > 0 && !createSession.isPending,
@@ -88,8 +128,8 @@ export function SystemDesignStartClient() {
       const next = [toRecentSession(session), ...recents]
         .filter((item, idx, arr) => arr.findIndex((x) => x.id === item.id) === idx)
         .slice(0, 10);
-      setRecents(next);
       window.localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
+      notifyRecentsChanged();
 
       router.push(`/system-design/sessions/${session.id}`);
     } catch (err) {

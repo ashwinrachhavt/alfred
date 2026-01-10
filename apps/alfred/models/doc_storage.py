@@ -106,10 +106,10 @@ class _JsonObjectType(TypeDecorator[dict[str, Any] | None]):
         return dialect.type_descriptor(sa.JSON)
 
 
-class NoteRow(SQLModel, table=True):
-    """Lightweight note record."""
+class QuickNoteRow(SQLModel, table=True):
+    """Lightweight note record for quick capture (legacy Atheneum notes)."""
 
-    __tablename__ = "notes"
+    __tablename__ = "quick_notes"
 
     id: uuid.UUID = Field(
         default_factory=uuid.uuid4,
@@ -300,4 +300,4 @@ class DocChunkRow(SQLModel, table=True):
     )
 
 
-__all__ = ["NoteRow", "DocumentRow", "DocChunkRow"]
+__all__ = ["QuickNoteRow", "DocumentRow", "DocChunkRow"]
