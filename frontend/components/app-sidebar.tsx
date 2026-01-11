@@ -65,14 +65,20 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                     <Link href={item.href}>
                       <item.icon className="size-4" aria-hidden="true" />
                       <span>{item.title}</span>
-                      {item.key === "tasks" && activeCount ? (
-                        <div className="bg-destructive text-destructive-foreground ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-medium">
-                          {activeCount}
+                      {item.key === "tasks" ? (
+                        <div
+                          suppressHydrationWarning
+                          className={`bg-destructive text-destructive-foreground ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-medium ${activeCount ? "" : "hidden"}`}
+                        >
+                          {activeCount ?? ""}
                         </div>
                       ) : null}
-                      {item.key === "follow-ups" && dueNowCount ? (
-                        <div className="bg-destructive text-destructive-foreground ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-medium">
-                          {dueNowCount}
+                      {item.key === "follow-ups" ? (
+                        <div
+                          suppressHydrationWarning
+                          className={`bg-destructive text-destructive-foreground ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-medium ${dueNowCount ? "" : "hidden"}`}
+                        >
+                          {dueNowCount ?? ""}
                         </div>
                       ) : null}
                     </Link>

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import Response
 
 from alfred.core.celery_client import get_celery_client
@@ -49,6 +49,49 @@ class NotionImportStartResponse(BaseModel):
     task_id: str | None = None
     status_url: str | None = None
     result: dict[str, Any] | None = None
+
+
+class NotionPageSearchResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    page_id: str = Field(..., description="Notion page id.")
+    title: str = Field(..., description="Notion page title.")
+    url: str | None = Field(default=None, description="Notion page URL.")
+    last_edited_time: str | None = Field(default=None, description="ISO 8601 string.")
+
+
+class NotionPageSearchResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    results: list[NotionPageSearchResult]
+
+
+class NotionPageMarkdownResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    page_id: str
+    title: str
+    url: str | None = None
+    last_edited_time: str | None = None
+    markdown: str
+
+
+class NotionPageMarkdownUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    markdown: str = Field(..., description="Markdown to write into the Notion page.")
+    mode: Literal["replace", "append"] = Field(
+        default="replace",
+        description="How to apply markdown: replace archives existing blocks; append adds blocks.",
+    )
+
+
+class NotionPageMarkdownUpdateResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    success: bool
+    page_id: str
+    mode: Literal["replace", "append"]
 
 
 @router.get("/status")
@@ -186,7 +229,7 @@ async def get_notion_history(
         default=False,
         description="When true, fetch full block content for each page (slower).",
     ),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     try:
         pages = await notion.fetch_page_history(
             start_date=start_date,
@@ -203,3 +246,48 @@ async def get_notion_history(
     except Exception as exc:  # pragma: no cover - unexpected runtime errors
         logger.exception("Notion history failed")
         raise ServiceUnavailableError("Notion history failed") from exc
+
+
+@router.get("/search", response_model=NotionPageSearchResponse)
+def search_pages(
+    q: str = Query(..., min_length=1, description="Search query."),
+    limit: int = Query(default=20, ge=1, le=50, description="Max results."),
+) -> NotionPageSearchResponse:
+    try:
+        results = notion.search_pages(q, page_size=limit)
+        return NotionPageSearchResponse(
+            results=[NotionPageSearchResult(**r) for r in results if r.get("page_id")]
+        )
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as exc:
+        logger.exception("Notion search failed")
+        raise ServiceUnavailableError("Notion search failed") from exc
+
+
+@router.get("/pages/{page_id}/markdown", response_model=NotionPageMarkdownResponse)
+def get_page_markdown(page_id: str) -> NotionPageMarkdownResponse:
+    try:
+        return NotionPageMarkdownResponse(**notion.get_page_markdown(page_id))
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as exc:
+        logger.exception("Notion page markdown fetch failed")
+        raise ServiceUnavailableError("Notion page fetch failed") from exc
+
+
+@router.post("/pages/{page_id}/markdown", response_model=NotionPageMarkdownUpdateResponse)
+def update_page_markdown(
+    page_id: str,
+    payload: NotionPageMarkdownUpdateRequest,
+) -> NotionPageMarkdownUpdateResponse:
+    try:
+        notion.update_page_markdown(page_id=page_id, markdown=payload.markdown, mode=payload.mode)
+        return NotionPageMarkdownUpdateResponse(success=True, page_id=page_id, mode=payload.mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as exc:
+        logger.exception("Notion page markdown update failed")
+        raise ServiceUnavailableError("Notion page update failed") from exc

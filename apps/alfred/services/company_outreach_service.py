@@ -21,6 +21,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, TypedDict
 
 import requests
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
 from alfred.agents.company_outreach.agent import build_company_outreach_graph
@@ -693,6 +694,63 @@ class OutreachService:
             if role_l:
                 items = [c for c in items if role_l in (c.get("title") or "").lower()]
             return items[:limit]
+
+    def list_recent_contacts_from_db(
+        self,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+        query: str | None = None,
+        company: str | None = None,
+        role_filter: str | None = None,
+        providers: Sequence[ContactProvider] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return recently stored outreach contacts across companies (DB-only).
+
+        Supports lightweight filtering by free-text query, company name, role/title match,
+        and source providers. Results are ordered by newest first.
+        """
+
+        limit = max(1, int(limit))
+        offset = max(0, int(offset))
+
+        company_value = (company or "").strip() or None
+        query_value = (query or "").strip() or None
+        role_value = (role_filter or "").strip() or None
+
+        selected = {p.value for p in providers} if providers else None
+
+        sess_ctx = self.session or next(get_session())
+        with sess_ctx as db:
+            stmt = select(OutreachContact)
+
+            if company_value is not None:
+                stmt = stmt.where(OutreachContact.company == company_value)
+
+            if selected is not None:
+                stmt = stmt.where(
+                    func.lower(OutreachContact.source).in_([s.lower() for s in selected])
+                )
+
+            if role_value is not None:
+                role_l = role_value.lower()
+                stmt = stmt.where(func.lower(OutreachContact.title).like(f"%{role_l}%"))
+
+            if query_value is not None:
+                q_l = query_value.lower()
+                pattern = f"%{q_l}%"
+                stmt = stmt.where(
+                    or_(
+                        func.lower(OutreachContact.company).like(pattern),
+                        func.lower(OutreachContact.name).like(pattern),
+                        func.lower(OutreachContact.title).like(pattern),
+                        func.lower(OutreachContact.email).like(pattern),
+                    )
+                )
+
+            stmt = stmt.order_by(OutreachContact.created_at.desc()).offset(offset).limit(limit)
+            rows: Iterable[OutreachContact] = db.exec(stmt).all()
+            return [_row_to_db_dict(row) for row in rows]
 
     # -------- sending --------
     def send_email(

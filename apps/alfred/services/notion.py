@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import HTTPException
 from notion_client import Client
@@ -164,7 +164,26 @@ def _create_page_in_db(db_id: str, title: str, blocks: List[Dict[str, Any]]):
 def _append_blocks(page_id: str, blocks: List[Dict[str, Any]]):
     if not blocks:
         return {"page_id": page_id, "status": "skipped", "reason": "no blocks"}
-    return _client().blocks.children.append(block_id=page_id, children=blocks)
+
+    client = _client()
+    results: list[dict] = []
+    for i in range(0, len(blocks), 100):
+        chunk = blocks[i : i + 100]
+        results.append(client.blocks.children.append(block_id=page_id, children=chunk))
+
+    if len(results) == 1:
+        return results[0]
+
+    combined: dict[str, Any] = {
+        "object": "list",
+        "results": [],
+        "has_more": False,
+        "type": "block",
+    }
+    for resp in results:
+        combined["results"].extend(resp.get("results", []) or [])
+    combined["total"] = len(combined["results"])
+    return combined
 
 
 @retry(wait=wait_exponential_jitter(1, 5), stop=stop_after_attempt(5))
@@ -433,3 +452,116 @@ def fetch_database_as_markdown(database_id: str) -> str:
         return f"❌ Notion API error: {getattr(e, 'message', str(e))}"
     except Exception as e:
         return f"❌ Unexpected error while fetching Notion markdown: {e}"
+
+
+def _extract_page_title(page: dict) -> str:
+    """Extract a human-readable title from a Notion page payload."""
+
+    props = page.get("properties") or {}
+    if isinstance(props, dict):
+        for prop in props.values():
+            if not isinstance(prop, dict):
+                continue
+            if prop.get("type") != "title":
+                continue
+            title_data = prop.get("title") or []
+            if isinstance(title_data, list):
+                title = "".join(item.get("plain_text", "") for item in title_data).strip()
+                if title:
+                    return title
+    return "Untitled"
+
+
+def search_pages(query: str, page_size: int = 25) -> list[dict[str, Any]]:
+    """Search Notion for pages matching `query` (server-side token)."""
+
+    q = (query or "").strip()
+    size = max(1, min(50, page_size))
+
+    client = _client()
+    try:
+        resp = client.search(
+            query=q,
+            page_size=size,
+            sort={"direction": "descending", "timestamp": "last_edited_time"},
+        )
+    except TypeError:
+        resp = client.search(query=q, page_size=size)
+
+    results = resp.get("results", []) or []
+    pages: list[dict[str, Any]] = []
+    for item in results:
+        if not isinstance(item, dict) or item.get("object") != "page":
+            continue
+        pages.append(
+            {
+                "page_id": item.get("id"),
+                "title": _extract_page_title(item),
+                "url": item.get("url"),
+                "last_edited_time": item.get("last_edited_time"),
+            }
+        )
+    return pages
+
+
+def get_page_markdown(page_id: str) -> dict[str, Any]:
+    """Fetch a Notion page and convert its blocks into markdown."""
+
+    page = get_page(page_id)
+    children = _collect_children_all(page_id)
+    md_lines: list[str] = []
+    for block in children:
+        md_lines.extend(_block_to_md(block, depth=0))
+    markdown = "\n".join(md_lines).rstrip()
+    return {
+        "page_id": page_id,
+        "title": _extract_page_title(page),
+        "url": page.get("url"),
+        "last_edited_time": page.get("last_edited_time"),
+        "markdown": markdown,
+    }
+
+
+def _archive_block(block_id: str) -> dict[str, Any]:
+    client = _client()
+    update_fn = getattr(client.blocks, "update", None)
+    try:
+        if callable(update_fn):
+            try:
+                return update_fn(block_id=block_id, archived=True)
+            except TypeError:
+                return update_fn(block_id, archived=True)  # type: ignore[misc]
+        return client.request(path=f"blocks/{block_id}", method="PATCH", body={"archived": True})
+    except APIResponseError as exc:
+        status = getattr(exc, "status", None) or 502
+        detail = getattr(exc, "message", None) or str(exc)
+        raise HTTPException(status, detail) from exc
+
+
+def update_page_markdown(
+    *,
+    page_id: str,
+    markdown: str,
+    mode: Literal["replace", "append"] = "replace",
+) -> dict[str, Any]:
+    """Update a Notion page's content from markdown.
+
+    Modes:
+    - `replace`: archive existing top-level blocks, then append new content
+    - `append`: append new content without touching existing blocks
+    """
+
+    blocks = _md_to_blocks(markdown)
+
+    if mode == "append":
+        return _append_blocks(page_id, blocks)
+
+    if mode != "replace":
+        raise ValueError(f"Invalid update mode: {mode}")
+
+    for block in _collect_children_all(page_id):
+        block_id = block.get("id")
+        if block_id:
+            _archive_block(block_id)
+
+    return _append_blocks(page_id, blocks)

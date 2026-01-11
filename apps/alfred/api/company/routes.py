@@ -265,6 +265,16 @@ class OutreachContactsDbResponse(BaseModel):
     items: list[OutreachContactRow]
 
 
+class OutreachContactsDbRecentResponse(BaseModel):
+    query: str | None
+    company: str | None
+    role: str | None
+    limit: int
+    offset: int
+    providers: list[str] | None
+    items: list[OutreachContactRow]
+
+
 @router.get("/contacts/db", response_model=OutreachContactsDbResponse)
 async def company_contacts_db(
     name: str = Query(..., description="Company name"),
@@ -295,6 +305,44 @@ async def company_contacts_db(
     except Exception as exc:
         logger.exception("Company contacts db lookup failed")
         raise ServiceUnavailableError("Company contacts db lookup failed") from exc
+
+
+@router.get("/contacts/db/recent", response_model=OutreachContactsDbRecentResponse)
+async def company_contacts_db_recent(
+    q: str | None = Query(None, description="Optional search query (name/title/email/company)"),
+    company: str | None = Query(None, description="Optional company name filter"),
+    role: str | None = Query(None, description="Optional role/title filter"),
+    limit: int = Query(20, ge=1, le=100, description="Max contacts to return"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    providers: list[ContactProvider] | None = Query(
+        None,
+        description="Contact sources to include. Repeat the parameter to select multiple.",
+    ),
+    outreach_service: OutreachService = Depends(get_outreach_service),
+):
+    """Return contacts already stored in the database across all companies (no external lookups)."""
+
+    try:
+        items = outreach_service.list_recent_contacts_from_db(
+            limit=limit,
+            offset=offset,
+            query=q,
+            company=company,
+            role_filter=role,
+            providers=providers,
+        )
+        return {
+            "query": (q or "").strip() or None,
+            "company": (company or "").strip() or None,
+            "role": (role or "").strip() or None,
+            "limit": limit,
+            "offset": offset,
+            "providers": [p.value for p in providers] if providers else None,
+            "items": items,
+        }
+    except Exception as exc:
+        logger.exception("Company contacts db recent lookup failed")
+        raise ServiceUnavailableError("Company contacts db recent lookup failed") from exc
 
 
 class OutreachRequest(BaseModel):

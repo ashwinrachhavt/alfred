@@ -7,8 +7,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
 from pydantic import AnyHttpUrl, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+load_dotenv()
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "alfred.db"
 
@@ -21,7 +24,7 @@ class LLMProvider(str, Enum):
 class Settings(BaseSettings):
     """Unified application settings for Alfred.
 
-    Loads from env with support for repo ".env" files. Avoids manual load_dotenv().
+    Loads from env with support for repo ".env" files.
     """
 
     _app_env = (os.getenv("APP_ENV") or "").strip().lower()
@@ -30,8 +33,12 @@ class Settings(BaseSettings):
         []
         if _is_test_like_env
         else [
-            str((Path(__file__).resolve().parents[1] / ".env")),  # apps/alfred/.env
-            str((Path(__file__).resolve().parents[3] / ".env")),  # repo root .env
+            # apps/alfred/.env* (prefer local overrides first)
+            str((Path(__file__).resolve().parents[1] / ".env.local")),
+            str((Path(__file__).resolve().parents[1] / ".env")),
+            # repo root .env* (common for local dev)
+            str((Path(__file__).resolve().parents[3] / ".env.local")),
+            str((Path(__file__).resolve().parents[3] / ".env")),
         ]
     )
 

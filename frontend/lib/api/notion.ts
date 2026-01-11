@@ -1,5 +1,11 @@
-import { apiFetch } from "@/lib/api/client";
-import type { NotionHistoryResponse } from "@/lib/api/types/notion";
+import { apiFetch, apiPostJson } from "@/lib/api/client";
+import type {
+  NotionHistoryResponse,
+  NotionPageMarkdownResponse,
+  NotionPageSearchResponse,
+  UpdateNotionPageMarkdownRequest,
+  UpdateNotionPageMarkdownResponse,
+} from "@/lib/api/types/notion";
 
 export type GetNotionHistoryParams = {
   start_date?: string | null;
@@ -26,3 +32,23 @@ export async function getNotionHistory(
   return apiFetch(`/api/notion/history${buildQuery(params)}`);
 }
 
+export async function searchNotionPages(params: {
+  q: string;
+  limit?: number;
+}): Promise<NotionPageSearchResponse> {
+  const query = new URLSearchParams();
+  query.set("q", params.q);
+  if (typeof params.limit === "number") query.set("limit", String(params.limit));
+  return apiFetch(`/api/notion/search?${query.toString()}`);
+}
+
+export async function getNotionPageMarkdown(pageId: string): Promise<NotionPageMarkdownResponse> {
+  return apiFetch(`/api/notion/pages/${encodeURIComponent(pageId)}/markdown`);
+}
+
+export async function updateNotionPageMarkdown(
+  pageId: string,
+  payload: UpdateNotionPageMarkdownRequest,
+): Promise<UpdateNotionPageMarkdownResponse> {
+  return apiPostJson(`/api/notion/pages/${encodeURIComponent(pageId)}/markdown`, payload);
+}

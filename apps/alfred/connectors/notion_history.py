@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from notion_client import AsyncClient
 from notion_client.errors import APIResponseError
@@ -18,7 +18,6 @@ from notion_client.errors import APIResponseError
 from alfred.core.settings import settings
 
 logger = logging.getLogger(__name__)
-
 
 def _parse_iso(dt: str | datetime | None) -> Optional[datetime]:
     """Parse an ISO 8601 string or datetime into an aware datetime (UTC)."""
@@ -36,8 +35,8 @@ def _parse_iso(dt: str | datetime | None) -> Optional[datetime]:
 
 
 async def _enumerate_async(
-    iterable: AsyncIterator[Dict[str, Any]],
-) -> AsyncIterator[Tuple[int, Dict[str, Any]]]:
+    iterable: AsyncIterator[dict[str, Any]],
+) -> AsyncIterator[tuple[int, dict[str, Any]]]:
     index = 0
     async for item in iterable:
         yield index, item

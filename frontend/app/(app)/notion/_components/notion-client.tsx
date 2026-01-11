@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { ApiError } from "@/lib/api/client";
 import type { NotionHistoryPage } from "@/lib/api/types/notion";
 import { useNotionHistory } from "@/features/notion/queries";
+import { NotionNotetaker } from "@/app/(app)/notion/_components/notion-notetaker";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -85,6 +86,8 @@ export function NotionClient() {
           Review pages visible to the configured Notion integration (server-side token).
         </p>
       </header>
+
+      <NotionNotetaker />
 
       <Card>
         <CardHeader>
@@ -179,4 +182,3 @@ export function NotionClient() {
     </div>
   );
 }
-

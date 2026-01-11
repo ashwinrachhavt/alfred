@@ -28,21 +28,39 @@ def get_task_status(task_id: str, *, include_result: bool = True) -> TaskStatusR
 
     result: Any | None = None
     error: str | None = None
-    if async_result.ready() and include_result:
-        if async_result.successful():
-            try:
-                result = jsonable_encoder(async_result.result)
-            except TypeError:
-                result = str(async_result.result)
-        elif async_result.failed():
-            error = str(async_result.result)
+    try:
+        is_ready = async_result.ready()
+        is_successful = async_result.successful()
+        is_failed = async_result.failed()
+        status = async_result.status
+
+        if is_ready and include_result:
+            if is_successful:
+                try:
+                    result = jsonable_encoder(async_result.result)
+                except TypeError:
+                    result = str(async_result.result)
+            elif is_failed:
+                error = str(async_result.result)
+    except Exception as exc:  # pragma: no cover - depends on external broker/result backend
+        # If Redis (or another result backend) is unavailable, avoid returning 500s for
+        # status polling. Let the UI degrade gracefully.
+        return TaskStatusResponse(
+            task_id=task_id,
+            status="unavailable",
+            ready=False,
+            successful=False,
+            failed=False,
+            result=None,
+            error=str(exc),
+        )
 
     return TaskStatusResponse(
         task_id=task_id,
-        status=async_result.status,
-        ready=async_result.ready(),
-        successful=async_result.successful(),
-        failed=async_result.failed(),
+        status=status,
+        ready=is_ready,
+        successful=is_successful,
+        failed=is_failed,
         result=result,
         error=error,
     )

@@ -29,6 +29,64 @@ const Excalidraw = dynamic(async () => (await import("@excalidraw/excalidraw")).
   ),
 });
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isPoint(value: unknown): value is [number, number] {
+  return (
+    Array.isArray(value) &&
+    value.length === 2 &&
+    isFiniteNumber(value[0]) &&
+    isFiniteNumber(value[1])
+  );
+}
+
+/**
+ * Excalidraw requires linear elements (line/arrow) to be normalized such that
+ * the first point is `[0, 0]` and the remaining points are relative to `x/y`.
+ *
+ * Some persisted scenes (or migrations) can violate this invariant, which
+ * triggers noisy console errors (and can surface as an overlay in Next.js).
+ */
+function normalizeLinearElementOrigins(elements: unknown): unknown {
+  if (!Array.isArray(elements)) return elements;
+
+  let changed = false;
+
+  const next = elements.map((element) => {
+    if (!isRecord(element)) return element;
+
+    const type = element.type;
+    if (type !== "line" && type !== "arrow") return element;
+
+    const points = element.points;
+    if (!Array.isArray(points) || points.length === 0) return element;
+    if (!points.every(isPoint)) return element;
+
+    const [offsetX, offsetY] = points[0];
+    if (offsetX === 0 && offsetY === 0) return element;
+
+    const x = element.x;
+    const y = element.y;
+    if (!isFiniteNumber(x) || !isFiniteNumber(y)) return element;
+
+    changed = true;
+    return {
+      ...element,
+      x: x + offsetX,
+      y: y + offsetY,
+      points: points.map(([px, py]) => [px - offsetX, py - offsetY]),
+    };
+  });
+
+  return changed ? next : elements;
+}
+
 function toPersistedDiagram(
   serialize: SerializeAsJSON,
   elements: unknown,
@@ -150,7 +208,9 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
       });
 
       return {
-        elements: safeElements as unknown as ExcalidrawInitialDataState["elements"],
+        elements: normalizeLinearElementOrigins(
+          safeElements,
+        ) as unknown as ExcalidrawInitialDataState["elements"],
         appState: (diagram.appState ?? {}) as unknown as ExcalidrawInitialDataState["appState"],
         files: (diagram.files ?? {}) as unknown as ExcalidrawInitialDataState["files"],
       };
@@ -197,8 +257,10 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
           { refreshDimensions: true, repairBindings: true },
         );
 
+        const elements = normalizeLinearElementOrigins(restored.elements);
+
         setNormalizedInitialData({
-          elements: restored.elements as unknown as ExcalidrawInitialDataState["elements"],
+          elements: elements as unknown as ExcalidrawInitialDataState["elements"],
           appState: restored.appState as unknown as ExcalidrawInitialDataState["appState"],
           files: restored.files as unknown as ExcalidrawInitialDataState["files"],
         });

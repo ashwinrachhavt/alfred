@@ -84,3 +84,13 @@ export type CompanyContactsDbResponse = {
   providers: string[] | null;
   items: CompanyContactDbRow[];
 };
+
+export type CompanyContactsDbRecentResponse = {
+  query: string | null;
+  company: string | null;
+  role: string | null;
+  limit: number;
+  offset: number;
+  providers: string[] | null;
+  items: CompanyContactDbRow[];
+};
