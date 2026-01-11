@@ -1,13 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, Star } from "lucide-react";
+import { GripVertical, Search, Star } from "lucide-react";
 
-import { useSystemDesignComponents } from "@/features/system-design/queries";
 import type { ComponentDefinition } from "@/lib/api/types/system-design";
-
+import { useSystemDesignComponents } from "@/features/system-design/queries";
 import { cn } from "@/lib/utils";
 
+import {
+  SYSTEM_DESIGN_COMPONENT_DND_MIME,
+  encodeSystemDesignComponentDragPayload,
+  toSystemDesignComponentDragPayload,
+} from "@/components/system-design/system-design-dnd";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,6 +66,63 @@ export type SystemDesignComponentPaletteProps = {
   className?: string;
   showHeader?: boolean;
 };
+
+function ComponentRow({
+  component,
+  isFavorite,
+  onInsert,
+  onToggleFavorite,
+}: {
+  component: ComponentDefinition;
+  isFavorite: boolean;
+  onInsert: (component: Pick<ComponentDefinition, "id" | "name" | "category">) => void;
+  onToggleFavorite: (id: string) => void;
+}) {
+  return (
+    <div className="bg-background flex items-start justify-between gap-3 rounded-lg border p-3">
+      <button
+        type="button"
+        draggable
+        onClick={() => onInsert(component)}
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = "copy";
+          const payload = toSystemDesignComponentDragPayload(component);
+          event.dataTransfer.setData(
+            SYSTEM_DESIGN_COMPONENT_DND_MIME,
+            encodeSystemDesignComponentDragPayload(payload),
+          );
+          event.dataTransfer.setData("text/plain", component.name);
+        }}
+        className="min-w-0 flex-1 space-y-1 text-left"
+        title="Click to insert, or drag onto the canvas"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="truncate text-sm font-medium">{component.name}</span>
+          <Badge variant="secondary" className="whitespace-nowrap">
+            {formatCategory(component.category)}
+          </Badge>
+        </div>
+        <p className="text-muted-foreground line-clamp-2 text-xs">{component.description}</p>
+      </button>
+
+      <div className="flex items-center gap-1">
+        <span className="text-muted-foreground">
+          <GripVertical className="size-4" />
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground hover:text-foreground"
+          onClick={() => onToggleFavorite(component.id)}
+          title={isFavorite ? "Remove favorite" : "Add favorite"}
+        >
+          <Star className="size-4" fill={isFavorite ? "currentColor" : "none"} />
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export function SystemDesignComponentPalette({
   onInsert,
@@ -119,161 +180,114 @@ export function SystemDesignComponentPalette({
     });
   }
 
-  function handleInsert(component: ComponentDefinition) {
-    onInsert({ id: component.id, name: component.name, category: component.category });
+  function insert(component: Pick<ComponentDefinition, "id" | "name" | "category">) {
     registerRecent(component.id);
+    onInsert(component);
   }
 
   const favoriteComponents = useMemo(() => {
-    if (!favorites.size) return [];
-    return Array.from(favorites)
-      .map((id) => byId.get(id))
-      .filter(Boolean) as ComponentDefinition[];
+    const items: ComponentDefinition[] = [];
+    for (const id of favorites) {
+      const component = byId.get(id);
+      if (component) items.push(component);
+    }
+    return items.sort((a, b) => a.name.localeCompare(b.name));
   }, [byId, favorites]);
 
   const recentComponents = useMemo(() => {
-    if (!recents.length) return [];
-    return recents.map((id) => byId.get(id)).filter(Boolean) as ComponentDefinition[];
+    const items: ComponentDefinition[] = [];
+    for (const id of recents) {
+      const component = byId.get(id);
+      if (component) items.push(component);
+    }
+    return items;
   }, [byId, recents]);
 
-  const errorMessage = error instanceof Error ? error.message : error ? "Failed to load components." : null;
-
   return (
-    <div className={cn("flex min-h-0 flex-1 flex-col gap-4 p-4", className)}>
+    <div className={cn("flex h-full flex-col gap-3", className)}>
       {showHeader ? (
         <div className="space-y-1">
-          <h2 className="text-base font-semibold">Components</h2>
-          <p className="text-muted-foreground text-xs">
-            Search and click to drop a component onto the canvas.
-          </p>
+          <div className="text-sm font-medium">Component library</div>
+          <div className="text-muted-foreground text-xs">Click to insert, or drag onto canvas.</div>
         </div>
       ) : null}
 
       <div className="relative">
-        <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+        <Search className="text-muted-foreground absolute top-2.5 left-2.5 size-4" />
         <Input
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(event) => setQuery(event.target.value)}
           placeholder="Search components…"
           className="pl-9"
-          disabled={isPending}
         />
       </div>
 
-      {errorMessage ? <p className="text-destructive text-sm">{errorMessage}</p> : null}
-
       {isPending ? (
-        <p className="text-muted-foreground text-sm">Loading component library…</p>
-      ) : null}
-
-      {!isPending && !components.length ? (
-        <p className="text-muted-foreground text-sm">No components available.</p>
-      ) : null}
-
-      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto pr-1">
-        {favoriteComponents.length ? (
-          <section className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">Favorites</h3>
-              <Badge variant="secondary">{favoriteComponents.length}</Badge>
-            </div>
+        <div className="text-muted-foreground text-sm">Loading components…</div>
+      ) : error ? (
+        <div className="text-destructive text-sm">Failed to load components.</div>
+      ) : (
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+          {favoriteComponents.length ? (
             <div className="space-y-2">
-              {favoriteComponents.map((component) => (
-                <ComponentRow
-                  key={component.id}
-                  component={component}
-                  isFavorite
-                  onToggleFavorite={toggleFavorite}
-                  onInsert={handleInsert}
-                />
-              ))}
+              <div className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                Favorites
+              </div>
+              <div className="space-y-2">
+                {favoriteComponents.map((component) => (
+                  <ComponentRow
+                    key={component.id}
+                    component={component}
+                    isFavorite={favorites.has(component.id)}
+                    onInsert={insert}
+                    onToggleFavorite={toggleFavorite}
+                  />
+                ))}
+              </div>
             </div>
-          </section>
-        ) : null}
+          ) : null}
 
-        {recentComponents.length ? (
-          <section className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">Recent</h3>
-              <Badge variant="secondary">{recentComponents.length}</Badge>
-            </div>
+          {recentComponents.length ? (
             <div className="space-y-2">
-              {recentComponents.map((component) => (
-                <ComponentRow
-                  key={component.id}
-                  component={component}
-                  isFavorite={favorites.has(component.id)}
-                  onToggleFavorite={toggleFavorite}
-                  onInsert={handleInsert}
-                />
-              ))}
+              <div className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                Recent
+              </div>
+              <div className="space-y-2">
+                {recentComponents.map((component) => (
+                  <ComponentRow
+                    key={component.id}
+                    component={component}
+                    isFavorite={favorites.has(component.id)}
+                    onInsert={insert}
+                    onToggleFavorite={toggleFavorite}
+                  />
+                ))}
+              </div>
             </div>
-          </section>
-        ) : null}
+          ) : null}
 
-        {groups.map(([category, items]) => (
-          <section key={category} className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">{formatCategory(category)}</h3>
-              <Badge variant="outline">{items.length}</Badge>
-            </div>
-            <div className="space-y-2">
-              {items.map((component) => (
-                <ComponentRow
-                  key={component.id}
-                  component={component}
-                  isFavorite={favorites.has(component.id)}
-                  onToggleFavorite={toggleFavorite}
-                  onInsert={handleInsert}
-                />
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ComponentRow({
-  component,
-  isFavorite,
-  onToggleFavorite,
-  onInsert,
-}: {
-  component: ComponentDefinition;
-  isFavorite: boolean;
-  onToggleFavorite: (id: string) => void;
-  onInsert: (component: ComponentDefinition) => void;
-}) {
-  return (
-    <div className="bg-background flex items-start justify-between gap-3 rounded-lg border p-3">
-      <button
-        type="button"
-        onClick={() => onInsert(component)}
-        className="min-w-0 flex-1 space-y-1 text-left"
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-medium">{component.name}</span>
-          <Badge variant="secondary" className="whitespace-nowrap">
-            {formatCategory(component.category)}
-          </Badge>
+          <div className="space-y-4">
+            {groups.map(([category, items]) => (
+              <div key={category} className="space-y-2">
+                <div className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                  {formatCategory(category)}
+                </div>
+                <div className="space-y-2">
+                  {items.map((component) => (
+                    <ComponentRow
+                      key={component.id}
+                      component={component}
+                      isFavorite={favorites.has(component.id)}
+                      onInsert={insert}
+                      onToggleFavorite={toggleFavorite}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        <p className="text-muted-foreground line-clamp-2 text-xs">{component.description}</p>
-      </button>
-
-      <div className="flex items-center gap-1">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground hover:text-foreground"
-          onClick={() => onToggleFavorite(component.id)}
-          title={isFavorite ? "Remove favorite" : "Add favorite"}
-        >
-          <Star className="size-4" fill={isFavorite ? "currentColor" : "none"} />
-        </Button>
-      </div>
+      )}
     </div>
   );
 }

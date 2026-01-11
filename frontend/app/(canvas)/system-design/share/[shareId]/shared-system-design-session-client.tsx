@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { getSharedSystemDesignSession } from "@/lib/api/system-design";
@@ -11,6 +12,8 @@ import { ExcalidrawCanvas } from "@/components/system-design/excalidraw-canvas";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 function formatErrorMessage(error: unknown): string {
@@ -20,23 +23,37 @@ function formatErrorMessage(error: unknown): string {
 }
 
 export function SharedSystemDesignSessionClient({ shareId }: { shareId: string }) {
+  const searchParams = useSearchParams();
+  const isEmbed = searchParams.get("embed") === "1";
+
   const [session, setSession] = useState<SystemDesignSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [password, setPassword] = useState("");
+  const [needsPassword, setNeedsPassword] = useState(false);
+
+  async function load(pass?: string) {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const next = await getSharedSystemDesignSession(
+        shareId,
+        pass ? { password: pass } : undefined,
+      );
+      setSession(next);
+      setNeedsPassword(false);
+    } catch (err) {
+      setSession(null);
+      if (err instanceof ApiError && err.status === 401) {
+        setNeedsPassword(true);
+      }
+      setError(formatErrorMessage(err));
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function load() {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const next = await getSharedSystemDesignSession(shareId);
-        setSession(next);
-      } catch (err) {
-        setError(formatErrorMessage(err));
-      } finally {
-        setIsLoading(false);
-      }
-    }
     void load();
   }, [shareId]);
 
@@ -51,6 +68,38 @@ export function SharedSystemDesignSessionClient({ shareId }: { shareId: string }
   }
 
   if (!session) {
+    if (needsPassword) {
+      return (
+        <div className="mx-auto w-full max-w-md space-y-4 px-4 py-10">
+          <h1 className="text-2xl font-semibold">{title}</h1>
+          <p className="text-muted-foreground text-sm">{error ?? "Password required."}</p>
+
+          <div className="bg-background space-y-3 rounded-xl border p-4">
+            <div className="space-y-2">
+              <Label htmlFor="sdSharePassword">Password</Label>
+              <Input
+                id="sdSharePassword"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter password…"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <Button onClick={() => void load(password)} disabled={!password.trim() || isLoading}>
+                {isLoading ? "Unlocking…" : "Unlock"}
+              </Button>
+              {!isEmbed ? (
+                <Button asChild variant="outline">
+                  <Link href="/system-design">Back</Link>
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="mx-auto w-full max-w-3xl space-y-4 px-4 py-10">
         <h1 className="text-2xl font-semibold">{title}</h1>
@@ -58,6 +107,14 @@ export function SharedSystemDesignSessionClient({ shareId }: { shareId: string }
         <Button asChild variant="outline">
           <Link href="/system-design">Back</Link>
         </Button>
+      </div>
+    );
+  }
+
+  if (isEmbed) {
+    return (
+      <div className="h-full w-full">
+        <ExcalidrawCanvas initialDiagram={session.diagram} readOnly framed={false} viewportScale={1} />
       </div>
     );
   }

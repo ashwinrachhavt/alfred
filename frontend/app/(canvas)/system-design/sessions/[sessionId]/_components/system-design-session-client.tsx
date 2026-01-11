@@ -10,7 +10,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Shapes,
-  Share2,
   WandSparkles,
   X,
 } from "lucide-react";
@@ -54,7 +53,7 @@ import {
   SystemDesignNotesEditor,
   type SystemDesignNotesEditorHandle,
 } from "@/components/system-design/system-design-notes-editor";
-import { SystemDesignComponentPalette } from "@/components/system-design/system-design-component-palette";
+import { SystemDesignShareDialog } from "@/components/system-design/system-design-share-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -89,10 +88,6 @@ function formatErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
   return "Something went wrong.";
-}
-
-function toShareUrl(shareId: string): string {
-  return `/system-design/share/${shareId}`;
 }
 
 export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) {
@@ -131,6 +126,8 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   const diagramRevisionRef = useRef(0);
   const lastSavedRevisionRef = useRef(0);
   const sessionVersionRef = useRef<number>(1);
+  const templateAppliedSessionRef = useRef<string | null>(null);
+  const isApplyingTemplateRef = useRef(false);
 
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -266,7 +263,42 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
     setSelectedElementIds([]);
   }, [showDiagram]);
 
-  const shareUrl = useMemo(() => (session ? toShareUrl(session.share_id) : null), [session]);
+  useEffect(() => {
+    if (!session) return;
+    if (isApplyingTemplateRef.current) return;
+    if (templateAppliedSessionRef.current === session.id) return;
+
+    const metadata = session.diagram?.metadata;
+    const mermaid =
+      metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>).mermaid : null;
+    if (typeof mermaid !== "string" || !mermaid.trim()) return;
+    if (session.diagram?.elements?.length) {
+      templateAppliedSessionRef.current = session.id;
+      return;
+    }
+
+    isApplyingTemplateRef.current = true;
+    void (async () => {
+      try {
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+          const handle = canvasRef.current;
+          if (handle) {
+            await handle.replaceWithMermaid(mermaid);
+            const nextDiagram = handle.getDiagram();
+            if (nextDiagram && nextDiagram.elements.length) {
+              queueAutosave(nextDiagram);
+              await flushAutosave().catch(() => {});
+              templateAppliedSessionRef.current = session.id;
+              break;
+            }
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 100));
+        }
+      } finally {
+        isApplyingTemplateRef.current = false;
+      }
+    })();
+  }, [session]);
 
   const mainGridTemplateColumns = useMemo(() => {
     // Account for resize handles (w-1 = 4px) in the grid columns.
@@ -442,14 +474,6 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
     }
   }
 
-  async function copyToClipboard(text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // ignore; copying is optional UX sugar
-    }
-  }
-
   function toExportBasename(title: string | null | undefined, id: string): string {
     const base = (title ?? "").trim();
     const raw = base.length ? base : `system-design-${id.slice(0, 8)}`;
@@ -473,6 +497,30 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
 
   function downloadTextFile(text: string, filename: string, mimeType: string) {
     downloadBlob(new Blob([text], { type: mimeType }), filename);
+  }
+
+  async function copyToClipboard(text: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {}
+
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "true");
+    textarea.style.position = "fixed";
+    textarea.style.top = "0";
+    textarea.style.left = "0";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand("copy");
+    } catch {
+      // Ignore clipboard failures.
+    } finally {
+      textarea.remove();
+    }
   }
 
   if (isLoading) {
@@ -823,22 +871,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
             </Tooltip>
           </div>
 
-          {shareUrl ? (
-            <>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    onClick={() => void copyToClipboard(shareUrl)}
-                  >
-                    <Share2 className="size-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Copy share link</TooltipContent>
-              </Tooltip>
-            </>
-          ) : null}
+          <SystemDesignShareDialog session={session} onSessionUpdated={setSession} />
           <Button asChild variant="ghost" size="sm">
             <Link href="/system-design">Exit</Link>
           </Button>
@@ -903,120 +936,110 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
             {/* Overlay during resize to prevent event trapping */}
             {isResizing && <div className="absolute inset-0 z-50 bg-transparent" />}
 
-            <div className="min-h-0 flex-1 p-0">
+            <div
+              className="relative min-h-0 flex-1"
+              onDoubleClick={() => {
+                if (!canvasSelection) return;
+                setPropertiesTarget(canvasSelection);
+                setPropertiesName(canvasSelection.name);
+                setIsPropertiesOpen(true);
+              }}
+            >
               <ExcalidrawCanvas
                 ref={canvasRef}
                 initialDiagram={session.diagram}
                 onDiagramChange={queueAutosave}
                 onSelectionChange={setSelectedElementIds}
+                onSelectionDetailsChange={(selection) => {
+                  setCanvasSelection(selection);
+
+                  if (!isPropertiesOpen) return;
+                  if (!selection) {
+                    setIsPropertiesOpen(false);
+                    setPropertiesTarget(null);
+                    return;
+                  }
+
+                  setPropertiesTarget((prev) => {
+                    if (!prev || prev.elementId !== selection.elementId) {
+                      setPropertiesName(selection.name);
+                      return selection;
+                    }
+                    return prev;
+                  });
+                }}
                 framed={false}
                 viewportScale={1}
               />
 
-              <div
-                className="relative min-w-0 flex-1"
-                onDoubleClick={() => {
-                  if (!canvasSelection) return;
-                  setPropertiesTarget(canvasSelection);
-                  setPropertiesName(canvasSelection.name);
-                  setIsPropertiesOpen(true);
-                }}
-              >
-                <ExcalidrawCanvas
-                  ref={canvasRef}
-                  initialDiagram={session.diagram}
-                  onDiagramChange={queueAutosave}
-                  onSelectionChange={(selection) => {
-                    setCanvasSelection(selection);
+              {isPropertiesOpen && propertiesTarget ? (
+                <Card
+                  className="bg-background/95 absolute top-3 right-3 z-20 w-80 border shadow-lg backdrop-blur"
+                  onDoubleClick={(event) => event.stopPropagation()}
+                >
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 py-3">
+                    <CardTitle className="text-sm">Properties</CardTitle>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => {
+                        setIsPropertiesOpen(false);
+                      }}
+                    >
+                      <X className="size-4" />
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="space-y-4 px-4 pb-4">
+                    <div className="flex flex-wrap gap-2">
+                      {propertiesTarget.category ? (
+                        <Badge variant="secondary">
+                          {propertiesTarget.category.replaceAll("_", " ")}
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary">component</Badge>
+                      )}
+                      <Badge variant="outline">id: {propertiesTarget.elementId}</Badge>
+                    </div>
 
-                    if (!isPropertiesOpen) return;
-                    if (!selection) {
-                      setIsPropertiesOpen(false);
-                      setPropertiesTarget(null);
-                      return;
-                    }
+                    <div className="space-y-2">
+                      <Label htmlFor="sd-component-name">Name</Label>
+                      <Input
+                        id="sd-component-name"
+                        value={propertiesName}
+                        onChange={(e) => setPropertiesName(e.target.value)}
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key !== "Enter") return;
+                          const nextName = propertiesName.trim();
+                          if (!nextName) return;
+                          canvasRef.current?.updateComponentLabel(propertiesTarget.elementId, nextName);
+                        }}
+                      />
+                    </div>
 
-                    setPropertiesTarget((prev) => {
-                      if (!prev || prev.elementId !== selection.elementId) {
-                        setPropertiesName(selection.name);
-                        return selection;
-                      }
-                      return prev;
-                    });
-                  }}
-                  framed={false}
-                  viewportScale={1}
-                />
-
-                {isPropertiesOpen && propertiesTarget ? (
-                  <Card
-                    className="bg-background/95 absolute top-3 right-3 z-20 w-80 border shadow-lg backdrop-blur"
-                    onDoubleClick={(event) => event.stopPropagation()}
-                  >
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 py-3">
-                      <CardTitle className="text-sm">Properties</CardTitle>
+                    <div className="flex justify-end gap-2">
                       <Button
-                        variant="ghost"
-                        size="icon-sm"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsPropertiesOpen(false)}
+                      >
+                        Close
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={!propertiesName.trim()}
                         onClick={() => {
-                          setIsPropertiesOpen(false);
+                          const nextName = propertiesName.trim();
+                          if (!nextName) return;
+                          canvasRef.current?.updateComponentLabel(propertiesTarget.elementId, nextName);
                         }}
                       >
-                        <X className="size-4" />
+                        Apply
                       </Button>
-                    </CardHeader>
-                    <CardContent className="space-y-4 px-4 pb-4">
-                      <div className="flex flex-wrap gap-2">
-                        {propertiesTarget.category ? (
-                          <Badge variant="secondary">
-                            {propertiesTarget.category.replaceAll("_", " ")}
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary">component</Badge>
-                        )}
-                        <Badge variant="outline">id: {propertiesTarget.elementId}</Badge>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="sd-component-name">Name</Label>
-                        <Input
-                          id="sd-component-name"
-                          value={propertiesName}
-                          onChange={(e) => setPropertiesName(e.target.value)}
-                          autoFocus
-                          onKeyDown={(e) => {
-                            if (e.key !== "Enter") return;
-                            const nextName = propertiesName.trim();
-                            if (!nextName) return;
-                            canvasRef.current?.updateComponentLabel(propertiesTarget.elementId, nextName);
-                          }}
-                        />
-                      </div>
-
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setIsPropertiesOpen(false)}
-                        >
-                          Close
-                        </Button>
-                        <Button
-                          size="sm"
-                          disabled={!propertiesName.trim()}
-                          onClick={() => {
-                            const nextName = propertiesName.trim();
-                            if (!nextName) return;
-                            canvasRef.current?.updateComponentLabel(propertiesTarget.elementId, nextName);
-                          }}
-                        >
-                          Apply
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ) : null}
-              </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
             </div>
           </div>
         )}

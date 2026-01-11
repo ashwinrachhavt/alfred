@@ -87,6 +87,20 @@ class NotFoundError(AlfredException):
     default_code = "not_found"
 
 
+class ShareAccessDeniedError(AlfredException):
+    """Raised when a shared resource requires authorization."""
+
+    status_code = 401
+    default_code = "share_access_denied"
+
+
+class ShareExpiredError(AlfredException):
+    """Raised when a shared link has expired."""
+
+    status_code = 410
+    default_code = "share_expired"
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """Register Alfred's exception handlers on a FastAPI app."""
 

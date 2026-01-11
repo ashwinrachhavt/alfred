@@ -138,7 +138,6 @@ def _build_doc_chunk_rows(
     day_bucket: date,
 ) -> list[DocChunkRow]:
     """Convert chunk payloads into persisted `DocChunkRow` records."""
-
     rows: list[DocChunkRow] = []
     for ch in chunk_payloads:
         ctokens = ch.tokens if ch.tokens is not None else _token_count(ch.text)

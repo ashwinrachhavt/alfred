@@ -64,6 +64,7 @@ export type ExcalidrawCanvasProps = {
   initialDiagram: ExcalidrawData;
   onDiagramChange?: (diagram: ExcalidrawData) => void;
   onSelectionChange?: (selectedElementIds: string[]) => void;
+  onSelectionDetailsChange?: (selection: ExcalidrawCanvasSelection | null) => void;
   readOnly?: boolean;
   /**
    * When enabled, renders a bordered container around the Excalidraw editor.
@@ -88,6 +89,7 @@ export type ExcalidrawCanvasSelection = {
 
 export type ExcalidrawCanvasHandle = {
   insertComponent: (component: { id: string; name: string; category?: string }) => void;
+  updateComponentLabel: (elementId: string, name: string) => void;
   replaceWithMermaid: (definition: string) => Promise<void>;
   connectElements: (connection: {
     fromElementId: string;
@@ -109,6 +111,7 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
       initialDiagram,
       onDiagramChange,
       onSelectionChange,
+      onSelectionDetailsChange,
       readOnly,
       framed = true,
       viewportScale = 1,
@@ -120,6 +123,7 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
     const restoreRef = useRef<Restore | null>(null);
     const captureUpdateRef = useRef<CaptureUpdateActionValue | null>(null);
     const apiRef = useRef<ExcalidrawAPI | null>(null);
+    const metadataRef = useRef<Record<string, unknown> | undefined>(initialDiagram.metadata);
     const [helpersReady, setHelpersReady] = useState(false);
     const [normalizedInitialData, setNormalizedInitialData] =
       useState<ExcalidrawInitialDataState | null>(null);
@@ -174,6 +178,7 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
 
     useEffect(() => {
       if (!helpersReady) return;
+      metadataRef.current = initialDiagram.metadata;
       const restore = restoreRef.current;
       if (!restore) {
         setNormalizedInitialData(normalizeFallback(initialDiagram));
@@ -203,7 +208,6 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
     }, [helpersReady, initialDiagram, normalizeFallback]);
 
     const readSelection = useCallback((elements: unknown, appState: unknown) => {
-      if (!onSelectionChange) return null;
       if (!Array.isArray(elements)) return null;
       if (!appState || typeof appState !== "object") return null;
 
@@ -269,10 +273,21 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
       }
 
       return { elementId: containerId, name: labelText, category } satisfies ExcalidrawCanvasSelection;
-    }, [onSelectionChange]);
+    }, []);
 
     const handleChange = useCallback(
       (elements: unknown, appState: unknown, files: unknown) => {
+        if (onSelectionDetailsChange) {
+          const selection = readSelection(elements, appState);
+          const key = selection
+            ? `${selection.elementId}:${selection.name}:${selection.category ?? ""}`
+            : "";
+          if (lastSelectionKeyRef.current !== key) {
+            lastSelectionKeyRef.current = key || null;
+            onSelectionDetailsChange(selection);
+          }
+        }
+
         if (onSelectionChange) {
           const selectedIds = new Set<string>();
           if (appState && typeof appState === "object") {
@@ -306,16 +321,46 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
         if (!onDiagramChange) return;
         const serialize = serializeRef.current;
         if (!serialize) return;
-        onDiagramChange(toPersistedDiagram(serialize, elements, appState, files));
+        const next = toPersistedDiagram(serialize, elements, appState, files);
+        if (metadataRef.current) next.metadata = metadataRef.current;
+        onDiagramChange(next);
       },
-      [onDiagramChange, onSelectionChange],
+      [onDiagramChange, onSelectionChange, onSelectionDetailsChange, readSelection],
+    );
+
+    const handleSelectionDetails = useCallback(
+      (elements: unknown, appState: unknown) => {
+        if (!onSelectionDetailsChange) return;
+        const selection = readSelection(elements, appState);
+        const key = selection ? `${selection.elementId}:${selection.name}:${selection.category ?? ""}` : null;
+        if (key !== lastSelectionKeyRef.current) {
+          lastSelectionKeyRef.current = key;
+          onSelectionDetailsChange(selection);
+        }
+      },
+      [onSelectionDetailsChange, readSelection],
     );
 
     const getDiagram = useCallback((): ExcalidrawData | null => {
       const api = apiRef.current;
       const serialize = serializeRef.current;
       if (!api || !serialize) return null;
-      return toPersistedDiagram(serialize, api.getSceneElements(), api.getAppState(), api.getFiles());
+
+      const apiHelpers = api as unknown as {
+        getSceneElements: () => unknown;
+        getSceneElementsIncludingDeleted?: () => unknown;
+        getFiles?: () => unknown;
+      };
+
+      const elements =
+        typeof apiHelpers.getSceneElementsIncludingDeleted === "function"
+          ? apiHelpers.getSceneElementsIncludingDeleted()
+          : apiHelpers.getSceneElements();
+      const files = typeof apiHelpers.getFiles === "function" ? apiHelpers.getFiles() : {};
+
+      const next = toPersistedDiagram(serialize, elements, api.getAppState(), files);
+      if (metadataRef.current) next.metadata = metadataRef.current;
+      return next;
     }, []);
 
     const connectElements = useCallback(
@@ -548,6 +593,14 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
       [insertComponentAt, readOnly, viewportScale],
     );
 
+    const handleCanvasChange = useCallback(
+      (elements: unknown, appState: unknown, files: unknown) => {
+        handleChange(elements, appState, files);
+        handleSelectionDetails(elements, appState);
+      },
+      [handleChange, handleSelectionDetails],
+    );
+
     const replaceWithMermaid = useCallback(
       async (definition: string) => {
         if (readOnly) return;
@@ -656,13 +709,22 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
       ref,
       () => ({
         insertComponent,
+        updateComponentLabel,
         replaceWithMermaid,
         connectElements,
         getDiagram,
         exportPng,
         exportSvg,
       }),
-      [connectElements, exportPng, exportSvg, getDiagram, insertComponent, replaceWithMermaid],
+      [
+        connectElements,
+        exportPng,
+        exportSvg,
+        getDiagram,
+        insertComponent,
+        replaceWithMermaid,
+        updateComponentLabel,
+      ],
     );
 
     return (
@@ -695,7 +757,7 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, ExcalidrawCan
             {normalizedInitialData ? (
               <Excalidraw
                 initialData={normalizedInitialData}
-                onChange={handleChange}
+                onChange={handleCanvasChange}
                 viewModeEnabled={readOnly}
                 excalidrawAPI={(api) => {
                   apiRef.current = api;

@@ -1,4 +1,4 @@
-import { apiFetch, apiPatchJson, apiPostJson } from "@/lib/api/client";
+import { apiFetch, apiFetchText, apiPatchJson, apiPostJson } from "@/lib/api/client";
 import type {
   AutosaveRequest,
   ComponentDefinition,
@@ -12,10 +12,12 @@ import type {
   SystemDesignKnowledgeDraft,
   SystemDesignPublishRequest,
   SystemDesignPublishResponse,
+  SystemDesignShareUpdate,
   SystemDesignSession,
   SystemDesignSessionCreate,
   SystemDesignSessionSummary,
   SystemDesignSessionUpdate,
+  SystemDesignTemplateCreate,
   TemplateDefinition,
 } from "@/lib/api/types/system-design";
 
@@ -46,9 +48,16 @@ export async function getSystemDesignSession(sessionId: string): Promise<SystemD
   });
 }
 
-export async function getSharedSystemDesignSession(shareId: string): Promise<SystemDesignSession> {
+export async function getSharedSystemDesignSession(
+  shareId: string,
+  options?: { password?: string | null },
+): Promise<SystemDesignSession> {
+  const headers: HeadersInit = {};
+  if (options?.password) headers["X-Alfred-Share-Password"] = options.password;
+
   return apiFetch<SystemDesignSession>(`/api/system-design/sessions/share/${shareId}`, {
     cache: "no-store",
+    headers,
   });
 }
 
@@ -93,6 +102,39 @@ export async function getSystemDesignComponents(): Promise<ComponentDefinition[]
 
 export async function getSystemDesignTemplates(): Promise<TemplateDefinition[]> {
   return apiFetch<TemplateDefinition[]>("/api/system-design/library/templates", {
+    cache: "no-store",
+  });
+}
+
+export async function createSystemDesignTemplate(
+  payload: SystemDesignTemplateCreate,
+): Promise<TemplateDefinition> {
+  return apiPostJson<TemplateDefinition, SystemDesignTemplateCreate>(
+    "/api/system-design/library/templates",
+    payload,
+    { cache: "no-store" },
+  );
+}
+
+export async function updateSystemDesignShareSettings(
+  sessionId: string,
+  payload: SystemDesignShareUpdate,
+): Promise<SystemDesignSession> {
+  return apiPatchJson<SystemDesignSession, SystemDesignShareUpdate>(
+    `/api/system-design/sessions/${sessionId}/share`,
+    payload,
+    { cache: "no-store" },
+  );
+}
+
+export async function exportSystemDesignMermaid(sessionId: string): Promise<string> {
+  return apiFetchText(`/api/system-design/sessions/${sessionId}/export/mermaid`, {
+    cache: "no-store",
+  });
+}
+
+export async function exportSystemDesignPlantUml(sessionId: string): Promise<string> {
+  return apiFetchText(`/api/system-design/sessions/${sessionId}/export/plantuml`, {
     cache: "no-store",
   });
 }

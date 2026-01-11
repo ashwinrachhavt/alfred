@@ -101,6 +101,14 @@ async function safeReadJson(response: Response): Promise<unknown> {
   }
 }
 
+async function safeReadText(response: Response): Promise<string> {
+  try {
+    return await response.text();
+  } catch {
+    return "";
+  }
+}
+
 function coerceErrorMessage(payload: unknown, fallback: string): string {
   if (!payload) return fallback;
   if (typeof payload === "string") return payload;
@@ -195,6 +203,70 @@ export async function apiFetch<TResponse>(
       }
 
       return payload as TResponse;
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+
+      if (isAbortError(error)) {
+        if (timedOut()) {
+          throw new ApiError(408, "Request timed out");
+        }
+        throw error;
+      }
+
+      if (shouldRetry && attempt < retryOpts.retries) {
+        await sleep(computeBackoffMs(attempt, retryOpts));
+        continue;
+      }
+
+      throw new ApiError(0, "Network request failed", error);
+    } finally {
+      cleanup();
+    }
+  }
+
+  throw new ApiError(0, "Network request failed");
+}
+
+export async function apiFetchText(
+  path: string,
+  init?: RequestInit,
+  options?: ApiFetchOptions,
+): Promise<string> {
+  const url = apiUrl(path);
+  const method = (init?.method ?? "GET").toUpperCase();
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
+  const retryOpts = clampRetryOptions(options?.retry);
+  const shouldRetry = method === "GET" || method === "HEAD";
+
+  for (let attempt = 0; attempt <= (shouldRetry ? retryOpts.retries : 0); attempt += 1) {
+    const { signal, cleanup, timedOut } = createTimeoutSignal(init?.signal, timeoutMs);
+
+    try {
+      const response = await fetch(url, { ...init, signal });
+      if (!response.ok) {
+        const contentType = response.headers.get("content-type") ?? "";
+        const payload = contentType.includes("application/json")
+          ? await safeReadJson(response)
+          : await safeReadText(response);
+
+        if (shouldRetry && attempt < retryOpts.retries && isRetryableStatus(response.status)) {
+          const retryAfterMs = parseRetryAfterMs(response.headers.get("Retry-After"));
+          const backoffMs = retryAfterMs ?? computeBackoffMs(attempt, retryOpts);
+          await sleep(backoffMs);
+          continue;
+        }
+
+        throw new ApiError(
+          response.status,
+          coerceErrorMessage(payload, response.statusText),
+          payload,
+        );
+      }
+
+      return await safeReadText(response);
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
