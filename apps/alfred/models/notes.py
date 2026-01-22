@@ -130,4 +130,54 @@ class NoteRow(SQLModel, table=True):
     )
 
 
-__all__ = ["NoteRow", "WorkspaceRow"]
+class NoteAssetRow(SQLModel, table=True):
+    """A binary asset (image) attached to a note.
+
+    For dogfooding, we keep image bytes in Postgres so pasted screenshots "just work"
+    in local/dev without requiring external object storage. If/when we add S3, this
+    model can evolve into metadata-only with a storage URL.
+    """
+
+    __tablename__ = "note_assets"
+    __table_args__ = (
+        sa.Index("ix_note_assets_note_id", "note_id"),
+        sa.Index("ix_note_assets_workspace_id", "workspace_id"),
+        sa.Index("ix_note_assets_created_at", "created_at"),
+    )
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=sa.Column(UUID(as_uuid=True), primary_key=True, nullable=False),
+    )
+    note_id: uuid.UUID = Field(
+        sa_column=sa.Column(
+            UUID(as_uuid=True),
+            sa.ForeignKey("notes.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+    )
+    workspace_id: uuid.UUID = Field(
+        sa_column=sa.Column(
+            UUID(as_uuid=True),
+            sa.ForeignKey("workspaces.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+    )
+    file_name: str = Field(sa_column=sa.Column(sa.String(length=500), nullable=False))
+    mime_type: str = Field(sa_column=sa.Column(sa.String(length=200), nullable=False))
+    size_bytes: int = Field(sa_column=sa.Column(sa.Integer, nullable=False))
+    sha256: str | None = Field(default=None, sa_column=sa.Column(sa.String(length=64)))
+    data: bytes = Field(sa_column=sa.Column(sa.LargeBinary, nullable=False))
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=sa.Column(
+            sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+    )
+    created_by: int | None = Field(
+        default=None,
+        sa_column=sa.Column(sa.Integer, sa.ForeignKey("users.id", ondelete="SET NULL")),
+    )
+
+
+__all__ = ["NoteAssetRow", "NoteRow", "WorkspaceRow"]

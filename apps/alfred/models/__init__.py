@@ -16,7 +16,7 @@ from alfred.models.learning import (
     LearningReview,
     LearningTopic,
 )
-from alfred.models.notes import NoteRow, WorkspaceRow
+from alfred.models.notes import NoteAssetRow, NoteRow, WorkspaceRow
 from alfred.models.research import ResearchRun
 from alfred.models.system import SystemSetting
 from alfred.models.threads import ThreadMessageRow, ThreadRow
@@ -55,6 +55,7 @@ __all__ = [
     "DocChunkRow",
     "WorkspaceRow",
     "NoteRow",
+    "NoteAssetRow",
     "DataStoreRow",
     "CompanyInterviewRow",
     "CompanyResearchReportRow",

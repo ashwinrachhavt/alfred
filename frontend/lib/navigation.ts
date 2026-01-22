@@ -8,6 +8,7 @@ import {
   LayoutGrid,
   MessageCircle,
   MessageSquareText,
+  NotebookPen,
   NotepadText,
   Palette,
   Shapes,
@@ -50,6 +51,13 @@ export const appNavItems: AppNavItem[] = [
     href: "/documents",
     icon: FileText,
     keywords: ["documents", "notes", "files"],
+  },
+  {
+    key: "notes",
+    title: "Notes",
+    href: "/notes",
+    icon: NotebookPen,
+    keywords: ["notes", "markdown", "editor", "tiptap", "second brain"],
   },
   {
     key: "notion",

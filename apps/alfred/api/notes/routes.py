@@ -3,11 +3,12 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlmodel import Session
 
 from alfred.api.dependencies import get_db_session
 from alfred.schemas.notes import (
+    NoteAssetResponse,
     NoteCreateRequest,
     NoteMoveRequest,
     NoteResponse,
@@ -16,6 +17,12 @@ from alfred.schemas.notes import (
     NoteTreeNode,
     NoteTreeResponse,
     NoteUpdateRequest,
+)
+from alfred.services.note_assets_service import (
+    NoteAssetNotFoundError,
+    NoteAssetsService,
+    NoteAssetTooLargeError,
+    NoteAssetUnsupportedTypeError,
 )
 from alfred.services.notes_service import (
     NoteMoveConflictError,
@@ -294,3 +301,63 @@ def move_note(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _note_response(row)
+
+
+@router.post(
+    "/notes/{note_id}/assets",
+    response_model=NoteAssetResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_note_asset(
+    note_id: uuid.UUID,
+    file: UploadFile = File(...),
+    user_id: int | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+) -> NoteAssetResponse:
+    svc = NoteAssetsService(session)
+    try:
+        data = await file.read()
+        row = svc.create_image_asset(
+            note_id,
+            file_name=file.filename,
+            mime_type=file.content_type or "application/octet-stream",
+            data=data,
+            user_id=user_id,
+        )
+    except NoteNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (NoteAssetTooLargeError, NoteAssetUnsupportedTypeError) as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return NoteAssetResponse(
+        id=str(row.id),
+        note_id=str(row.note_id),
+        workspace_id=str(row.workspace_id),
+        file_name=row.file_name,
+        mime_type=row.mime_type,
+        size_bytes=int(row.size_bytes),
+        sha256=row.sha256,
+        url=f"/api/v1/notes/assets/{row.id}",
+        created_at=row.created_at,
+        created_by=row.created_by,
+    )
+
+
+@router.get("/notes/assets/{asset_id}")
+def get_note_asset(
+    asset_id: uuid.UUID,
+    session: Session = Depends(get_db_session),
+) -> Response:
+    svc = NoteAssetsService(session)
+    try:
+        row = svc.get_asset(asset_id)
+    except NoteAssetNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    headers = {
+        "Content-Disposition": f'inline; filename="{row.file_name}"',
+        "Cache-Control": "public, max-age=31536000, immutable",
+    }
+    return Response(content=row.data, media_type=row.mime_type, headers=headers)

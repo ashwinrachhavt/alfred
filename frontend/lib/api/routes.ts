@@ -35,4 +35,13 @@ export const apiRoutes = {
     autocomplete: "/api/intelligence/autocomplete",
     edit: "/api/intelligence/edit",
   },
+  notes: {
+    workspaces: "/api/v1/workspaces",
+    createWorkspace: "/api/v1/workspaces",
+    tree: "/api/v1/notes/tree",
+    createNote: "/api/v1/notes",
+    noteById: (noteId: string) => `/api/v1/notes/${noteId}`,
+    noteAssets: (noteId: string) => `/api/v1/notes/${noteId}/assets`,
+    noteAssetById: (assetId: string) => `/api/v1/notes/assets/${assetId}`,
+  },
 } as const;

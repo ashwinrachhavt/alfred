@@ -58,6 +58,19 @@ class NoteResponse(NoteSummary):
     last_edited_by: int | None = None
 
 
+class NoteAssetResponse(BaseModel):
+    id: str
+    note_id: str
+    workspace_id: str
+    file_name: str
+    mime_type: str
+    size_bytes: int
+    sha256: str | None = None
+    url: str
+    created_at: datetime
+    created_by: int | None = None
+
+
 class NotesListResponse(BaseModel):
     items: list[NoteSummary]
     total: int
@@ -77,6 +90,7 @@ class NoteTreeResponse(BaseModel):
 
 __all__ = [
     "NoteCreateRequest",
+    "NoteAssetResponse",
     "NoteMoveRequest",
     "NoteResponse",
     "NotesListResponse",
