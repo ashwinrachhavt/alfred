@@ -1,13 +1,30 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 
+from alfred.core.dependencies import get_doc_storage_service
 from alfred.core.settings import settings
+from alfred.services.doc_storage_pg import DocStorageService
 from alfred.services.linear import LinearService, get_linear_service
+from alfred.services.linear_import import import_linear
 
 router = APIRouter(prefix="/api/linear", tags=["linear"])
+logger = logging.getLogger(__name__)
+
+
+class LinearImportRequest(BaseModel):
+    token: str | None = None
+    limit: int | None = Field(default=None, ge=1, le=5000)
+    since: str | None = None
+
+
+class LinearImportResponse(BaseModel):
+    status: str
+    result: dict[str, Any] | None = None
 
 
 @router.get("/status")
@@ -60,3 +77,17 @@ def list_issues(
         items = [svc.issue_to_markdown(issue) for issue in issues]
 
     return {"count": len(items), "items": items}
+
+
+@router.post("/import", response_model=LinearImportResponse)
+def start_linear_import(
+    payload: LinearImportRequest,
+    svc: DocStorageService = Depends(get_doc_storage_service),
+) -> LinearImportResponse:
+    result = import_linear(
+        doc_store=svc,
+        token=payload.token,
+        limit=payload.limit,
+        since=payload.since,
+    )
+    return LinearImportResponse(status="completed", result=result)

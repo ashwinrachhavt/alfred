@@ -87,3 +87,5 @@ next-env.d.ts
 *.next
 *.pnpm-store.mcp.json
 Alfred/
+
+.mcp*
