@@ -117,7 +117,8 @@ class PlanningService:
             "Add validation and error handling",
             "Verify with targeted checks and document usage",
         ]
-        if max_steps <= 3:
+        SHORT_PLAN_THRESHOLD = 3
+        if max_steps <= SHORT_PLAN_THRESHOLD:
             return [
                 "Clarify requirements and constraints",
                 "Implement the core functionality",

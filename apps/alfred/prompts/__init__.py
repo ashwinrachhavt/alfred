@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 
 _PROMPTS_ROOT = Path(__file__).resolve().parent
 
 
-@lru_cache(maxsize=None)
+@cache
 def load_prompt(*relative_parts: str) -> str:
     """Load a prompt template from ``apps/alfred/prompts``.
 

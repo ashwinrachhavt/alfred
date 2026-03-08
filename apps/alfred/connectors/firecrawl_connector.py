@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import urljoin
 
 import requests
@@ -11,11 +11,11 @@ from pydantic import BaseModel
 
 class FirecrawlResponse(BaseModel):
     success: bool
-    data: Optional[Any] = None
-    error: Optional[Any] = None
-    markdown: Optional[str] = None
-    html: Optional[str] = None
-    status_code: Optional[int] = None
+    data: Any | None = None
+    error: Any | None = None
+    markdown: str | None = None
+    html: str | None = None
+    status_code: int | None = None
 
 
 class FirecrawlClient:
@@ -26,7 +26,7 @@ class FirecrawlClient:
     def get(self, endpoint: str) -> FirecrawlResponse:
         return self._request("get", endpoint)
 
-    def post(self, endpoint: str, payload: Dict[str, Any]) -> FirecrawlResponse:
+    def post(self, endpoint: str, payload: dict[str, Any]) -> FirecrawlResponse:
         return self._request("post", endpoint, payload)
 
     def health(self) -> FirecrawlResponse:
@@ -56,11 +56,11 @@ class FirecrawlClient:
 
     def extract(
         self,
-        urls: List[str],
-        selectors: Optional[Dict[str, str]] = None,
+        urls: list[str],
+        selectors: dict[str, str] | None = None,
         render_js: bool = False,
     ) -> FirecrawlResponse:
-        payload: Dict[str, Any] = {"urls": urls, "render_js": render_js}
+        payload: dict[str, Any] = {"urls": urls, "render_js": render_js}
         if selectors:
             payload["selectors"] = selectors
         return self.post("/extract", payload)
@@ -70,7 +70,7 @@ class FirecrawlClient:
         return self.post("/search", payload)
 
     def _request(
-        self, method: str, endpoint: str, payload: Optional[Dict[str, Any]] = None
+        self, method: str, endpoint: str, payload: dict[str, Any] | None = None
     ) -> FirecrawlResponse:
         url = urljoin(self.base_url + "/", endpoint.lstrip("/"))
         try:
@@ -82,7 +82,7 @@ class FirecrawlClient:
                 "Accept": "application/json, text/plain, */*",
                 "Accept-Language": "en-US,en;q=0.9",
             }
-            kwargs: Dict[str, Any] = {"timeout": self.timeout, "headers": headers}
+            kwargs: dict[str, Any] = {"timeout": self.timeout, "headers": headers}
             if payload is not None:
                 kwargs["json"] = payload
             response = requests.request(method=method.lower(), url=url, **kwargs)
@@ -107,15 +107,15 @@ class FirecrawlClient:
             )
         return FirecrawlResponse(success=False, error=payload, status_code=response.status_code)
 
-    def _extract_markdown(self, payload: Any) -> Optional[str]:
+    def _extract_markdown(self, payload: Any) -> str | None:
         """Best-effort extraction of markdown/content from Firecrawl responses.
 
         Recursively searches for any of keys (markdown, content, text) and merges list items.
         """
         keys = ("markdown", "content", "text")
 
-        def _search(obj: Any) -> List[str]:
-            found: List[str] = []
+        def _search(obj: Any) -> list[str]:
+            found: list[str] = []
             if isinstance(obj, str):
                 s = obj.strip()
                 if s:
@@ -139,9 +139,9 @@ class FirecrawlClient:
             return results[0]
         return None
 
-    def _extract_html(self, payload: Any) -> Optional[str]:
-        def _search_html(obj: Any) -> List[str]:
-            found: List[str] = []
+    def _extract_html(self, payload: Any) -> str | None:
+        def _search_html(obj: Any) -> list[str]:
+            found: list[str] = []
             if isinstance(obj, str):
                 s = obj.strip()
                 if s.startswith("<"):

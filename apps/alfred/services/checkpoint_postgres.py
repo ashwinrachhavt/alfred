@@ -195,7 +195,7 @@ class PostgresCheckpointSaver(BaseCheckpointSaver[str]):
                     (thread_id, checkpoint_ns, selected_checkpoint_id),
                 )
                 pending: list[PendingWrite] = []
-                for task_id, idx, channel, value_type, value_bytes, task_path in cur.fetchall():
+                for task_id, _idx, channel, value_type, value_bytes, task_path in cur.fetchall():
                     _ = task_path  # not currently surfaced in CheckpointTuple
                     pending.append(
                         (task_id, channel, self.serde.loads_typed((value_type, value_bytes)))

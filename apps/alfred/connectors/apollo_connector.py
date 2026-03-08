@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Tuple
+from typing import Any
 
 import requests
 
@@ -13,7 +13,7 @@ class ApolloClient:
         self.timeout_seconds = timeout_seconds
         self.headers = {"Content-Type": "application/json", "X-Api-Key": api_key}
 
-    def mixed_people_search(self, payload: dict[str, Any]) -> Tuple[int, dict[str, Any]]:
+    def mixed_people_search(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         resp = requests.post(
             # Apollo deprecated /mixed_people/search for API callers; /api_search is the supported path.
             "https://api.apollo.io/api/v1/mixed_people/api_search",

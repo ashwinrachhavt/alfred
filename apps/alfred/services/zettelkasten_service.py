@@ -7,10 +7,10 @@ document storage services without hard coupling.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from math import sqrt
-from typing import Iterable
 
 from sqlmodel import Session, select
 
@@ -26,7 +26,7 @@ def _cosine_similarity(a: Iterable[float], b: Iterable[float]) -> float:
     b_list = list(b)
     if not a_list or not b_list or len(a_list) != len(b_list):
         return 0.0
-    dot = sum(x * y for x, y in zip(a_list, b_list))
+    dot = sum(x * y for x, y in zip(a_list, b_list, strict=False))
     norm_a = sqrt(sum(x * x for x in a_list))
     norm_b = sqrt(sum(y * y for y in b_list))
     denom = norm_a * norm_b
@@ -116,7 +116,7 @@ class ZettelkastenService:
 
     def update_card(self, card: ZettelCard, **fields) -> ZettelCard:
         text_changed = False
-        if "title" in fields and fields["title"]:
+        if fields.get("title"):
             card.title = str(fields["title"]).strip()
             text_changed = True
         if "content" in fields:
@@ -133,7 +133,7 @@ class ZettelkastenService:
             card.source_url = fields["source_url"]
         if "document_id" in fields:
             card.document_id = fields["document_id"]
-        if "status" in fields and fields["status"]:
+        if fields.get("status"):
             card.status = str(fields["status"])
         if "importance" in fields and fields["importance"] is not None:
             card.importance = clamp_int(int(fields["importance"]), lo=0, hi=10)
@@ -323,7 +323,7 @@ class ZettelkastenService:
         text = " ".join([p.strip() for p in text_parts if p and p.strip()])
         if not text:
             raise ValueError("Cannot embed empty card content")
-        from alfred.core.llm_factory import get_embedding_model  # noqa: PLC0415
+        from alfred.core.llm_factory import get_embedding_model
 
         model = get_embedding_model()
         return model.embed_query(text)

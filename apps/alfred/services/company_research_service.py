@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, List, Optional, cast
+from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
 import sqlalchemy as sa
 from langchain_openai import ChatOpenAI
@@ -69,7 +70,7 @@ class EnrichedSource:
 class ReportSection(BaseModel):
     name: str = Field(..., description="Section title such as 'Market Landscape'.")
     summary: str = Field(..., description="Short paragraph summarizing this section.")
-    insights: List[str] = Field(
+    insights: list[str] = Field(
         default_factory=list,
         description="Bullet insights with bracketed source citations.",
     )
@@ -78,11 +79,11 @@ class ReportSection(BaseModel):
 class CompanyResearchReport(BaseModel):
     company: str
     executive_summary: str
-    sections: List[ReportSection]
-    risks: List[str] = Field(default_factory=list)
-    opportunities: List[str] = Field(default_factory=list)
-    recommended_actions: List[str] = Field(default_factory=list)
-    references: List[str] = Field(default_factory=list)
+    sections: list[ReportSection]
+    risks: list[str] = Field(default_factory=list)
+    opportunities: list[str] = Field(default_factory=list)
+    recommended_actions: list[str] = Field(default_factory=list)
+    references: list[str] = Field(default_factory=list)
 
 
 class CompanyResearchService:
@@ -280,7 +281,7 @@ class CompanyResearchService:
         payload = {
             "company": company,
             "model": self._model_name,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "report": report.dict(),
             "sources": [src.to_payload() for src in sources],
             "search": search_meta,
@@ -292,7 +293,7 @@ class CompanyResearchService:
                 company=company,
                 payload=payload,
                 model_name=self._model_name,
-                generated_at=datetime.now(timezone.utc),
+                generated_at=datetime.now(UTC),
             )
         except Exception:
             logger.exception("Failed to persist company research report")
@@ -430,7 +431,7 @@ class CompanyResearchService:
 
 
 def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).isoformat()
+    return dt.astimezone(UTC).isoformat()
 
 
 def _compact_text(text: str) -> str:
@@ -629,7 +630,7 @@ class CompanyInsightsService:
         pages: list[dict[str, str | None]],
         *,
         company: str,
-        role: Optional[str],
+        role: str | None,
     ) -> list[SalaryData] | None:
         if not (settings.openai_api_key and settings.openai_api_key.get_secret_value()):
             return None

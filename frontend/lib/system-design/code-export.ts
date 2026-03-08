@@ -1,14 +1,5 @@
 import type { ExcalidrawData } from "@/lib/api/types/system-design";
-
-type UnknownRecord = Record<string, unknown>;
-
-function isRecord(value: unknown): value is UnknownRecord {
-  return Boolean(value) && typeof value === "object";
-}
-
-function getString(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
+import { coerceString, isRecord } from "@/lib/utils";
 
 function sanitizeInline(text: string): string {
   return text.replace(/\s+/g, " ").trim();
@@ -24,12 +15,12 @@ function escapeMermaidLabel(text: string): string {
 
 function getElementId(element: unknown): string | null {
   if (!isRecord(element)) return null;
-  return getString(element.id);
+  return coerceString(element.id);
 }
 
 function getElementType(element: unknown): string | null {
   if (!isRecord(element)) return null;
-  return getString(element.type);
+  return coerceString(element.type);
 }
 
 function isDeleted(element: unknown): boolean {
@@ -44,8 +35,8 @@ function buildTextByContainerId(elements: unknown[]): Map<string, string> {
     if (getElementType(element) !== "text") continue;
     if (!isRecord(element)) continue;
 
-    const containerId = getString(element.containerId);
-    const text = getString(element.text);
+    const containerId = coerceString(element.containerId);
+    const text = coerceString(element.text);
     if (!containerId || !text) continue;
 
     const normalized = sanitizeInline(text);
@@ -57,12 +48,12 @@ function buildTextByContainerId(elements: unknown[]): Map<string, string> {
 function getElementLabel(element: unknown, textByContainerId: Map<string, string>): string {
   if (!isRecord(element)) return "Untitled";
 
-  const id = getString(element.id);
+  const id = coerceString(element.id);
   if (id && textByContainerId.has(id)) return textByContainerId.get(id) ?? "Untitled";
 
   const label = element.label;
   if (isRecord(label)) {
-    const labelText = getString(label.text);
+    const labelText = coerceString(label.text);
     if (labelText) return sanitizeInline(labelText);
   }
 
@@ -71,7 +62,7 @@ function getElementLabel(element: unknown, textByContainerId: Map<string, string
 
 function getBindingElementId(binding: unknown): string | null {
   if (!isRecord(binding)) return null;
-  return getString(binding.elementId);
+  return coerceString(binding.elementId);
 }
 
 type GraphNode = { id: string; label: string; type: string };

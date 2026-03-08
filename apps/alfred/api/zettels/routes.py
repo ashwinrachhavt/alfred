@@ -22,15 +22,15 @@ from alfred.services.zettelkasten_service import ZettelkastenService
 router = APIRouter(prefix="/api/zettels", tags=["zettels"])
 
 
-def _card_out(card) -> ZettelCardOut:  # noqa: ANN001
+def _card_out(card) -> ZettelCardOut:
     return ZettelCardOut.model_validate(card)
 
 
-def _link_out(link) -> ZettelLinkOut:  # noqa: ANN001
+def _link_out(link) -> ZettelLinkOut:
     return ZettelLinkOut.model_validate(link)
 
 
-def _review_out(review) -> ZettelReviewOut:  # noqa: ANN001
+def _review_out(review) -> ZettelReviewOut:
     return ZettelReviewOut.model_validate(review)
 
 

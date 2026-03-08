@@ -60,9 +60,9 @@ class HunterClient:
                     or value.get("personal")
                     or value.get("generic")
                 )
-                if isinstance(nested, (int, float)):
+                if isinstance(nested, int | float):
                     return int(nested)
-            if isinstance(value, (int, float)):
+            if isinstance(value, int | float):
                 return int(value)
         return None
 

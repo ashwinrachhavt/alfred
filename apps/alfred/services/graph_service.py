@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ if _NEO4J_AVAILABLE:
             logger.debug("GraphService connected to Neo4j at %s", self.uri)
 
         # --- internals ---
-        def _run(self, query: str, params: Dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        def _run(self, query: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
             with self._driver.session() as session:
                 result = session.run(query, params or {})
                 try:
@@ -41,7 +41,7 @@ if _NEO4J_AVAILABLE:
 
         # --- public helpers ---
         def upsert_document_node(
-            self, *, doc_id: str, title: Optional[str], source_url: Optional[str]
+            self, *, doc_id: str, title: str | None, source_url: str | None
         ) -> None:
             query = """
             MERGE (d:Document {doc_id: $doc_id})
@@ -51,7 +51,7 @@ if _NEO4J_AVAILABLE:
             """
             self._run(query, {"doc_id": doc_id, "title": title, "source_url": source_url})
 
-        def upsert_entity(self, *, name: str, type_: Optional[str] = None) -> None:
+        def upsert_entity(self, *, name: str, type_: str | None = None) -> None:
             query = """
             MERGE (e:Entity {name: $name})
             SET e.type = coalesce($type, e.type),
@@ -78,7 +78,7 @@ if _NEO4J_AVAILABLE:
             """
             self._run(query, {"from": from_name, "to": to_name})
 
-        def upsert_topic_node(self, *, topic_id: str, name: Optional[str] = None) -> None:
+        def upsert_topic_node(self, *, topic_id: str, name: str | None = None) -> None:
             query = """
             MERGE (t:Topic {topic_id: $topic_id})
             SET t.name = coalesce($name, t.name),
@@ -164,18 +164,18 @@ else:
         def __post_init__(self) -> None:  # pragma: no cover - environment dependent
             logger.info("Neo4j not installed; GraphService will no-op.")
 
-        def _run(self, query: str, params: Dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        def _run(self, query: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
             return []
 
         def close(self) -> None:
             return
 
         def upsert_document_node(
-            self, *, doc_id: str, title: Optional[str], source_url: Optional[str]
+            self, *, doc_id: str, title: str | None, source_url: str | None
         ) -> None:
             return
 
-        def upsert_entity(self, *, name: str, type_: Optional[str] = None) -> None:
+        def upsert_entity(self, *, name: str, type_: str | None = None) -> None:
             return
 
         def link_doc_to_entity(self, *, doc_id: str, name: str, rel_type: str = "MENTIONS") -> None:
@@ -186,7 +186,7 @@ else:
         ) -> None:
             return
 
-        def upsert_topic_node(self, *, topic_id: str, name: Optional[str] = None) -> None:
+        def upsert_topic_node(self, *, topic_id: str, name: str | None = None) -> None:
             return
 
         def link_topic_to_document(

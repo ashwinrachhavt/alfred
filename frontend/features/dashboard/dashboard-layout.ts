@@ -1,7 +1,6 @@
 export type DashboardWidgetKey =
   | "recent-documents"
   | "company-research"
-  | "threads"
   | "follow-ups"
   | "templates";
 
@@ -21,7 +20,6 @@ export type DashboardLayout = {
 const DEFAULT_ORDER: DashboardWidgetKey[] = [
   "recent-documents",
   "company-research",
-  "threads",
   "follow-ups",
   "templates",
 ];

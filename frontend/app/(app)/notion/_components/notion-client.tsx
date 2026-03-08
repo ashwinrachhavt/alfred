@@ -3,8 +3,8 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { ApiError } from "@/lib/api/client";
 import type { NotionHistoryPage } from "@/lib/api/types/notion";
+import { formatErrorMessage } from "@/lib/utils";
 import { useNotionHistory } from "@/features/notion/queries";
 import { NotionNotetaker } from "@/app/(app)/notion/_components/notion-notetaker";
 
@@ -15,12 +15,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-
-function formatErrorMessage(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  if (error instanceof Error) return error.message;
-  return "Something went wrong.";
-}
 
 function toDateInputValue(iso: string): string {
   // Accepts ISO strings like "2026-01-10T14:30:00Z" and returns "2026-01-10".

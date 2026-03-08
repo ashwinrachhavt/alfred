@@ -6,7 +6,7 @@ import json
 import math
 import time
 from http import HTTPStatus
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 from urllib.parse import urljoin
 
 import requests
@@ -19,12 +19,12 @@ from alfred.core.settings import settings
 
 class GlassdoorResponse(BaseModel):
     success: bool
-    data: Optional[Dict[str, Any]] = None  # normalized leaf payload
-    error: Optional[str] = None
-    status_code: Optional[int] = None
+    data: dict[str, Any] | None = None  # normalized leaf payload
+    error: str | None = None
+    status_code: int | None = None
 
 
-def _unwrap(obj: Any) -> Tuple[bool, Optional[Dict[str, Any]]]:
+def _unwrap(obj: Any) -> tuple[bool, dict[str, Any] | None]:
     """
     Docs/examples show bodies like:
       {"status":"OK","parameters":{...},"data": {...}}
@@ -39,7 +39,7 @@ def _unwrap(obj: Any) -> Tuple[bool, Optional[Dict[str, Any]]]:
     return success, obj  # fallback to raw dict if no "data"
 
 
-def _best_company_match(query: str, candidates: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _best_company_match(query: str, candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
     """
     Pick the best match in ONE pass (no extra requests):
       1) exact case-insensitive name match
@@ -51,7 +51,7 @@ def _best_company_match(query: str, candidates: List[Dict[str, Any]]) -> Optiona
     if not candidates:
         return None
 
-    def key_tuple(item: Dict[str, Any]) -> Tuple[int, float]:
+    def key_tuple(item: dict[str, Any]) -> tuple[int, float]:
         # For fallback sorting: (review_count, rating)
         return (
             int(item.get("review_count") or 0),
@@ -78,7 +78,7 @@ class GlassdoorClient:
     def __init__(
         self,
         base_url: str = settings.openweb_ninja_base_url,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         timeout: int = 30,
         max_retries: int = 3,
         backoff_base: float = 0.5,
@@ -100,7 +100,7 @@ class GlassdoorClient:
 
     # ---------------- core http ----------------
 
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self) -> dict[str, str]:
         if not self.is_configured:
             raise ConfigurationError("Glassdoor API key not configured. Set OPENWEB_NINJA_API_KEY.")
         return {
@@ -114,7 +114,7 @@ class GlassdoorClient:
         method: str,
         endpoint: str,
         *,
-        params: Optional[Dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
     ) -> GlassdoorResponse:
         # Throttle paid API calls to avoid bursts.
         web_rate_limiter.wait("glassdoor")
@@ -170,7 +170,7 @@ class GlassdoorClient:
                     continue
                 return GlassdoorResponse(success=False, error=str(exc))
 
-    def get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> GlassdoorResponse:
+    def get(self, endpoint: str, params: dict[str, Any] | None = None) -> GlassdoorResponse:
         return self._request("GET", endpoint, params=params)
 
     # ---------------- endpoints ----------------
@@ -180,7 +180,7 @@ class GlassdoorClient:
         query: str,
         *,
         limit: int = 10,
-        domain: Optional[str] = None,
+        domain: str | None = None,
     ) -> GlassdoorResponse:
         params = {
             "query": query,
@@ -191,9 +191,9 @@ class GlassdoorClient:
 
     def company_overview(
         self,
-        company_id: Union[int, str],
+        company_id: int | str,
         *,
-        domain: Optional[str] = None,
+        domain: str | None = None,
     ) -> GlassdoorResponse:
         """Fetch company overview metadata for a resolved company_id."""
         params = {
@@ -204,7 +204,7 @@ class GlassdoorClient:
 
     def company_reviews_page(
         self,
-        company_id: Union[int, str],
+        company_id: int | str,
         *,
         page: int = 1,
         sort: str = "POPULAR",  # POPULAR | MOST_RECENT | OLDEST | HIGHEST_RATING | LOWEST_RATING | RELEVANCE
@@ -213,9 +213,9 @@ class GlassdoorClient:
         employment_statuses: str | None = None,
         only_current_employees: bool = False,
         extended_rating_data: bool = False,
-        domain: Optional[str] = None,
+        domain: str | None = None,
     ) -> GlassdoorResponse:
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "company_id": str(company_id),
             "page": str(page),
             "sort": sort,
@@ -232,7 +232,7 @@ class GlassdoorClient:
 
     def company_interviews_page(
         self,
-        company_id: Union[int, str],
+        company_id: int | str,
         *,
         page: int = 1,
         sort: str = "POPULAR",  # POPULAR | MOST_RECENT | OLDEST | EASIEST | MOST_DIFFICULT | RELEVANCE
@@ -240,10 +240,10 @@ class GlassdoorClient:
         job_title: str = "",
         location: str = "",
         location_type: str = "ANY",  # ANY | CITY | STATE | COUNTRY
-        received_offer_only: Optional[bool] = None,
-        domain: Optional[str] = None,
+        received_offer_only: bool | None = None,
+        domain: str | None = None,
     ) -> GlassdoorResponse:
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "company_id": str(company_id),
             "page": str(page),
             "sort": sort,
@@ -259,16 +259,16 @@ class GlassdoorClient:
 
     def company_salaries(
         self,
-        company_id: Union[int, str],
+        company_id: int | str,
         *,
         job_title: str,
         location: str | None = None,
         location_type: str = "ANY",
         years_of_experience: str = "ALL",
-        domain: Optional[str] = None,
+        domain: str | None = None,
     ) -> GlassdoorResponse:
         """Fetch salary aggregates for a company + job_title (Glassdoor)."""
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "company_id": str(company_id),
             "job_title": job_title,
             "location_type": location_type,
@@ -281,17 +281,17 @@ class GlassdoorClient:
 
     def company_salaries_v2(
         self,
-        company_id: Union[int, str],
+        company_id: int | str,
         *,
         page: int = 1,
         sort: str = "MOST_SALARIES",  # MOST_SALARIES | HIGHEST_SALARY | LOWEST_SALARY
         location: str | None = None,
         location_type: str = "ANY",
         job_title: str | None = None,
-        domain: Optional[str] = None,
+        domain: str | None = None,
     ) -> GlassdoorResponse:
         """Fetch salary entries for a company (paged)."""
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "company_id": str(company_id),
             "page": str(page),
             "sort": sort,
@@ -311,10 +311,10 @@ class GlassdoorClient:
         location: str,
         location_type: str = "ANY",
         years_of_experience: str = "ALL",
-        domain: Optional[str] = None,
+        domain: str | None = None,
     ) -> GlassdoorResponse:
         """Estimate salary range for a job title + location (not company-specific)."""
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "job_title": job_title,
             "location": location,
             "location_type": location_type,
@@ -327,11 +327,11 @@ class GlassdoorClient:
 
     def resolve_company_id(
         self,
-        company: Union[int, str],
+        company: int | str,
         *,
         search_limit: int = 10,
-        domain: Optional[str] = None,
-    ) -> Tuple[Optional[int], Optional[GlassdoorResponse]]:
+        domain: str | None = None,
+    ) -> tuple[int | None, GlassdoorResponse | None]:
         """
         Resolve the provided identifier and return (company_id, error_response).
         """
@@ -372,7 +372,7 @@ class GlassdoorClient:
 
     def get_company_reviews(
         self,
-        company: Union[int, str],
+        company: int | str,
         *,
         max_reviews: int = 50,
         sort: str = "MOST_RECENT",
@@ -381,7 +381,7 @@ class GlassdoorClient:
         employment_statuses: str | None = None,
         only_current_employees: bool = False,
         extended_rating_data: bool = False,
-        domain: Optional[str] = None,
+        domain: str | None = None,
     ) -> GlassdoorResponse:
         """Fetch up to `max_reviews` review entries with minimal requests.
 
@@ -409,7 +409,7 @@ class GlassdoorClient:
             return first
 
         data = first.data
-        reviews: List[Dict[str, Any]] = []
+        reviews: list[dict[str, Any]] = []
         page_payload = data.get("reviews") or data.get("data") or []
         if isinstance(page_payload, list):
             reviews.extend(page_payload)
@@ -468,13 +468,13 @@ class GlassdoorClient:
 
     def get_company_salaries(
         self,
-        company: Union[int, str],
+        company: int | str,
         *,
         job_title: str,
         location: str | None = None,
         location_type: str = "ANY",
         years_of_experience: str = "ALL",
-        domain: Optional[str] = None,
+        domain: str | None = None,
     ) -> GlassdoorResponse:
         """Convenience wrapper: resolve company_id and fetch company salary aggregates."""
         company_id, resolution = self.resolve_company_id(company, domain=domain)
@@ -493,7 +493,7 @@ class GlassdoorClient:
 
     def get_company_interviews(
         self,
-        company: Union[int, str],
+        company: int | str,
         *,
         max_interviews: int = 50,
         # filters below are passed to /company-interviews
@@ -502,8 +502,8 @@ class GlassdoorClient:
         job_title: str = "",
         location: str = "",
         location_type: str = "ANY",
-        received_offer_only: Optional[bool] = None,
-        domain: Optional[str] = None,
+        received_offer_only: bool | None = None,
+        domain: str | None = None,
     ) -> GlassdoorResponse:
         """
         Fetch up to `max_interviews` interview entries with minimal requests.
@@ -534,7 +534,7 @@ class GlassdoorClient:
             return first  # contains error/status_code
 
         data = first.data
-        interviews: List[Dict[str, Any]] = []
+        interviews: list[dict[str, Any]] = []
         page_payload = data.get("interviews") or data.get("reviews") or []  # defensive
         if isinstance(page_payload, list):
             interviews.extend(page_payload)

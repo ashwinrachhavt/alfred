@@ -37,14 +37,14 @@ class _TextListType(TypeDecorator[list[str]]):
             return dialect.type_descriptor(postgresql.ARRAY(sa.Text))
         return dialect.type_descriptor(sa.JSON)
 
-    def process_bind_param(  # noqa: D401
+    def process_bind_param(
         self,
         value: list[str] | None,
         dialect: sa.engine.Dialect,  # type: ignore[name-defined]
     ) -> list[str]:
         return list(value or [])
 
-    def process_result_value(  # noqa: D401
+    def process_result_value(
         self,
         value: Any,
         dialect: sa.engine.Dialect,  # type: ignore[name-defined]
@@ -69,7 +69,7 @@ class _FloatListType(TypeDecorator[list[float] | None]):
             return dialect.type_descriptor(postgresql.ARRAY(sa.Float))
         return dialect.type_descriptor(sa.JSON)
 
-    def process_bind_param(  # noqa: D401
+    def process_bind_param(
         self,
         value: list[float] | None,
         dialect: sa.engine.Dialect,  # type: ignore[name-defined]
@@ -78,7 +78,7 @@ class _FloatListType(TypeDecorator[list[float] | None]):
             return None
         return [float(x) for x in value]
 
-    def process_result_value(  # noqa: D401
+    def process_result_value(
         self,
         value: Any,
         dialect: sa.engine.Dialect,  # type: ignore[name-defined]

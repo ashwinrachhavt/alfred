@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import base64
 import importlib.util
-from typing import Iterable, Optional, Type, TypeVar
+from collections.abc import Iterable
+from typing import TypeVar
 
 from openai import AsyncOpenAI, OpenAI
 from pydantic import BaseModel
@@ -31,12 +32,12 @@ class LLMService:
     def __init__(
         self,
         *,
-        openai_client: Optional[OpenAI] = None,
-        openai_async_client: Optional[AsyncOpenAI] = None,
+        openai_client: OpenAI | None = None,
+        openai_async_client: AsyncOpenAI | None = None,
     ) -> None:
         self.cfg = settings
-        self._openai_client: Optional[OpenAI] = openai_client
-        self._openai_async_client: Optional[AsyncOpenAI] = openai_async_client
+        self._openai_client: OpenAI | None = openai_client
+        self._openai_async_client: AsyncOpenAI | None = openai_async_client
 
     # ---------- internal helpers ----------
 
@@ -76,9 +77,9 @@ class LLMService:
         self,
         messages: list[dict[str, str]],
         *,
-        provider: Optional[LLMProvider] = None,
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
+        provider: LLMProvider | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
     ) -> str:
         """
         Non-streaming text response.
@@ -113,9 +114,9 @@ class LLMService:
         self,
         messages: list[dict[str, str]],
         *,
-        provider: Optional[LLMProvider] = None,
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
+        provider: LLMProvider | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
     ) -> str:
         """Async non-streaming text response."""
         provider = provider or self.cfg.llm_provider
@@ -149,9 +150,9 @@ class LLMService:
         self,
         messages: list[dict[str, str]],
         *,
-        provider: Optional[LLMProvider] = None,
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
+        provider: LLMProvider | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
     ) -> Iterable[str]:
         """
         Streaming text response generator.
@@ -196,7 +197,7 @@ class LLMService:
         domain: str | None,
         excerpt: str,
         summary: str | None,
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> str:
         """Generate a compact visual brief for a cover image prompt.
 
@@ -249,9 +250,9 @@ class LLMService:
     def structured(
         self,
         messages: list[dict[str, str]],
-        schema: Type[T],
+        schema: type[T],
         *,
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> T:
         """
         Enforce a Pydantic schema using OpenAI's Structured Outputs / JSON Schema.
@@ -363,9 +364,9 @@ class LLMService:
     async def structured_async(
         self,
         messages: list[dict[str, str]],
-        schema: Type[T],
+        schema: type[T],
         *,
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> T:
         """Async structured output (OpenAI only; Ollama runs in a thread)."""
         provider = self.cfg.llm_provider
@@ -505,7 +506,7 @@ class LLMService:
             # Prefer base64 to avoid a follow-up download; fall back if the API rejects it.
             try:
                 resp = self.openai_client.images.generate(**kwargs, response_format="b64_json")
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 msg = str(exc)
                 if "Unknown parameter: 'response_format'" not in msg:
                     raise
@@ -519,7 +520,7 @@ class LLMService:
         if not isinstance(b64, str) or not b64.strip():
             url = getattr(first, "url", None)
             if isinstance(url, str) and url.strip():
-                import httpx  # noqa: PLC0415
+                import httpx
 
                 r = httpx.get(url, timeout=60)
                 r.raise_for_status()

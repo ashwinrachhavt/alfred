@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -29,10 +29,10 @@ class ExcalidrawData(BaseModel):
 
     model_config = ConfigDict(validate_by_name=True)
 
-    elements: List[Dict[str, Any]] = Field(default_factory=list)
-    app_state: Dict[str, Any] = Field(default_factory=dict, alias="appState")
-    files: Dict[str, Any] = Field(default_factory=dict)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    elements: list[dict[str, Any]] = Field(default_factory=list)
+    app_state: dict[str, Any] = Field(default_factory=dict, alias="appState")
+    files: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ComponentDefinition(BaseModel):
@@ -40,14 +40,14 @@ class ComponentDefinition(BaseModel):
     name: str
     category: ComponentCategory
     description: str
-    default_element: Dict[str, Any]
+    default_element: dict[str, Any]
 
 
 class TemplateDefinition(BaseModel):
     id: str
     name: str
     description: str
-    components: List[str] = Field(default_factory=list)
+    components: list[str] = Field(default_factory=list)
     diagram: ExcalidrawData
 
 
@@ -60,14 +60,14 @@ class SystemDesignShareSettings(BaseModel):
     """
 
     enabled: bool = True
-    expires_at: Optional[datetime] = None
+    expires_at: datetime | None = None
     has_password: bool = False
 
 
 class DiagramVersion(BaseModel):
     id: str
     created_at: datetime
-    label: Optional[str] = None
+    label: str | None = None
     diagram: ExcalidrawData
 
 
@@ -75,63 +75,63 @@ class DiagramExport(BaseModel):
     id: str
     format: str
     created_at: datetime
-    storage_url: Optional[str] = None
-    notes: Optional[str] = None
+    storage_url: str | None = None
+    notes: str | None = None
 
 
 class SystemDesignArtifacts(BaseModel):
-    learning_topic_ids: List[int] = Field(default_factory=list)
-    learning_resource_ids: List[int] = Field(default_factory=list)
-    zettel_card_ids: List[int] = Field(default_factory=list)
-    interview_prep_id: Optional[str] = None
-    published_at: Optional[datetime] = None
+    learning_topic_ids: list[int] = Field(default_factory=list)
+    learning_resource_ids: list[int] = Field(default_factory=list)
+    zettel_card_ids: list[int] = Field(default_factory=list)
+    interview_prep_id: str | None = None
+    published_at: datetime | None = None
 
 
 class SystemDesignSessionCreate(BaseModel):
-    title: Optional[str] = None
+    title: str | None = None
     problem_statement: str
-    template_id: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    template_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class SystemDesignSession(BaseModel):
     id: str
     share_id: str
     share_settings: SystemDesignShareSettings = Field(default_factory=SystemDesignShareSettings)
-    title: Optional[str] = None
+    title: str | None = None
     problem_statement: str
-    template_id: Optional[str] = None
-    notes_markdown: Optional[str] = None
+    template_id: str | None = None
+    notes_markdown: str | None = None
     diagram: ExcalidrawData
     version: int = 1
-    versions: List[DiagramVersion] = Field(default_factory=list)
-    exports: List[DiagramExport] = Field(default_factory=list)
+    versions: list[DiagramVersion] = Field(default_factory=list)
+    exports: list[DiagramExport] = Field(default_factory=list)
     artifacts: SystemDesignArtifacts = Field(default_factory=SystemDesignArtifacts)
     created_at: datetime
     updated_at: datetime
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AutosaveRequest(BaseModel):
     diagram: ExcalidrawData
-    label: Optional[str] = None
-    expected_version: Optional[int] = None
+    label: str | None = None
+    expected_version: int | None = None
 
 
 class SystemDesignSessionSummary(BaseModel):
     id: str
     share_id: str
-    title: Optional[str] = None
+    title: str | None = None
     problem_statement: str
-    template_id: Optional[str] = None
+    template_id: str | None = None
     version: int = 1
     created_at: datetime
     updated_at: datetime
 
 
 class SystemDesignSessionUpdate(BaseModel):
-    title: Optional[str] = None
-    problem_statement: Optional[str] = None
+    title: str | None = None
+    problem_statement: str | None = None
 
 
 class SystemDesignNotesUpdate(BaseModel):
@@ -139,17 +139,17 @@ class SystemDesignNotesUpdate(BaseModel):
 
 
 class SystemDesignShareUpdate(BaseModel):
-    enabled: Optional[bool] = None
-    expires_at: Optional[datetime] = None
-    password: Optional[str] = None
+    enabled: bool | None = None
+    expires_at: datetime | None = None
+    password: str | None = None
     clear_password: bool = False
     rotate_share_id: bool = False
 
 
 class DesignPrompt(BaseModel):
     problem: str
-    constraints: List[str] = Field(default_factory=list)
-    target_scale: Optional[str] = None
+    constraints: list[str] = Field(default_factory=list)
+    target_scale: str | None = None
 
 
 class InvalidConnection(BaseModel):
@@ -159,23 +159,23 @@ class InvalidConnection(BaseModel):
 
 
 class DiagramAnalysis(BaseModel):
-    detected_components: List[str] = Field(default_factory=list)
-    missing_components: List[str] = Field(default_factory=list)
-    invalid_connections: List[InvalidConnection] = Field(default_factory=list)
-    bottlenecks: List[str] = Field(default_factory=list)
-    best_practices_hints: List[str] = Field(default_factory=list)
+    detected_components: list[str] = Field(default_factory=list)
+    missing_components: list[str] = Field(default_factory=list)
+    invalid_connections: list[InvalidConnection] = Field(default_factory=list)
+    bottlenecks: list[str] = Field(default_factory=list)
+    best_practices_hints: list[str] = Field(default_factory=list)
     completeness_score: int = Field(ge=0, le=100, default=0)
-    scale_notes: List[str] = Field(default_factory=list)
+    scale_notes: list[str] = Field(default_factory=list)
 
 
 class DiagramQuestion(BaseModel):
     id: str
     text: str
-    rationale: Optional[str] = None
+    rationale: str | None = None
 
 
 class DiagramQuestionSet(BaseModel):
-    items: List[DiagramQuestion] = Field(default_factory=list)
+    items: list[DiagramQuestion] = Field(default_factory=list)
 
 
 class DiagramSuggestion(BaseModel):
@@ -185,7 +185,7 @@ class DiagramSuggestion(BaseModel):
 
 
 class DiagramSuggestionSet(BaseModel):
-    items: List[DiagramSuggestion] = Field(default_factory=list)
+    items: list[DiagramSuggestion] = Field(default_factory=list)
 
 
 class DiagramEvaluation(BaseModel):
@@ -194,46 +194,46 @@ class DiagramEvaluation(BaseModel):
     tradeoffs: int = Field(ge=0, le=100, default=0)
     communication: int = Field(ge=0, le=100, default=0)
     technical_depth: int = Field(ge=0, le=100, default=0)
-    notes: List[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
 
 
 class SystemDesignKnowledgeTopic(BaseModel):
     title: str
-    description: Optional[str] = None
-    tags: List[str] = Field(default_factory=list)
+    description: str | None = None
+    tags: list[str] = Field(default_factory=list)
 
 
 class SystemDesignZettelDraft(BaseModel):
     title: str
-    summary: Optional[str] = None
-    content: Optional[str] = None
-    tags: List[str] = Field(default_factory=list)
-    topic: Optional[str] = None
+    summary: str | None = None
+    content: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    topic: str | None = None
 
 
 class SystemDesignInterviewPrepDraft(BaseModel):
-    likely_questions: List[LikelyQuestion] = Field(default_factory=list)
-    technical_topics: List[TechnicalTopic] = Field(default_factory=list)
+    likely_questions: list[LikelyQuestion] = Field(default_factory=list)
+    technical_topics: list[TechnicalTopic] = Field(default_factory=list)
 
 
 class SystemDesignKnowledgeDraft(BaseModel):
-    topics: List[SystemDesignKnowledgeTopic] = Field(default_factory=list)
-    zettels: List[SystemDesignZettelDraft] = Field(default_factory=list)
+    topics: list[SystemDesignKnowledgeTopic] = Field(default_factory=list)
+    zettels: list[SystemDesignZettelDraft] = Field(default_factory=list)
     interview_prep: SystemDesignInterviewPrepDraft = Field(
         default_factory=SystemDesignInterviewPrepDraft
     )
-    notes: List[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
 
 
 class SystemDesignPublishRequest(BaseModel):
     create_learning_topics: bool = True
     create_zettels: bool = True
     create_interview_prep_items: bool = False
-    learning_topic_id: Optional[int] = None
-    interview_prep_id: Optional[str] = None
-    topic_title: Optional[str] = None
-    topic_tags: List[str] = Field(default_factory=list)
-    zettel_tags: List[str] = Field(default_factory=list)
+    learning_topic_id: int | None = None
+    interview_prep_id: str | None = None
+    topic_title: str | None = None
+    topic_tags: list[str] = Field(default_factory=list)
+    zettel_tags: list[str] = Field(default_factory=list)
 
 
 class SystemDesignPublishResponse(BaseModel):
@@ -244,14 +244,14 @@ class SystemDesignPublishResponse(BaseModel):
 
 class DiagramExportRequest(BaseModel):
     format: str
-    storage_url: Optional[str] = None
-    notes: Optional[str] = None
+    storage_url: str | None = None
+    notes: str | None = None
 
 
 class SystemDesignTemplateCreate(BaseModel):
     name: str = Field(min_length=1)
     description: str = Field(default="")
-    components: List[str] = Field(default_factory=list)
+    components: list[str] = Field(default_factory=list)
     diagram: ExcalidrawData
 
 

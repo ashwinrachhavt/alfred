@@ -9,8 +9,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Dict, List, Optional
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
+from typing import Any
 
 from notion_client import AsyncClient
 from notion_client.errors import APIResponseError
@@ -19,12 +20,12 @@ from alfred.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
-def _parse_iso(dt: str | datetime | None) -> Optional[datetime]:
+def _parse_iso(dt: str | datetime | None) -> datetime | None:
     """Parse an ISO 8601 string or datetime into an aware datetime (UTC)."""
     if dt is None:
         return None
     if isinstance(dt, datetime):
-        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
     # Notion returns e.g. "2025-01-01T12:34:56.789Z"
     dt = dt.replace("Z", "+00:00")
     try:
@@ -48,7 +49,7 @@ class NotionHistoryConnector:
 
     def __init__(
         self,
-        token: Optional[str] = None,
+        token: str | None = None,
         page_size: int = 50,
     ) -> None:
         """
@@ -67,7 +68,7 @@ class NotionHistoryConnector:
     async def close(self) -> None:
         await self.client.aclose()
 
-    async def __aenter__(self) -> "NotionHistoryConnector":
+    async def __aenter__(self) -> NotionHistoryConnector:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -79,11 +80,11 @@ class NotionHistoryConnector:
 
     async def get_all_pages(
         self,
-        start_date: Optional[str | datetime] = None,
-        end_date: Optional[str | datetime] = None,
-        limit: Optional[int] = None,
+        start_date: str | datetime | None = None,
+        end_date: str | datetime | None = None,
+        limit: int | None = None,
         include_content: bool = False,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Fetch all pages shared with the integration, including nested blocks.
 
@@ -103,7 +104,7 @@ class NotionHistoryConnector:
         start_dt = _parse_iso(start_date) if start_date else None
         end_dt = _parse_iso(end_date) if end_date else None
 
-        results: List[Dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
 
         async for index, page in _enumerate_async(
             self._iter_pages(start_dt=start_dt, end_dt=end_dt)
@@ -129,7 +130,7 @@ class NotionHistoryConnector:
 
         return results
 
-    async def get_page_content(self, page_id: str) -> List[Dict[str, Any]]:
+    async def get_page_content(self, page_id: str) -> list[dict[str, Any]]:
         """
         Fetch all blocks (and nested children) for a page.
 
@@ -145,7 +146,7 @@ class NotionHistoryConnector:
         # Top-level blocks (fully paginated)
         root_blocks = await self._fetch_all_children(page_id)
 
-        processed: List[Dict[str, Any]] = []
+        processed: list[dict[str, Any]] = []
         for block in root_blocks:
             processed.append(await self._process_block(block))
 
@@ -157,20 +158,20 @@ class NotionHistoryConnector:
 
     async def _iter_pages(
         self,
-        start_dt: Optional[datetime] = None,
-        end_dt: Optional[datetime] = None,
-    ) -> AsyncIterator[Dict[str, Any]]:
+        start_dt: datetime | None = None,
+        end_dt: datetime | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
         """
         Async generator over all pages the integration can see, paginated.
         Applies last_edited_time filtering client-side.
         """
-        search_params: Dict[str, Any] = {
+        search_params: dict[str, Any] = {
             "filter": {"value": "page", "property": "object"},
             "sort": {"direction": "descending", "timestamp": "last_edited_time"},
             "page_size": self.page_size,
         }
 
-        cursor: Optional[str] = None
+        cursor: str | None = None
 
         while True:
             if cursor:
@@ -206,13 +207,13 @@ class NotionHistoryConnector:
             if not cursor:
                 break
 
-    async def _fetch_all_children(self, block_id: str) -> List[Dict[str, Any]]:
+    async def _fetch_all_children(self, block_id: str) -> list[dict[str, Any]]:
         """Fetch all children for a block/page, handling pagination."""
-        items: List[Dict[str, Any]] = []
-        cursor: Optional[str] = None
+        items: list[dict[str, Any]] = []
+        cursor: str | None = None
 
         while True:
-            kwargs: Dict[str, Any] = {"block_id": block_id, "page_size": 100}
+            kwargs: dict[str, Any] = {"block_id": block_id, "page_size": 100}
             if cursor:
                 kwargs["start_cursor"] = cursor
 
@@ -239,14 +240,14 @@ class NotionHistoryConnector:
 
         return items
 
-    async def _process_block(self, block: Dict[str, Any]) -> Dict[str, Any]:
+    async def _process_block(self, block: dict[str, Any]) -> dict[str, Any]:
         """Process a block and recursively process all children."""
         block_id = block["id"]
         block_type = block["type"]
 
         content = self._extract_block_content(block)
 
-        children: List[Dict[str, Any]] = []
+        children: list[dict[str, Any]] = []
         if block.get("has_children"):
             for child in await self._fetch_all_children(block_id):
                 children.append(await self._process_block(child))
@@ -262,7 +263,7 @@ class NotionHistoryConnector:
     # Content extraction
     # ------------------------
 
-    def get_page_title(self, page: Dict[str, Any]) -> str:
+    def get_page_title(self, page: dict[str, Any]) -> str:
         """Extract a human-readable title from a page object."""
         properties = page.get("properties", {}) or {}
         for _name, prop in properties.items():
@@ -272,7 +273,7 @@ class NotionHistoryConnector:
                     return " ".join(f.get("plain_text", "") for f in fragments).strip()
         return f"Untitled page ({page['id']})"
 
-    def _extract_block_content(self, block: Dict[str, Any]) -> str:
+    def _extract_block_content(self, block: dict[str, Any]) -> str:
         """
         Extract readable content from a Notion block.
 

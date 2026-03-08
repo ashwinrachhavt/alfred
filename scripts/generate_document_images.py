@@ -33,7 +33,7 @@ Notes
 import argparse
 import logging
 import uuid
-from typing import Iterable
+from collections.abc import Iterable
 
 from alfred.core.celery_client import get_celery_client
 from alfred.core.database import SessionLocal

@@ -59,7 +59,6 @@ class MemoryCreateRequest(BaseModel):
         default=None,
         description="Where the memory came from (e.g. 'thread', 'task', 'manual').",
     )
-    thread_id: str | None = None
     task_id: str | None = None
     tags: list[str] = Field(default_factory=list)
     links: list[dict[str, Any]] = Field(default_factory=list)
@@ -72,12 +71,6 @@ class MemoryListResponse(BaseModel):
     skip: int
     limit: int
 
-
-class MemoryExtractFromThreadRequest(BaseModel):
-    thread_id: str = Field(..., min_length=1)
-    user_id: int | None = None
-    max_memories: int = Field(default=6, ge=1, le=12)
-    max_messages: int = Field(default=40, ge=1, le=200)
 
 
 class LanguageDetectRequest(BaseModel):
@@ -180,7 +173,6 @@ __all__ = [
     "SummarizeUrlRequest",
     "SummaryPayload",
     "MemoryCreateRequest",
-    "MemoryExtractFromThreadRequest",
     "MemoryItem",
     "MemoryListResponse",
 ]

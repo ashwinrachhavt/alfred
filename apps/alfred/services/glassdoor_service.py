@@ -26,7 +26,7 @@ def _first_str(obj: dict[str, Any], *keys: str) -> str | None:
 def _first_float(obj: dict[str, Any], *keys: str) -> float | None:
     for k in keys:
         v = obj.get(k)
-        if isinstance(v, (int, float)):
+        if isinstance(v, int | float):
             return float(v)
         if isinstance(v, str):
             try:

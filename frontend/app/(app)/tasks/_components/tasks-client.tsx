@@ -2,12 +2,12 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+
 
 import { toast } from "sonner";
 
 import { useTaskStatus } from "@/features/tasks/queries";
-import { appendThreadMessage, createThread } from "@/lib/api/threads";
+
 import type {
   UnifiedInterviewOperation,
   UnifiedInterviewResponse,
@@ -20,13 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
-}
-
-function coerceString(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
+import { coerceString, isRecord } from "@/lib/utils";
 
 function extractCompanyResearchReportId(result: unknown): string | null {
   if (!isRecord(result)) return null;
@@ -45,12 +39,6 @@ function extractCompanyResearchExecutiveSummary(result: unknown): string | null 
   return summary?.trim() || null;
 }
 
-function extractThreadIdFromTaskResult(result: unknown): string | null {
-  if (!isRecord(result)) return null;
-  const metadata = isRecord(result.metadata) ? result.metadata : null;
-  const threadId = metadata ? coerceString(metadata.thread_id) : null;
-  return threadId?.trim() || null;
-}
 
 function isUnifiedInterviewOperation(value: unknown): value is UnifiedInterviewOperation {
   return value === "collect_questions" || value === "deep_research" || value === "practice_session";
@@ -62,53 +50,6 @@ function isUnifiedInterviewResponse(result: unknown): result is UnifiedInterview
   return isRecord(result.metadata);
 }
 
-function formatUnifiedInterviewMarkdown(result: UnifiedInterviewResponse): string {
-  const lines: string[] = [];
-
-  lines.push(`# Interview Prep — ${formatOperationLabel(result.operation)}`);
-  if (typeof result.sources_scraped === "number")
-    lines.push(`Sources scraped: ${result.sources_scraped}`);
-  lines.push("");
-
-  if (result.operation === "collect_questions") {
-    const questions = result.questions ?? [];
-    lines.push("## Questions");
-    if (!questions.length) {
-      lines.push("_No questions returned._");
-      return `${lines.join("\n").trim()}\n`;
-    }
-
-    questions.forEach((question, idx) => {
-      lines.push(`${idx + 1}. ${question.question}`);
-      if (question.categories?.length)
-        lines.push(`   - Categories: ${question.categories.join(", ")}`);
-      if (question.sources?.length) lines.push(`   - Sources: ${question.sources.join(", ")}`);
-      if (question.solution?.approach) lines.push(`   - Approach: ${question.solution.approach}`);
-      lines.push("");
-    });
-
-    return `${lines.join("\n").trim()}\n`;
-  }
-
-  if (result.operation === "deep_research") {
-    if (result.key_insights?.length) {
-      lines.push("## Key insights");
-      result.key_insights.forEach((insight) => lines.push(`- ${insight}`));
-      lines.push("");
-    }
-
-    lines.push("## Research report");
-    lines.push(result.research_report?.trim() || "_No report returned._");
-    return `${lines.join("\n").trim()}\n`;
-  }
-
-  lines.push("## Interviewer response");
-  lines.push(result.interviewer_response?.trim() || "_No response returned._");
-  lines.push("");
-  lines.push("## Feedback");
-  lines.push(JSON.stringify(result.feedback ?? {}, null, 2));
-  return `${lines.join("\n").trim()}\n`;
-}
 
 function formatOperationLabel(operation: UnifiedInterviewOperation): string {
   if (operation === "collect_questions") return "Collect questions";
@@ -202,11 +143,9 @@ function QuestionCard({ question, index }: { question: UnifiedQuestion; index: n
 }
 
 export function TasksClient({ initialTaskId }: { initialTaskId?: string }) {
-  const router = useRouter();
   const [taskId, setTaskId] = useState<string>(initialTaskId ?? "");
   const trimmedTaskId = useMemo(() => taskId.trim(), [taskId]);
   const { data, error, isFetching } = useTaskStatus(trimmedTaskId ? trimmedTaskId : null);
-  const [isSavingToThread, setIsSavingToThread] = useState(false);
 
   const companyReportId = useMemo(
     () => extractCompanyResearchReportId(data?.result),
@@ -226,7 +165,6 @@ export function TasksClient({ initialTaskId }: { initialTaskId?: string }) {
     return result;
   }, [data?.result]);
 
-  const resultThreadId = useMemo(() => extractThreadIdFromTaskResult(data?.result), [data?.result]);
 
   return (
     <Card>
@@ -298,52 +236,6 @@ export function TasksClient({ initialTaskId }: { initialTaskId?: string }) {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-medium">Result</p>
                   <div className="flex flex-wrap gap-2">
-                    {resultThreadId ? (
-                      <Button asChild size="sm" variant="secondary">
-                        <Link href={`/threads/${encodeURIComponent(resultThreadId)}`}>
-                          Open in Threads
-                        </Link>
-                      </Button>
-                    ) : unifiedInterview ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        disabled={isSavingToThread}
-                        onClick={async () => {
-                          setIsSavingToThread(true);
-                          try {
-                            const thread = await createThread({
-                              kind: "tasks",
-                              title: `Interview prep — ${formatOperationLabel(unifiedInterview.operation)}`,
-                              metadata: {
-                                source: "tasks",
-                                task_id: data.task_id,
-                              },
-                            });
-                            await appendThreadMessage(thread.id, {
-                              role: "assistant",
-                              content: formatUnifiedInterviewMarkdown(unifiedInterview),
-                              data: {
-                                type: "task_result",
-                                task_id: data.task_id,
-                                operation: unifiedInterview.operation,
-                              },
-                            });
-                            toast.success("Saved to Threads.");
-                            router.push(`/threads/${thread.id}`);
-                          } catch (err) {
-                            toast.error(
-                              err instanceof Error ? err.message : "Failed to save to Threads.",
-                            );
-                          } finally {
-                            setIsSavingToThread(false);
-                          }
-                        }}
-                      >
-                        {isSavingToThread ? "Saving…" : "Save to Threads"}
-                      </Button>
-                    ) : null}
                     {companyReportHref ? (
                       <Button asChild size="sm" variant="secondary">
                         <Link href={companyReportHref}>Open company report</Link>

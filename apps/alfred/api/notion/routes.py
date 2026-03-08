@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -211,15 +211,15 @@ def start_notion_import(
 
 @router.get("/history", response_model=dict[str, Any])
 async def get_notion_history(
-    start_date: Optional[str] = Query(
+    start_date: str | None = Query(
         default=None,
         description="ISO 8601 date string; include pages edited on/after this value.",
     ),
-    end_date: Optional[str] = Query(
+    end_date: str | None = Query(
         default=None,
         description="ISO 8601 date string; include pages edited on/before this value.",
     ),
-    limit: Optional[int] = Query(
+    limit: int | None = Query(
         default=10,
         ge=1,
         le=200,

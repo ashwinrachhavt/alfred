@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { AI_MODELS, OPENAI_API_URL } from "@/lib/constants/ai";
 
 type GenerateDiagramRequest = {
   prompt: string;
@@ -10,7 +11,7 @@ type GenerateDiagramResponse = {
   mermaid: string;
 };
 
-const MODEL = "gpt-5.2";
+const MODEL = AI_MODELS.DIAGRAM;
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
       .filter(Boolean)
       .join("\n\n");
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(OPENAI_API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

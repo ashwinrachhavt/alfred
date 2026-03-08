@@ -7,11 +7,6 @@ from sqlalchemy import create_engine
 from sqlmodel import Session, SQLModel
 
 
-class _DummyThreadService:
-    def list_messages(self, *args, **kwargs):  # noqa: ANN002, ANN003
-        return []
-
-
 def _session() -> Session:
     engine = create_engine("sqlite:///:memory:")
     SQLModel.metadata.create_all(engine)
@@ -21,7 +16,7 @@ def _session() -> Session:
 def test_memory_service_create_and_list() -> None:
     session = _session()
     doc_storage = DocStorageService(session=session)
-    svc = MemoryService(doc_storage=doc_storage, thread_service=_DummyThreadService())
+    svc = MemoryService(doc_storage=doc_storage)
 
     created = svc.create_memory(
         MemoryCreateRequest(
@@ -43,7 +38,7 @@ def test_memory_service_create_and_list() -> None:
 def test_memory_service_context_scoring() -> None:
     session = _session()
     doc_storage = DocStorageService(session=session)
-    svc = MemoryService(doc_storage=doc_storage, thread_service=_DummyThreadService())
+    svc = MemoryService(doc_storage=doc_storage)
 
     svc.create_memory(
         MemoryCreateRequest(text="Use TypeScript for frontend features.", source="task")

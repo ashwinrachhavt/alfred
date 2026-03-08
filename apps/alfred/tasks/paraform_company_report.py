@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from celery import shared_task
@@ -132,7 +132,7 @@ def paraform_company_report_task(
         "category": category,
         "seniority": seniority,
         "remote_available": remote_available,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "company_research": company_research,
         "interview_questions": interview_questions,
         "interview_strategy": interview_strategy,

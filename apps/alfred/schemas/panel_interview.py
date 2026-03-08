@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -44,12 +44,12 @@ class InterviewerPersona(BaseModel):
     )
     questioning_style: str = Field(..., description='e.g., "direct", "open-ended", "behavioral"')
 
-    name: Optional[str] = Field(default=None, description="Display name for the persona.")
-    voice: Optional[str] = Field(
+    name: str | None = Field(default=None, description="Display name for the persona.")
+    voice: str | None = Field(
         default=None,
         description="Voice identifier for TTS clients (frontend chooses the actual provider/voice mapping).",
     )
-    avatar: Optional[str] = Field(
+    avatar: str | None = Field(
         default=None,
         description="Avatar identifier (frontend mapping) for visual rendering.",
     )
@@ -58,8 +58,8 @@ class InterviewerPersona(BaseModel):
 class PanelConfig(BaseModel):
     """Configuration for a panel interview session."""
 
-    company: Optional[str] = Field(default=None, description="Company name for realism (optional).")
-    role: Optional[str] = Field(
+    company: str | None = Field(default=None, description="Company name for realism (optional).")
+    role: str | None = Field(
         default=None, description="Target role for the interview (optional)."
     )
     difficulty: PanelDifficulty = Field(default=PanelDifficulty.medium)
@@ -93,7 +93,7 @@ class PanelMember(BaseModel):
 class PanelReaction(BaseModel):
     member_id: str
     reaction: PanelReactionType = Field(default=PanelReactionType.neutral)
-    note: Optional[str] = Field(
+    note: str | None = Field(
         default=None, description="Short reaction note for UI (e.g., 'wants more detail')."
     )
 
@@ -102,10 +102,10 @@ class PanelEvent(BaseModel):
     type: PanelEventType
     timestamp: str = Field(..., description="UTC ISO timestamp")
 
-    member_id: Optional[str] = Field(
+    member_id: str | None = Field(
         default=None, description="Speaker or reactor id, when applicable."
     )
-    text: Optional[str] = Field(
+    text: str | None = Field(
         default=None, description="Utterance text for question/answer/follow-up."
     )
 
@@ -124,7 +124,7 @@ class PanelSession(BaseModel):
     # Session state
     turn_index: int = 0
     time_remaining_s: int = 0
-    current_speaker_id: Optional[str] = None
+    current_speaker_id: str | None = None
 
     transcript: list[PanelEvent] = Field(default_factory=list)
 
@@ -132,7 +132,7 @@ class PanelSession(BaseModel):
 class PanelSessionCreate(BaseModel):
     config: PanelConfig
     # Optional context to tailor questions (resume snippet, user background, etc.)
-    candidate_context: Optional[str] = Field(default=None, max_length=20_000)
+    candidate_context: str | None = Field(default=None, max_length=20_000)
 
 
 class PanelTurnRequest(BaseModel):
@@ -153,7 +153,7 @@ class PanelFeedbackItem(BaseModel):
     strengths: list[str] = Field(default_factory=list)
     improvements: list[str] = Field(default_factory=list)
     score: int | None = Field(default=None, ge=1, le=10)
-    summary: Optional[str] = None
+    summary: str | None = None
 
 
 class PanelFeedback(BaseModel):

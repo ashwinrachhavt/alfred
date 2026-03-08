@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -13,8 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 # -----------------
 class NoteCreate(BaseModel):
     text: str
-    source_url: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    source_url: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("text")
     @classmethod
@@ -24,20 +24,19 @@ class NoteCreate(BaseModel):
             raise ValueError("text must not be empty")
         return trimmed
 
-
 NoteCreateRequest = NoteCreate
 
 
 class NoteResponse(BaseModel):
     id: str
     text: str
-    source_url: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    source_url: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
 
 
 class NotesListResponse(BaseModel):
-    items: List[NoteResponse]
+    items: list[NoteResponse]
     total: int
     skip: int
     limit: int
@@ -47,10 +46,9 @@ class NoteRecord(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     text: str
-    source_url: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    source_url: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
-
 
 # -----------------
 # Documents
@@ -60,19 +58,19 @@ CAPTURED_HOUR_MAX = 23
 
 
 class DocSummary(BaseModel):
-    short: Optional[str] = None
-    bullets: Optional[List[str]] = None
-    key_points: Optional[List[str]] = None
+    short: str | None = None
+    bullets: list[str] | None = None
+    key_points: list[str] | None = None
 
 
 class DocumentIngestChunk(BaseModel):
     idx: int
     text: str
-    tokens: Optional[int] = None
-    section: Optional[str] = None
-    char_start: Optional[int] = None
-    char_end: Optional[int] = None
-    embedding: Optional[List[float]] = None
+    tokens: int | None = None
+    section: str | None = None
+    char_start: int | None = None
+    char_end: int | None = None
+    embedding: list[float] | None = None
 
     @field_validator("idx")
     @classmethod
@@ -91,24 +89,24 @@ class DocumentIngestChunk(BaseModel):
 
 class DocumentIngest(BaseModel):
     source_url: str
-    canonical_url: Optional[str] = None
-    title: Optional[str] = None
-    content_type: Optional[str] = None
-    lang: Optional[str] = None
-    raw_markdown: Optional[str] = None
+    canonical_url: str | None = None
+    title: str | None = None
+    content_type: str | None = None
+    lang: str | None = None
+    raw_markdown: str | None = None
     cleaned_text: str
-    tokens: Optional[int] = None
-    hash: Optional[str] = None
-    summary: Optional[DocSummary] = None
-    topics: Optional[Dict[str, Any]] = None
-    tags: Optional[List[str]] = None
-    embedding: Optional[List[float]] = None
-    captured_at: Optional[datetime] = None
-    published_at: Optional[datetime] = None
-    processed_at: Optional[datetime] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    chunks: List[DocumentIngestChunk] = Field(default_factory=list)
-    session_id: Optional[str] = None
+    tokens: int | None = None
+    hash: str | None = None
+    summary: DocSummary | None = None
+    topics: dict[str, Any] | None = None
+    tags: list[str] | None = None
+    embedding: list[float] | None = None
+    captured_at: datetime | None = None
+    published_at: datetime | None = None
+    processed_at: datetime | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    chunks: list[DocumentIngestChunk] = Field(default_factory=list)
+    session_id: str | None = None
 
     @field_validator("cleaned_text")
     @classmethod
@@ -129,30 +127,30 @@ class DocumentRecord(BaseModel):
     model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
     source_url: str
-    canonical_url: Optional[str] = None
-    domain: Optional[str] = None
-    title: Optional[str] = None
+    canonical_url: str | None = None
+    domain: str | None = None
+    title: str | None = None
     content_type: str = "web"
-    lang: Optional[str] = None
-    raw_markdown: Optional[str] = None
+    lang: str | None = None
+    raw_markdown: str | None = None
     cleaned_text: str
     tokens: int
     hash: str
-    summary: Optional[Dict[str, Any]] = None
-    topics: Optional[Dict[str, Any]] = None
-    entities: Optional[Dict[str, Any]] = None
-    tags: List[str] = Field(default_factory=list)
-    embedding: Optional[List[float]] = None
+    summary: dict[str, Any] | None = None
+    topics: dict[str, Any] | None = None
+    entities: dict[str, Any] | None = None
+    tags: list[str] = Field(default_factory=list)
+    embedding: list[float] | None = None
     captured_at: datetime
     captured_hour: int
     day_bucket: datetime
-    published_at: Optional[datetime] = None
+    published_at: datetime | None = None
     processed_at: datetime
     created_at: datetime
     updated_at: datetime
-    session_id: Optional[str] = None
-    agent_run_id: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    session_id: str | None = None
+    agent_run_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("captured_hour")
     @classmethod
@@ -171,11 +169,11 @@ class DocChunkRecord(BaseModel):
     idx: int
     text: str
     tokens: int
-    section: Optional[str] = None
-    char_start: Optional[int] = None
-    char_end: Optional[int] = None
-    embedding: Optional[List[float]] = None
-    topics: Optional[Dict[str, Any]] = None
+    section: str | None = None
+    char_start: int | None = None
+    char_end: int | None = None
+    embedding: list[float] | None = None
+    topics: dict[str, Any] | None = None
     captured_at: datetime
     captured_hour: int
     day_bucket: datetime
@@ -193,15 +191,15 @@ class MindPalaceDocumentRecord(BaseModel):
     model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
     doc_id: str
-    chunk_ids: List[str] = Field(default_factory=list)
-    title: Optional[str] = None
-    summary: Optional[Dict[str, Any]] = None
-    tags: List[str] = Field(default_factory=list)
-    topics: Optional[Dict[str, Any]] = None
-    annotation: Optional[str] = None
+    chunk_ids: list[str] = Field(default_factory=list)
+    title: str | None = None
+    summary: dict[str, Any] | None = None
+    tags: list[str] = Field(default_factory=list)
+    topics: dict[str, Any] | None = None
+    annotation: str | None = None
     created_at: datetime
     updated_at: datetime
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class DocumentDetailsResponse(BaseModel):
@@ -209,28 +207,28 @@ class DocumentDetailsResponse(BaseModel):
 
     id: str
     source_url: str
-    canonical_url: Optional[str] = None
-    domain: Optional[str] = None
-    title: Optional[str] = None
+    canonical_url: str | None = None
+    domain: str | None = None
+    title: str | None = None
     cover_image_url: str | None = Field(
         default=None, description="Optional cover image URL (generated or extracted)."
     )
     content_type: str = "web"
-    lang: Optional[str] = None
-    raw_markdown: Optional[str] = None
+    lang: str | None = None
+    raw_markdown: str | None = None
     cleaned_text: str
-    tokens: Optional[int] = None
-    summary: Optional[Dict[str, Any]] = None
-    topics: Optional[Dict[str, Any]] = None
-    entities: Optional[Dict[str, Any]] = None
-    tags: List[str] = Field(default_factory=list)
+    tokens: int | None = None
+    summary: dict[str, Any] | None = None
+    topics: dict[str, Any] | None = None
+    entities: dict[str, Any] | None = None
+    tags: list[str] = Field(default_factory=list)
     captured_at: datetime
     day_bucket: date
     created_at: datetime
     updated_at: datetime
-    session_id: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    enrichment: Optional[Dict[str, Any]] = None
+    session_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    enrichment: dict[str, Any] | None = None
 
 
 class DocumentTextUpdateRequest(BaseModel):
@@ -243,12 +241,12 @@ class DocumentTextUpdateRequest(BaseModel):
     - `tiptap_json` is optionally persisted into the document `metadata` for future rich editing.
     """
 
-    raw_markdown: Optional[str] = None
-    cleaned_text: Optional[str] = None
-    tiptap_json: Optional[Dict[str, Any]] = None
+    raw_markdown: str | None = None
+    cleaned_text: str | None = None
+    tiptap_json: dict[str, Any] | None = None
 
     @model_validator(mode="after")
-    def _must_include_a_field(self) -> "DocumentTextUpdateRequest":
+    def _must_include_a_field(self) -> DocumentTextUpdateRequest:
         if self.raw_markdown is None and self.cleaned_text is None and self.tiptap_json is None:
             raise ValueError("At least one of raw_markdown, cleaned_text, tiptap_json must be set")
         return self
@@ -273,7 +271,7 @@ class ExplorerDocumentItem(BaseModel):
 class ExplorerDocumentsResponse(BaseModel):
     """Cursor-paginated documents list for explorer views (Atheneum)."""
 
-    items: List[ExplorerDocumentItem]
+    items: list[ExplorerDocumentItem]
     next_cursor: str | None = Field(
         default=None,
         description="Opaque cursor for the next page; omit/None when there is no next page.",
@@ -287,7 +285,7 @@ class SemanticMapPoint(BaseModel):
     """A single point (document) in the semantic map."""
 
     id: str
-    pos: List[float] = Field(..., min_length=3, max_length=3, description="XYZ position.")
+    pos: list[float] = Field(..., min_length=3, max_length=3, description="XYZ position.")
     color: str = Field(..., description="Hex color derived from primary topic.")
     label: str = Field(..., description="Display label (best-effort title).")
     primary_topic: str | None = None
@@ -296,8 +294,7 @@ class SemanticMapPoint(BaseModel):
 class SemanticMapResponse(BaseModel):
     """3D semantic map payload for the Galaxy view."""
 
-    points: List[SemanticMapPoint]
-
+    points: list[SemanticMapPoint]
 
 __all__ = [
     "DocChunkRecord",

@@ -7,7 +7,7 @@ Create Date: 2026-01-11
 
 from __future__ import annotations
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
@@ -15,9 +15,9 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "3b8f2a7c1d4e"
-down_revision: Union[str, tuple[str, ...], None] = ("2d0e971dd90b", "2f4c8a1d9b7e")
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | tuple[str, ...] | None = ("2d0e971dd90b", "2f4c8a1d9b7e")
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

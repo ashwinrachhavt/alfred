@@ -19,4 +19,4 @@ def validate(payload: QuizPayload) -> Quiz:
         return validate_quiz(payload.model_dump())
     except Exception as exc:
         # Normalize validation to HTTP 422
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

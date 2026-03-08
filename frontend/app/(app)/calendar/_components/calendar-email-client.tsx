@@ -31,6 +31,7 @@ import {
 } from "@/features/google/mutations";
 import { useGmailProfile, useGoogleStatus } from "@/features/google/queries";
 import { googleQueryKeys } from "@/features/google/query-keys";
+import { formatMaybeDate } from "@/lib/utils/format";
 
 function openOAuthPopup(url: string) {
   const width = 640;
@@ -43,18 +44,6 @@ function openOAuthPopup(url: string) {
     "Alfred Google OAuth",
     `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`,
   );
-}
-
-function formatMaybeDate(raw?: string): string {
-  if (!raw) return "—";
-  const maybeNumber = Number(raw);
-  if (!Number.isNaN(maybeNumber) && Number.isFinite(maybeNumber)) {
-    const date = new Date(maybeNumber);
-    if (!Number.isNaN(date.getTime())) return date.toLocaleString();
-  }
-  const date = new Date(raw);
-  if (!Number.isNaN(date.getTime())) return date.toLocaleString();
-  return raw;
 }
 
 export function CalendarEmailClient() {

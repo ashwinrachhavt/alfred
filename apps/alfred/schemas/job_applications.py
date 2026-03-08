@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -23,10 +23,10 @@ class JobApplicationRecord(BaseModel):
     company: str
     role: str
     status: JobApplicationStatus = JobApplicationStatus.applied
-    source_url: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    source_url: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     @field_validator("company", "role")
     @classmethod
@@ -41,8 +41,8 @@ class JobApplicationCreate(BaseModel):
 
     company: str
     role: str
-    source_url: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    source_url: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("company", "role")
     @classmethod
@@ -55,11 +55,10 @@ class JobApplicationCreate(BaseModel):
 class JobApplicationUpdate(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    status: Optional[JobApplicationStatus] = None
-    source_url: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
-    updated_at: Optional[datetime] = None
-
+    status: JobApplicationStatus | None = None
+    source_url: str | None = None
+    metadata: dict[str, Any] | None = None
+    updated_at: datetime | None = None
 
 __all__ = [
     "JobApplicationCreate",

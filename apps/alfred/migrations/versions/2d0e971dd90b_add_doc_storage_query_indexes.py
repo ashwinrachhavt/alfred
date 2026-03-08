@@ -9,15 +9,15 @@ These indexes focus on high-traffic read paths:
 
 from __future__ import annotations
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import context, op
 
 # revision identifiers, used by Alembic.
 revision: str = "2d0e971dd90b"
-down_revision: Union[str, tuple[str, ...], None] = "c0f8a1b2c3d4"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | tuple[str, ...] | None = "c0f8a1b2c3d4"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -14,24 +14,24 @@ class EnrichmentResult(BaseModel):
     """
 
     summary_short: str = Field(..., description="One-paragraph summary (short).")
-    summary_long: Optional[str] = Field(
+    summary_long: str | None = Field(
         default=None, description="Extended summary or abstract (optional)."
     )
-    highlights: List[str] = Field(
+    highlights: list[str] = Field(
         default_factory=list,
         description="Key highlights or takeaways (keep concise).",
     )
-    tags: List[str] = Field(
+    tags: list[str] = Field(
         default_factory=list,
         description="Short snake_case labels (prefer 2–6).",
     )
-    topic_category: Optional[str] = Field(
+    topic_category: str | None = Field(
         default=None, description="Primary topic/category as short slug."
     )
-    topic_graph: Optional[Dict[str, Any]] = Field(
+    topic_graph: dict[str, Any] | None = Field(
         default=None, description="Optional topic relationships graph."
     )
-    domain_summary: Optional[str] = Field(
+    domain_summary: str | None = Field(
         default=None, description="Optional domain-specific summary."
     )
     prompt_version: str = Field(
@@ -39,7 +39,7 @@ class EnrichmentResult(BaseModel):
     )
     model_name: str = Field(default="unknown", description="LLM model identifier.")
     generated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="UTC timestamp when the enrichment was generated.",
     )
 
@@ -50,13 +50,13 @@ class EnrichmentResult(BaseModel):
 
     @field_validator("summary_long", "domain_summary")
     @classmethod
-    def _trim_optional_str(cls, v: Optional[str]) -> Optional[str]:
+    def _trim_optional_str(cls, v: str | None) -> str | None:
         return v.strip() if isinstance(v, str) else v
 
     @field_validator("highlights")
     @classmethod
-    def _clean_highlights(cls, vals: List[str]) -> List[str]:
-        cleaned: List[str] = []
+    def _clean_highlights(cls, vals: list[str]) -> list[str]:
+        cleaned: list[str] = []
         seen: set[str] = set()
         for item in vals or []:
             if not isinstance(item, str):
@@ -71,8 +71,8 @@ class EnrichmentResult(BaseModel):
 
     @field_validator("tags")
     @classmethod
-    def _normalize_tags(cls, vals: List[str]) -> List[str]:
-        out: List[str] = []
+    def _normalize_tags(cls, vals: list[str]) -> list[str]:
+        out: list[str] = []
         seen: set[str] = set()
         for t in vals or []:
             if not isinstance(t, str):
@@ -101,7 +101,7 @@ class EnrichmentResult(BaseModel):
 
     @field_validator("topic_category")
     @classmethod
-    def _normalize_topic_category(cls, v: Optional[str]) -> Optional[str]:
+    def _normalize_topic_category(cls, v: str | None) -> str | None:
         if v is None:
             return None
         s = v.strip().lower()
@@ -190,6 +190,5 @@ def normalize_enrichment(data: dict | EnrichmentResult | None) -> EnrichmentResu
         topic_category=topic_category,
         topic_graph=topic_graph,
     )
-
 
 __all__ = ["EnrichmentResult", "normalize_enrichment"]

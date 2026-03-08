@@ -10,6 +10,7 @@ import {
   SYSTEM_DESIGN_COMPONENT_DND_MIME,
   decodeSystemDesignComponentDragPayload,
 } from "@/components/system-design/system-design-dnd";
+import { isRecord } from "@/lib/utils";
 
 type SerializeAsJSON = typeof import("@excalidraw/excalidraw").serializeAsJSON;
 type ConvertToExcalidrawElements =
@@ -28,10 +29,6 @@ const Excalidraw = dynamic(async () => (await import("@excalidraw/excalidraw")).
     </div>
   ),
 });
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value != null && typeof value === "object" && !Array.isArray(value);
-}
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);

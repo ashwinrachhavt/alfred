@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Iterator
-from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException
 from starlette.responses import StreamingResponse
@@ -14,7 +13,7 @@ from alfred.services.writing_service import list_writing_presets, write, write_s
 router = APIRouter(prefix="/api/writing", tags=["writing"])
 
 
-def _require_extension_token(x_alfred_token: Optional[str]) -> None:
+def _require_extension_token(x_alfred_token: str | None) -> None:
     """
     Optional shared-secret auth for local browser extensions.
 
@@ -39,7 +38,7 @@ def presets() -> list[WritingPreset]:
 @router.post("/compose", response_model=WritingResponse)
 def compose(
     req: WritingRequest,
-    x_alfred_token: Optional[str] = Header(default=None, alias="X-Alfred-Token"),
+    x_alfred_token: str | None = Header(default=None, alias="X-Alfred-Token"),
 ) -> WritingResponse:
     """Non-streaming writing response for simple clients."""
 
@@ -58,7 +57,7 @@ def _sse_encode(*, data: str, event: str = "token") -> str:
 @router.post("/compose/stream")
 def compose_stream(
     req: WritingRequest,
-    x_alfred_token: Optional[str] = Header(default=None, alias="X-Alfred-Token"),
+    x_alfred_token: str | None = Header(default=None, alias="X-Alfred-Token"),
 ) -> StreamingResponse:
     """
     Stream a writing response using Server-Sent Events (SSE).

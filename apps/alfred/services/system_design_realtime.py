@@ -33,7 +33,7 @@ class SystemDesignRealtimeHub:
             if not connections:
                 self._connections.pop(session_id, None)
 
-    async def broadcast(self, session_id: str, payload: dict) -> None:  # noqa: ANN401
+    async def broadcast(self, session_id: str, payload: dict) -> None:
         async with self._lock:
             targets = list(self._connections.get(session_id, set()))
 

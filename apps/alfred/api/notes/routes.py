@@ -43,7 +43,7 @@ def _as_uuid(value: str | None, *, field_name: str) -> uuid.UUID | None:
         raise HTTPException(status_code=422, detail=f"Invalid {field_name}: {value}") from exc
 
 
-def _note_summary(row) -> NoteSummary:  # noqa: ANN001 - SQLModel row
+def _note_summary(row) -> NoteSummary:
     return NoteSummary(
         id=str(row.id),
         title=row.title,
@@ -58,7 +58,7 @@ def _note_summary(row) -> NoteSummary:  # noqa: ANN001 - SQLModel row
     )
 
 
-def _note_response(row) -> NoteResponse:  # noqa: ANN001 - SQLModel row
+def _note_response(row) -> NoteResponse:
     return NoteResponse(
         **_note_summary(row).model_dump(),
         content_markdown=row.content_markdown or "",

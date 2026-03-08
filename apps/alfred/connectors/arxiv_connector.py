@@ -20,8 +20,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any
 
 from langchain_community.retrievers import ArxivRetriever
 from langchain_core.documents import Document
@@ -50,7 +51,7 @@ def _looks_like_iso_date(text: str) -> bool:
 
 def _normalize_date(value: date | datetime | str) -> str:
     """Normalize date-like inputs into the YYYYMMDD format expected by arXiv queries."""
-    if isinstance(value, (date, datetime)):
+    if isinstance(value, date | datetime):
         return value.strftime("%Y%m%d")
     text = str(value).strip()
     digits = [c for c in text if c.isdigit()]
@@ -68,11 +69,11 @@ def _normalize_date(value: date | datetime | str) -> str:
 def _compose_query(
     base_query: str | None,
     *,
-    categories: Optional[Sequence[str]] = None,
-    date_from: Optional[date | datetime | str] = None,
-    date_to: Optional[date | datetime | str] = None,
+    categories: Sequence[str] | None = None,
+    date_from: date | datetime | str | None = None,
+    date_to: date | datetime | str | None = None,
 ) -> str:
-    parts: List[str] = []
+    parts: list[str] = []
     if base_query and base_query.strip():
         parts.append(f"({base_query.strip()})")
 
@@ -101,7 +102,7 @@ class ArxivConnector:
         load_all_available_meta: bool = False,
         sort_by: str = "relevance",
         sort_order: str = "descending",
-        search_defaults: Optional[Dict[str, Any]] = None,
+        search_defaults: dict[str, Any] | None = None,
     ) -> None:
         self._validate_sort(sort_by, sort_order)
         self._load_max_docs = max(1, int(load_max_docs))
@@ -115,14 +116,14 @@ class ArxivConnector:
         self,
         query: str,
         *,
-        categories: Optional[Sequence[str]] = None,
-        date_from: Optional[date | datetime | str] = None,
-        date_to: Optional[date | datetime | str] = None,
-        max_results: Optional[int] = None,
-        sort_by: Optional[str] = None,
-        sort_order: Optional[str] = None,
-        search_kwargs: Optional[Dict[str, Any]] = None,
-    ) -> List[Document]:
+        categories: Sequence[str] | None = None,
+        date_from: date | datetime | str | None = None,
+        date_to: date | datetime | str | None = None,
+        max_results: int | None = None,
+        sort_by: str | None = None,
+        sort_order: str | None = None,
+        search_kwargs: dict[str, Any] | None = None,
+    ) -> list[Document]:
         effective_sort_by = sort_by or self._sort_by
         effective_sort_order = sort_order or self._sort_order
         self._validate_sort(effective_sort_by, effective_sort_order)
@@ -140,7 +141,7 @@ class ArxivConnector:
         )
         return retriever.invoke(q)
 
-    async def asearch(self, query: str, **kwargs: Any) -> List[Document]:
+    async def asearch(self, query: str, **kwargs: Any) -> list[Document]:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, lambda: self.search(query, **kwargs))
 
@@ -152,7 +153,7 @@ class ArxivConnector:
         load_all_available_meta: bool,
         sort_by: str,
         sort_order: str,
-        search_kwargs: Optional[Dict[str, Any]] = None,
+        search_kwargs: dict[str, Any] | None = None,
     ) -> ArxivRetriever:
         retriever = ArxivRetriever(
             load_max_docs=load_max_docs,
@@ -160,7 +161,7 @@ class ArxivConnector:
             load_all_available_meta=load_all_available_meta,
         )
 
-        extras: Dict[str, Any] = {"sort_by": sort_by, "sort_order": sort_order}
+        extras: dict[str, Any] = {"sort_by": sort_by, "sort_order": sort_order}
         extras.update(self._search_defaults)
         if search_kwargs:
             extras.update(search_kwargs)

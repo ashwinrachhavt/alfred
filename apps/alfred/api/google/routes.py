@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Query
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -63,7 +63,7 @@ def google_status() -> dict[str, object]:
     expiry_iso = None
     if creds is not None and getattr(creds, "expiry", None) is not None:
         expiry_dt: datetime = creds.expiry
-        expiry_iso = expiry_dt.astimezone(timezone.utc).isoformat()
+        expiry_iso = expiry_dt.astimezone(UTC).isoformat()
 
     return {
         "configured": configured,

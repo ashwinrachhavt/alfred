@@ -4,8 +4,8 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ExternalLink, Loader2, RefreshCcw, Save } from "lucide-react";
 
-import { ApiError } from "@/lib/api/client";
 import type { NotionPageMarkdownResponse, NotionPageSearchResult } from "@/lib/api/types/notion";
+import { formatErrorMessage } from "@/lib/utils";
 import { useUpdateNotionPageMarkdown } from "@/features/notion/mutations";
 import { useNotionPageSearch } from "@/features/notion/queries";
 import { MarkdownNotesEditor } from "@/components/editor/markdown-notes-editor";
@@ -17,12 +17,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-
-function formatErrorMessage(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  if (error instanceof Error) return error.message;
-  return "Something went wrong.";
-}
 
 function formatIsoDate(iso: string | null | undefined): string | null {
   if (!iso) return null;

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Optional
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -13,9 +12,9 @@ from .settings import LLMProvider, settings
 
 @lru_cache(maxsize=8)
 def get_chat_model(
-    provider: Optional[LLMProvider] = None,
-    model: Optional[str] = None,
-    temperature: Optional[float] = None,
+    provider: LLMProvider | None = None,
+    model: str | None = None,
+    temperature: float | None = None,
 ) -> BaseChatModel:
     cfg = settings
     provider = provider or cfg.llm_provider
@@ -43,8 +42,8 @@ def get_chat_model(
 
 @lru_cache(maxsize=8)
 def get_embedding_model(
-    provider: Optional[LLMProvider] = None,
-    model: Optional[str] = None,
+    provider: LLMProvider | None = None,
+    model: str | None = None,
 ) -> Embeddings:
     cfg = settings
     provider = provider or cfg.llm_provider

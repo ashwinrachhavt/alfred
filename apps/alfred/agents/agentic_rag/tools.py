@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from functools import lru_cache
-from typing import Any, List, Sequence
+from typing import Any
 
 from langchain_core.documents import Document
 from langchain_core.tools import BaseTool
@@ -95,7 +96,7 @@ def create_retriever_tool(retriever: Any, name: str, description: str) -> BaseTo
     return _RetrieverTool(name=name, description=description, retriever=retriever)
 
 
-def get_context_chunks(question: str, k: int = 4) -> List[dict]:
+def get_context_chunks(question: str, k: int = 4) -> list[dict]:
     retriever = make_retriever(k=k)
     docs = retriever.invoke(question)
     items = []

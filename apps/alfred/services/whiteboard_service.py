@@ -78,7 +78,7 @@ class WhiteboardService:
     def update_whiteboard(self, board: Whiteboard, **fields) -> Whiteboard:
         """Apply partial updates and refresh timestamps."""
 
-        if "title" in fields and fields["title"]:
+        if fields.get("title"):
             board.title = str(fields["title"]).strip()
         if "description" in fields:
             board.description = fields["description"]

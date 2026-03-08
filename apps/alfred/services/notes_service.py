@@ -114,7 +114,7 @@ class NotesService:
         name: str,
         icon: str | None = None,
         user_id: int | None = None,
-        settings: dict | None = None,  # noqa: ANN401 - passthrough JSON
+        settings: dict | None = None,
     ) -> WorkspaceRow:
         trimmed_name = (name or "").strip()
         if not trimmed_name:
@@ -201,7 +201,7 @@ class NotesService:
         icon: str | None = None,
         cover_image: str | None = None,
         content_markdown: str | None = None,
-        content_json: dict | None = None,  # noqa: ANN401 - JSON payload
+        content_json: dict | None = None,
         user_id: int | None = None,
     ) -> NoteRow:
         workspace = (
@@ -257,7 +257,7 @@ class NotesService:
         icon: str | None = None,
         cover_image: str | None = None,
         content_markdown: str | None = None,
-        content_json: dict | None = None,  # noqa: ANN401 - JSON payload
+        content_json: dict | None = None,
         is_archived: bool | None = None,
         user_id: int | None = None,
     ) -> NoteRow:

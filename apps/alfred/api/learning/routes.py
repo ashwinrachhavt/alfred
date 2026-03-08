@@ -59,7 +59,7 @@ def _topic_out(t: LearningTopic) -> TopicOut:
     )
 
 
-def _resource_out(r) -> ResourceOut:  # noqa: ANN001
+def _resource_out(r) -> ResourceOut:
     return ResourceOut(
         id=r.id or 0,
         topic_id=r.topic_id,
@@ -91,7 +91,7 @@ def _quiz_out(q: LearningQuiz) -> QuizOut:
     )
 
 
-def _attempt_out(a) -> QuizAttemptOut:  # noqa: ANN001
+def _attempt_out(a) -> QuizAttemptOut:
     return QuizAttemptOut(
         id=a.id or 0,
         quiz_id=a.quiz_id,

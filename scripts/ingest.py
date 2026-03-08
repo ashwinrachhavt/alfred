@@ -6,7 +6,6 @@ import logging
 import os
 from hashlib import md5
 from pathlib import Path
-from typing import List
 
 from alfred.core.settings import settings
 from langchain_community.document_loaders import PyPDFLoader, RecursiveUrlLoader
@@ -29,7 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # Note: per request, use WebBaseLoader/RecursiveUrlLoader instead of custom crawler
 
 # ---- Defaults (you can keep your STATIC_URLS here) ----
-STATIC_URLS: List[str] = [
+STATIC_URLS: list[str] = [
     "https://ashwinrachha.vercel.app/",
     "https://www.linkedin.com/in/ashwin_rachha/",
     "https://medium.com/@ashwin_rachha",
@@ -56,9 +55,9 @@ def parse_args():
     return p.parse_args()
 
 
-def load_urls_file(path: str) -> List[str]:
-    out: List[str] = []
-    with open(path, "r", encoding="utf-8") as f:
+def load_urls_file(path: str) -> list[str]:
+    out: list[str] = []
+    with open(path, encoding="utf-8") as f:
         for line in f:
             s = line.strip()
             if not s or s.startswith("#"):
@@ -69,12 +68,12 @@ def load_urls_file(path: str) -> List[str]:
 
 def _hash_id(text: str, src: str, i: int) -> str:
     # Stable IDs per (source, chunk) so re-ingest replaces instead of duplicating
-    return md5(f"{src}::{i}".encode("utf-8")).hexdigest()
+    return md5(f"{src}::{i}".encode()).hexdigest()
 
 
-def chunk_docs(docs: List[Document], chunk_size: int, overlap: int) -> List[Document]:
+def chunk_docs(docs: list[Document], chunk_size: int, overlap: int) -> list[Document]:
     splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
-    out: List[Document] = []
+    out: list[Document] = []
     for d in docs:
         chunks = splitter.split_documents([d])
         for i, ch in enumerate(chunks):
@@ -88,10 +87,10 @@ def chunk_docs(docs: List[Document], chunk_size: int, overlap: int) -> List[Docu
     return out
 
 
-def load_web(urls: List[str]) -> List[Document]:
+def load_web(urls: list[str]) -> list[Document]:
     if not urls:
         return []
-    docs: List[Document] = []
+    docs: list[Document] = []
     # 1) Direct fetch of provided URLs
     header_template = {
         "User-Agent": settings.user_agent,
@@ -131,7 +130,7 @@ def load_web(urls: List[str]) -> List[Document]:
                 )
 
     # Normalize metadata
-    normed: List[Document] = []
+    normed: list[Document] = []
     for d in docs:
         meta = dict(d.metadata or {})
         src = meta.get("source") or meta.get("url") or meta.get("web_path") or "unknown"
@@ -144,10 +143,10 @@ def load_web(urls: List[str]) -> List[Document]:
     return normed
 
 
-def load_pdfs(directory: str) -> List[Document]:
+def load_pdfs(directory: str) -> list[Document]:
     """Load PDF pages from ``directory`` plus the default resume, if it exists."""
 
-    docs: List[Document] = []
+    docs: list[Document] = []
 
     candidates = []
     data_dir = Path(directory)
@@ -183,7 +182,7 @@ def load_pdfs(directory: str) -> List[Document]:
 def main():
     args = parse_args()
 
-    urls: List[str] = [] if args.no_defaults else list(STATIC_URLS)
+    urls: list[str] = [] if args.no_defaults else list(STATIC_URLS)
     if args.urls_file:
         urls.extend(load_urls_file(args.urls_file))
     if args.url:

@@ -20,7 +20,6 @@ const isBackendApiRoute = createRouteMatcher([
   "/api/v1/workspaces(.*)",
   "/api/rag(.*)",
   "/api/tasks(.*)",
-  "/api/threads(.*)",
 ]);
 
 export default clerkEnabled

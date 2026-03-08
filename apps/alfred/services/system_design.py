@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from alfred.core.exceptions import (
     AlfredException,
     NotFoundError,
@@ -27,20 +28,20 @@ from alfred.schemas.system_design import (
     ScaleEstimateResponse,
     SystemDesignArtifacts,
     SystemDesignKnowledgeDraft,
-    SystemDesignShareSettings,
-    SystemDesignShareUpdate,
     SystemDesignSession,
     SystemDesignSessionCreate,
     SystemDesignSessionSummary,
     SystemDesignSessionUpdate,
+    SystemDesignShareSettings,
+    SystemDesignShareUpdate,
     SystemDesignTemplateCreate,
     TemplateDefinition,
 )
 from alfred.services.datastore import DataStoreService
 from alfred.services.llm_service import LLMService
-from alfred.services.system_design_share import hash_password, verify_password
 from alfred.services.system_design_heuristics import component_library, template_library
 from alfred.services.system_design_interviewer import SystemDesignInterviewer
+from alfred.services.system_design_share import hash_password, verify_password
 
 
 def _new_id() -> str:
@@ -82,13 +83,13 @@ class SystemDesignService:
     def ensure_indexes(self) -> None:
         return
 
-    def component_library(self) -> List[ComponentDefinition]:
+    def component_library(self) -> list[ComponentDefinition]:
         return component_library()
 
-    def template_library(self) -> List[TemplateDefinition]:
+    def template_library(self) -> list[TemplateDefinition]:
         return template_library()
 
-    def list_templates(self) -> List[TemplateDefinition]:
+    def list_templates(self) -> list[TemplateDefinition]:
         """Return both built-in and user-saved templates."""
 
         builtins = self.template_library()
@@ -154,7 +155,7 @@ class SystemDesignService:
         doc_id = self._collection.insert_one(doc)
         return self._to_session(doc_id, doc)
 
-    def get_session(self, session_id: str) -> Optional[SystemDesignSession]:
+    def get_session(self, session_id: str) -> SystemDesignSession | None:
         doc = self._collection.find_one({"_id": session_id})
         if not doc:
             return None
@@ -170,9 +171,9 @@ class SystemDesignService:
 
     def update_session(
         self, session_id: str, payload: SystemDesignSessionUpdate
-    ) -> Optional[SystemDesignSession]:
+    ) -> SystemDesignSession | None:
         now = _utcnow()
-        update: Dict[str, Any] = {"updated_at": now}
+        update: dict[str, Any] = {"updated_at": now}
         if payload.title is not None:
             update["title"] = payload.title
         if payload.problem_statement is not None:
@@ -187,7 +188,7 @@ class SystemDesignService:
             return None
         return self._to_session(str(doc["_id"]), doc)
 
-    def get_by_share_id(self, share_id: str) -> Optional[SystemDesignSession]:
+    def get_by_share_id(self, share_id: str) -> SystemDesignSession | None:
         doc = self._collection.find_one({"share_id": share_id})
         if not doc:
             return None
@@ -219,7 +220,7 @@ class SystemDesignService:
 
     def update_share_settings(
         self, session_id: str, payload: SystemDesignShareUpdate
-    ) -> Optional[SystemDesignSession]:
+    ) -> SystemDesignSession | None:
         doc = self._collection.find_one({"_id": session_id})
         if not doc:
             return None
@@ -246,7 +247,7 @@ class SystemDesignService:
             secret["password_salt"] = hashed.salt_hex
             secret["password_hash"] = hashed.digest_hex
 
-        update: Dict[str, Any] = {
+        update: dict[str, Any] = {
             "share_id": doc.get("share_id"),
             "share_settings": share_settings,
             "share_secret": secret,
@@ -258,7 +259,7 @@ class SystemDesignService:
             return None
         return self._to_session(str(updated["_id"]), updated)
 
-    def autosave(self, session_id: str, payload: AutosaveRequest) -> Optional[SystemDesignSession]:
+    def autosave(self, session_id: str, payload: AutosaveRequest) -> SystemDesignSession | None:
         now = _utcnow()
         attempts = 0
         while attempts < MAX_AUTOSAVE_RETRIES:
@@ -278,12 +279,12 @@ class SystemDesignService:
                 )
 
             next_version = current_version + 1
-            update: Dict[str, Any] = {
+            update: dict[str, Any] = {
                 "diagram": payload.diagram.model_dump(by_alias=True),
                 "updated_at": now,
                 "version": next_version,
             }
-            ops: Dict[str, Any] = {"$set": update}
+            ops: dict[str, Any] = {"$set": update}
             if payload.label:
                 snapshot = DiagramVersion(
                     id=_new_id(),
@@ -316,7 +317,7 @@ class SystemDesignService:
             "Failed to save diagram due to concurrent updates. Please retry.",
         )
 
-    def update_notes(self, session_id: str, notes_markdown: str) -> Optional[SystemDesignSession]:
+    def update_notes(self, session_id: str, notes_markdown: str) -> SystemDesignSession | None:
         now = _utcnow()
         self._collection.update_one(
             {"_id": session_id},
@@ -327,7 +328,7 @@ class SystemDesignService:
             return None
         return self._to_session(str(doc["_id"]), doc)
 
-    def list_versions(self, session_id: str) -> List[DiagramVersion]:
+    def list_versions(self, session_id: str) -> list[DiagramVersion]:
         session = self.get_session(session_id)
         if not session:
             return []
@@ -336,10 +337,10 @@ class SystemDesignService:
     def analyze(self, diagram: ExcalidrawData) -> DiagramAnalysis:
         return self._interviewer.analyze_diagram(diagram)
 
-    def ask_probing_questions(self, diagram: ExcalidrawData) -> List[DiagramQuestion]:
+    def ask_probing_questions(self, diagram: ExcalidrawData) -> list[DiagramQuestion]:
         return self._interviewer.ask_probing_questions(diagram)
 
-    def suggest_improvements(self, diagram: ExcalidrawData) -> List[DiagramSuggestion]:
+    def suggest_improvements(self, diagram: ExcalidrawData) -> list[DiagramSuggestion]:
         return self._interviewer.suggest_improvements(diagram)
 
     def evaluate_design(self, diagram: ExcalidrawData) -> DiagramEvaluation:
@@ -350,7 +351,7 @@ class SystemDesignService:
 
     def add_export(
         self, session_id: str, payload: DiagramExportRequest
-    ) -> Optional[SystemDesignSession]:
+    ) -> SystemDesignSession | None:
         now = _utcnow()
         export = DiagramExport(
             id=_new_id(),
@@ -370,7 +371,7 @@ class SystemDesignService:
 
     def attach_artifacts(
         self, session_id: str, artifacts: SystemDesignArtifacts
-    ) -> Optional[SystemDesignSession]:
+    ) -> SystemDesignSession | None:
         now = _utcnow()
         data = artifacts.model_dump()
         data["published_at"] = data.get("published_at") or now
@@ -399,7 +400,7 @@ class SystemDesignService:
             retained_storage_gb=round(retained_storage_gb, 2),
         )
 
-    def _to_session(self, session_id: str, doc: Dict[str, Any]) -> SystemDesignSession:
+    def _to_session(self, session_id: str, doc: dict[str, Any]) -> SystemDesignSession:
         diagram = ExcalidrawData.model_validate(doc.get("diagram") or {})
         version = _coerce_version(doc.get("version", 1))
         versions = [
@@ -435,7 +436,7 @@ class SystemDesignService:
         )
 
     def _to_session_summary(
-        self, session_id: str, doc: Dict[str, Any]
+        self, session_id: str, doc: dict[str, Any]
     ) -> SystemDesignSessionSummary:
         return SystemDesignSessionSummary(
             id=session_id,
@@ -448,13 +449,13 @@ class SystemDesignService:
             updated_at=doc.get("updated_at") or _utcnow(),
         )
 
-    def _to_template(self, template_id: str, doc: Dict[str, Any]) -> TemplateDefinition:
+    def _to_template(self, template_id: str, doc: dict[str, Any]) -> TemplateDefinition:
         diagram = ExcalidrawData.model_validate(doc.get("diagram") or {})
         components = doc.get("components") if isinstance(doc.get("components"), list) else []
         return TemplateDefinition(
             id=template_id,
             name=str(doc.get("name") or "Untitled template"),
             description=str(doc.get("description") or ""),
-            components=[str(c) for c in components if isinstance(c, (str, int))],
+            components=[str(c) for c in components if isinstance(c, str | int)],
             diagram=diagram,
         )

@@ -4,7 +4,7 @@ import hashlib
 import importlib.util
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -30,19 +30,19 @@ class ExtractionService:
     minimal shape suitable for graph upserts (entities/relations/topics).
     """
 
-    api_key: Optional[str] = None
+    api_key: str | None = None
     llm_service: LLMService | None = None
 
     def _llm(self) -> LLMService:
         return self.llm_service or LLMService()
 
-    def extract_graph(self, *, text: str, metadata: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    def extract_graph(self, *, text: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
         """
         Use LangExtract (if available) with OpenAI provider to extract entities,
         relations, and topics. Falls back to OpenAI structured outputs.
         """
         text = (text or "").strip()
-        out: Dict[str, Any] = {"entities": [], "relations": [], "topics": []}
+        out: dict[str, Any] = {"entities": [], "relations": [], "topics": []}
         if not text:
             return out
 
@@ -53,20 +53,20 @@ class ExtractionService:
 
                 @_dc_dataclass
                 class Entity:
-                    name: Optional[str] = None
-                    type: Optional[str] = None
+                    name: str | None = None
+                    type: str | None = None
 
                 @_dc_dataclass
                 class Relation:
-                    source: Optional[str] = field(default=None, metadata={"alias": "from"})
-                    target: Optional[str] = field(default=None, metadata={"alias": "to"})
-                    type: Optional[str] = None
+                    source: str | None = field(default=None, metadata={"alias": "from"})
+                    target: str | None = field(default=None, metadata={"alias": "to"})
+                    type: str | None = None
 
                 @_dc_dataclass
                 class GraphExtraction:
-                    entities: List[Entity] = field(default_factory=list)
-                    relations: List[Relation] = field(default_factory=list)
-                    topics: List[str] = field(default_factory=list)
+                    entities: list[Entity] = field(default_factory=list)
+                    relations: list[Relation] = field(default_factory=list)
+                    topics: list[str] = field(default_factory=list)
 
                 instr = (
                     "Extract entities (name,type) and relations (from,to,type). "
@@ -81,9 +81,9 @@ class ExtractionService:
                     max_workers=0,
                     extraction_passes=1,
                 )
-                entities_list: List[Dict[str, Any]] = []
-                relations_list: List[Dict[str, Any]] = []
-                topics_list: List[str] = []
+                entities_list: list[dict[str, Any]] = []
+                relations_list: list[dict[str, Any]] = []
+                topics_list: list[str] = []
                 for ex in getattr(result, "extractions", []) or []:
                     attrs = getattr(ex, "attributes", {}) or {}
                     for e in attrs.get("entities", []) or []:
@@ -111,17 +111,17 @@ class ExtractionService:
         # Fallback: OpenAI structured outputs
         class EntityModel(BaseModel):
             name: str
-            type: Optional[str] = None
+            type: str | None = None
 
         class RelationModel(BaseModel):
             from_name: str = Field(alias="from")
             to_name: str = Field(alias="to")
-            type: Optional[str] = None
+            type: str | None = None
 
         class GraphOut(BaseModel):
-            entities: List[EntityModel] = Field(default_factory=list)
-            relations: List[RelationModel] = Field(default_factory=list)
-            topics: List[str] = Field(default_factory=list)
+            entities: list[EntityModel] = Field(default_factory=list)
+            relations: list[RelationModel] = Field(default_factory=list)
+            topics: list[str] = Field(default_factory=list)
 
         ls = self._llm()
         prompt = (
@@ -160,11 +160,11 @@ class ExtractionService:
         self,
         *,
         cleaned_text: str,
-        raw_markdown: Optional[str] = None,
-        metadata: Dict[str, Any] | None = None,
+        raw_markdown: str | None = None,
+        metadata: dict[str, Any] | None = None,
         include_embedding: bool = True,
         include_graph: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Use OpenAI models to populate a broad enrichment payload:
         - lang (ISO 639-1 where possible)
@@ -193,14 +193,14 @@ class ExtractionService:
 
         # ---------- 1) Combined structured extraction (LangExtract preferred) ----------
         class EnrichOut(BaseModel):
-            lang: Optional[str] = None
-            summary_short: Optional[str] = None
-            summary_long: Optional[str] = None
-            bullets: List[str] = Field(default_factory=list)
-            key_points: List[str] = Field(default_factory=list)
-            topics_primary: Optional[str] = None
-            topics_secondary: List[str] = Field(default_factory=list)
-            tags: List[str] = Field(default_factory=list)
+            lang: str | None = None
+            summary_short: str | None = None
+            summary_long: str | None = None
+            bullets: list[str] = Field(default_factory=list)
+            key_points: list[str] = Field(default_factory=list)
+            topics_primary: str | None = None
+            topics_secondary: list[str] = Field(default_factory=list)
+            tags: list[str] = Field(default_factory=list)
 
         out: EnrichOut
         try:
@@ -208,14 +208,14 @@ class ExtractionService:
 
                 @dataclass
                 class DocEnrichment:
-                    lang: Optional[str] = None
-                    summary_short: Optional[str] = None
-                    summary_long: Optional[str] = None
-                    bullets: List[str] = field(default_factory=list)
-                    key_points: List[str] = field(default_factory=list)
-                    topics_primary: Optional[str] = None
-                    topics_secondary: List[str] = field(default_factory=list)
-                    tags: List[str] = field(default_factory=list)
+                    lang: str | None = None
+                    summary_short: str | None = None
+                    summary_long: str | None = None
+                    bullets: list[str] = field(default_factory=list)
+                    key_points: list[str] = field(default_factory=list)
+                    topics_primary: str | None = None
+                    topics_secondary: list[str] = field(default_factory=list)
+                    tags: list[str] = field(default_factory=list)
 
                 instr = (
                     "Detect `lang` (ISO 639-1). "
@@ -264,7 +264,7 @@ class ExtractionService:
             )
 
         # ---------- 2) Entities/topics (optional graph extract) ----------
-        entities: List[Dict[str, Any]] = []
+        entities: list[dict[str, Any]] = []
         if include_graph:
             try:
                 g = self.extract_graph(text=text, metadata=metadata or {})
@@ -279,7 +279,7 @@ class ExtractionService:
                 logger.debug("graph enrich failed: %s", exc)
 
         # ---------- 3) Embedding ----------
-        embedding: Optional[List[float]] = None
+        embedding: list[float] | None = None
         if include_embedding:
             try:
                 client = self._llm().openai_client
@@ -328,8 +328,8 @@ class ExtractionService:
     # Taxonomy classification via LangExtract (with prompt templates)
     # ------------------------------------------------------------
     def classify_taxonomy(
-        self, *, text: str, taxonomy_context: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, *, text: str, taxonomy_context: str | None = None
+    ) -> dict[str, Any]:
         """Classify text into (domain, subdomain, microtopics, topic{title,confidence}).
 
         Uses prompt templates in apps/alfred/prompts/classification and LangExtract with
@@ -346,13 +346,13 @@ class ExtractionService:
 
         @_dc_dataclass
         class Topic:
-            title: Optional[str] = None
-            confidence: Optional[float] = None
+            title: str | None = None
+            confidence: float | None = None
 
         @_dc_dataclass
         class Classification:
-            domain: Optional[str] = None
-            subdomain: Optional[str] = None
+            domain: str | None = None
+            subdomain: str | None = None
             microtopics: list[str] = field(default_factory=list)
             topic: Topic = field(default_factory=Topic)
 
@@ -387,9 +387,9 @@ class ExtractionService:
             confidence: float = Field(ge=0.0, le=1.0)
 
         class ClassificationResult(BaseModel):
-            domain: Optional[str] = None
-            subdomain: Optional[str] = None
-            microtopics: Optional[List[str]] = None
+            domain: str | None = None
+            subdomain: str | None = None
+            microtopics: list[str] | None = None
             topic: TopicTitle
 
         ls = self._llm()

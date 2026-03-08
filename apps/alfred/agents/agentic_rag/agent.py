@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from functools import lru_cache
-from typing import Iterable
 
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, START, StateGraph

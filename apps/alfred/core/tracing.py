@@ -15,12 +15,13 @@ from __future__ import annotations
 import importlib.util
 import logging
 import time
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from alfred.core.settings import settings
 
 _client_cache: Any | None = None
-_observe_impl: Optional[Callable[..., Callable[..., Any]]] = None
+_observe_impl: Callable[..., Callable[..., Any]] | None = None
 
 # --- Optional MLflow support (minimal, decorator-scoped runs) ---
 _mlflow_ready: bool | None = None
@@ -69,7 +70,7 @@ def lf_get_client() -> Any | None:
 
 
 def lf_observe(
-    *, name: Optional[str] = None, as_type: Optional[str] = None
+    *, name: str | None = None, as_type: str | None = None
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator factory. If Langfuse is configured, returns @observe(...).
 
@@ -131,7 +132,7 @@ def _init_mlflow() -> bool:
         else:
             _mlflow_experiment_id = exp.experiment_id
         _mlflow_ready = True
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Failed to init MLflow tracking: %s", exc)
         _mlflow_ready = False
 
@@ -172,7 +173,7 @@ def _mlflow_log_param_best_effort(key: str, value: object) -> None:
         return
 
 
-def _mlflow_observe(name: Optional[str] = None, as_type: Optional[str] = None):
+def _mlflow_observe(name: str | None = None, as_type: str | None = None):
     """Return a decorator that logs a single function call as an MLflow run.
 
     We keep it intentionally minimal: start a run, record basic tags/params,
@@ -202,7 +203,7 @@ def _mlflow_observe(name: Optional[str] = None, as_type: Optional[str] = None):
                     duration = time.perf_counter() - start
                     _mlflow.log_metric("duration_seconds", duration)
                     return result
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     _mlflow.set_tag("error_type", type(exc).__name__)
                     _mlflow.log_param("error", str(exc))
                     raise
@@ -222,7 +223,7 @@ def _mlflow_observe(name: Optional[str] = None, as_type: Optional[str] = None):
                     duration = time.perf_counter() - start
                     _mlflow.log_metric("duration_seconds", duration)
                     return result
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     _mlflow.set_tag("error_type", type(exc).__name__)
                     _mlflow.log_param("error", str(exc))
                     raise
@@ -238,7 +239,7 @@ def _mlflow_observe(name: Optional[str] = None, as_type: Optional[str] = None):
 
 
 def observe(
-    *, name: Optional[str] = None, as_type: Optional[str] = None
+    *, name: str | None = None, as_type: str | None = None
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Unified decorator: prefers Langfuse, falls back to MLflow, else no-op.
 
@@ -299,11 +300,11 @@ def lf_update_span(
 
 def lf_update_trace(
     *,
-    name: Optional[str] = None,
-    user_id: Optional[str] = None,
-    session_id: Optional[str] = None,
+    name: str | None = None,
+    user_id: str | None = None,
+    session_id: str | None = None,
     tags: list[str] | None = None,
-    public: Optional[bool] = None,
+    public: bool | None = None,
     metadata: dict | None = None,
 ) -> None:
     """Best-effort update of the current trace. No-ops if client unavailable."""

@@ -80,7 +80,7 @@ class NotesListResponse(BaseModel):
 
 class NoteTreeNode(BaseModel):
     note: NoteSummary
-    children: list["NoteTreeNode"] = Field(default_factory=list)
+    children: list[NoteTreeNode] = Field(default_factory=list)
 
 
 class NoteTreeResponse(BaseModel):
