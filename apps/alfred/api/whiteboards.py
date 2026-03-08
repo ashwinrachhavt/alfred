@@ -19,7 +19,7 @@ from alfred.services.whiteboard_service import WhiteboardService
 router = APIRouter(prefix="/api/whiteboards", tags=["whiteboards"])
 
 
-def _to_whiteboard_response(board, revision):  # noqa: ANN001
+def _to_whiteboard_response(board, revision):
     base = WhiteboardOut.model_validate(board).model_dump()
     return WhiteboardWithRevision(
         **base,

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable, Optional
+from typing import Any
 
 from alfred.schemas.system_design import ExcalidrawData
 
@@ -17,7 +18,7 @@ class DiagramNode:
 class DiagramEdge:
     source_id: str
     target_id: str
-    label: Optional[str] = None
+    label: str | None = None
     directed: bool = True
 
 
@@ -50,7 +51,7 @@ def _is_node(el: dict[str, Any]) -> bool:
     return bool(el.get("id"))
 
 
-def _get_label_from_element(el: dict[str, Any]) -> Optional[str]:
+def _get_label_from_element(el: dict[str, Any]) -> str | None:
     label = el.get("label")
     if isinstance(label, dict):
         text = label.get("text")
@@ -102,7 +103,7 @@ def _extract_nodes(diagram: ExcalidrawData) -> dict[str, DiagramNode]:
     return indexed
 
 
-def _binding_element_id(binding: Any) -> Optional[str]:
+def _binding_element_id(binding: Any) -> str | None:
     if not isinstance(binding, dict):
         return None
     element_id = binding.get("elementId")
@@ -138,7 +139,7 @@ def _extract_edges(diagram: ExcalidrawData, nodes: dict[str, DiagramNode]) -> li
             )
         )
 
-    unique: dict[tuple[str, str, Optional[str], bool], DiagramEdge] = {}
+    unique: dict[tuple[str, str, str | None, bool], DiagramEdge] = {}
     for edge in edges:
         unique[(edge.source_id, edge.target_id, edge.label, edge.directed)] = edge
     return sorted(unique.values(), key=lambda e: (e.source_id, e.target_id, e.label or ""))

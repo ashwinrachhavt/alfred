@@ -394,7 +394,7 @@ export function FollowUpsClient({
                   id="fuHref"
                   value={href}
                   onChange={(e) => setHref(e.target.value)}
-                  placeholder="https://… or /threads/…"
+                  placeholder="https://…"
                 />
               </div>
 

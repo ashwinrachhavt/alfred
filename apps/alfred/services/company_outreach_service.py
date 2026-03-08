@@ -11,13 +11,14 @@ import json
 import logging
 import os
 import smtplib
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from email.message import EmailMessage
 from enum import Enum
 from functools import lru_cache
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, TypedDict
+from typing import Any, TypedDict
 
 import requests
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -50,7 +51,7 @@ def _use_stub_outreach() -> bool:
     return False
 
 
-def _stub_outreach(company: str, role: str, personal_context: str) -> Dict[str, Any]:
+def _stub_outreach(company: str, role: str, personal_context: str) -> dict[str, Any]:
     summary = (
         f"Offline outreach kit for {company} ({role}). Set OPENAI_API_KEY or ALFRED_OLLAMA_* to "
         "enable live generation."
@@ -92,8 +93,8 @@ def _normalize_contact(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _normalize_outreach_payload(raw: Dict[str, Any], company: str, role: str) -> Dict[str, Any]:
-    base: Dict[str, Any] = {
+def _normalize_outreach_payload(raw: dict[str, Any], company: str, role: str) -> dict[str, Any]:
+    base: dict[str, Any] = {
         "summary": "",
         "positioning": [],
         "suggested_topics": [],
@@ -233,7 +234,7 @@ class ContactProvider(str, Enum):
     SNOV = "snov"
 
 
-def _guess_domain(company: str) -> Optional[str]:
+def _guess_domain(company: str) -> str | None:
     slug = company.lower().replace(" ", "").replace(",", "").replace(".", "")
     if slug and "." not in slug:
         return f"{slug}.com"
@@ -522,13 +523,13 @@ class ContactDiscoveryService:
             if isinstance(value, dict):
                 for nested in ("all", "total", "total_emails"):
                     nested_value = value.get(nested)
-                    if isinstance(nested_value, (int, float)):
+                    if isinstance(nested_value, int | float):
                         return int(nested_value)
-            if isinstance(value, (int, float)):
+            if isinstance(value, int | float):
                 return int(value)
         return None
 
-    def _dedupe_and_rank(self, contacts: Iterable[Contact], *, limit: int = 20) -> List[Contact]:
+    def _dedupe_and_rank(self, contacts: Iterable[Contact], *, limit: int = 20) -> list[Contact]:
         seen: set[str] = set()
         cleaned: list[Contact] = []
         for contact in contacts:
@@ -843,7 +844,7 @@ def generate_company_outreach(
     *,
     personal_context: str = "",
     k: int = 6,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     if _use_stub_outreach():
         return _stub_outreach(company, role, personal_context)
 
@@ -867,7 +868,7 @@ def generate_company_outreach(
     if job_description_context:
         seed += f"\n\n=== Job Description Search Highlights ===\n{job_description_context}"
 
-    final_text: Optional[str] = None
+    final_text: str | None = None
 
     try:
         for chunk in graph.stream(

@@ -1,8 +1,9 @@
 """Google Calendar Connector."""
 
 import uuid
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, timedelta
-from typing import Any, Awaitable, Callable, Optional, Sequence
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytz
@@ -22,9 +23,7 @@ class GoogleCalendarConnector:
         self,
         credentials: Credentials,
         user_id: str | None = None,
-        on_credentials_refreshed: Optional[
-            Callable[[Credentials], Optional[Awaitable[None]]]
-        ] = None,
+        on_credentials_refreshed: Callable[[Credentials], Awaitable[None] | None] | None = None,
     ):
         """
         Initialize the GoogleCalendarConnector class.

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
@@ -17,7 +18,6 @@ from alfred.schemas.documents import NoteCreate
 from alfred.schemas.intelligence import MemoryCreateRequest, MemoryItem, MemoryListResponse
 from alfred.services.doc_storage_pg import DocStorageService
 from alfred.services.llm_service import LLMService
-from alfred.services.thread_service import ThreadService
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,6 @@ class MemoryService:
     """Context-aware personal memory stored as notes with structured metadata."""
 
     doc_storage: DocStorageService
-    thread_service: ThreadService
     llm_service: LLMService | None = None
 
     def _llm(self) -> LLMService:
@@ -96,8 +95,6 @@ class MemoryService:
             meta["user_id"] = int(payload.user_id)
         if payload.source:
             meta["source"] = payload.source
-        if payload.thread_id:
-            meta["thread_id"] = str(payload.thread_id)
         if payload.task_id:
             meta["task_id"] = str(payload.task_id)
         tags = _normalize_tags(payload.tags)
@@ -126,7 +123,6 @@ class MemoryService:
         q: str | None = None,
         user_id: int | None = None,
         source: str | None = None,
-        thread_id: str | None = None,
         task_id: str | None = None,
         skip: int = 0,
         limit: int = 20,
@@ -136,7 +132,6 @@ class MemoryService:
 
         q_norm = (q or "").strip() or None
         source_norm = (source or "").strip() or None
-        thread_norm = (thread_id or "").strip() or None
         task_norm = (task_id or "").strip() or None
 
         stmt = select(QuickNoteRow).order_by(QuickNoteRow.created_at.desc())
@@ -154,8 +149,6 @@ class MemoryService:
             if user_id is not None and _first_int(meta.get("user_id")) != int(user_id):
                 continue
             if source_norm and (meta.get("source") != source_norm):
-                continue
-            if thread_norm and (str(meta.get("thread_id") or "") != thread_norm):
                 continue
             if task_norm and (str(meta.get("task_id") or "") != task_norm):
                 continue
@@ -236,57 +229,6 @@ class MemoryService:
                 )
             )
         return out
-
-    def extract_memories_from_thread(
-        self,
-        *,
-        thread_id: str,
-        user_id: int | None = None,
-        max_memories: int = 6,
-        max_messages: int = 40,
-    ) -> list[MemoryItem]:
-        tid = (thread_id or "").strip()
-        if not tid:
-            raise ValueError("thread_id is required")
-
-        max_memories = clamp_int(int(max_memories), lo=1, hi=12)
-        max_messages = clamp_int(int(max_messages), lo=1, hi=200)
-
-        messages = self.thread_service.list_messages(thread_id=tid, limit=max_messages, offset=0)
-        if not messages:
-            return []
-
-        transcript_lines: list[str] = []
-        for m in messages:
-            role = (m.role or "").strip().lower() or "user"
-            content = (m.content or "").strip()
-            if not content:
-                continue
-            transcript_lines.append(f"{role}: {content}")
-
-        transcript = "\n".join(transcript_lines).strip()
-        if not transcript:
-            return []
-
-        drafts = self._try_llm_extract(transcript=transcript, max_memories=max_memories) or []
-        if not drafts:
-            return []
-
-        created: list[MemoryItem] = []
-        for d in drafts[:max_memories]:
-            text = " ".join((d.text or "").strip().split())
-            if not text:
-                continue
-            payload = MemoryCreateRequest(
-                text=text,
-                user_id=user_id,
-                source="thread",
-                thread_id=tid,
-                tags=_normalize_tags(d.tags),
-                metadata={"confidence": d.confidence} if d.confidence is not None else {},
-            )
-            created.append(self.create_memory(payload))
-        return created
 
     def _try_llm_extract(self, *, transcript: str, max_memories: int) -> list[_MemoryDraft] | None:
         if settings.llm_provider != LLMProvider.openai:

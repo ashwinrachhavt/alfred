@@ -139,19 +139,19 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
         celery_app.autodiscover_tasks(["alfred"])
         # Be explicit to avoid "Received unregistered task" when running workers from
         # different entrypoints/working directories.
-        import alfred.tasks.company_insights  # noqa: F401
-        import alfred.tasks.company_interviews  # noqa: F401
-        import alfred.tasks.company_research  # noqa: F401
-        import alfred.tasks.document_concepts  # noqa: F401
-        import alfred.tasks.document_enrichment  # noqa: F401
-        import alfred.tasks.document_processing  # noqa: F401
-        import alfred.tasks.document_title_image  # noqa: F401
-        import alfred.tasks.gmail_interviews  # noqa: F401
-        import alfred.tasks.interview_prep  # noqa: F401
-        import alfred.tasks.interviews_unified  # noqa: F401
-        import alfred.tasks.learning_concepts  # noqa: F401
-        import alfred.tasks.mind_palace_agent  # noqa: F401
-        import alfred.tasks.notion_import  # noqa: F401
+        import alfred.tasks.company_insights
+        import alfred.tasks.company_interviews
+        import alfred.tasks.company_research
+        import alfred.tasks.document_concepts
+        import alfred.tasks.document_enrichment
+        import alfred.tasks.document_processing
+        import alfred.tasks.document_title_image
+        import alfred.tasks.gmail_interviews
+        import alfred.tasks.interview_prep
+        import alfred.tasks.interviews_unified
+        import alfred.tasks.learning_concepts
+        import alfred.tasks.mind_palace_agent
+        import alfred.tasks.notion_import
         import alfred.tasks.paraform_company_report  # noqa: F401
 
     return celery_app

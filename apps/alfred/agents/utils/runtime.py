@@ -13,8 +13,9 @@ with a `messages` list, making it easy to reuse across multiple graphs.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Mapping, MutableMapping
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Iterable, Mapping, MutableMapping
+from typing import Any
 
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import BaseTool
@@ -65,7 +66,7 @@ def _stringify_tool_result(result: Any) -> str:
     them if needed.
     """
 
-    if isinstance(result, (dict, list)):
+    if isinstance(result, dict | list):
         try:
             return json.dumps(result, ensure_ascii=False)
         except Exception:

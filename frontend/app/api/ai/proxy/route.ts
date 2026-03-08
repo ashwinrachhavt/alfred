@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { AI_MODELS, OPENAI_API_URL } from "@/lib/constants/ai";
 
 export async function POST(req: Request) {
   try {
@@ -15,14 +16,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing OPENAI_API_KEY" }, { status: 500 });
     }
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(OPENAI_API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o",
+        model: AI_MODELS.PROXY,
         messages,
         temperature,
       }),

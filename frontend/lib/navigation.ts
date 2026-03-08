@@ -7,7 +7,7 @@ import {
   Home,
   LayoutGrid,
   MessageCircle,
-  MessageSquareText,
+
   NotebookPen,
   NotepadText,
   Palette,
@@ -87,13 +87,7 @@ export const appNavItems: AppNavItem[] = [
     icon: BookOpen,
     keywords: ["interview", "prep", "questions", "practice"],
   },
-  {
-    key: "threads",
-    title: "Threads",
-    href: "/threads",
-    icon: MessageSquareText,
-    keywords: ["threads", "history", "messages", "conversation"],
-  },
+
   { key: "rag", title: "RAG", href: "/rag", icon: MessageCircle, keywords: ["rag", "chat", "qa"] },
   {
     key: "follow-ups",

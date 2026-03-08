@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
 from qdrant_client import QdrantClient
@@ -25,8 +25,8 @@ class KnowledgeService:
     """
 
     collection_name: str = "alfred_knowledge"
-    client: Optional[QdrantClient] = None
-    embedder: Optional[Any] = None
+    client: QdrantClient | None = None
+    embedder: Any | None = None
     vector_size: int = 1536  # OpenAI default, adjust for other models
 
     def __post_init__(self) -> None:
@@ -62,9 +62,9 @@ class KnowledgeService:
 
     def index_documents(
         self,
-        docs: List[Dict[str, Any]],
+        docs: list[dict[str, Any]],
         batch_size: int = 100,
-    ) -> List[str]:
+    ) -> list[str]:
         """Index documents into the knowledge store.
 
         Args:
@@ -87,7 +87,7 @@ class KnowledgeService:
 
             # Prepare points for Qdrant
             points = []
-            for doc, embedding in zip(batch, embeddings):
+            for doc, embedding in zip(batch, embeddings, strict=False):
                 doc_id = doc.get("id") or str(uuid4())
                 point = PointStruct(
                     id=self._hash_id(doc_id),
@@ -114,7 +114,7 @@ class KnowledgeService:
         query: str,
         limit: int = 5,
         score_threshold: float = 0.0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Search for relevant documents.
 
         Args:
@@ -154,7 +154,7 @@ class KnowledgeService:
 
         return matches
 
-    def delete_documents(self, doc_ids: List[str]) -> None:
+    def delete_documents(self, doc_ids: list[str]) -> None:
         """Delete documents by ID."""
         self._ensure_initialized()
         point_ids = [self._hash_id(doc_id) for doc_id in doc_ids]

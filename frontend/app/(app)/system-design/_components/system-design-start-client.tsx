@@ -6,8 +6,8 @@ import { useMemo, useState, useSyncExternalStore } from "react";
 
 import type { SystemDesignSession } from "@/lib/api/types/system-design";
 
-import { ApiError } from "@/lib/api/client";
 import { useCreateSystemDesignSession } from "@/features/system-design/mutations";
+import { formatErrorMessage } from "@/lib/utils";
 import { useSystemDesignTemplates } from "@/features/system-design/queries";
 import { SystemDesignTemplatePicker } from "@/components/system-design/system-design-template-picker";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -79,12 +79,6 @@ function notifyRecentsChanged(): void {
 
 function useRecentSystemDesignSessions(): RecentSystemDesignSession[] {
   return useSyncExternalStore(subscribeToRecents, readRecentsSnapshot, () => EMPTY_RECENTS);
-}
-
-function formatErrorMessage(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  if (error instanceof Error) return error.message;
-  return "Something went wrong.";
 }
 
 function toRecentSession(session: SystemDesignSession): RecentSystemDesignSession {

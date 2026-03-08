@@ -19,7 +19,6 @@ from alfred.models.learning import (
 from alfred.models.notes import NoteAssetRow, NoteRow, WorkspaceRow
 from alfred.models.research import ResearchRun
 from alfred.models.system import SystemSetting
-from alfred.models.threads import ThreadMessageRow, ThreadRow
 from alfred.models.user import User
 from alfred.models.whiteboard import Whiteboard, WhiteboardComment, WhiteboardRevision
 from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview
@@ -59,6 +58,4 @@ __all__ = [
     "DataStoreRow",
     "CompanyInterviewRow",
     "CompanyResearchReportRow",
-    "ThreadRow",
-    "ThreadMessageRow",
 ]

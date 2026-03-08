@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from notion_client import Client
@@ -66,11 +66,11 @@ class NotionSyncInput(BaseModel):
     page_limit: int = 10
 
 
-def _text_rich_text(text: str) -> Dict[str, Any]:
+def _text_rich_text(text: str) -> dict[str, Any]:
     return {"type": "text", "text": {"content": text}}
 
 
-def _flush_paragraph(lines: List[str], blocks: List[Dict[str, Any]]) -> None:
+def _flush_paragraph(lines: list[str], blocks: list[dict[str, Any]]) -> None:
     if not lines:
         return
     paragraph = "\n".join(lines).strip("\n")
@@ -84,7 +84,7 @@ def _flush_paragraph(lines: List[str], blocks: List[Dict[str, Any]]) -> None:
     lines.clear()
 
 
-def _flush_bullets(items: List[str], blocks: List[Dict[str, Any]]) -> None:
+def _flush_bullets(items: list[str], blocks: list[dict[str, Any]]) -> None:
     if not items:
         return
     for item in items:
@@ -97,12 +97,12 @@ def _flush_bullets(items: List[str], blocks: List[Dict[str, Any]]) -> None:
     items.clear()
 
 
-def _md_to_blocks(md: str) -> List[Dict[str, Any]]:
+def _md_to_blocks(md: str) -> list[dict[str, Any]]:
     """Convert a small markdown subset into Notion block payloads."""
 
-    blocks: List[Dict[str, Any]] = []
-    paragraph_lines: List[str] = []
-    bullet_items: List[str] = []
+    blocks: list[dict[str, Any]] = []
+    paragraph_lines: list[str] = []
+    bullet_items: list[str] = []
 
     for raw in md.replace("\r\n", "\n").split("\n"):
         line = raw.rstrip()
@@ -145,7 +145,7 @@ def _md_to_blocks(md: str) -> List[Dict[str, Any]]:
     return blocks
 
 
-def _create_page_under_parent(parent_page_id: str, title: str, blocks: List[Dict[str, Any]]):
+def _create_page_under_parent(parent_page_id: str, title: str, blocks: list[dict[str, Any]]):
     return _client().pages.create(
         parent={"page_id": parent_page_id},
         properties={"title": {"title": [_text_rich_text(title)]}},
@@ -153,7 +153,7 @@ def _create_page_under_parent(parent_page_id: str, title: str, blocks: List[Dict
     )
 
 
-def _create_page_in_db(db_id: str, title: str, blocks: List[Dict[str, Any]]):
+def _create_page_in_db(db_id: str, title: str, blocks: list[dict[str, Any]]):
     return _client().pages.create(
         parent={"database_id": db_id},
         properties={"Name": {"title": [_text_rich_text(title)]}},
@@ -161,7 +161,7 @@ def _create_page_in_db(db_id: str, title: str, blocks: List[Dict[str, Any]]):
     )
 
 
-def _append_blocks(page_id: str, blocks: List[Dict[str, Any]]):
+def _append_blocks(page_id: str, blocks: list[dict[str, Any]]):
     if not blocks:
         return {"page_id": page_id, "status": "skipped", "reason": "no blocks"}
 
@@ -187,7 +187,7 @@ def _append_blocks(page_id: str, blocks: List[Dict[str, Any]]):
 
 
 @retry(wait=wait_exponential_jitter(1, 5), stop=stop_after_attempt(5))
-def write_to_notion(payload: NotionWriteInput) -> Dict[str, Any]:
+def write_to_notion(payload: NotionWriteInput) -> dict[str, Any]:
     blocks = _md_to_blocks(payload.md)
 
     if payload.page_id:
@@ -212,7 +212,7 @@ def create_simple_page(title: str, md: str):
     return write_to_notion(payload)["result"]
 
 
-def sync_database(input: NotionSyncInput) -> Dict[str, Any]:
+def sync_database(input: NotionSyncInput) -> dict[str, Any]:
     page_size = max(1, min(100, input.page_limit))
     results = _database_query(input.db_id, page_size=page_size)
     pages = results.get("results", [])
@@ -237,7 +237,7 @@ def list_block_children(block_id: str, page_size: int = 50) -> dict:
 
 
 def query_database(
-    db_id: str, filter: Optional[dict] = None, sorts: Optional[list] = None, page_size: int = 50
+    db_id: str, filter: dict | None = None, sorts: list | None = None, page_size: int = 50
 ) -> dict:
     payload: dict[str, Any] = {"page_size": page_size}
     if filter:
@@ -265,12 +265,12 @@ def list_notes() -> dict:
 
 async def fetch_page_history(
     *,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    token: Optional[str] = None,
-    limit: Optional[int] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    token: str | None = None,
+    limit: int | None = None,
     include_content: bool = False,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Fetch page histories using the async connector for deep exports."""
 
     configured = settings.notion_token.get_secret_value() if settings.notion_token else None

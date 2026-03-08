@@ -7,13 +7,13 @@ documents and notes using a lightweight search over DocStorageService.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from alfred.schemas import AgentResponse, ChatMessage
 from alfred.services.doc_storage_pg import DocStorageService
 
 
-def _summarize_items(items: List[Dict[str, Any]], *, limit: int = 5) -> str:
+def _summarize_items(items: list[dict[str, Any]], *, limit: int = 5) -> str:
     lines = []
     for i, it in enumerate(items[:limit], start=1):
         title = it.get("title") or (it.get("text") or "").split("\n", 1)[0]
@@ -44,8 +44,8 @@ class KnowledgeAgentService:
         self,
         *,
         question: str,
-        history: Optional[List[ChatMessage]] = None,
-        context: Optional[Dict[str, Any]] = None,
+        history: list[ChatMessage] | None = None,
+        context: dict[str, Any] | None = None,
     ) -> AgentResponse:
         # Lightweight search over documents only
         return await self._fallback_answer(question)

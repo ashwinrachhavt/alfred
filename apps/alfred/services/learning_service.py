@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Iterable
 
 from sqlalchemy import func
 from sqlmodel import Session, select
@@ -681,9 +681,10 @@ class LearningService:
         from itertools import combinations
 
         max_topics_per_entity_for_links = 25
+        MIN_TOPICS_FOR_LINK = 2
         shared: Counter[tuple[int, int]] = Counter()
         for topics in entity_topic_weight.values():
-            if len(topics) < 2:
+            if len(topics) < MIN_TOPICS_FOR_LINK:
                 continue
             top = nlargest(
                 max_topics_per_entity_for_links,

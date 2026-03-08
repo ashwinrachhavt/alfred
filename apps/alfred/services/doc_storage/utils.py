@@ -9,8 +9,8 @@ import base64
 import hashlib
 import json
 import uuid
-from datetime import date, datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, date, datetime
+from typing import Any
 from urllib.parse import urlparse
 
 from alfred.core.exceptions import BadRequestError
@@ -58,7 +58,7 @@ def read_text_file_best_effort(path: str | None) -> str | None:
     if not path:
         return None
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             return fh.read()
     except OSError:
         return None
@@ -93,11 +93,11 @@ def start_of_day_utc(dt: datetime) -> date:
     """Return the UTC day bucket for a datetime."""
 
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).date()
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC).date()
 
 
-def domain_from_url(url: Optional[str]) -> Optional[str]:
+def domain_from_url(url: str | None) -> str | None:
     """Extract a domain (netloc) from a URL, best-effort."""
 
     if not url:
@@ -108,7 +108,7 @@ def domain_from_url(url: Optional[str]) -> Optional[str]:
         return None
 
 
-def apply_offset_limit(stmt, *, skip: int, limit: int, max_limit: int = 200):  # noqa: ANN001
+def apply_offset_limit(stmt, *, skip: int, limit: int, max_limit: int = 200):
     """Apply offset/limit with clamping."""
 
     return stmt.offset(int(skip)).limit(clamp_int(limit, lo=1, hi=max_limit))
@@ -270,7 +270,7 @@ def decode_cursor(cursor: str) -> tuple[datetime, str]:
     except Exception as exc:
         raise BadRequestError("Invalid cursor", code="invalid_cursor") from exc
     if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=timezone.utc)
+        created_at = created_at.replace(tzinfo=UTC)
 
     return created_at, doc_id
 

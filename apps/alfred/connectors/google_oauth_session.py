@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from datetime import datetime, timezone
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -37,7 +37,7 @@ class GoogleOAuthSession:
 
         expiry = getattr(credentials, "expiry", None)
         if isinstance(expiry, datetime) and expiry.tzinfo is not None:
-            credentials.expiry = expiry.astimezone(timezone.utc).replace(tzinfo=None)
+            credentials.expiry = expiry.astimezone(UTC).replace(tzinfo=None)
 
     def __init__(
         self,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from celery import shared_task
@@ -154,7 +154,7 @@ def send_interview_reminders_task(*, horizon_days: int = 14) -> dict[str, Any]:
         if not isinstance(interview_date, datetime):
             continue
         if interview_date.tzinfo is None:
-            interview_date = interview_date.replace(tzinfo=timezone.utc)
+            interview_date = interview_date.replace(tzinfo=UTC)
 
         company = str(doc.get("company") or "").strip()
         role = str(doc.get("role") or "").strip()

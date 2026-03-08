@@ -5,15 +5,15 @@ Revises: 5c5c5d8a4e3b
 Create Date: 2025-12-24
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "8b2c9e7c1c9a"
-down_revision: Union[str, None] = "5c5c5d8a4e3b"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "5c5c5d8a4e3b"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

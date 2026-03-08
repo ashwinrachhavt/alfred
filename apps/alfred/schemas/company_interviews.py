@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -17,20 +17,20 @@ class CompanyInterviewExperience(BaseModel):
     company: str = Field(..., description="Company name used for indexing/search.")
     provider: InterviewProvider = Field(..., description="Upstream provider.")
     source_id: str = Field(..., description="Stable unique identifier for de-duplication.")
-    source_url: Optional[str] = Field(
+    source_url: str | None = Field(
         default=None, description="Canonical source URL, if available."
     )
-    source_title: Optional[str] = Field(default=None, description="Source title, if available.")
+    source_title: str | None = Field(default=None, description="Source title, if available.")
 
-    role: Optional[str] = Field(default=None, description="Interviewed role/title if available.")
-    location: Optional[str] = Field(default=None, description="Interview location if available.")
-    interview_date: Optional[str] = Field(
+    role: str | None = Field(default=None, description="Interviewed role/title if available.")
+    location: str | None = Field(default=None, description="Interview location if available.")
+    interview_date: str | None = Field(
         default=None, description="ISO date/datetime if available."
     )
-    difficulty: Optional[str] = Field(default=None, description="Difficulty label if available.")
-    outcome: Optional[str] = Field(default=None, description="Outcome label if available.")
+    difficulty: str | None = Field(default=None, description="Difficulty label if available.")
+    outcome: str | None = Field(default=None, description="Outcome label if available.")
 
-    process_summary: Optional[str] = Field(
+    process_summary: str | None = Field(
         default=None, description="Short process/experience summary."
     )
     questions: list[str] = Field(default_factory=list, description="Interview questions mentioned.")

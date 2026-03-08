@@ -16,7 +16,6 @@ from alfred.schemas.intelligence import (
     LanguageDetectRequest,
     LanguageDetectResponse,
     MemoryCreateRequest,
-    MemoryExtractFromThreadRequest,
     MemoryItem,
     MemoryListResponse,
     PlanCreateRequest,
@@ -81,8 +80,7 @@ def create_memory(
 def list_memories(
     q: str | None = Query(default=None, description="Optional text search"),
     user_id: int | None = Query(default=None),
-    source: str | None = Query(default=None, description="Filter by source (thread/task/manual)"),
-    thread_id: str | None = Query(default=None),
+    source: str | None = Query(default=None, description="Filter by source (e.g. 'task', 'manual')"),
     task_id: str | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=200),
@@ -95,7 +93,6 @@ def list_memories(
             q=q,
             user_id=user_id,
             source=source,
-            thread_id=thread_id,
             task_id=task_id,
             skip=skip,
             limit=limit,
@@ -309,25 +306,3 @@ def qa(
         raise HTTPException(status_code=500, detail="Q&A failed") from exc
 
 
-@router.post(
-    "/memory/extract/thread",
-    response_model=list[MemoryItem],
-    status_code=status.HTTP_201_CREATED,
-)
-def extract_memories_from_thread(
-    payload: MemoryExtractFromThreadRequest,
-    svc: MemoryService = Depends(get_memory_service),
-) -> list[MemoryItem]:
-    """Extract durable memories from a thread transcript and persist them."""
-
-    try:
-        return svc.extract_memories_from_thread(
-            thread_id=payload.thread_id,
-            user_id=payload.user_id,
-            max_memories=payload.max_memories,
-            max_messages=payload.max_messages,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except Exception as exc:  # pragma: no cover - defensive
-        raise HTTPException(status_code=500, detail="Failed to extract memories") from exc

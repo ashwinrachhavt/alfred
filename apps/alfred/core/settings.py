@@ -5,7 +5,6 @@ import sys
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
 
 from dotenv import load_dotenv
 from pydantic import AnyHttpUrl, Field, SecretStr
@@ -34,11 +33,11 @@ class Settings(BaseSettings):
         if _is_test_like_env
         else [
             # apps/alfred/.env* (prefer local overrides first)
-            str((Path(__file__).resolve().parents[1] / ".env.local")),
-            str((Path(__file__).resolve().parents[1] / ".env")),
+            str(Path(__file__).resolve().parents[1] / ".env.local"),
+            str(Path(__file__).resolve().parents[1] / ".env"),
             # repo root .env* (common for local dev)
-            str((Path(__file__).resolve().parents[3] / ".env.local")),
-            str((Path(__file__).resolve().parents[3] / ".env")),
+            str(Path(__file__).resolve().parents[3] / ".env.local"),
+            str(Path(__file__).resolve().parents[3] / ".env"),
         ]
     )
 
@@ -65,7 +64,7 @@ class Settings(BaseSettings):
     cors_allow_origins: list[str] = Field(default=["*"], alias="CORS_ALLOW_ORIGINS")
 
     # --- Integrations ---
-    airtable_api_key: Optional[str] = Field(default=None, alias="AIRTABLE_API_KEY")
+    airtable_api_key: str | None = Field(default=None, alias="AIRTABLE_API_KEY")
 
     # Notion
     notion_token: SecretStr | None = Field(default=None, alias="NOTION_TOKEN")
@@ -76,7 +75,7 @@ class Settings(BaseSettings):
     # Notion OAuth (optional)
     notion_client_id: str | None = Field(default=None, alias="NOTION_CLIENT_ID")
     notion_client_secret: SecretStr | None = Field(default=None, alias="NOTION_CLIENT_SECRET")
-    notion_redirect_uri: Optional[AnyHttpUrl] = Field(default=None, alias="NOTION_REDIRECT_URI")
+    notion_redirect_uri: AnyHttpUrl | None = Field(default=None, alias="NOTION_REDIRECT_URI")
 
     # Qdrant
     qdrant_url: str | None = Field(default=None, alias="QDRANT_URL")
@@ -86,14 +85,14 @@ class Settings(BaseSettings):
     # OpenAI (also used by downstream libs)
     openai_api_key: SecretStr | None = Field(default=None, alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-5-mini", alias="OPENAI_MODEL")
-    openai_base_url: Optional[str] = Field(default=None, alias="OPENAI_BASE_URL")
-    openai_organization: Optional[str] = Field(default=None, alias="OPENAI_ORG")
+    openai_base_url: str | None = Field(default=None, alias="OPENAI_BASE_URL")
+    openai_organization: str | None = Field(default=None, alias="OPENAI_ORG")
 
     # Google / Gmail
-    google_client_id: Optional[str] = Field(default=None, alias="GOOGLE_CLIENT_ID")
-    google_client_secret: Optional[str] = Field(default=None, alias="GOOGLE_CLIENT_SECRET")
-    google_redirect_uri: Optional[AnyHttpUrl] = Field(default=None, alias="GOOGLE_REDIRECT_URI")
-    google_project_id: Optional[str] = Field(default=None, alias="GOOGLE_PROJECT_ID")
+    google_client_id: str | None = Field(default=None, alias="GOOGLE_CLIENT_ID")
+    google_client_secret: str | None = Field(default=None, alias="GOOGLE_CLIENT_SECRET")
+    google_redirect_uri: AnyHttpUrl | None = Field(default=None, alias="GOOGLE_REDIRECT_URI")
+    google_project_id: str | None = Field(default=None, alias="GOOGLE_PROJECT_ID")
     google_scopes: list[str] = Field(
         default=[
             "https://www.googleapis.com/auth/gmail.readonly",
@@ -101,7 +100,7 @@ class Settings(BaseSettings):
         ],
         alias="GOOGLE_SCOPES",
     )
-    gcp_pubsub_topic: Optional[str] = Field(default=None, alias="GCP_PUBSUB_TOPIC")
+    gcp_pubsub_topic: str | None = Field(default=None, alias="GCP_PUBSUB_TOPIC")
     token_store_dir: str = Field(default=".alfred_data/tokens", alias="TOKEN_STORE_DIR")
     enable_gmail: bool = Field(default=False, alias="ENABLE_GMAIL")
     enable_gmail_interview_poll: bool = Field(
@@ -109,7 +108,7 @@ class Settings(BaseSettings):
         alias="ENABLE_GMAIL_INTERVIEW_POLL",
     )
 
-    gmail_push_oidc_audience: Optional[str] = Field(default=None, alias="GMAIL_PUSH_OIDC_AUDIENCE")
+    gmail_push_oidc_audience: str | None = Field(default=None, alias="GMAIL_PUSH_OIDC_AUDIENCE")
 
     # MCP / tools
     enable_mcp: bool = True
@@ -122,23 +121,23 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-3-sonnet-20240229"
 
     # Misc
-    whatsapp_api_key: Optional[str] = None
-    whatsapp_phone: Optional[str] = None
+    whatsapp_api_key: str | None = None
+    whatsapp_phone: str | None = None
 
     mcp_timeout: int = 30
     mcp_max_retries: int = 3
 
     # OpenWeb Ninja / Glassdoor connector
-    openweb_ninja_api_key: Optional[str] = Field(default=None, alias="OPENWEB_NINJA_API_KEY")
+    openweb_ninja_api_key: str | None = Field(default=None, alias="OPENWEB_NINJA_API_KEY")
     openweb_ninja_base_url: str = Field(
         default="https://api.openwebninja.com/realtime-glassdoor-data",
         alias="OPENWEB_NINJA_BASE_URL",
     )
 
     # Langfuse (observability)
-    langfuse_public_key: Optional[str] = Field(default=None, alias="LANGFUSE_PUBLIC_KEY")
+    langfuse_public_key: str | None = Field(default=None, alias="LANGFUSE_PUBLIC_KEY")
     langfuse_secret_key: SecretStr | None = Field(default=None, alias="LANGFUSE_SECRET_KEY")
-    langfuse_host: Optional[str] = Field(default=None, alias="LANGFUSE_HOST")
+    langfuse_host: str | None = Field(default=None, alias="LANGFUSE_HOST")
     langfuse_debug: bool = Field(default=False, alias="LANGFUSE_DEBUG")
     langfuse_tracing_enabled: bool = Field(default=True, alias="LANGFUSE_TRACING_ENABLED")
     # Observability (MLflow)
@@ -322,21 +321,21 @@ class Settings(BaseSettings):
     calendar_organizer_email: str | None = Field(default=None, alias="CALENDAR_ORGANIZER_EMAIL")
 
     # MongoDB Lens MCP
-    mcp_server_url: Optional[str] = Field(default="http://localhost:8001", alias="MCP_SERVER_URL")
-    mcp_database: Optional[str] = Field(default=None, alias="MCP_DATABASE")
+    mcp_server_url: str | None = Field(default="http://localhost:8001", alias="MCP_SERVER_URL")
+    mcp_database: str | None = Field(default=None, alias="MCP_DATABASE")
 
     # Agent tracing (LangGraph reasoning trace)
     enable_agent_trace: bool = Field(default=False, alias="ENABLE_AGENT_TRACE")
 
     # Enrichment & graph (optional)
     enable_ingest_enrichment: bool = Field(default=False, alias="ENABLE_INGEST_ENRICHMENT")
-    neo4j_uri: Optional[str] = Field(default=None, alias="NEO4J_URI")
-    neo4j_user: Optional[str] = Field(default=None, alias="NEO4J_USER")
-    neo4j_password: Optional[str] = Field(default=None, alias="NEO4J_PASSWORD")
+    neo4j_uri: str | None = Field(default=None, alias="NEO4J_URI")
+    neo4j_user: str | None = Field(default=None, alias="NEO4J_USER")
+    neo4j_password: str | None = Field(default=None, alias="NEO4J_PASSWORD")
 
     # Classification (taxonomy)
     enable_ingest_classification: bool = Field(default=False, alias="ENABLE_INGEST_CLASSIFICATION")
-    classification_taxonomy_path: Optional[str] = Field(
+    classification_taxonomy_path: str | None = Field(
         default=None, alias="CLASSIFICATION_TAXONOMY_PATH"
     )
 
@@ -466,7 +465,7 @@ class Settings(BaseSettings):
     smtp_from_email: str | None = Field(default=None, alias="SMTP_FROM_EMAIL")
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     return Settings()
 

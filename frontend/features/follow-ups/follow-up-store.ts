@@ -1,3 +1,5 @@
+import { isRecord } from "@/lib/utils";
+
 export type FollowUpSource = "manual" | "task" | "gmail" | "calendar";
 
 export type FollowUpItem = {
@@ -24,10 +26,6 @@ type StoredPayload = {
   version: 1;
   items: FollowUpItem[];
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
-}
 
 function normalizeIsoString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;

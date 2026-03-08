@@ -4,8 +4,9 @@ import asyncio
 import json
 import logging
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Sequence
+from typing import Any, Literal
 
 from alfred.core.exceptions import ConfigurationError
 from alfred.core.rate_limit import web_rate_limiter
@@ -19,9 +20,9 @@ Provider = Literal["searx", "langsearch"]
 
 @dataclass
 class SearchHit:
-    title: Optional[str]
-    url: Optional[str]
-    snippet: Optional[str]
+    title: str | None
+    url: str | None
+    snippet: str | None
     source: Provider
     raw: Any
 

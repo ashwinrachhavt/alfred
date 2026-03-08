@@ -45,11 +45,7 @@ def _hsl_to_hex(*, hue: float, saturation: float, lightness: float) -> str:
         g = _hue_to_rgb(p, q, h)
         b = _hue_to_rgb(p, q, h - 1 / 3)
 
-    return "#{:02x}{:02x}{:02x}".format(
-        int(round(r * 255)),
-        int(round(g * 255)),
-        int(round(b * 255)),
-    )
+    return f"#{int(round(r * 255)):02x}{int(round(g * 255)):02x}{int(round(b * 255)):02x}"
 
 
 def topic_to_color(topic: str | None) -> str:

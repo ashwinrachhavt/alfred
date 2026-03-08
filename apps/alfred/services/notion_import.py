@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any, Iterator, Optional
+from collections.abc import Iterator
+from datetime import UTC, datetime
+from typing import Any
 
 from notion_client import Client
 from notion_client.errors import APIResponseError
@@ -32,17 +33,17 @@ from alfred.services.notion_oauth import list_connected_workspaces, load_oauth_t
 logger = logging.getLogger(__name__)
 
 
-def _parse_iso(dt: str | datetime | None) -> Optional[datetime]:
+def _parse_iso(dt: str | datetime | None) -> datetime | None:
     """Parse a Notion ISO datetime into an aware datetime (UTC)."""
 
     if dt is None:
         return None
     if isinstance(dt, datetime):
-        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
     dt = dt.replace("Z", "+00:00")
     try:
         parsed = datetime.fromisoformat(dt)
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     except Exception:
         return None
 

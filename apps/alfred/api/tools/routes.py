@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class SlackSendRequest(BaseModel):
     channel: str = Field(..., description="Channel ID or name (e.g., #general or C12345)")
     text: str = Field(..., description="Message text")
-    thread_ts: Optional[str] = Field(None, description="Thread timestamp to reply within a thread")
+    thread_ts: str | None = Field(None, description="Thread timestamp to reply within a thread")
 
 
 @router.post("/slack/send")
@@ -28,7 +28,7 @@ def slack_send(payload: SlackSendRequest) -> dict[str, Any]:
     try:
         svc = SlackService()
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Slack not configured: {exc}")
+        raise HTTPException(status_code=400, detail=f"Slack not configured: {exc}") from exc
 
     try:
         result = svc.send_message(

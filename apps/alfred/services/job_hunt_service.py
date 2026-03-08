@@ -7,7 +7,7 @@ application tracking, company research, and outreach services.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 from alfred.core.settings import settings
 from alfred.core.utils import utcnow as _utcnow
@@ -45,7 +45,7 @@ class JobApplicationService:
         }
         return self._collection.insert_one(doc)
 
-    def get(self, job_application_id: str) -> Optional[Dict[str, Any]]:
+    def get(self, job_application_id: str) -> dict[str, Any] | None:
         doc = self._collection.find_one({"_id": job_application_id})
         if not doc:
             return None

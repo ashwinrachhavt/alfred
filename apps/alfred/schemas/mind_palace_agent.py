@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -12,15 +12,14 @@ class ChatMessage(BaseModel):
 
 class AgentQueryRequest(BaseModel):
     question: str = Field(..., min_length=1)
-    history: List[ChatMessage] = Field(default_factory=list)
-    context: Dict[str, Any] = Field(default_factory=dict)
+    history: list[ChatMessage] = Field(default_factory=list)
+    context: dict[str, Any] = Field(default_factory=dict)
 
 
 class AgentResponse(BaseModel):
     answer: str
-    sources: Optional[List[Dict[str, Any]]] = None
-    meta: Dict[str, Any] = Field(default_factory=dict)
-
+    sources: list[dict[str, Any]] | None = None
+    meta: dict[str, Any] = Field(default_factory=dict)
 
 __all__ = [
     "ChatMessage",

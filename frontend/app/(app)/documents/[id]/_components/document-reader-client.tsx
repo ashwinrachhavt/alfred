@@ -7,7 +7,6 @@ import { ArrowLeft, ExternalLink, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { enqueueDocumentImage } from "@/lib/api/documents";
-import type { DocumentDetailsResponse } from "@/lib/api/types/documents";
 
 import { useDocumentDetails } from "@/features/documents/queries";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
@@ -19,18 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import { DocumentEditor } from "./document-editor";
 
-function coerceString(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
-
-function extractSummary(details: DocumentDetailsResponse | null): string | null {
-  if (!details?.summary) return null;
-  const short = coerceString(details.summary.short);
-  if (short) return short;
-  const summary = coerceString(details.summary.summary);
-  if (summary) return summary;
-  return null;
-}
+import { extractSummary } from "@/lib/utils/format";
 
 export function DocumentReaderClient({ docId }: { docId: string }) {
   const taskTracker = useTaskTracker();

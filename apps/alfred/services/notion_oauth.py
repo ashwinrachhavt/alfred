@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -77,7 +77,7 @@ def exchange_code_for_token(*, code: str) -> dict[str, Any]:
     assert settings.notion_redirect_uri is not None
 
     raw_secret = settings.notion_client_secret.get_secret_value()
-    basic = base64.b64encode(f"{settings.notion_client_id}:{raw_secret}".encode("utf-8")).decode(
+    basic = base64.b64encode(f"{settings.notion_client_id}:{raw_secret}".encode()).decode(
         "ascii"
     )
 
@@ -112,7 +112,7 @@ def persist_oauth_token(token: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Notion token response missing workspace_id")
 
     record = {
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "token": token,
     }
     encrypted = encrypt_json(record, aad=workspace_id.encode("utf-8"))

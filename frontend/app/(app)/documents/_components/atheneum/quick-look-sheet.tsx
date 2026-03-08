@@ -22,25 +22,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 
-function formatMaybeDate(raw?: string | null): string {
-  if (!raw) return "—";
-  const date = new Date(raw);
-  if (!Number.isNaN(date.getTime())) return date.toLocaleString();
-  return raw;
-}
-
-function coerceString(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
-
-function extractSummary(details: DocumentDetailsResponse | null): string | null {
-  if (!details?.summary) return null;
-  const short = coerceString(details.summary.short);
-  if (short) return short;
-  const summary = coerceString(details.summary.summary);
-  if (summary) return summary;
-  return null;
-}
+import { extractSummary, formatMaybeDate } from "@/lib/utils/format";
 
 export function QuickLookSheet({
   open,

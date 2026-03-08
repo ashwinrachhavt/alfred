@@ -32,7 +32,7 @@ class SystemDesignInterviewer:
     low-friction defaults so the UI/API remains usable.
     """
 
-    def __init__(self, *, llm_service=None) -> None:  # noqa: ANN001
+    def __init__(self, *, llm_service=None) -> None:
         self._llm_service = llm_service
 
     def present_design_problem(self, problem: str) -> DesignPrompt:

@@ -10,10 +10,11 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Iterable, Mapping, Protocol
+from datetime import UTC, datetime
+from typing import Any, ClassVar, Protocol
 from urllib.parse import urlparse
 
 from dateutil import parser as date_parser
@@ -103,7 +104,7 @@ class InterviewDetectionService:
         "goodtime.io",
     )
 
-    _TZINFOS: dict[str, object] = {
+    _TZINFOS: ClassVar[dict[str, object]] = {
         # Common US timezone abbreviations seen in scheduling emails.
         "PT": date_tz.gettz("America/Los_Angeles"),
         "PST": date_tz.gettz("America/Los_Angeles"),
@@ -614,7 +615,7 @@ class InterviewQuestionsService:
                         report = InterviewQuestionsReport.model_validate(cached.get("report"))
                         report.questions = report.questions[:max_questions]
                         report.sources = report.sources[:max_sources]
-                        report.warnings = list(report.warnings or []) + ["cache_hit"]
+                        report.warnings = [*list(report.warnings or []), "cache_hit"]
                         return report
                     except Exception:
                         pass
@@ -1006,10 +1007,10 @@ class InterviewQuestionsService:
 
 
 class _LLM(Protocol):
-    def structured(self, *, messages: list[dict[str, str]], schema: type[PrepDoc]):  # noqa: ANN201
+    def structured(self, *, messages: list[dict[str, str]], schema: type[PrepDoc]):
         ...
 
-    def chat(self, *, messages: list[dict[str, str]]):  # noqa: ANN201
+    def chat(self, *, messages: list[dict[str, str]]):
         ...
 
 
@@ -1090,7 +1091,7 @@ class InterviewPrepDocGenerator:
 
         interview_type = (interview_type or "").strip() or "N/A"
         interview_date_str = (
-            interview_date.astimezone(timezone.utc).isoformat()
+            interview_date.astimezone(UTC).isoformat()
             if isinstance(interview_date, datetime)
             else "N/A"
         )
@@ -1261,7 +1262,7 @@ class InterviewChecklistService:
         role = (role or "").strip() or "Role"
 
         when = (
-            interview_date.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            interview_date.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC")
             if isinstance(interview_date, datetime)
             else "N/A"
         )

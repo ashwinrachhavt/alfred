@@ -7,7 +7,7 @@ Wraps `slack_sdk.WebClient.chat_postMessage` and reads the token from
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class SlackService:
     """Send messages to Slack channels or threads."""
 
-    def __init__(self, token: Optional[str] = None) -> None:
+    def __init__(self, token: str | None = None) -> None:
         configured = settings.slack_api_key.get_secret_value() if settings.slack_api_key else None
         self._token = token or configured
         if not self._token:
@@ -28,7 +28,7 @@ class SlackService:
         self._client = WebClient(token=self._token)
 
     def send_message(
-        self, channel: str, text: str, *, thread_ts: Optional[str] = None
+        self, channel: str, text: str, *, thread_ts: str | None = None
     ) -> dict[str, Any]:
         """Send a message to a channel. Optionally post in a thread.
 

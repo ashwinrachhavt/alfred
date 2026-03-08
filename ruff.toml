@@ -6,16 +6,30 @@ exclude = [
 
 [lint]
 select = [
-  "E",   # pycodestyle errors
-  "F",   # pyflakes
-  "I",   # isort
-  "PLR2004",  # pylint: magic-value-comparison
+  "E",       # pycodestyle errors
+  "F",       # pyflakes
+  "I",       # isort
+  "B",       # flake8-bugbear
+  "UP",      # pyupgrade (modernize syntax)
+  "T20",     # flake8-print (flag print statements)
+  "RUF",     # Ruff-specific rules
+  "PLR2004", # pylint: magic-value-comparison
 ]
 # E501 (line length) is treated as a soft limit in this repo; ignore to reduce noise.
-ignore = ["E501"]
+# B008: FastAPI uses function calls in defaults (Depends, Query, Header, etc.) by design.
+# RUF001: Prompts and user-facing strings intentionally use typographic chars (en-dash, curly quotes).
+ignore = [
+  "E501",   # line length is a soft limit
+  "B008",   # FastAPI uses function calls in defaults (Depends, Query, etc.)
+  "RUF001", # prompts use typographic chars (en-dash, curly quotes)
+  "RUF002", # same in docstrings
+  "RUF003", # same in comments
+  "E402",   # conditional imports (try/except) are intentional
+]
 
 [lint.per-file-ignores]
 "tests/**" = ["PLR2004"]
+"scripts/**" = ["T20"]  # allow print() in CLI scripts
 
 [format]
 quote-style = "double"

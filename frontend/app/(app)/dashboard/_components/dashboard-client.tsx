@@ -24,7 +24,7 @@ import { GripVertical, LayoutDashboard, Plus, RotateCcw } from "lucide-react";
 import { useRecentCompanyResearchReports } from "@/features/company/queries";
 import { useRecentDocuments } from "@/features/documents/queries";
 import { useFollowUps } from "@/features/follow-ups/follow-up-provider";
-import { useThreads } from "@/features/threads/queries";
+
 import { useNowMs } from "@/hooks/use-now";
 
 import { Badge } from "@/components/ui/badge";
@@ -143,7 +143,7 @@ function SortableWidget({
 export function DashboardClient() {
   const recentDocuments = useRecentDocuments(6);
   const recentReports = useRecentCompanyResearchReports(6);
-  const threads = useThreads();
+
   const {
     items: followUpItems,
     dueNowCount: followUpDueNowCount,
@@ -156,7 +156,7 @@ export function DashboardClient() {
     () => ({
       "recent-documents": "Recent documents",
       "company-research": "Company research",
-      threads: "Threads",
+
       "follow-ups": "Follow-ups",
       templates: "Templates",
     }),
@@ -168,7 +168,6 @@ export function DashboardClient() {
     loadDashboardLayout([
       "recent-documents",
       "company-research",
-      "threads",
       "follow-ups",
       "templates",
     ]),
@@ -193,26 +192,6 @@ export function DashboardClient() {
     [layout.hidden, layout.order],
   );
 
-  const sortedThreads = React.useMemo(() => {
-    const items = threads.data ?? [];
-
-    return items
-      .slice()
-      .sort((a, b) => {
-        const aTime = a.updated_at
-          ? Date.parse(a.updated_at)
-          : a.created_at
-            ? Date.parse(a.created_at)
-            : 0;
-        const bTime = b.updated_at
-          ? Date.parse(b.updated_at)
-          : b.created_at
-            ? Date.parse(b.created_at)
-            : 0;
-        return bTime - aTime;
-      })
-      .slice(0, 6);
-  }, [threads.data]);
 
   const visibleFollowUps = React.useMemo(() => {
     return followUpItems
@@ -244,11 +223,7 @@ export function DashboardClient() {
       description: "Start with a pre-filled problem statement.",
       href: "/system-design?problemStatement=Design%20a%20rate%20limiter%20for%20an%20API",
     },
-    {
-      title: "Thread: meeting notes",
-      description: "Create a thread with a title.",
-      href: "/threads?title=Meeting%20notes",
-    },
+
     {
       title: "Follow-up: send recap",
       description: "Create a follow-up due tomorrow.",
@@ -371,56 +346,6 @@ export function DashboardClient() {
       );
     }
 
-    if (key === "threads") {
-      return (
-        <DashboardWidgetFrame
-          title="Threads"
-          description="Recent conversations and notes."
-          {...frame}
-        >
-          {threads.isLoading ? (
-            <div className="space-y-2">
-              <Skeleton className="h-5 w-2/3" />
-              <Skeleton className="h-5 w-5/6" />
-              <Skeleton className="h-5 w-3/5" />
-            </div>
-          ) : threads.isError ? (
-            <div className="space-y-2">
-              <p className="text-muted-foreground text-sm">
-                Couldn&apos;t load threads. Is the API running?
-              </p>
-              <Button size="sm" variant="outline" onClick={() => void threads.refetch()}>
-                Retry
-              </Button>
-            </div>
-          ) : sortedThreads.length ? (
-            <ul className="space-y-2">
-              {sortedThreads.map((thread) => (
-                <li key={thread.id} className="flex items-start justify-between gap-3">
-                  <Link
-                    href={`/threads/${thread.id}`}
-                    className="hover:text-foreground text-sm leading-snug font-medium underline-offset-4 hover:underline"
-                  >
-                    {thread.title || thread.kind || "Untitled thread"}
-                  </Link>
-                  <div className="text-muted-foreground shrink-0 text-xs">
-                    {formatTimestamp(thread.updated_at ?? thread.created_at)}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-muted-foreground text-sm">No threads yet.</p>
-          )}
-
-          <div>
-            <Button asChild size="sm" variant="ghost">
-              <Link href="/threads">Open threads</Link>
-            </Button>
-          </div>
-        </DashboardWidgetFrame>
-      );
-    }
 
     if (key === "follow-ups") {
       return (

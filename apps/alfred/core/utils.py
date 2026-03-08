@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 
 def utcnow() -> datetime:
     """Return the current time as a timezone-aware UTC datetime."""
 
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def utcnow_naive() -> datetime:

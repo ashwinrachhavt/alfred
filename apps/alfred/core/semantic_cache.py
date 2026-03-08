@@ -5,9 +5,10 @@ import json
 import logging
 import math
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from cachetools import TTLCache
 
@@ -52,22 +53,23 @@ def _signature(vec: list[float], *, bits: int, seed: str) -> str:
     if dim <= 0 or bits <= 0:
         return ""
 
+    BITS_PER_BYTE = 8
     packed: list[int] = []
     byte = 0
     filled = 0
     for i in range(bits):
-        digest = hashlib.sha256(f"{seed}:{i}:{dim}".encode("utf-8")).digest()
+        digest = hashlib.sha256(f"{seed}:{i}:{dim}".encode()).digest()
         idx = int.from_bytes(digest[:4], "big") % dim
         bit = 1 if float(vec[idx]) >= 0.0 else 0
         byte = (byte << 1) | bit
         filled += 1
-        if filled == 8:
+        if filled == BITS_PER_BYTE:
             packed.append(byte)
             byte = 0
             filled = 0
 
     if filled:
-        byte = byte << (8 - filled)
+        byte = byte << (BITS_PER_BYTE - filled)
         packed.append(byte)
 
     return bytes(packed).hex()

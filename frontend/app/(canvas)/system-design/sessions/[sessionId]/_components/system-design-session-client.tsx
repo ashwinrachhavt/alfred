@@ -14,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 
-import { cn } from "@/lib/utils";
+import { cn, formatErrorMessage } from "@/lib/utils";
 
 import {
   analyzeSystemDesign,
@@ -83,12 +83,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type AutosaveState = "idle" | "dirty" | "saving" | "saved" | "error";
-
-function formatErrorMessage(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  if (error instanceof Error) return error.message;
-  return "Something went wrong.";
-}
 
 export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) {
   const [session, setSession] = useState<SystemDesignSession | null>(null);

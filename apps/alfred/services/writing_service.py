@@ -5,7 +5,7 @@ import logging
 import os
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional, TypedDict
+from typing import TYPE_CHECKING, Any, ClassVar, TypedDict
 from urllib.parse import urlparse
 
 from redis import Redis
@@ -121,13 +121,13 @@ def list_writing_presets() -> list[WritingPreset]:
     ]
 
 
-def resolve_preset(*, site_url: str, preset: Optional[str]) -> WritingPreset:
+def resolve_preset(*, site_url: str, preset: str | None) -> WritingPreset:
     presets = {p.key: p for p in list_writing_presets()}
     key = (preset or "").strip().lower() or infer_preset_key(site_url)
     return presets.get(key, presets["generic"])
 
 
-def preset_rules(preset: WritingPreset, *, max_chars: Optional[int]) -> str:
+def preset_rules(preset: WritingPreset, *, max_chars: int | None) -> str:
     budget = max_chars if max_chars is not None else preset.max_chars
     parts: list[str] = []
 
@@ -221,7 +221,7 @@ def _hash(text: str) -> str:
 @dataclass(frozen=True)
 class WriterCacheHit:
     output: str
-    score: Optional[float] = None
+    score: float | None = None
 
 
 MIN_REDISEARCH_VERSION = 20400
@@ -235,7 +235,7 @@ class WriterSemanticCache:
     LangChain's global LLM cache, to avoid cross-service side effects.
     """
 
-    DEFAULT_SCHEMA = {
+    DEFAULT_SCHEMA: ClassVar[dict[str, Any]] = {
         "content_key": "prompt",
         "text": [{"name": "prompt"}],
         "extra": [{"name": "output"}, {"name": "llm_string"}, {"name": "version"}],
@@ -268,7 +268,7 @@ class WriterSemanticCache:
         try:
             # Deprecated in langchain-community, but still ships and works for Redis Stack.
             from langchain_community.vectorstores.redis import (
-                Redis as RedisVectorstore,  # noqa: PLC0415
+                Redis as RedisVectorstore,
             )
         except Exception as exc:  # pragma: no cover - optional dependency surface
             raise RuntimeError("Redis vectorstore backend is not available") from exc
@@ -298,8 +298,8 @@ class WriterSemanticCache:
                 d: dict[str, str] = {}
                 for k in it:
                     v = next(it)
-                    kk = k.decode("utf-8") if isinstance(k, (bytes, bytearray)) else str(k)
-                    vv = v.decode("utf-8") if isinstance(v, (bytes, bytearray)) else str(v)
+                    kk = k.decode("utf-8") if isinstance(k, bytes | bytearray) else str(k)
+                    vv = v.decode("utf-8") if isinstance(v, bytes | bytearray) else str(v)
                     d[kk] = vv
                 modules.append(d)
             except Exception:
@@ -355,7 +355,7 @@ class WriterSemanticCache:
         self._cache[index_name] = vs
         return vs
 
-    def lookup(self, *, prompt: str, llm_string: str) -> Optional[WriterCacheHit]:
+    def lookup(self, *, prompt: str, llm_string: str) -> WriterCacheHit | None:
         try:
             vs = self._get_index(llm_string)
         except Exception as exc:
@@ -434,8 +434,8 @@ def _stub_output(req: WritingRequest, preset: WritingPreset) -> str:
     return base
 
 
-def _get_checkpointer() -> Optional[PostgresCheckpointSaver]:
-    from alfred.services.checkpoint_postgres import (  # noqa: PLC0415
+def _get_checkpointer() -> PostgresCheckpointSaver | None:
+    from alfred.services.checkpoint_postgres import (
         PostgresCheckpointConfig,
         PostgresCheckpointSaver,
     )
@@ -446,14 +446,14 @@ def _get_checkpointer() -> Optional[PostgresCheckpointSaver]:
     return PostgresCheckpointSaver(cfg=PostgresCheckpointConfig(dsn=dsn))
 
 
-def _get_semantic_cache() -> Optional[WriterSemanticCache]:
+def _get_semantic_cache() -> WriterSemanticCache | None:
     if not settings.writer_semantic_cache_enabled:
         return None
     redis_url = (settings.redis_url or "").strip()
     if not redis_url:
         return None
     try:
-        from alfred.core.llm_factory import get_embedding_model  # noqa: PLC0415
+        from alfred.core.llm_factory import get_embedding_model
 
         embedding = get_embedding_model()
         threshold = float(settings.writer_cache_threshold)
@@ -497,7 +497,7 @@ def _truncate(text: str, *, limit: int) -> str:
 
 def _retrieve_voice_examples(req: WritingRequest) -> str:
     # Uses the user's note KB (Qdrant/Chroma) if configured. Safe no-op otherwise.
-    from alfred.services.agentic_rag import make_retriever  # noqa: PLC0415
+    from alfred.services.agentic_rag import make_retriever
 
     retriever = make_retriever(k=int(settings.writer_voice_k))
     query = (req.draft.strip() or req.selection.strip() or req.instruction.strip()).strip()
@@ -527,7 +527,7 @@ def _retrieve_voice_examples(req: WritingRequest) -> str:
 
 def build_writer_graph():
     # Lazy import to avoid circular imports during module load.
-    from alfred.agents.writer.agent import build_writer_graph as _build  # noqa: PLC0415
+    from alfred.agents.writer.agent import build_writer_graph as _build
 
     return _build()
 

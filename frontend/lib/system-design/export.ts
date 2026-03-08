@@ -1,6 +1,7 @@
 "use client";
 
 import type { ExcalidrawData } from "@/lib/api/types/system-design";
+import { EXPORT_MAX_HEIGHT, EXPORT_MAX_WIDTH, EXPORT_PADDING } from "@/lib/constants/export";
 
 export type DiagramPngExportOptions = {
   transparent?: boolean;
@@ -58,14 +59,14 @@ export async function exportDiagramToPng(
     } as never,
     files,
     mimeType: "image/png",
-    exportPadding: 16,
+    exportPadding: EXPORT_PADDING,
   });
 
   const filename = guessSafeFilename(filenameBase, "png");
 
   // If the diagram is extremely large, downscale to stay within requested bounds.
-  const maxWidth = options.maxWidth ?? 3840;
-  const maxHeight = options.maxHeight ?? 2160;
+  const maxWidth = options.maxWidth ?? EXPORT_MAX_WIDTH;
+  const maxHeight = options.maxHeight ?? EXPORT_MAX_HEIGHT;
   const img = document.createElement("img");
   img.decoding = "async";
 
@@ -122,7 +123,7 @@ export async function exportDiagramToSvg(
         exportEmbedScene: options.embedScene ?? true,
       } as never,
       files,
-      exportPadding: 16,
+      exportPadding: EXPORT_PADDING,
     }),
   );
 
@@ -148,7 +149,7 @@ export async function exportDiagramToPdfViaPng(
     } as never,
     files,
     mimeType: "image/png",
-    exportPadding: 16,
+    exportPadding: EXPORT_PADDING,
   });
 
   const bytes = await blobToArrayBuffer(png);

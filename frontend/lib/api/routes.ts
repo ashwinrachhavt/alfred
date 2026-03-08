@@ -23,11 +23,7 @@ export const apiRoutes = {
     documentImage: (id: string) => `/api/documents/${id}/image`,
     documentImageAsync: (id: string) => `/api/documents/${id}/image/async`,
   },
-  threads: {
-    list: "/api/threads",
-    create: "/api/threads",
-    messages: (threadId: string) => `/api/threads/${threadId}/messages`,
-  },
+
   tasks: {
     status: (taskId: string) => `/api/tasks/${taskId}`,
   },

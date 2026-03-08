@@ -5,7 +5,7 @@ import os
 import re
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -57,7 +57,7 @@ def token_path(user_id: str | None = None, *, namespace: str | None = DEFAULT_NA
 
 
 def generate_authorization_url(
-    state: Optional[str] = None, scopes: Optional[list[str]] = None
+    state: str | None = None, scopes: list[str] | None = None
 ) -> tuple[str, str]:
     cfg = _client_config()
     flow = Flow.from_client_config(cfg, scopes=scopes or settings.google_scopes)
@@ -75,8 +75,8 @@ def generate_authorization_url(
 def exchange_code_for_tokens(
     user_id: str | None,
     code: str,
-    state: Optional[str] = None,
-    scopes: Optional[list[str]] = None,
+    state: str | None = None,
+    scopes: list[str] | None = None,
     *,
     namespace: str | None = DEFAULT_NAMESPACE,
 ) -> Credentials:

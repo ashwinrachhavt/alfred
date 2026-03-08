@@ -9,8 +9,9 @@ Provides a thin wrapper around the Gmail API that:
 import asyncio
 import base64
 import re
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -25,9 +26,7 @@ class GoogleGmailConnector:
         self,
         credentials: Credentials,
         user_id: str | None = None,
-        on_credentials_refreshed: Optional[
-            Callable[[Credentials], Optional[Awaitable[None]]]
-        ] = None,
+        on_credentials_refreshed: Callable[[Credentials], Awaitable[None] | None] | None = None,
     ):
         """Initialize the connector."""
         self._credentials = credentials

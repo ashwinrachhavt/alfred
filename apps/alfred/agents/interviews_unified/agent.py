@@ -10,7 +10,6 @@ from langgraph.graph import END, START, StateGraph
 from starlette.concurrency import run_in_threadpool
 
 from alfred.agents.interviews_unified.state import InterviewAgentState
-from alfred.core.exceptions import ServiceUnavailableError
 from alfred.core.settings import LLMProvider, settings
 from alfred.core.utils import clamp_int
 from alfred.schemas.panel_interview import PanelConfig, PanelSessionCreate, PanelTurnRequest
@@ -20,7 +19,6 @@ from alfred.schemas.unified_interview import (
     UnifiedInterviewResponse,
     UnifiedQuestion,
 )
-from alfred.services.thread_service import ThreadService
 
 logger = logging.getLogger(__name__)
 
@@ -262,7 +260,6 @@ class UnifiedInterviewAgent:
     questions_service: InterviewQuestionsServiceProtocol
     company_research_service: CompanyResearchServiceProtocol
     panel_service: PanelInterviewServiceProtocol | None = None
-    thread_service: ThreadService | None = None
 
     def __post_init__(self) -> None:
         self._graph = self._build_graph()
@@ -491,34 +488,6 @@ class UnifiedInterviewAgent:
         if not company:
             raise ValueError("company is required")
 
-        thread_id: str | None = None
-        if self.thread_service is not None:
-            title = f"{company} — {role}"
-            try:
-                requested_thread_id = _coerce_optional_uuid(request.thread_id)
-                if requested_thread_id is None and _safe_text(request.thread_id):
-                    logger.warning(
-                        "Ignoring invalid unified interview thread_id: %r", request.thread_id
-                    )
-                thread = self.thread_service.upsert_thread(
-                    thread_id=requested_thread_id,
-                    kind="interview_prep",
-                    title=title,
-                    metadata={"company": company, "role": role},
-                )
-                thread_id = str(thread.id)
-                self.thread_service.append_message(
-                    thread_id=thread.id,
-                    role="user",
-                    content=None,
-                    data={
-                        "type": "unified_interview_request",
-                        "payload": request.model_dump(mode="json"),
-                    },
-                )
-            except Exception as exc:
-                raise ServiceUnavailableError(f"Failed to persist interview thread: {exc}") from exc
-
         initial_state: InterviewAgentState = {
             "operation": request.operation,
             "company": company,
@@ -583,31 +552,6 @@ class UnifiedInterviewAgent:
             },
         )
 
-        if thread_id is not None:
-            response.metadata["thread_id"] = thread_id
-            if self.thread_service is not None:
-                try:
-                    if request.operation == "deep_research":
-                        content = response.research_report
-                    elif request.operation == "collect_questions":
-                        content = None
-                    else:
-                        content = response.interviewer_response
-
-                    self.thread_service.append_message(
-                        thread_id=thread_id,
-                        role="assistant",
-                        content=content,
-                        data={
-                            "type": "unified_interview_response",
-                            "payload": response.model_dump(mode="json"),
-                        },
-                    )
-                except Exception as exc:
-                    raise ServiceUnavailableError(
-                        f"Failed to persist interview thread message: {exc}"
-                    ) from exc
-
         return response
 
 
@@ -620,12 +564,10 @@ def agent():
     from alfred.core.dependencies import (
         get_company_research_service,
         get_interview_questions_service,
-        get_thread_service,
     )
 
     return UnifiedInterviewAgent(
         questions_service=get_interview_questions_service(),
         company_research_service=get_company_research_service(),
         panel_service=None,
-        thread_service=get_thread_service(),
     )._graph

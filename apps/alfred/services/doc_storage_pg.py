@@ -11,8 +11,8 @@ import threading
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from cachetools import TTLCache
 from sqlalchemy import and_, func, or_, select, update
@@ -257,7 +257,7 @@ class DocStorageService:
             s.refresh(record)
             return str(record.id)
 
-    def list_notes(self, *, q: Optional[str], skip: int, limit: int) -> Dict[str, Any]:
+    def list_notes(self, *, q: str | None, skip: int, limit: int) -> dict[str, Any]:
         with _session_scope(self.session) as s:
             stmt = select(QuickNoteRow)
             if q:
@@ -291,7 +291,7 @@ class DocStorageService:
                 "limit": limit,
             }
 
-    def get_note(self, note_id: str) -> Dict[str, Any] | None:
+    def get_note(self, note_id: str) -> dict[str, Any] | None:
         uid = _parse_uuid(note_id)
         if uid is None:
             return None
@@ -320,7 +320,7 @@ class DocStorageService:
             return True
 
     # --------------- Documents ---------------
-    def ingest_document(self, payload: DocumentIngest) -> Dict[str, Any]:
+    def ingest_document(self, payload: DocumentIngest) -> dict[str, Any]:
         do_enrichment = bool(settings.enable_ingest_enrichment)
         do_classification = bool(settings.enable_ingest_classification)
         if do_enrichment or do_classification:
@@ -333,23 +333,23 @@ class DocStorageService:
             do_graph=do_graph,
         )
 
-    def ingest_document_basic(self, payload: DocumentIngest) -> Dict[str, Any]:
+    def ingest_document_basic(self, payload: DocumentIngest) -> dict[str, Any]:
         return self._ingest_document(
             payload, do_enrichment=False, do_classification=False, do_graph=False
         )
 
-    def ingest_document_store_only(self, payload: DocumentIngest) -> Dict[str, Any]:
+    def ingest_document_store_only(self, payload: DocumentIngest) -> dict[str, Any]:
         """Persist a document quickly without chunking or enrichment.
 
         This is intended for latency-sensitive ingestion paths (e.g., browser extension
         page saves) where chunking/enrichment can be performed asynchronously.
         """
-        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        now = datetime.utcnow().replace(tzinfo=UTC)
         captured_at = payload.captured_at or now
         if captured_at.tzinfo is None:
-            captured_at = captured_at.replace(tzinfo=timezone.utc)
+            captured_at = captured_at.replace(tzinfo=UTC)
         day_bucket = _start_of_day_utc(captured_at)
-        captured_hour = captured_at.astimezone(timezone.utc).hour
+        captured_hour = captured_at.astimezone(UTC).hour
 
         cleaned_text = payload.cleaned_text
         content_hash = payload.hash or _sha256_hex(cleaned_text)
@@ -420,13 +420,13 @@ class DocStorageService:
         do_enrichment: bool,
         do_classification: bool,
         do_graph: bool,
-    ) -> Dict[str, Any]:
-        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+    ) -> dict[str, Any]:
+        now = datetime.utcnow().replace(tzinfo=UTC)
         captured_at = payload.captured_at or now
         if captured_at.tzinfo is None:
-            captured_at = captured_at.replace(tzinfo=timezone.utc)
+            captured_at = captured_at.replace(tzinfo=UTC)
         day_bucket = _start_of_day_utc(captured_at)
-        captured_hour = captured_at.astimezone(timezone.utc).hour
+        captured_hour = captured_at.astimezone(UTC).hour
 
         cleaned_text = payload.cleaned_text
         content_hash = payload.hash or _sha256_hex(cleaned_text)
@@ -434,10 +434,10 @@ class DocStorageService:
         canonical = payload.canonical_url or payload.source_url
         domain = _domain_from_url(canonical)
 
-        summary_obj: Dict[str, Any] | None = None
-        topics_obj: Dict[str, Any] | None = None
-        embedding_vec: List[float] | None = None
-        entities_obj: Dict[str, Any] | None = None
+        summary_obj: dict[str, Any] | None = None
+        topics_obj: dict[str, Any] | None = None
+        embedding_vec: list[float] | None = None
+        entities_obj: dict[str, Any] | None = None
 
         if do_enrichment and self.extraction_service:
             try:
@@ -545,7 +545,7 @@ class DocStorageService:
             s.commit()
             s.refresh(doc_record)
 
-            chunk_ids: List[str] = []
+            chunk_ids: list[str] = []
             chunk_payloads = payload.chunks
             if (not chunk_payloads) and (cleaned_text or (payload.raw_markdown or "").strip()):
                 src_text = payload.raw_markdown or cleaned_text
@@ -575,7 +575,7 @@ class DocStorageService:
                 "chunk_ids": chunk_ids,
             }
 
-    def process_document(self, doc_id: str, *, force: bool = False) -> Dict[str, Any]:
+    def process_document(self, doc_id: str, *, force: bool = False) -> dict[str, Any]:
         """Generate missing chunks and (optionally) enrich/classify an existing document."""
         uid = _parse_uuid(doc_id)
         if uid is None:
@@ -638,7 +638,7 @@ class DocStorageService:
                         captured_hour = (
                             int(doc.captured_hour)
                             if doc.captured_hour is not None
-                            else doc.captured_at.astimezone(timezone.utc).hour
+                            else doc.captured_at.astimezone(UTC).hour
                         )
                         chunk_rows = _build_doc_chunk_rows(
                             doc_id=uid,
@@ -665,7 +665,7 @@ class DocStorageService:
                         "enrichment_skipped": True,
                     }
 
-                now = datetime.utcnow().replace(tzinfo=timezone.utc)
+                now = datetime.utcnow().replace(tzinfo=UTC)
                 cleaned_text = (doc.cleaned_text or "").strip()
                 raw_markdown = doc.raw_markdown
                 metadata = doc.meta or {}
@@ -752,7 +752,7 @@ class DocStorageService:
                 "has_graph": bool(self.graph_service),
             }
 
-    def enrich_document(self, doc_id: str, *, force: bool = False) -> Dict[str, Any]:
+    def enrich_document(self, doc_id: str, *, force: bool = False) -> dict[str, Any]:
         uid = _parse_uuid(doc_id)
         if uid is None:
             raise BadRequestError("Invalid id", code="invalid_id")
@@ -786,7 +786,7 @@ class DocStorageService:
             if not self._ensure_extraction_service():
                 raise RuntimeError("Extraction service not configured")
 
-            now = datetime.utcnow().replace(tzinfo=timezone.utc)
+            now = datetime.utcnow().replace(tzinfo=UTC)
             cleaned_text = (doc.cleaned_text or "").strip()
             raw_markdown = doc.raw_markdown
             metadata = doc.meta or {}
@@ -813,7 +813,7 @@ class DocStorageService:
             if enrich.get("topics"):
                 topics_obj = enrich.get("topics")
 
-            updates: Dict[str, Any] = {
+            updates: dict[str, Any] = {
                 "updated_at": now,
                 "processed_at": now,
                 "meta": metadata,
@@ -872,9 +872,9 @@ class DocStorageService:
         `force=True` includes already-extracted documents (useful for reprocessing).
         """
 
-        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        now = datetime.utcnow().replace(tzinfo=UTC)
         # Use SQLModel's select so `Session.exec()` yields model instances (not Row tuples).
-        from sqlmodel import select as sql_select  # noqa: PLC0415
+        from sqlmodel import select as sql_select
 
         stmt = sql_select(DocumentRow).where(func.length(func.trim(DocumentRow.cleaned_text)) > 0)
         if not force:
@@ -902,9 +902,9 @@ class DocStorageService:
         """
 
         limit = clamp_int(limit, lo=1, hi=500)
-        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        now = datetime.utcnow().replace(tzinfo=UTC)
 
-        from sqlmodel import select as sql_select  # noqa: PLC0415
+        from sqlmodel import select as sql_select
 
         stmt = sql_select(DocumentRow)
         if not force:
@@ -917,7 +917,7 @@ class DocStorageService:
         with _session_scope(self.session) as s:
             return s.exec(stmt).all()
 
-    def extract_document_concepts(self, doc_id: str, *, force: bool = False) -> Dict[str, Any]:
+    def extract_document_concepts(self, doc_id: str, *, force: bool = False) -> dict[str, Any]:
         """Extract and persist a lightweight concept graph for a stored document.
 
         This is intentionally separate from document enrichment. The output is stored
@@ -940,7 +940,7 @@ class DocStorageService:
             if not text:
                 raise BadRequestError("Document has no text", code="missing_document_text")
 
-            now = datetime.utcnow().replace(tzinfo=timezone.utc)
+            now = datetime.utcnow().replace(tzinfo=UTC)
             extractor = self.extraction_service or ExtractionService(
                 llm_service=self._ensure_llm_service()
             )
@@ -1003,7 +1003,7 @@ class DocStorageService:
             }
 
     # --------------- Queries ---------------
-    def get_document_text(self, doc_id: str) -> Optional[str]:
+    def get_document_text(self, doc_id: str) -> str | None:
         uid = _parse_uuid(doc_id)
         if uid is None:
             return None
@@ -1023,7 +1023,7 @@ class DocStorageService:
                 return None
             return doc.raw_markdown or doc.cleaned_text or ""
 
-    def get_document(self, doc_id: str) -> Dict[str, Any] | None:
+    def get_document(self, doc_id: str) -> dict[str, Any] | None:
         uid = _parse_uuid(doc_id)
         if uid is None:
             return None
@@ -1059,7 +1059,7 @@ class DocStorageService:
                 ),
             }
 
-    def get_document_details(self, doc_id: str) -> Dict[str, Any] | None:
+    def get_document_details(self, doc_id: str) -> dict[str, Any] | None:
         """Return the full persisted document payload for deep inspection views."""
 
         uid = _parse_uuid(doc_id)
@@ -1140,7 +1140,7 @@ class DocStorageService:
         raw_markdown: str | None = None,
         tiptap_json: dict[str, Any] | None = None,
         metadata_update: dict[str, Any] | None = None,
-    ) -> Dict[str, Any] | None:
+    ) -> dict[str, Any] | None:
         """Update a document's editable text payload.
 
         This is intentionally lightweight:
@@ -1154,7 +1154,7 @@ class DocStorageService:
         if uid is None:
             raise BadRequestError("Invalid id", code="invalid_id")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         with _session_scope(self.session) as s:
             doc = s.get(DocumentRow, uid)
@@ -1276,7 +1276,7 @@ class DocStorageService:
         model: str = "gpt-image-1",
         size: str = "1024x1024",
         quality: str = "high",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate and persist a title/cover image for a document via OpenAI."""
 
         uid = _parse_uuid(doc_id)
@@ -1360,7 +1360,7 @@ class DocStorageService:
                     model_used = candidate
                     last_exc = None
                     break
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     # If gpt-image-1 is blocked due to org verification, fall back to DALL·E.
                     if candidate == "gpt-image-1":
                         msg = str(exc)
@@ -1376,7 +1376,7 @@ class DocStorageService:
             if image_bytes is None:
                 raise last_exc or RuntimeError("Failed to generate image")
 
-            now = datetime.utcnow().replace(tzinfo=timezone.utc)
+            now = datetime.utcnow().replace(tzinfo=UTC)
 
             generated_meta = {
                 "model": model_used,
@@ -1420,7 +1420,7 @@ class DocStorageService:
         cursor: str | None = None,
         filter_topic: str | None = None,
         search: str | None = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Cursor-paginated documents list for the Shelf (Explorer) view."""
 
         limit = max(1, min(int(limit), 200))
@@ -1591,7 +1591,7 @@ class DocStorageService:
             ts = s.exec(select(func.max(DocumentRow.updated_at))).one()[0]
         if isinstance(ts, datetime):
             if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
+                ts = ts.replace(tzinfo=UTC)
             return ts.isoformat()
         return "none"
 
@@ -1670,14 +1670,14 @@ class DocStorageService:
     def list_documents(
         self,
         *,
-        q: Optional[str] = None,
-        topic: Optional[str] = None,
-        date: Optional[str] = None,
-        start: Optional[str] = None,
-        end: Optional[str] = None,
+        q: str | None = None,
+        topic: str | None = None,
+        date: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
         skip: int = 0,
         limit: int = 20,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         with _session_scope(self.session) as s:
             stmt = (
                 select(DocumentRow)
@@ -1742,12 +1742,12 @@ class DocStorageService:
     def list_chunks(
         self,
         *,
-        doc_id: Optional[str] = None,
-        topic: Optional[str] = None,
-        date: Optional[str] = None,
+        doc_id: str | None = None,
+        topic: str | None = None,
+        date: str | None = None,
         skip: int = 0,
         limit: int = 20,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         with _session_scope(self.session) as s:
             stmt = (
                 select(DocChunkRow)

@@ -105,7 +105,7 @@ def _jsonable_scalar(value: Any) -> Any:
     """Convert a value to the scalar representation stored in JSON columns."""
 
     converted = to_jsonable_python(value)
-    if isinstance(converted, (dict, list)):
+    if isinstance(converted, dict | list):
         raise TypeError("Filter values must be scalar for SQL-backed filtering.")
     return converted
 
@@ -429,7 +429,7 @@ class DataStoreService:
                 ).one()
             )
 
-    def with_collection(self, name: str) -> "DataStoreService":
+    def with_collection(self, name: str) -> DataStoreService:
         return DataStoreService(default_collection=name)
 
     def bulk_write(

@@ -8,6 +8,7 @@ import { getSharedSystemDesignSession } from "@/lib/api/system-design";
 import type { SystemDesignSession } from "@/lib/api/types/system-design";
 
 import { ApiError } from "@/lib/api/client";
+import { formatErrorMessage } from "@/lib/utils";
 import { ExcalidrawCanvas } from "@/components/system-design/excalidraw-canvas";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,12 +16,6 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-
-function formatErrorMessage(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  if (error instanceof Error) return error.message;
-  return "Something went wrong.";
-}
 
 export function SharedSystemDesignSessionClient({ shareId }: { shareId: string }) {
   const searchParams = useSearchParams();

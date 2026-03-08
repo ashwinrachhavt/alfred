@@ -18,6 +18,8 @@ import {
   type TrackedTask,
 } from "@/features/tasks/task-tracker";
 
+import { isRecord } from "@/lib/utils";
+
 type TaskTrackerContextValue = {
   tasks: TrackedTask[];
   statusById: Record<string, TaskStatusResponse | undefined>;
@@ -55,10 +57,6 @@ function nextTaskLabel(source: TaskSource, label: string): string {
   if (source === "company_research") return "Company research";
   if (source === "interview_prep") return "Interview prep";
   return "Background task";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
 }
 
 function extractCompanyResearchReportId(result: unknown): string | null {

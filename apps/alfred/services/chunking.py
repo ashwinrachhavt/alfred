@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional
 
 from langchain_text_splitters import (
     CharacterTextSplitter,
@@ -40,9 +39,9 @@ class ChunkingService:
         *,
         max_tokens: int = 500,
         overlap: int = 100,
-        mode: Optional[str] = None,
-        content_type: Optional[str] = None,
-    ) -> List[DocumentIngestChunk]:
+        mode: str | None = None,
+        content_type: str | None = None,
+    ) -> list[DocumentIngestChunk]:
         src = (text or "").strip()
         if not src:
             return []
@@ -60,7 +59,7 @@ class ChunkingService:
                 strip_headers=False,
             )
             docs = splitter.split_text(src)
-            chunks: List[DocumentIngestChunk] = []
+            chunks: list[DocumentIngestChunk] = []
             for idx, d in enumerate(docs):
                 content = d.page_content or ""
                 # Best-effort section extraction from first header line
@@ -80,7 +79,7 @@ class ChunkingService:
 
         if chosen == "html":
             docs = HTMLHeaderTextSplitter().split_text(src)
-            out: List[DocumentIngestChunk] = []
+            out: list[DocumentIngestChunk] = []
             for idx, d in enumerate(docs):
                 content = d.page_content or ""
                 out.append(
@@ -130,14 +129,14 @@ class ChunkingService:
         ]
 
 
-def _fallback_split(text: str, max_tokens: int, overlap: int) -> List[str]:
+def _fallback_split(text: str, max_tokens: int, overlap: int) -> list[str]:
     """Very small local fallback if langchain splitters unavailable."""
     words = (text or "").split()
     if not words:
         return []
     max_tokens = max(1, max_tokens)
     overlap = max(0, min(overlap, max_tokens - 1))
-    parts: List[str] = []
+    parts: list[str] = []
     i = 0
     while i < len(words):
         j = min(i + max_tokens, len(words))

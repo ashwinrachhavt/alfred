@@ -6,8 +6,8 @@ import { toast } from "sonner";
 
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { processUnifiedInterview } from "@/lib/api/interviews-unified";
-import { ApiError } from "@/lib/api/client";
 import type { UnifiedInterviewResponse } from "@/lib/api/types/interviews-unified";
+import { formatErrorMessage } from "@/lib/utils";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -29,8 +29,6 @@ type PracticeSessionDrillProps = {
   company: string;
   role: string;
   candidateBackground: string;
-  threadId: string;
-  onThreadIdChange: (nextThreadId: string) => void;
   sessionId: string;
   onSessionIdChange: (nextSessionId: string) => void;
 };
@@ -49,22 +47,6 @@ function nowIso(): string {
 function newMessageId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function formatErrorMessage(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  if (error instanceof Error) return error.message;
-  return "Something went wrong.";
-}
-
-function extractThreadIdFromMetadata(
-  metadata: Record<string, unknown> | null | undefined,
-): string | null {
-  if (!metadata) return null;
-  const value = metadata.thread_id;
-  if (typeof value !== "string") return null;
-  const normalized = value.trim();
-  return normalized ? normalized : null;
 }
 
 function formatTimer(valueSeconds: number): string {
@@ -130,8 +112,6 @@ export function PracticeSessionDrill({
   company,
   role,
   candidateBackground,
-  threadId,
-  onThreadIdChange,
   sessionId,
   onSessionIdChange,
 }: PracticeSessionDrillProps) {
@@ -358,13 +338,11 @@ export function PracticeSessionDrill({
     setAnswerDraft("");
 
     try {
-      const normalizedThreadId = threadId.trim();
       const response = await processUnifiedInterview({
         operation: "practice_session",
         company: company.trim(),
         role: role.trim() || "Software Engineer",
         candidate_background: candidateBackground.trim() || null,
-        ...(normalizedThreadId ? { thread_id: normalizedThreadId } : {}),
         session_id: sessionId.trim() || null,
         candidate_response: answer,
       });
@@ -374,13 +352,6 @@ export function PracticeSessionDrill({
           "Practice sessions can’t be queued. Disable background mode and try again.",
         );
       }
-
-      const persistedThreadId = extractThreadIdFromMetadata(
-        "metadata" in response && response.metadata && typeof response.metadata === "object"
-          ? (response.metadata as Record<string, unknown>)
-          : null,
-      );
-      if (persistedThreadId) onThreadIdChange(persistedThreadId);
 
       const { nextSessionId } = coercePracticeSessionResponse(response, answer);
       if (nextSessionId !== sessionId) {

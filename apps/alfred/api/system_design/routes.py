@@ -25,11 +25,11 @@ from alfred.schemas.system_design import (
     SystemDesignNotesUpdate,
     SystemDesignPublishRequest,
     SystemDesignPublishResponse,
-    SystemDesignShareUpdate,
     SystemDesignSession,
     SystemDesignSessionCreate,
     SystemDesignSessionSummary,
     SystemDesignSessionUpdate,
+    SystemDesignShareUpdate,
     SystemDesignTemplateCreate,
     TemplateDefinition,
 )

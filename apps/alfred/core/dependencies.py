@@ -170,20 +170,12 @@ def get_interview_questions_service() -> InterviewQuestionsService:
 
 
 @lru_cache(maxsize=1)
-def get_thread_service():
-    from alfred.services.thread_service import ThreadService
-
-    return ThreadService()
-
-
-@lru_cache(maxsize=1)
 def get_unified_interview_agent() -> UnifiedInterviewAgent:
     from alfred.agents.interviews_unified.agent import UnifiedInterviewAgent
 
     return UnifiedInterviewAgent(
         questions_service=get_interview_questions_service(),
         company_research_service=get_company_research_service(),
-        thread_service=get_thread_service(),
     )
 
 
@@ -234,7 +226,6 @@ def get_memory_service():
 
     return MemoryService(
         doc_storage=get_doc_storage_service(),
-        thread_service=get_thread_service(),
         llm_service=get_llm_service(),
     )
 

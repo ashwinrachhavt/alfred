@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import base64
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
-def _b64url_decode(data: Optional[str]) -> Optional[bytes]:
+def _b64url_decode(data: str | None) -> bytes | None:
     if not data:
         return None
     # Gmail API uses URL-safe base64 without padding
@@ -27,7 +27,7 @@ class GmailService:
     """
 
     @staticmethod
-    def parse_headers(message: Dict[str, Any]) -> Dict[str, str]:
+    def parse_headers(message: dict[str, Any]) -> dict[str, str]:
         headers = {}
         try:
             for h in (message.get("payload", {}) or {}).get("headers", []) or []:
@@ -40,13 +40,13 @@ class GmailService:
         return headers
 
     @staticmethod
-    def _find_parts(message: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _find_parts(message: dict[str, Any]) -> list[dict[str, Any]]:
         payload = message.get("payload", {}) or {}
         parts = payload.get("parts") or []
         return parts if isinstance(parts, list) else []
 
     @staticmethod
-    def _body_text_for_mime(message: Dict[str, Any], mime: str) -> Optional[str]:
+    def _body_text_for_mime(message: dict[str, Any], mime: str) -> str | None:
         payload = message.get("payload", {}) or {}
         # Direct body if matches
         if payload.get("mimeType") == mime:
@@ -70,7 +70,7 @@ class GmailService:
         return None
 
     @staticmethod
-    def extract_plaintext(message: Dict[str, Any]) -> Optional[str]:
+    def extract_plaintext(message: dict[str, Any]) -> str | None:
         txt = GmailService._body_text_for_mime(message, "text/plain")
         if txt:
             return txt
@@ -85,7 +85,7 @@ class GmailService:
         return message.get("snippet")
 
     @staticmethod
-    def extract_html(message: Dict[str, Any]) -> Optional[str]:
+    def extract_html(message: dict[str, Any]) -> str | None:
         html = GmailService._body_text_for_mime(message, "text/html")
         if html:
             return html
@@ -96,12 +96,12 @@ class GmailService:
         return None
 
     @staticmethod
-    def list_attachments_from_message(message: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def list_attachments_from_message(message: dict[str, Any]) -> list[dict[str, Any]]:
         """Return attachment metadata from message parts.
 
         Each item: {filename, mimeType, attachmentId, size}
         """
-        attachments: List[Dict[str, Any]] = []
+        attachments: list[dict[str, Any]] = []
         for p in GmailService._find_parts(message):
             body = p.get("body") or {}
             filename = p.get("filename") or ""
