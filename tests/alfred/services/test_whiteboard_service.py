@@ -1,6 +1,7 @@
-from alfred.services.whiteboard_service import WhiteboardService
 from sqlalchemy import create_engine
 from sqlmodel import Session, SQLModel
+
+from alfred.services.whiteboard_service import WhiteboardService
 
 
 def _session() -> Session:

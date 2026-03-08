@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from alfred.api.mind_palace_agent import routes as mp_agent_routes
-from alfred.services.agents.mind_palace_agent import KnowledgeAgentService
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from alfred.api.mind_palace_agent import routes as mp_agent_routes
+from alfred.services.agents.mind_palace_agent import KnowledgeAgentService
+
 
 class _FakeDocStorage:
-    def list_documents(self, *, q=None, skip=0, limit=20, **kwargs):  # noqa: ANN001
+    def list_documents(self, *, q=None, skip=0, limit=20, **kwargs):
         return {
             "items": [
                 {
@@ -24,10 +25,10 @@ class _FakeDocStorage:
 
 
 class _EmptyMCP:
-    async def health(self):  # noqa: D401
+    async def health(self):
         return True
 
-    async def query(self, query: str, context=None):  # noqa: ANN001, D401
+    async def query(self, query: str, context=None):
         return {"results": []}
 
 

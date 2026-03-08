@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-from typing import List
+from qdrant_client import QdrantClient
 
 from alfred.services.knowledge import KnowledgeService
-from qdrant_client import QdrantClient
 
 
 class _FakeEmbedder:
     def __init__(self, dim: int = 8):
         self.dim = dim
 
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
         # Deterministic small vectors
         return [[float((i + j) % 5) for j in range(self.dim)] for i, _ in enumerate(texts)]
 
-    def embed_query(self, text: str) -> List[float]:
+    def embed_query(self, text: str) -> list[float]:
         return [0.1 for _ in range(self.dim)]
 
 

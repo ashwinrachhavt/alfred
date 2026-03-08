@@ -3,9 +3,10 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from alfred.api.interviews_unified import router as interviews_unified_router
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from alfred.api.interviews_unified import router as interviews_unified_router
 
 
 class DummyAsyncResult:
@@ -17,7 +18,7 @@ class DummyCeleryClient:
     def __init__(self) -> None:
         self.sent: list[dict[str, Any]] = []
 
-    def send_task(self, name: str, *args: Any, **options: Any) -> DummyAsyncResult:  # noqa: ANN401
+    def send_task(self, name: str, *args: Any, **options: Any) -> DummyAsyncResult:
         kwargs = options.get("kwargs") or {}
         queue = options.get("queue")
         task_id = options.get("task_id") or "unified-task-1"

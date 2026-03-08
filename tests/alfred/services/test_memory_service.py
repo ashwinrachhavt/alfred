@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from sqlalchemy import create_engine
+from sqlmodel import Session, SQLModel
+
 from alfred.schemas.intelligence import MemoryCreateRequest
 from alfred.services.doc_storage_pg import DocStorageService
 from alfred.services.memory_service import MemoryService
-from sqlalchemy import create_engine
-from sqlmodel import Session, SQLModel
 
 
 def _session() -> Session:

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
+
 from alfred.schemas.interview_prep import InterviewPrepCreate, InterviewPrepRecord
 
 
@@ -12,7 +13,7 @@ def test_interview_prep_create_valid():
         job_application_id=str(uuid.uuid4()),
         company="OpenAI",
         role="AI Engineer",
-        interview_date=datetime(2026, 1, 5, tzinfo=timezone.utc),
+        interview_date=datetime(2026, 1, 5, tzinfo=UTC),
         interview_type="phone",
     )
     assert payload.company == "OpenAI"
@@ -25,7 +26,7 @@ def test_interview_prep_record_validation_allows_extra_id():
         "job_application_id": str(uuid.uuid4()),
         "company": "ExampleCo",
         "role": "Backend Engineer",
-        "generated_at": datetime.now(tz=timezone.utc),
+        "generated_at": datetime.now(tz=UTC),
         "prep_doc": {"company_overview": "x", "role_analysis": "y"},
         "quiz": {"questions": []},
         "unexpected": {"ok": True},
@@ -35,5 +36,5 @@ def test_interview_prep_record_validation_allows_extra_id():
 
 
 def test_interview_prep_create_rejects_empty_company():
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         InterviewPrepCreate(company="  ", role="AI Engineer")

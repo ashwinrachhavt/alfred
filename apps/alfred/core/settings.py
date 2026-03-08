@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
-from pydantic import AnyHttpUrl, Field, SecretStr
+from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     notion_client_id: str | None = Field(default=None, alias="NOTION_CLIENT_ID")
     notion_client_secret: SecretStr | None = Field(default=None, alias="NOTION_CLIENT_SECRET")
     notion_redirect_uri: AnyHttpUrl | None = Field(default=None, alias="NOTION_REDIRECT_URI")
+
+    @field_validator("notion_redirect_uri", mode="before")
+    @classmethod
+    def _empty_str_to_none(cls, v: object) -> object:
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
 
     # Qdrant
     qdrant_url: str | None = Field(default=None, alias="QDRANT_URL")

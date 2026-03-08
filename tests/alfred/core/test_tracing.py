@@ -26,4 +26,4 @@ def test_tracing_noop_without_keys(monkeypatch):
 
     # Update functions should not raise
     tracing.lf_update_span(input={"a": 1})
-    tracing.lf_update_trace(name="n", tags=["t1"]).__class__
+    tracing.lf_update_trace(name="n", tags=["t1"])

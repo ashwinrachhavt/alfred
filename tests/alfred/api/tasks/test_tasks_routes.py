@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from alfred.api.tasks import router as tasks_router
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from alfred.api.tasks import router as tasks_router
 
 
 class DummyAsyncResult:
@@ -40,13 +41,13 @@ class DummyCeleryClient:
         self.sent: list[dict[str, Any]] = []
         self.results: dict[str, DummyAsyncResult] = {}
 
-    def send_task(self, name: str, *, kwargs: dict[str, Any], queue: str) -> DummyAsyncResult:  # noqa: ANN401
+    def send_task(self, name: str, *, kwargs: dict[str, Any], queue: str) -> DummyAsyncResult:
         self.sent.append({"name": name, "kwargs": kwargs, "queue": queue})
         result = DummyAsyncResult(task_id="task-123")
         self.results[result.id] = result
         return result
 
-    def AsyncResult(self, task_id: str) -> DummyAsyncResult:  # noqa: N802
+    def AsyncResult(self, task_id: str) -> DummyAsyncResult:
         return self.results.get(task_id, DummyAsyncResult(task_id=task_id))
 
 

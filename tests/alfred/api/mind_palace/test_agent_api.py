@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from alfred.api.mind_palace_agent import routes as mp_agent_routes
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from alfred.api.mind_palace_agent import routes as mp_agent_routes
+
 
 class _FakeAgent:
-    async def ask(self, *, question: str, history=None, context=None):  # noqa: ANN001
+    async def ask(self, *, question: str, history=None, context=None):
         return {
             "answer": f"You asked: {question}",
             "sources": [

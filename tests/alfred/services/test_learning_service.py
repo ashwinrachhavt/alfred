@@ -3,10 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pytest
-from alfred.models.learning import LearningReview
-from alfred.services.learning_service import LearningService
 from sqlalchemy import create_engine
 from sqlmodel import Session, SQLModel
+
+from alfred.models.learning import LearningReview
+from alfred.services.learning_service import LearningService
 
 try:  # avoid ImportError when sqlmodel.select is unavailable in minimal envs
     from sqlmodel import select  # type: ignore

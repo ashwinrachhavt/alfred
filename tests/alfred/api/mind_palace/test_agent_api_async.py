@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from alfred.api.mind_palace_agent import routes as mp_agent_routes
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from alfred.api.mind_palace_agent import routes as mp_agent_routes
 
 
 class DummyAsyncResult:
@@ -16,7 +17,7 @@ class DummyCeleryClient:
     def __init__(self) -> None:
         self.sent: list[dict[str, Any]] = []
 
-    def send_task(self, name: str, *, kwargs: dict[str, Any], queue: str) -> DummyAsyncResult:  # noqa: ANN401
+    def send_task(self, name: str, *, kwargs: dict[str, Any], queue: str) -> DummyAsyncResult:
         self.sent.append({"name": name, "kwargs": kwargs, "queue": queue})
         return DummyAsyncResult(task_id="agent-task-1")
 

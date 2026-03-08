@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from logging.config import fileConfig
 
-import alfred.models  # noqa: F401 — side-effect: registers all SQLModel tables on metadata
 from alembic import context
-from alfred.core.database import normalize_db_url
-from alfred.core.settings import settings
 from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
+
+import alfred.models  # noqa: F401 — side-effect: registers all SQLModel tables on metadata
+from alfred.core.database import normalize_db_url
+from alfred.core.settings import settings
 
 config = context.config
 

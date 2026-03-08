@@ -1,6 +1,7 @@
-from alfred.core.exceptions import ConfigurationError, RateLimitError, register_exception_handlers
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+
+from alfred.core.exceptions import ConfigurationError, RateLimitError, register_exception_handlers
 
 
 def create_app() -> FastAPI:

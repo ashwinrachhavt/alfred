@@ -1,4 +1,5 @@
 import pytest
+
 from alfred.connectors.airtable_connector import AirtableConnector
 from alfred.schemas.airtable_auth_credentials import AirtableAuthCredentialsBase
 

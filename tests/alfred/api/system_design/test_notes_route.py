@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from alfred.api import register_routes
 from alfred.core.dependencies import get_system_design_service
 from alfred.schemas.system_design import ExcalidrawData, SystemDesignSession
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 
 @dataclass
@@ -33,8 +34,8 @@ def test_update_notes_route_returns_session() -> None:
         versions=[],
         exports=[],
         artifacts={},
-        created_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        updated_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        created_at=datetime(2025, 1, 1, tzinfo=UTC),
+        updated_at=datetime(2025, 1, 1, tzinfo=UTC),
         metadata={},
     )
 

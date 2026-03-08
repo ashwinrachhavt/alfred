@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from alfred.api.company import routes as company_routes
-from alfred.models.company import CompanyResearchReportRow
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session, SQLModel
+
+from alfred.api.company import routes as company_routes
+from alfred.models.company import CompanyResearchReportRow
 
 
 def test_recent_company_research_reports_returns_executive_summary(
@@ -23,7 +24,7 @@ def test_recent_company_research_reports_returns_executive_summary(
     )
     monkeypatch.setattr(company_routes, "SessionLocal", session_local)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     with session_local() as session:
         session.add(
             CompanyResearchReportRow(

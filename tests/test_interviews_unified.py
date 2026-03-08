@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from alfred.agents.interviews_unified.agent import UnifiedInterviewAgent
 from alfred.api.interviews_unified import router as interviews_unified_router
 from alfred.core.dependencies import get_unified_interview_agent
@@ -24,8 +27,6 @@ from alfred.schemas.panel_interview import (
     PanelTurnRequest,
     PanelTurnResponse,
 )
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 
 class StubInterviewQuestionsService:

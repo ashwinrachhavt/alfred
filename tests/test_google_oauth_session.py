@@ -4,12 +4,13 @@ import asyncio
 import json
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
+from google.oauth2.credentials import Credentials
+
 from alfred.connectors.google_oauth_session import GoogleOAuthSession
 from alfred.services.google_oauth import persist_credentials, token_path
-from google.oauth2.credentials import Credentials
 
 
 @pytest.mark.asyncio
@@ -25,7 +26,7 @@ async def test_google_oauth_session_refresh_is_single_flight(
             refresh_calls += 1
         time.sleep(0.05)
         self.token = "refreshed-token"
-        self.expiry = datetime.now(timezone.utc) + timedelta(minutes=30)
+        self.expiry = datetime.now(UTC) + timedelta(minutes=30)
 
     monkeypatch.setattr(Credentials, "refresh", fake_refresh, raising=True)
 
@@ -36,7 +37,7 @@ async def test_google_oauth_session_refresh_is_single_flight(
         client_id="client-id",
         client_secret="client-secret",
         scopes=["https://www.googleapis.com/auth/gmail.readonly"],
-        expiry=datetime.now(timezone.utc) - timedelta(seconds=1),
+        expiry=datetime.now(UTC) - timedelta(seconds=1),
     )
 
     session = GoogleOAuthSession(creds)
@@ -63,7 +64,7 @@ def test_persist_credentials_writes_valid_json(tmp_path, monkeypatch: pytest.Mon
         client_id="client-id",
         client_secret="client-secret",
         scopes=["https://www.googleapis.com/auth/gmail.readonly"],
-        expiry=datetime.now(timezone.utc) + timedelta(minutes=30),
+        expiry=datetime.now(UTC) + timedelta(minutes=30),
     )
 
     persist_credentials(None, creds, namespace="gmail")

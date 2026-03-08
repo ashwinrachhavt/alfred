@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from langchain_core.messages import AIMessage, ToolMessage
+
 from alfred.agents.utils.runtime import has_tool_calls, tools_node
 from alfred.agents.utils.web_tools import make_web_search_tool
-from langchain_core.messages import AIMessage, ToolMessage
 
 
 def test_tools_node_executes_structured_tool_calls(monkeypatch):
