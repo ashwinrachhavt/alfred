@@ -77,6 +77,17 @@ class Settings(BaseSettings):
     notion_client_secret: SecretStr | None = Field(default=None, alias="NOTION_CLIENT_SECRET")
     notion_redirect_uri: AnyHttpUrl | None = Field(default=None, alias="NOTION_REDIRECT_URI")
 
+    # Readwise
+    readwise_token: SecretStr | None = Field(default=None, alias="READWISE_TOKEN")
+
+    # GitHub
+    github_token: SecretStr | None = Field(default=None, alias="GITHUB_TOKEN")
+    github_repos: list[str] = Field(
+        default=[],
+        alias="GITHUB_REPOS",
+        description="Repos to sync, e.g. ['owner/repo1', 'owner/repo2']. Empty = all user repos.",
+    )
+
     # Qdrant
     qdrant_url: str | None = Field(default=None, alias="QDRANT_URL")
     qdrant_api_key: SecretStr | None = Field(default=None, alias="QDRANT_API_KEY")
@@ -97,6 +108,7 @@ class Settings(BaseSettings):
         default=[
             "https://www.googleapis.com/auth/gmail.readonly",
             "https://www.googleapis.com/auth/gmail.metadata",
+            "https://www.googleapis.com/auth/drive.readonly",
         ],
         alias="GOOGLE_SCOPES",
     )
@@ -109,6 +121,9 @@ class Settings(BaseSettings):
     )
 
     gmail_push_oidc_audience: str | None = Field(default=None, alias="GMAIL_PUSH_OIDC_AUDIENCE")
+
+    # Google Drive
+    enable_google_drive: bool = Field(default=False, alias="ENABLE_GOOGLE_DRIVE")
 
     # MCP / tools
     enable_mcp: bool = True

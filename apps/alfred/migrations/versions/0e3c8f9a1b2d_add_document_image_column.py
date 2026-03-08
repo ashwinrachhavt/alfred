@@ -1,7 +1,7 @@
 """add document image column
 
 Revision ID: 0e3c8f9a1b2d
-Revises: 543490e0f01a
+Revises: 1a9d2f3c4b5e
 Create Date: 2026-01-08
 """
 
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "0e3c8f9a1b2d"
-down_revision: str | None = "543490e0f01a"
+down_revision: str | None = "1a9d2f3c4b5e"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
