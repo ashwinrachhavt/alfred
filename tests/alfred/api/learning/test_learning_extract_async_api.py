@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
-from alfred.api.learning import routes as learning_routes
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from alfred.api.learning import routes as learning_routes
 
 
 def _app() -> TestClient:
@@ -22,9 +23,9 @@ def test_enqueue_learning_resource_extraction(monkeypatch) -> None:
 
     class _FakeCelery:
         def __init__(self) -> None:
-            self.calls: list[Dict[str, Any]] = []
+            self.calls: list[dict[str, Any]] = []
 
-        def send_task(self, name: str, *, kwargs: Dict[str, Any]) -> _FakeAsyncResult:
+        def send_task(self, name: str, *, kwargs: dict[str, Any]) -> _FakeAsyncResult:
             self.calls.append({"name": name, "kwargs": kwargs})
             return _FakeAsyncResult("task-123")
 
@@ -55,9 +56,9 @@ def test_enqueue_learning_batch_extraction(monkeypatch) -> None:
 
     class _FakeCelery:
         def __init__(self) -> None:
-            self.calls: list[Dict[str, Any]] = []
+            self.calls: list[dict[str, Any]] = []
 
-        def send_task(self, name: str, *, kwargs: Dict[str, Any]) -> _FakeAsyncResult:
+        def send_task(self, name: str, *, kwargs: dict[str, Any]) -> _FakeAsyncResult:
             self.calls.append({"name": name, "kwargs": kwargs})
             return _FakeAsyncResult("task-999")
 

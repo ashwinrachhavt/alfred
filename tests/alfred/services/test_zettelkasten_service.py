@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from alfred.models.zettel import ZettelReview
-from alfred.services.zettelkasten_service import ZettelkastenService
 from sqlalchemy import create_engine
 from sqlmodel import Session, SQLModel
+
+from alfred.models.zettel import ZettelReview
+from alfred.services.zettelkasten_service import ZettelkastenService
 
 try:  # avoid ImportError when sqlmodel.select is unavailable in minimal envs
     from sqlmodel import select  # type: ignore

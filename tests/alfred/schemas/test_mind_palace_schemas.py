@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+
 from alfred.schemas.documents import (
     DocumentIngest,
     DocumentIngestChunk,

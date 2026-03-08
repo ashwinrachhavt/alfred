@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from alfred.api.writing import router as writing_router
-from alfred.core.exceptions import register_exception_handlers
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from alfred.api.writing import router as writing_router
+from alfred.core.exceptions import register_exception_handlers
 
 
 def _enable_writing_stub(monkeypatch) -> None:

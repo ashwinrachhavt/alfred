@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
-from alfred.models.company import CompanyResearchReportRow
-from alfred.services.company_research_service import CompanyResearchService
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session
+
+from alfred.models.company import CompanyResearchReportRow
+from alfred.services.company_research_service import CompanyResearchService
 
 
 @pytest.mark.usefixtures("_disable_network")
@@ -37,7 +38,7 @@ def test_company_research_service_db_roundtrip(monkeypatch) -> None:
         company="Mercury",
         payload=payload,
         model_name="test-model",
-        generated_at=datetime(2026, 1, 5, tzinfo=timezone.utc),
+        generated_at=datetime(2026, 1, 5, tzinfo=UTC),
     )
     assert stored["company"] == "Mercury"
     assert "id" in stored

@@ -1,4 +1,5 @@
 import pytest
+
 from alfred.connectors.linear_connector import LinearConnector
 
 

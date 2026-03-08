@@ -4,9 +4,10 @@ import uuid
 from datetime import date
 
 import sqlalchemy as sa
-from alfred.models.doc_storage import DocumentRow
 from sqlalchemy import insert
 from sqlalchemy.dialects import postgresql, sqlite
+
+from alfred.models.doc_storage import DocumentRow
 
 
 def test_document_tags_column_is_text_array() -> None:

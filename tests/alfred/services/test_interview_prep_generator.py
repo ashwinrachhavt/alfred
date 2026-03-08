@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
+
 from alfred.schemas.interview_prep import PrepDoc
 from alfred.services.interview_service import InterviewPrepDocGenerator
 
@@ -11,7 +12,7 @@ class _FakeLLM:
     def __init__(self, *, structured_ok: bool) -> None:
         self.structured_ok = structured_ok
 
-    def structured(self, *, messages, schema):  # noqa: ANN001
+    def structured(self, *, messages, schema):
         if not self.structured_ok:
             raise RuntimeError("structured not available")
         return PrepDoc(
@@ -22,7 +23,7 @@ class _FakeLLM:
             technical_topics=[],
         )
 
-    def chat(self, *, messages):  # noqa: ANN001
+    def chat(self, *, messages):
         return (
             "{"
             '"company_overview":"Company",'
@@ -35,12 +36,12 @@ class _FakeLLM:
 
 
 class _FakeCompanyResearch:
-    def get_cached_report(self, company: str):  # noqa: ANN001
+    def get_cached_report(self, company: str):
         return {"company": company, "report": {"executive_summary": "x"}}
 
 
 class _FakeDocStorage:
-    def list_notes(self, *, q: str, skip: int, limit: int):  # noqa: ANN001
+    def list_notes(self, *, q: str, skip: int, limit: int):
         return {"items": [{"text": f"note for {q}"}]}
 
 
@@ -54,7 +55,7 @@ def test_generator_uses_structured_when_available():
         company="ExampleCo",
         role="Backend Engineer",
         interview_type="phone",
-        interview_date=datetime(2026, 1, 5, tzinfo=timezone.utc),
+        interview_date=datetime(2026, 1, 5, tzinfo=UTC),
         candidate_background="Worked on X.",
     )
     assert isinstance(doc, PrepDoc)

@@ -1,6 +1,7 @@
 from datetime import date, datetime
 
 import pytest
+
 from alfred.connectors.arxiv_connector import (
     ArxivConnector,
     _compose_query,

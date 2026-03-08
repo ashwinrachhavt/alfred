@@ -1,6 +1,7 @@
-from alfred.api.google.routes import router as google_router
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
+
+from alfred.api.google.routes import router as google_router
 
 
 def test_google_oauth_callback_has_no_response_model() -> None:

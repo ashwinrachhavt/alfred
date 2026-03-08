@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+
 from alfred.connectors.web_connector import LangsearchClient
 from alfred.core.settings import settings
 
@@ -32,25 +33,25 @@ class _FakeResponse:
 
 
 class _FakeClient:
-    def __init__(self, *, on_post):  # noqa: ANN001
+    def __init__(self, *, on_post):
         self._on_post = on_post
 
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc, tb):  # noqa: ANN001
+    def __exit__(self, exc_type, exc, tb):
         return False
 
-    def post(self, url: str, *, json: dict[str, Any], headers: dict[str, str]):  # noqa: A002
+    def post(self, url: str, *, json: dict[str, Any], headers: dict[str, str]):
         self._on_post(url, json, headers)
         return _FakeResponse()
 
 
 class _FakeHttpx:
-    def __init__(self, *, on_post):  # noqa: ANN001
+    def __init__(self, *, on_post):
         self._on_post = on_post
 
-    def Client(self, *, timeout: float):  # noqa: N802, ANN001
+    def Client(self, *, timeout: float):
         _ = timeout
         return _FakeClient(on_post=self._on_post)
 

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from alfred.api.admin import routes as admin_routes
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from alfred.api.admin import routes as admin_routes
 
-def _client(*, monkeypatch, pending: int = 3, total: int = 10, sample_ids=None) -> TestClient:  # noqa: ANN001
+
+def _client(*, monkeypatch, pending: int = 3, total: int = 10, sample_ids=None) -> TestClient:
     sample_ids = sample_ids or [101, 102]
 
     class _FakeResult:
@@ -21,7 +22,7 @@ def _client(*, monkeypatch, pending: int = 3, total: int = 10, sample_ids=None) 
         def __init__(self) -> None:
             self._calls = 0
 
-        def exec(self, _stmt):  # noqa: ANN001 - statement type from sqlmodel/sqlalchemy
+        def exec(self, _stmt):
             self._calls += 1
             # Route does 2 exec() calls (pending, total). Keep it deterministic.
             if self._calls == 1:
@@ -31,7 +32,7 @@ def _client(*, monkeypatch, pending: int = 3, total: int = 10, sample_ids=None) 
     def _fake_get_db_session():
         yield _FakeSession()
 
-    def _fake_list(self, *, limit, topic_id, min_age_hours, force):  # noqa: ANN001
+    def _fake_list(self, *, limit, topic_id, min_age_hours, force):
         return [SimpleNamespace(id=i) for i in sample_ids[:limit]]
 
     monkeypatch.setattr(
@@ -75,7 +76,7 @@ def test_admin_enqueue_learning_concepts_batch(monkeypatch) -> None:
         def __init__(self) -> None:
             self.calls: list[dict] = []
 
-        def send_task(self, name: str, *, kwargs: dict) -> _FakeAsyncResult:  # noqa: ANN001
+        def send_task(self, name: str, *, kwargs: dict) -> _FakeAsyncResult:
             self.calls.append({"name": name, "kwargs": kwargs})
             return _FakeAsyncResult("task-abc")
 

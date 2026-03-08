@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from alfred.api import register_routes
 from alfred.core.dependencies import get_system_design_service
 from alfred.schemas.system_design import ExcalidrawData, TemplateDefinition
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 
 class DummySystemDesignService:

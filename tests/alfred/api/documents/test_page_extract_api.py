@@ -1,20 +1,21 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from alfred.api.documents import routes as doc_routes
 from alfred.core.exceptions import register_exception_handlers
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 
 class _FakeDocStorage:
     def __init__(self) -> None:
         self._next_id = 1
-        self.last_ingest: Dict[str, Any] | None = None
+        self.last_ingest: dict[str, Any] | None = None
         self.duplicate_next = False
 
-    def ingest_document_store_only(self, ingest) -> Dict[str, Any]:  # noqa: ANN001 - schema type from app
+    def ingest_document_store_only(self, ingest) -> dict[str, Any]:
         self.last_ingest = {
             "source_url": ingest.source_url,
             "title": ingest.title,
@@ -46,9 +47,9 @@ def test_page_extract_stores_only(monkeypatch) -> None:
 
     class _FakeCelery:
         def __init__(self) -> None:
-            self.calls: list[Dict[str, Any]] = []
+            self.calls: list[dict[str, Any]] = []
 
-        def send_task(self, name: str, *, kwargs: Dict[str, Any]) -> _FakeAsyncResult:
+        def send_task(self, name: str, *, kwargs: dict[str, Any]) -> _FakeAsyncResult:
             self.calls.append({"name": name, "kwargs": kwargs})
             return _FakeAsyncResult("task-123")
 
@@ -115,9 +116,9 @@ def test_enqueue_document_enrichment(monkeypatch) -> None:
 
     class _FakeCelery:
         def __init__(self) -> None:
-            self.calls: list[Dict[str, Any]] = []
+            self.calls: list[dict[str, Any]] = []
 
-        def send_task(self, name: str, *, kwargs: Dict[str, Any]) -> _FakeAsyncResult:
+        def send_task(self, name: str, *, kwargs: dict[str, Any]) -> _FakeAsyncResult:
             self.calls.append({"name": name, "kwargs": kwargs})
             return _FakeAsyncResult("task-123")
 
