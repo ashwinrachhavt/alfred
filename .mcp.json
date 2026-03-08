@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase",
+        "--access-token",
+        "YOUR_SUPABASE_ACCESS_TOKEN"
+      ]
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    },
+    "linear": {
+      "command": "npx",
+      "args": ["-y", "linear-mcp"],
+      "env": {
+        "LINEAR_ACCESS_TOKEN": "YOUR_LINEAR_API_TOKEN"
+      }
+    },
+    "serena": {
+      "command": "uvx",
+      "args": ["serena", "--workspace", "/Users/ashwinrachha/coding/alfred"]
+    }
+  }
+}
