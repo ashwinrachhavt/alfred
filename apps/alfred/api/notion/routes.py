@@ -162,6 +162,40 @@ def notion_oauth_callback(
     )
 
 
+class NotionOAuthExchangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(..., description="OAuth authorization code from Notion redirect.")
+    state: str = Field(..., description="OAuth state parameter for CSRF verification.")
+
+
+class NotionOAuthExchangeResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ok: bool
+    workspace: dict[str, Any] | None = None
+    error: str | None = None
+
+
+@router.post("/oauth/exchange", response_model=NotionOAuthExchangeResponse)
+def notion_oauth_exchange(payload: NotionOAuthExchangeRequest) -> NotionOAuthExchangeResponse:
+    """Exchange a Notion OAuth code for a token (frontend-driven flow).
+
+    The frontend receives the code + state from the Notion redirect,
+    then sends them here for server-side token exchange and storage.
+    """
+
+    try:
+        if consume_oauth_state(payload.state) is None:
+            raise ValueError("OAuth state is invalid or expired")
+        token = exchange_code_for_token(code=payload.code)
+        workspace = persist_oauth_token(token)
+        return NotionOAuthExchangeResponse(ok=True, workspace=workspace)
+    except Exception as exc:
+        logger.exception("Notion OAuth exchange failed")
+        return NotionOAuthExchangeResponse(ok=False, error=str(exc))
+
+
 @router.post("/revoke")
 def notion_revoke(workspace_id: str = Body(..., embed=True)) -> dict[str, Any]:
     """Delete a stored Notion OAuth token (does not affect NOTION_TOKEN)."""

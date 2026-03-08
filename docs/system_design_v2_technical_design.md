@@ -14,7 +14,7 @@ System Design v2 should be a **structured diagram editor** (components + connect
 
 ## Current state (in repo)
 
-- Frontend System Design editor uses **Excalidraw** (`frontend/components/system-design/excalidraw-canvas.tsx`).
+- Frontend System Design editor uses **Excalidraw** (`web/components/system-design/excalidraw-canvas.tsx`).
 - Sessions persist to Postgres via `DataStoreService` as JSON documents (`apps/alfred/services/system_design.py`).
 - Realtime currently exists as a **broadcast-only WebSocket** (`/api/system-design/sessions/{session_id}/ws`) with optional autosave on messages (`apps/alfred/api/system_design/routes.py`).
 

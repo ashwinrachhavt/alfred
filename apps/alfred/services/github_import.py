@@ -224,14 +224,354 @@ def import_issues(
     }
 
 
+def _render_discussion_markdown(discussion: dict[str, Any], slug: str) -> str:
+    """Render a discussion as a Markdown document."""
+    lines: list[str] = []
+    title = discussion.get("title", "Untitled Discussion")
+    number = discussion.get("number", "?")
+    lines.append(f"# {title}")
+    lines.append("")
+    lines.append(f"**Repository:** {slug} | **Discussion:** #{number}")
+    lines.append("")
+
+    labels = discussion.get("labels", {}).get("nodes") or []
+    if labels:
+        label_names = [lb.get("name", "") for lb in labels]
+        if label_names:
+            lines.append(f"**Labels:** {', '.join(label_names)}")
+            lines.append("")
+
+    author = (discussion.get("author") or {}).get("login", "unknown")
+    lines.append(f"**Author:** {author}")
+    lines.append("")
+
+    body = (discussion.get("body") or "").strip()
+    if body:
+        lines.append(body)
+    else:
+        lines.append("_No description provided._")
+    lines.append("")
+
+    # Accepted answer
+    answer = discussion.get("answer")
+    if answer:
+        ans_author = (answer.get("author") or {}).get("login", "unknown")
+        ans_body = (answer.get("body") or "").strip()
+        lines.append("---")
+        lines.append(f"## Accepted Answer (by {ans_author})")
+        lines.append("")
+        lines.append(ans_body)
+        lines.append("")
+
+    # Comments
+    comments = (discussion.get("comments") or {}).get("nodes") or []
+    if comments:
+        lines.append("---")
+        lines.append("## Comments")
+        lines.append("")
+        for comment in comments:
+            c_author = (comment.get("author") or {}).get("login", "unknown")
+            c_body = (comment.get("body") or "").strip()
+            lines.append(f"### Comment by {c_author}")
+            lines.append("")
+            lines.append(c_body)
+            lines.append("")
+
+    return "\n".join(lines)
+
+
+def _render_gist_markdown(gist: dict[str, Any]) -> str:
+    """Render a gist as a Markdown document."""
+    lines: list[str] = []
+    description = gist.get("description") or "Untitled Gist"
+    lines.append(f"# {description}")
+    lines.append("")
+
+    files = gist.get("files") or {}
+    for filename, file_info in files.items():
+        content = (file_info.get("content") or "").strip()
+        language = file_info.get("language") or ""
+        lines.append(f"## {filename}")
+        lines.append("")
+        lang_hint = language.lower() if language else ""
+        lines.append(f"```{lang_hint}")
+        lines.append(content)
+        lines.append("```")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def import_starred(
+    *,
+    doc_store: DocStorageService,
+    client: GitHubClient | None = None,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    """Import README files from starred repos into the document store."""
+    client = client or GitHubClient()
+
+    created = 0
+    updated = 0
+    skipped = 0
+    errors: list[dict[str, str]] = []
+    documents: list[dict[str, str]] = []
+
+    starred = client.list_starred()
+    if limit:
+        starred = starred[:limit]
+
+    for repo_data in starred:
+        owner = (repo_data.get("owner") or {}).get("login", "")
+        repo = repo_data.get("name", "")
+        slug = f"{owner}/{repo}"
+        if not owner or not repo:
+            skipped += 1
+            continue
+
+        try:
+            readme = client.get_readme(owner, repo)
+            if not readme:
+                skipped += 1
+                logger.debug("No README for starred repo %s", slug)
+                continue
+
+            html_url = repo_data.get("html_url", f"https://github.com/{slug}")
+            stable_hash = f"github:starred:{slug}"
+
+            repo_meta = {
+                "owner": owner,
+                "repo": repo,
+                "description": repo_data.get("description"),
+                "stars": repo_data.get("stargazers_count"),
+                "language": repo_data.get("language"),
+                "topics": repo_data.get("topics", []),
+            }
+
+            ingest = DocumentIngest(
+                source_url=html_url,
+                title=f"{slug} — Starred README",
+                content_type="github_starred",
+                raw_markdown=readme,
+                cleaned_text=readme,
+                hash=stable_hash,
+                metadata={"source": "github", "github_starred": repo_meta},
+            )
+
+            res = doc_store.ingest_document_store_only(ingest)
+            doc_id = str(res["id"])
+            if res.get("duplicate"):
+                updated += 1
+                doc_store.update_document_text(
+                    doc_id,
+                    title=f"{slug} — Starred README",
+                    cleaned_text=readme,
+                    raw_markdown=readme,
+                    metadata_update={"source": "github", "github_starred": repo_meta},
+                )
+            else:
+                created += 1
+
+            documents.append({"repo": slug, "document_id": doc_id})
+        except Exception as exc:
+            logger.exception("GitHub starred import failed for %s", slug)
+            errors.append({"repo": slug, "error": str(exc)})
+
+    return {
+        "ok": True,
+        "type": "github_starred",
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "errors": errors,
+        "documents": documents,
+    }
+
+
+def import_gists(
+    *,
+    doc_store: DocStorageService,
+    client: GitHubClient | None = None,
+    since: str | None = None,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    """Import gists from GitHub into the document store."""
+    client = client or GitHubClient()
+
+    created = 0
+    updated = 0
+    skipped = 0
+    errors: list[dict[str, str]] = []
+    documents: list[dict[str, str]] = []
+
+    gists = client.list_gists(since=since)
+    if limit:
+        gists = gists[:limit]
+
+    for gist_summary in gists:
+        gist_id = gist_summary.get("id", "")
+        if not gist_id:
+            skipped += 1
+            continue
+
+        try:
+            gist = client.get_gist(gist_id)
+            description = gist.get("description") or "Untitled Gist"
+            html_url = gist.get("html_url", f"https://gist.github.com/{gist_id}")
+            stable_hash = f"github:gist:{gist_id}"
+
+            markdown = _render_gist_markdown(gist)
+
+            gist_meta = {
+                "gist_id": gist_id,
+                "description": description,
+                "public": gist.get("public"),
+                "created_at": gist.get("created_at"),
+                "updated_at": gist.get("updated_at"),
+                "files": list((gist.get("files") or {}).keys()),
+            }
+
+            ingest = DocumentIngest(
+                source_url=html_url,
+                title=f"Gist: {description}",
+                content_type="github_gist",
+                raw_markdown=markdown,
+                cleaned_text=markdown,
+                hash=stable_hash,
+                metadata={"source": "github", "github_gist": gist_meta},
+            )
+
+            res = doc_store.ingest_document_store_only(ingest)
+            doc_id = str(res["id"])
+            if res.get("duplicate"):
+                updated += 1
+                doc_store.update_document_text(
+                    doc_id,
+                    title=f"Gist: {description}",
+                    cleaned_text=markdown,
+                    raw_markdown=markdown,
+                    metadata_update={"source": "github", "github_gist": gist_meta},
+                )
+            else:
+                created += 1
+
+            documents.append({"gist_id": gist_id, "document_id": doc_id})
+        except Exception as exc:
+            logger.exception("GitHub gist import failed for %s", gist_id)
+            errors.append({"gist_id": gist_id, "error": str(exc)})
+
+    return {
+        "ok": True,
+        "type": "github_gist",
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "errors": errors,
+        "documents": documents,
+    }
+
+
+def import_discussions(
+    *,
+    doc_store: DocStorageService,
+    client: GitHubClient | None = None,
+    repos: list[str] | None = None,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    """Import discussions from GitHub repos into the document store."""
+    client = client or GitHubClient()
+    repos_cfg = repos if repos is not None else settings.github_repos
+    repo_pairs = _resolve_repos(client, repos_cfg or None)
+
+    created = 0
+    updated = 0
+    skipped = 0
+    errors: list[dict[str, str]] = []
+    documents: list[dict[str, str]] = []
+
+    for owner, repo in repo_pairs:
+        slug = f"{owner}/{repo}"
+        try:
+            discussions = client.list_discussions(owner, repo)
+            if limit:
+                discussions = discussions[:limit]
+
+            for discussion in discussions:
+                number = discussion.get("number")
+                if number is None:
+                    skipped += 1
+                    continue
+
+                discussion_url = f"https://github.com/{slug}/discussions/{number}"
+                stable_hash = f"github:discussion:{slug}/{number}"
+                markdown = _render_discussion_markdown(discussion, slug)
+
+                disc_meta = {
+                    "owner": owner,
+                    "repo": repo,
+                    "number": number,
+                    "title": discussion.get("title"),
+                    "author": (discussion.get("author") or {}).get("login"),
+                    "labels": [
+                        lb.get("name")
+                        for lb in (discussion.get("labels", {}).get("nodes") or [])
+                    ],
+                    "created_at": discussion.get("createdAt"),
+                    "updated_at": discussion.get("updatedAt"),
+                    "has_answer": discussion.get("answer") is not None,
+                }
+
+                ingest = DocumentIngest(
+                    source_url=discussion_url,
+                    title=f"{slug} Discussion #{number}: {discussion.get('title', 'Untitled')}",
+                    content_type="github_discussion",
+                    raw_markdown=markdown,
+                    cleaned_text=markdown,
+                    hash=stable_hash,
+                    metadata={"source": "github", "github_discussion": disc_meta},
+                )
+
+                res = doc_store.ingest_document_store_only(ingest)
+                doc_id = str(res["id"])
+                if res.get("duplicate"):
+                    updated += 1
+                    doc_store.update_document_text(
+                        doc_id,
+                        title=f"{slug} Discussion #{number}: {discussion.get('title', 'Untitled')}",
+                        cleaned_text=markdown,
+                        raw_markdown=markdown,
+                        metadata_update={"source": "github", "github_discussion": disc_meta},
+                    )
+                else:
+                    created += 1
+
+                documents.append({"repo": slug, "discussion": number, "document_id": doc_id})
+        except Exception as exc:
+            logger.exception("GitHub discussion import failed for %s", slug)
+            errors.append({"repo": slug, "error": str(exc)})
+
+    return {
+        "ok": True,
+        "type": "github_discussion",
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "errors": errors,
+        "documents": documents,
+    }
+
+
 def import_github(
     *,
     doc_store: DocStorageService,
     repos: list[str] | None = None,
     state: str = "all",
     since: str | None = None,
+    include_starred: bool = False,
+    include_gists: bool = False,
+    include_discussions: bool = False,
 ) -> dict[str, Any]:
-    """Import both READMEs and issues from GitHub into the document store."""
+    """Import READMEs, issues, and optionally starred/gists/discussions from GitHub."""
     client = GitHubClient()
 
     readme_result = import_readmes(doc_store=doc_store, client=client, repos=repos)
@@ -239,15 +579,29 @@ def import_github(
         doc_store=doc_store, client=client, repos=repos, state=state, since=since
     )
 
-    return {
+    result: dict[str, Any] = {
         "ok": True,
         "readmes": readme_result,
         "issues": issues_result,
     }
 
+    if include_starred:
+        result["starred"] = import_starred(doc_store=doc_store, client=client)
+
+    if include_gists:
+        result["gists"] = import_gists(doc_store=doc_store, client=client, since=since)
+
+    if include_discussions:
+        result["discussions"] = import_discussions(doc_store=doc_store, client=client, repos=repos)
+
+    return result
+
 
 __all__ = [
+    "import_discussions",
+    "import_gists",
     "import_github",
     "import_issues",
     "import_readmes",
+    "import_starred",
 ]

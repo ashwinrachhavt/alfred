@@ -121,7 +121,7 @@ services:
 
   frontend:
     build:
-      context: ../frontend
+      context: ../web
       dockerfile: Dockerfile
       args:
         ALFRED_API_BASE_URL: http://api:8000

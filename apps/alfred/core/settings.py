@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
-from pydantic import AnyHttpUrl, Field, SecretStr
+from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
@@ -88,6 +88,13 @@ class Settings(BaseSettings):
         description="Repos to sync, e.g. ['owner/repo1', 'owner/repo2']. Empty = all user repos.",
     )
 
+    @field_validator("notion_redirect_uri", mode="before")
+    @classmethod
+    def _empty_str_to_none(cls, v: object) -> object:
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
+
     # Qdrant
     qdrant_url: str | None = Field(default=None, alias="QDRANT_URL")
     qdrant_api_key: SecretStr | None = Field(default=None, alias="QDRANT_API_KEY")
@@ -109,6 +116,7 @@ class Settings(BaseSettings):
             "https://www.googleapis.com/auth/gmail.readonly",
             "https://www.googleapis.com/auth/gmail.metadata",
             "https://www.googleapis.com/auth/drive.readonly",
+            "https://www.googleapis.com/auth/tasks.readonly",
         ],
         alias="GOOGLE_SCOPES",
     )
@@ -124,6 +132,22 @@ class Settings(BaseSettings):
 
     # Google Drive
     enable_google_drive: bool = Field(default=False, alias="ENABLE_GOOGLE_DRIVE")
+
+    # Pocket
+    pocket_consumer_key: str | None = Field(default=None, alias="POCKET_CONSUMER_KEY")
+    pocket_access_token: SecretStr | None = Field(default=None, alias="POCKET_ACCESS_TOKEN")
+
+    # Todoist
+    todoist_token: SecretStr | None = Field(default=None, alias="TODOIST_TOKEN")
+
+    # Hypothes.is
+    hypothesis_token: SecretStr | None = Field(default=None, alias="HYPOTHESIS_TOKEN")
+
+    # Semantic Scholar (optional — free tier works without key)
+    semantic_scholar_api_key: str | None = Field(default=None, alias="SEMANTIC_SCHOLAR_API_KEY")
+
+    # RSS feed URLs (comma-separated or JSON list)
+    rss_feed_urls: list[str] = Field(default=[], alias="RSS_FEED_URLS")
 
     # MCP / tools
     enable_mcp: bool = True

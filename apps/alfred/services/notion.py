@@ -10,13 +10,35 @@ from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 
 from alfred.connectors.notion_history import NotionHistoryConnector
 from alfred.core.settings import settings
+from alfred.services.notion_oauth import list_connected_workspaces, load_oauth_token
+
+
+def _resolve_token() -> str:
+    """Resolve a Notion access token from env config or stored OAuth tokens."""
+
+    # 1. Prefer explicit env token
+    if settings.notion_token:
+        token = settings.notion_token.get_secret_value().strip()
+        if token:
+            return token
+
+    # 2. Fall back to stored OAuth tokens
+    try:
+        workspaces = list_connected_workspaces()
+        if workspaces:
+            wid = workspaces[0]["workspace_id"]
+            oauth_data = load_oauth_token(wid)
+            access_token = (oauth_data.get("access_token") or "").strip()
+            if access_token:
+                return access_token
+    except Exception:
+        pass
+
+    raise HTTPException(500, "No Notion token configured. Connect via OAuth or set NOTION_TOKEN.")
 
 
 def _client() -> Client:
-    token = settings.notion_token.get_secret_value() if settings.notion_token else None
-    if not token:
-        raise HTTPException(500, "NOTION_TOKEN not configured")
-    return Client(auth=token)
+    return Client(auth=_resolve_token())
 
 
 def _database_query(db_id: str, **payload: Any) -> dict:
@@ -273,10 +295,7 @@ async def fetch_page_history(
 ) -> list[dict[str, Any]]:
     """Fetch page histories using the async connector for deep exports."""
 
-    configured = settings.notion_token.get_secret_value() if settings.notion_token else None
-    notion_token = token or configured
-    if not notion_token:
-        raise HTTPException(500, "NOTION_TOKEN not configured")
+    notion_token = token or _resolve_token()
 
     async with NotionHistoryConnector(notion_token) as connector:
         return await connector.get_all_pages(

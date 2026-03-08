@@ -1,6 +1,6 @@
 ## Prompting Guidelines (Alfred)
 
-This repo keeps many prompts as Markdown templates under `apps/alfred/prompts/` and a few inline prompts in the frontend/API code.
+This repo keeps many prompts as Markdown templates under `apps/alfred/prompts/` and a few inline prompts in the web/API code.
 
 ### Design principles
 
