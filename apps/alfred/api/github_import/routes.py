@@ -65,12 +65,16 @@ def start_import(
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> ImportResponse:
     """Import issues/PRs from GitHub repositories."""
-    result = import_github(
-        doc_store=svc,
-        repos=payload.repos,
-        state=payload.state,
-        since=payload.since,
-    )
+    try:
+        result = import_github(
+            doc_store=svc,
+            repos=payload.repos,
+            state=payload.state,
+            since=payload.since,
+        )
+    except Exception as exc:
+        logger.exception("GitHub import failed")
+        return ImportResponse(status="error", result={"ok": False, "error": str(exc)})
     return ImportResponse(status="completed", result=result)
 
 
@@ -80,10 +84,14 @@ def start_starred_import(
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> ImportResponse:
     """Import starred repositories from GitHub."""
-    result = import_starred(
-        doc_store=svc,
-        limit=payload.limit,
-    )
+    try:
+        result = import_starred(
+            doc_store=svc,
+            limit=payload.limit,
+        )
+    except Exception as exc:
+        logger.exception("GitHub starred import failed")
+        return ImportResponse(status="error", result={"ok": False, "error": str(exc)})
     return ImportResponse(status="completed", result=result)
 
 
@@ -93,11 +101,15 @@ def start_gists_import(
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> ImportResponse:
     """Import gists from GitHub."""
-    result = import_gists(
-        doc_store=svc,
-        since=payload.since,
-        limit=payload.limit,
-    )
+    try:
+        result = import_gists(
+            doc_store=svc,
+            since=payload.since,
+            limit=payload.limit,
+        )
+    except Exception as exc:
+        logger.exception("GitHub gists import failed")
+        return ImportResponse(status="error", result={"ok": False, "error": str(exc)})
     return ImportResponse(status="completed", result=result)
 
 
@@ -107,11 +119,15 @@ def start_discussions_import(
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> ImportResponse:
     """Import discussions from GitHub repositories."""
-    result = import_discussions(
-        doc_store=svc,
-        repos=payload.repos,
-        limit=payload.limit,
-    )
+    try:
+        result = import_discussions(
+            doc_store=svc,
+            repos=payload.repos,
+            limit=payload.limit,
+        )
+    except Exception as exc:
+        logger.exception("GitHub discussions import failed")
+        return ImportResponse(status="error", result={"ok": False, "error": str(exc)})
     return ImportResponse(status="completed", result=result)
 
 

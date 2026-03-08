@@ -36,11 +36,18 @@ def start_semantic_scholar_import(
     payload: SemanticScholarImportRequest,
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> ImportResponse:
-    result = import_semantic_scholar(
-        doc_store=svc,
-        query=payload.query,
-        api_key=payload.api_key,
-        limit=payload.limit,
-        year=payload.year,
-    )
+    try:
+        result = import_semantic_scholar(
+            doc_store=svc,
+            query=payload.query,
+            api_key=payload.api_key,
+            limit=payload.limit,
+            year=payload.year,
+        )
+    except Exception as exc:
+        logger.exception("Semantic Scholar import failed")
+        return ImportResponse(
+            status="error",
+            result={"ok": False, "error": str(exc)},
+        )
     return ImportResponse(status="completed", result=result)

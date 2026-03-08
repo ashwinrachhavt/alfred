@@ -34,13 +34,20 @@ def start_import(
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> ImportResponse:
     """Import highlights and books from Readwise."""
-    result = import_readwise(
-        doc_store=svc,
-        token=payload.token,
-        since=payload.since,
-        limit=payload.limit,
-        category=payload.category,
-    )
+    try:
+        result = import_readwise(
+            doc_store=svc,
+            token=payload.token,
+            since=payload.since,
+            limit=payload.limit,
+            category=payload.category,
+        )
+    except Exception as exc:
+        logger.exception("Readwise import failed")
+        return ImportResponse(
+            status="error",
+            result={"ok": False, "error": str(exc)},
+        )
     return ImportResponse(status="completed", result=result)
 
 

@@ -84,10 +84,17 @@ def start_linear_import(
     payload: LinearImportRequest,
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> LinearImportResponse:
-    result = import_linear(
-        doc_store=svc,
-        token=payload.token,
-        limit=payload.limit,
-        since=payload.since,
-    )
+    try:
+        result = import_linear(
+            doc_store=svc,
+            token=payload.token,
+            limit=payload.limit,
+            since=payload.since,
+        )
+    except Exception as exc:
+        logger.exception("Linear import failed")
+        return LinearImportResponse(
+            status="error",
+            result={"ok": False, "error": str(exc)},
+        )
     return LinearImportResponse(status="completed", result=result)

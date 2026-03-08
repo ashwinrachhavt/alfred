@@ -33,7 +33,7 @@ def google_tasks_status() -> dict[str, Any]:
         getattr(settings, "google_client_id", None)
         and getattr(settings, "google_client_secret", None)
     )
-    tasks_scope_present = "tasks" in getattr(settings, "google_scopes", "")
+    tasks_scope_present = any("tasks" in s for s in getattr(settings, "google_scopes", []))
     return {
         "configured": google_oauth_configured and tasks_scope_present,
         "google_oauth_configured": google_oauth_configured,
@@ -46,11 +46,18 @@ def start_google_tasks_import(
     payload: GoogleTasksImportRequest,
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> ImportResponse:
-    result = import_google_tasks(
-        doc_store=svc,
-        user_id=payload.user_id,
-        namespace=payload.namespace,
-        include_completed=payload.include_completed,
-        limit=payload.limit,
-    )
+    try:
+        result = import_google_tasks(
+            doc_store=svc,
+            user_id=payload.user_id,
+            namespace=payload.namespace,
+            include_completed=payload.include_completed,
+            limit=payload.limit,
+        )
+    except Exception as exc:
+        logger.exception("Google Tasks import failed")
+        return ImportResponse(
+            status="error",
+            result={"ok": False, "error": str(exc)},
+        )
     return ImportResponse(status="completed", result=result)

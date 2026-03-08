@@ -114,14 +114,18 @@ def import_readmes(
             res = doc_store.ingest_document_store_only(ingest)
             doc_id = str(res["id"])
             if res.get("duplicate"):
-                updated += 1
-                doc_store.update_document_text(
-                    doc_id,
-                    title=f"{slug} — README",
-                    cleaned_text=readme,
-                    raw_markdown=readme,
-                    metadata_update={"source": "github", "github": repo_meta},
-                )
+                try:
+                    doc_store.update_document_text(
+                        doc_id,
+                        title=f"{slug} — README",
+                        cleaned_text=readme,
+                        raw_markdown=readme,
+                        metadata_update={"source": "github", "github": repo_meta},
+                    )
+                    updated += 1
+                except Exception:
+                    logger.debug("Skipping update for duplicate %s", doc_id)
+                    skipped += 1
             else:
                 created += 1
 
@@ -197,14 +201,18 @@ def import_issues(
                 res = doc_store.ingest_document_store_only(ingest)
                 doc_id = str(res["id"])
                 if res.get("duplicate"):
-                    updated += 1
-                    doc_store.update_document_text(
-                        doc_id,
-                        title=f"{slug}#{number}: {issue.get('title', 'Untitled')}",
-                        cleaned_text=markdown,
-                        raw_markdown=markdown,
-                        metadata_update={"source": "github", "github_issue": issue_meta},
-                    )
+                    try:
+                        doc_store.update_document_text(
+                            doc_id,
+                            title=f"{slug}#{number}: {issue.get('title', 'Untitled')}",
+                            cleaned_text=markdown,
+                            raw_markdown=markdown,
+                            metadata_update={"source": "github", "github_issue": issue_meta},
+                        )
+                        updated += 1
+                    except Exception:
+                        logger.debug("Skipping update for duplicate %s", doc_id)
+                        skipped += 1
                 else:
                     created += 1
 
@@ -361,14 +369,18 @@ def import_starred(
             res = doc_store.ingest_document_store_only(ingest)
             doc_id = str(res["id"])
             if res.get("duplicate"):
-                updated += 1
-                doc_store.update_document_text(
-                    doc_id,
-                    title=f"{slug} — Starred README",
-                    cleaned_text=readme,
-                    raw_markdown=readme,
-                    metadata_update={"source": "github", "github_starred": repo_meta},
-                )
+                try:
+                    doc_store.update_document_text(
+                        doc_id,
+                        title=f"{slug} — Starred README",
+                        cleaned_text=readme,
+                        raw_markdown=readme,
+                        metadata_update={"source": "github", "github_starred": repo_meta},
+                    )
+                    updated += 1
+                except Exception:
+                    logger.debug("Skipping update for duplicate %s", doc_id)
+                    skipped += 1
             else:
                 created += 1
 
@@ -444,14 +456,18 @@ def import_gists(
             res = doc_store.ingest_document_store_only(ingest)
             doc_id = str(res["id"])
             if res.get("duplicate"):
-                updated += 1
-                doc_store.update_document_text(
-                    doc_id,
-                    title=f"Gist: {description}",
-                    cleaned_text=markdown,
-                    raw_markdown=markdown,
-                    metadata_update={"source": "github", "github_gist": gist_meta},
-                )
+                try:
+                    doc_store.update_document_text(
+                        doc_id,
+                        title=f"Gist: {description}",
+                        cleaned_text=markdown,
+                        raw_markdown=markdown,
+                        metadata_update={"source": "github", "github_gist": gist_meta},
+                    )
+                    updated += 1
+                except Exception:
+                    logger.debug("Skipping update for duplicate %s", doc_id)
+                    skipped += 1
             else:
                 created += 1
 
@@ -534,14 +550,18 @@ def import_discussions(
                 res = doc_store.ingest_document_store_only(ingest)
                 doc_id = str(res["id"])
                 if res.get("duplicate"):
-                    updated += 1
-                    doc_store.update_document_text(
-                        doc_id,
-                        title=f"{slug} Discussion #{number}: {discussion.get('title', 'Untitled')}",
-                        cleaned_text=markdown,
-                        raw_markdown=markdown,
-                        metadata_update={"source": "github", "github_discussion": disc_meta},
-                    )
+                    try:
+                        doc_store.update_document_text(
+                            doc_id,
+                            title=f"{slug} Discussion #{number}: {discussion.get('title', 'Untitled')}",
+                            cleaned_text=markdown,
+                            raw_markdown=markdown,
+                            metadata_update={"source": "github", "github_discussion": disc_meta},
+                        )
+                        updated += 1
+                    except Exception:
+                        logger.debug("Skipping update for duplicate %s", doc_id)
+                        skipped += 1
                 else:
                     created += 1
 

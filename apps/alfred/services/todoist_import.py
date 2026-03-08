@@ -166,14 +166,18 @@ def import_todoist(
             doc_id = str(res["id"])
 
             if res.get("duplicate"):
-                updated += 1
-                doc_store.update_document_text(
-                    doc_id,
-                    title=name,
-                    cleaned_text=cleaned_text,
-                    raw_markdown=markdown,
-                    metadata_update={"source": "todoist", "todoist": todoist_meta},
-                )
+                try:
+                    doc_store.update_document_text(
+                        doc_id,
+                        title=name,
+                        cleaned_text=cleaned_text,
+                        raw_markdown=markdown,
+                        metadata_update={"source": "todoist", "todoist": todoist_meta},
+                    )
+                    updated += 1
+                except Exception:
+                    logger.debug("Skipping update for duplicate %s", doc_id)
+                    skipped += 1
             else:
                 created += 1
 

@@ -40,12 +40,19 @@ def start_pocket_import(
     payload: PocketImportRequest,
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> ImportResponse:
-    result = import_pocket(
-        doc_store=svc,
-        consumer_key=payload.consumer_key,
-        access_token=payload.access_token,
-        limit=payload.limit,
-        since=payload.since,
-        tag=payload.tag,
-    )
+    try:
+        result = import_pocket(
+            doc_store=svc,
+            consumer_key=payload.consumer_key,
+            access_token=payload.access_token,
+            limit=payload.limit,
+            since=payload.since,
+            tag=payload.tag,
+        )
+    except Exception as exc:
+        logger.exception("Pocket import failed")
+        return ImportResponse(
+            status="error",
+            result={"ok": False, "error": str(exc)},
+        )
     return ImportResponse(status="completed", result=result)

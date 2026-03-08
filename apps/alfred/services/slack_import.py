@@ -137,14 +137,18 @@ def import_slack_channels(
             res = doc_store.ingest_document_store_only(ingest)
             doc_id = str(res["id"])
             if res.get("duplicate"):
-                updated += 1
-                doc_store.update_document_text(
-                    doc_id,
-                    title=title,
-                    cleaned_text=markdown,
-                    raw_markdown=markdown,
-                    metadata_update=meta,
-                )
+                try:
+                    doc_store.update_document_text(
+                        doc_id,
+                        title=title,
+                        cleaned_text=markdown,
+                        raw_markdown=markdown,
+                        metadata_update=meta,
+                    )
+                    updated += 1
+                except Exception:
+                    logger.debug("Skipping update for duplicate %s", doc_id)
+                    skipped += 1
             else:
                 created += 1
 
@@ -246,14 +250,18 @@ def import_slack_bookmarks(
                 res = doc_store.ingest_document_store_only(ingest)
                 doc_id = str(res["id"])
                 if res.get("duplicate"):
-                    updated += 1
-                    doc_store.update_document_text(
-                        doc_id,
-                        title=bm_title,
-                        cleaned_text=markdown,
-                        raw_markdown=markdown,
-                        metadata_update=meta,
-                    )
+                    try:
+                        doc_store.update_document_text(
+                            doc_id,
+                            title=bm_title,
+                            cleaned_text=markdown,
+                            raw_markdown=markdown,
+                            metadata_update=meta,
+                        )
+                        updated += 1
+                    except Exception:
+                        logger.debug("Skipping update for duplicate %s", doc_id)
+                        skipped += 1
                 else:
                     created += 1
 

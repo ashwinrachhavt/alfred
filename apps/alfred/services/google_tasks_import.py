@@ -214,14 +214,18 @@ class GoogleTasksImporter:
                 doc_id = str(res["id"])
 
                 if res.get("duplicate"):
-                    updated += 1
-                    doc_store.update_document_text(
-                        doc_id,
-                        title=title,
-                        cleaned_text=cleaned_text,
-                        raw_markdown=markdown,
-                        metadata_update={"source": "google_tasks", "google_tasks": gtasks_meta},
-                    )
+                    try:
+                        doc_store.update_document_text(
+                            doc_id,
+                            title=title,
+                            cleaned_text=cleaned_text,
+                            raw_markdown=markdown,
+                            metadata_update={"source": "google_tasks", "google_tasks": gtasks_meta},
+                        )
+                        updated += 1
+                    except Exception:
+                        logger.debug("Skipping update for duplicate %s", doc_id)
+                        skipped += 1
                 else:
                     created += 1
 

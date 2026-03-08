@@ -35,9 +35,16 @@ def start_hypothesis_import(
     payload: HypothesisImportRequest,
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> ImportResponse:
-    result = import_hypothesis(
-        doc_store=svc,
-        token=payload.token,
-        limit=payload.limit,
-    )
+    try:
+        result = import_hypothesis(
+            doc_store=svc,
+            token=payload.token,
+            limit=payload.limit,
+        )
+    except Exception as exc:
+        logger.exception("Hypothesis import failed")
+        return ImportResponse(
+            status="error",
+            result={"ok": False, "error": str(exc)},
+        )
     return ImportResponse(status="completed", result=result)

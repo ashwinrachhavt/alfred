@@ -37,11 +37,18 @@ def start_todoist_import(
     payload: TodoistImportRequest,
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> ImportResponse:
-    result = import_todoist(
-        doc_store=svc,
-        token=payload.token,
-        project_id=payload.project_id,
-        include_completed=payload.include_completed,
-        limit=payload.limit,
-    )
+    try:
+        result = import_todoist(
+            doc_store=svc,
+            token=payload.token,
+            project_id=payload.project_id,
+            include_completed=payload.include_completed,
+            limit=payload.limit,
+        )
+    except Exception as exc:
+        logger.exception("Todoist import failed")
+        return ImportResponse(
+            status="error",
+            result={"ok": False, "error": str(exc)},
+        )
     return ImportResponse(status="completed", result=result)

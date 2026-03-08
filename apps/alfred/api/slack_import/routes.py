@@ -34,13 +34,20 @@ def start_import(
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> ImportResponse:
     """Import messages from Slack channels."""
-    result = import_slack(
-        doc_store=svc,
-        token=payload.token,
-        channel_ids=payload.channel_ids,
-        limit=payload.limit,
-        since=payload.since,
-    )
+    try:
+        result = import_slack(
+            doc_store=svc,
+            token=payload.token,
+            channel_ids=payload.channel_ids,
+            limit=payload.limit,
+            since=payload.since,
+        )
+    except Exception as exc:
+        logger.exception("Slack import failed")
+        return ImportResponse(
+            status="error",
+            result={"ok": False, "error": str(exc)},
+        )
     return ImportResponse(status="completed", result=result)
 
 
