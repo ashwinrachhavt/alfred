@@ -42,7 +42,7 @@ export function DocumentReaderClient({ docId }: { docId: string }) {
       <header className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Button asChild variant="ghost">
-            <Link href="/documents">
+            <Link href="/library">
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
               Back to library
             </Link>

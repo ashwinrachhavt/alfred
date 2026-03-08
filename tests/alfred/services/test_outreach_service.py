@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import uuid
 
+from sqlmodel import Session, SQLModel, create_engine
+
 from alfred.schemas.outreach import OutreachContact, OutreachMessage
 from alfred.services.company_outreach_service import ContactProvider, OutreachService
-from sqlmodel import Session, SQLModel, create_engine
 
 
 def _session() -> Session:

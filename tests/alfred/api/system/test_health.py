@@ -1,6 +1,7 @@
-from alfred.api.system import router as system_router
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from alfred.api.system import router as system_router
 
 
 def create_app() -> FastAPI:

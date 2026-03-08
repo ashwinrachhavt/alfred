@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from alfred.models.doc_storage import DocumentRow
-from alfred.services.doc_storage_pg import DocStorageService
 from sqlalchemy import create_engine
 from sqlmodel import Session, SQLModel
+
+from alfred.models.doc_storage import DocumentRow
+from alfred.services.doc_storage_pg import DocStorageService
 
 
 @pytest.fixture()
@@ -29,7 +30,7 @@ class _StubExtractor:
 
 
 def _make_doc(*, created_at: datetime, extracted: bool) -> DocumentRow:
-    now = datetime.utcnow().replace(tzinfo=timezone.utc)
+    now = datetime.utcnow().replace(tzinfo=UTC)
     return DocumentRow(
         id=uuid.uuid4(),
         source_url="https://example.com",
@@ -42,7 +43,7 @@ def _make_doc(*, created_at: datetime, extracted: bool) -> DocumentRow:
         hash=str(uuid.uuid4()),
         day_bucket=created_at.date(),
         captured_at=created_at,
-        captured_hour=created_at.astimezone(timezone.utc).hour,
+        captured_hour=created_at.astimezone(UTC).hour,
         processed_at=now,
         created_at=created_at,
         updated_at=now,
@@ -53,7 +54,7 @@ def _make_doc(*, created_at: datetime, extracted: bool) -> DocumentRow:
 
 
 def test_list_documents_needing_concepts_extraction_filters_extracted(db_session: Session) -> None:
-    older = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(hours=10)
+    older = datetime.utcnow().replace(tzinfo=UTC) - timedelta(hours=10)
     doc_pending = _make_doc(created_at=older, extracted=False)
     doc_done = _make_doc(created_at=older, extracted=True)
     db_session.add(doc_pending)
@@ -68,7 +69,7 @@ def test_list_documents_needing_concepts_extraction_filters_extracted(db_session
 
 
 def test_extract_document_concepts_persists_payload(db_session: Session) -> None:
-    older = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(hours=1)
+    older = datetime.utcnow().replace(tzinfo=UTC) - timedelta(hours=1)
     doc = _make_doc(created_at=older, extracted=False)
     db_session.add(doc)
     db_session.commit()

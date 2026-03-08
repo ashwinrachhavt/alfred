@@ -21,6 +21,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, LayoutDashboard, Plus, RotateCcw } from "lucide-react";
 
+import { useAssistant } from "@/components/assistant-sheet";
 import { useRecentCompanyResearchReports } from "@/features/company/queries";
 import { useRecentDocuments } from "@/features/documents/queries";
 import { useFollowUps } from "@/features/follow-ups/follow-up-provider";
@@ -143,6 +144,7 @@ function SortableWidget({
 export function DashboardClient() {
   const recentDocuments = useRecentDocuments(6);
   const recentReports = useRecentCompanyResearchReports(6);
+  const { setAssistantOpen } = useAssistant();
 
   const {
     items: followUpItems,
@@ -280,7 +282,7 @@ export function DashboardClient() {
 
           <div>
             <Button asChild size="sm" variant="ghost">
-              <Link href="/documents">Browse documents</Link>
+              <Link href="/library">Browse documents</Link>
             </Button>
           </div>
         </DashboardWidgetFrame>
@@ -458,14 +460,16 @@ export function DashboardClient() {
           <Button asChild size="sm">
             <Link href="/company">Research a company</Link>
           </Button>
-          <Button asChild size="sm" variant="outline">
-            <Link href="/rag">Ask Alfred</Link>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setAssistantOpen(true)}
+          >
+            Ask Alfred
           </Button>
           <Button asChild size="sm" variant="outline">
-            <Link href="/documents">Documents</Link>
-          </Button>
-          <Button asChild size="sm" variant="outline">
-            <Link href="/tasks">Tasks</Link>
+            <Link href="/library">Library</Link>
           </Button>
           <Button
             type="button"

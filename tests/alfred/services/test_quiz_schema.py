@@ -1,4 +1,5 @@
 import pytest
+
 from alfred.services.agents.quiz import Quiz, validate_quiz
 
 
@@ -12,5 +13,5 @@ def test_quiz_schema_valid():
 
 def test_quiz_schema_invalid_raises():
     bad = {"topic": "", "questions": []}
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         validate_quiz(bad)

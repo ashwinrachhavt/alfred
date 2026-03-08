@@ -1,8 +1,9 @@
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from alfred.api.linear import router as linear_router
 from alfred.api.linear import routes as linear_routes
 from alfred.services.linear import get_linear_service
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 
 class _FakeLinearService:

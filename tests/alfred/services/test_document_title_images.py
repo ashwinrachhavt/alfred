@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from alfred.models.doc_storage import DocumentRow
-from alfred.services.doc_storage_pg import DocStorageService
 from sqlalchemy import create_engine
 from sqlmodel import Session, SQLModel
 
+from alfred.models.doc_storage import DocumentRow
+from alfred.services.doc_storage_pg import DocStorageService
+
 
 def _make_doc(*, has_image: bool) -> DocumentRow:
-    now = datetime.utcnow().replace(tzinfo=timezone.utc)
+    now = datetime.utcnow().replace(tzinfo=UTC)
     return DocumentRow(
         id=uuid.uuid4(),
         source_url="https://example.com",
@@ -23,7 +24,7 @@ def _make_doc(*, has_image: bool) -> DocumentRow:
         hash=str(uuid.uuid4()),
         day_bucket=now.date(),
         captured_at=now,
-        captured_hour=now.astimezone(timezone.utc).hour,
+        captured_hour=now.astimezone(UTC).hour,
         processed_at=now,
         created_at=now,
         updated_at=now,

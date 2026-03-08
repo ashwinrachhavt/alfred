@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from alfred.connectors.glassdoor_connector import GlassdoorResponse
@@ -166,7 +166,7 @@ def test_company_insights_caches_by_ttl_and_generates_without_network():
     )
 
     # Seed cache
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cached_doc = {
         "company": "ExampleCo",
         "generated_at_dt": now,

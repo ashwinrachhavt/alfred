@@ -1,5 +1,6 @@
 line-length = 100
 target-version = "py311"
+src = ["apps", "tests"]
 exclude = [
   "notebooks/",
 ]
@@ -30,6 +31,9 @@ ignore = [
 [lint.per-file-ignores]
 "tests/**" = ["PLR2004"]
 "scripts/**" = ["T20"]  # allow print() in CLI scripts
+
+[lint.isort]
+known-first-party = ["alfred"]
 
 [format]
 quote-style = "double"

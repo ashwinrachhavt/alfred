@@ -36,7 +36,7 @@ export default function HeroSection() {
               <Link href="/company">Research a company</Link>
             </Button>
             <Button asChild size="lg" variant="outline" className="rounded-full">
-              <Link href="/rag">Ask Alfred</Link>
+              <Link href="/dashboard">Get started</Link>
             </Button>
           </div>
         </div>
@@ -98,7 +98,7 @@ export default function HeroSection() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="secondary">Company</Badge>
-                  <Badge variant="secondary">Documents</Badge>
+                  <Badge variant="secondary">Library</Badge>
                   <Badge variant="secondary">Assistant</Badge>
                   <Badge variant="secondary">System Design</Badge>
                   <Badge variant="secondary">Interview Prep</Badge>

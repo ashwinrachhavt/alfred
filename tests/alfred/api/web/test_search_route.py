@@ -1,6 +1,7 @@
-from alfred.api.web import routes as web_routes
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from alfred.api.web import routes as web_routes
 
 
 def create_app() -> FastAPI:

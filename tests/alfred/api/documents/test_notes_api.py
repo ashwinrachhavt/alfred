@@ -1,24 +1,25 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from alfred.api.documents import routes as doc_routes
 from alfred.core.exceptions import register_exception_handlers
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 
 class _FakeDocStorage:
     def __init__(self) -> None:
-        self._notes: Dict[str, Dict[str, Any]] = {}
+        self._notes: dict[str, dict[str, Any]] = {}
         self._next_id = 1
 
     # API used by routes
-    def create_note(self, note) -> str:  # noqa: ANN001 - schema type comes from app
+    def create_note(self, note) -> str:
         note_id = str(self._next_id)
         self._next_id += 1
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         self._notes[note_id] = {
             "id": note_id,
             "text": note.text,
@@ -28,11 +29,11 @@ class _FakeDocStorage:
         }
         return note_id
 
-    def get_note(self, note_id: str) -> Optional[Dict[str, Any]]:
+    def get_note(self, note_id: str) -> dict[str, Any] | None:
         return self._notes.get(note_id)
 
-    def list_notes(self, *, q: Optional[str], skip: int, limit: int) -> Dict[str, Any]:
-        items: List[Dict[str, Any]] = list(self._notes.values())
+    def list_notes(self, *, q: str | None, skip: int, limit: int) -> dict[str, Any]:
+        items: list[dict[str, Any]] = list(self._notes.values())
         if q:
             q_lower = q.lower()
             items = [i for i in items if q_lower in (i.get("text") or "").lower()]

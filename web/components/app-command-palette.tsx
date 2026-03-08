@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { Bell, ListChecks, Moon, Search, Sparkles, Sun } from "lucide-react";
 
-import { appNavItems, navGroupLabels, navGroupOrder, type NavGroup } from "@/lib/navigation";
+import { appNavItems, navGroupLabels, navGroupOrder } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { useAssistant } from "@/components/assistant-sheet";
 import { useFollowUps } from "@/features/follow-ups/follow-up-provider";

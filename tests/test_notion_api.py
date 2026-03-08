@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from alfred.api.notion import router as notion_router
-from alfred.core.exceptions import register_exception_handlers
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from alfred.api.notion import router as notion_router
+from alfred.core.exceptions import register_exception_handlers
 
 
 def make_client() -> TestClient:

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from alfred.api import register_routes
 from alfred.core.dependencies import get_system_design_service
 from alfred.schemas.system_design import SystemDesignSessionSummary
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 
 class DummySystemDesignService:
@@ -19,8 +20,8 @@ class DummySystemDesignService:
                 problem_statement="Design X",
                 template_id=None,
                 version=3,
-                created_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
-                updated_at=datetime(2025, 1, 2, tzinfo=timezone.utc),
+                created_at=datetime(2025, 1, 1, tzinfo=UTC),
+                updated_at=datetime(2025, 1, 2, tzinfo=UTC),
             )
         ]
         return sessions[:limit]

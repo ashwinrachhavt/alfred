@@ -11,11 +11,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { isClerkEnabled } from "@/lib/auth";
 
 export default async function Home() {
+  let isAuthenticated = false;
+
   if (isClerkEnabled()) {
-    const { userId } = await auth();
-    if (userId) {
-      redirect("/dashboard");
+    try {
+      const { userId } = await auth();
+      isAuthenticated = Boolean(userId);
+    } catch {
+      // Clerk middleware may not have run for this route — fall through to marketing page.
     }
+  }
+
+  if (isAuthenticated) {
+    redirect("/dashboard");
   }
 
   return (

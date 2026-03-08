@@ -5,8 +5,9 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from alfred.core.semantic_cache import RedisSemanticCache, SemanticCacheConfig
 from cachetools import TTLCache
+
+from alfred.core.semantic_cache import RedisSemanticCache, SemanticCacheConfig
 
 
 @dataclass

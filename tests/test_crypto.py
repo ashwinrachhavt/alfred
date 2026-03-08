@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import cryptography.exceptions
 import pytest
 from pydantic import SecretStr
 
@@ -26,5 +27,5 @@ def test_decrypt_rejects_wrong_aad() -> None:
     from alfred.core.crypto import decrypt_json, encrypt_json
 
     encrypted = encrypt_json({"k": "v"}, aad=b"aad-1")
-    with pytest.raises(Exception):
+    with pytest.raises(cryptography.exceptions.InvalidTag):
         decrypt_json(encrypted, aad=b"aad-2")

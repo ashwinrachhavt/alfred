@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from alfred.models.datastore import DataStoreRow
-from alfred.services.datastore import DataStoreService
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session
+
+from alfred.models.datastore import DataStoreRow
+from alfred.services.datastore import DataStoreService
 
 
 def test_datastore_serializes_datetime_values(monkeypatch) -> None:
