@@ -124,6 +124,34 @@
   }
 }
 
+/* Arcane landing animations */
+
+@keyframes arcane-float {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 0.4; }
+  50% { transform: translateY(-18px) scale(1.2); opacity: 0.7; }
+}
+
+@keyframes arcane-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.arcane-float {
+  animation: arcane-float 6s ease-in-out infinite;
+}
+
+.arcane-float-delayed {
+  animation: arcane-float 8s ease-in-out 2s infinite;
+}
+
+.arcane-float-slow {
+  animation: arcane-float 10s ease-in-out 1s infinite;
+}
+
+.arcane-spin {
+  animation: arcane-spin 60s linear infinite;
+}
+
 @keyframes atheneum-warp {
   from {
     transform: translate3d(0, 0, 0);
