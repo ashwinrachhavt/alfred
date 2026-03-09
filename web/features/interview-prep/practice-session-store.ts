@@ -1,3 +1,5 @@
+import { safeGetItem, safeSetJSON } from "@/lib/storage";
+
 export type PracticeMessageRole = "candidate" | "interviewer" | "system";
 
 export type PracticeMessage = {
@@ -88,7 +90,7 @@ function normalizeTranscript(value: PracticeSessionTranscript): PracticeSessionT
 
 export function loadPracticeSessionIndex(): PracticeSessionSummary[] {
   if (typeof window === "undefined") return [];
-  const raw = window.localStorage.getItem(PRACTICE_SESSION_INDEX_KEY);
+  const raw = safeGetItem(PRACTICE_SESSION_INDEX_KEY);
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -111,7 +113,7 @@ export function savePracticeSessionIndex(sessions: PracticeSessionSummary[]): vo
     version: 1,
     sessions,
   };
-  window.localStorage.setItem(PRACTICE_SESSION_INDEX_KEY, JSON.stringify(payload));
+  safeSetJSON(PRACTICE_SESSION_INDEX_KEY, payload);
 }
 
 export function upsertPracticeSessionSummary(summary: PracticeSessionSummary): void {
@@ -126,7 +128,7 @@ export function loadPracticeSessionTranscript(sessionId: string): PracticeSessio
   if (typeof window === "undefined") return null;
   const normalizedId = sessionId.trim();
   if (!normalizedId) return null;
-  const raw = window.localStorage.getItem(transcriptStorageKey(normalizedId));
+  const raw = safeGetItem(transcriptStorageKey(normalizedId));
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as PracticeSessionTranscript;
@@ -140,8 +142,5 @@ export function savePracticeSessionTranscript(transcript: PracticeSessionTranscr
   if (typeof window === "undefined") return;
   const normalized = normalizeTranscript(transcript);
   if (!normalized) return;
-  window.localStorage.setItem(
-    transcriptStorageKey(normalized.sessionId),
-    JSON.stringify(normalized),
-  );
+  safeSetJSON(transcriptStorageKey(normalized.sessionId), normalized);
 }

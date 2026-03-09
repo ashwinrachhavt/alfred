@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
+import { safeGetItem } from "@/lib/storage";
 import type { Workspace } from "@/lib/api/types/notes";
 
 import { ResizableColumns } from "@/components/ui/resizable-columns";
@@ -16,7 +17,7 @@ import { NotesSidebar } from "./notes-sidebar";
 function readStoredNumber(key: string, fallback: number): number {
   if (typeof window === "undefined") return fallback;
   try {
-    const raw = window.localStorage.getItem(key);
+    const raw = safeGetItem(key);
     const parsed = raw ? Number(raw) : Number.NaN;
     return Number.isFinite(parsed) ? parsed : fallback;
   } catch {

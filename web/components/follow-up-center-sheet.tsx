@@ -5,6 +5,12 @@ import * as React from "react";
 import { Bell, CheckCircle2, Clock, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import {
+  formatDue,
+  formatSnoozeUntil,
+  isSnoozedUntilFuture,
+  dueBadgeVariant,
+} from "@/lib/utils/date-format";
 import { useFollowUps } from "@/features/follow-ups/follow-up-provider";
 import { useNowMs } from "@/hooks/use-now";
 
@@ -14,43 +20,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-
-function formatDue(value: string): string | null {
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return null;
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function formatSnoozeUntil(value: string): string | null {
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return null;
-  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
-}
-
-function isSnoozedUntilFuture(value: string | undefined, nowMs: number): boolean {
-  if (!value) return false;
-  const until = Date.parse(value);
-  if (Number.isNaN(until)) return false;
-  return until > nowMs;
-}
-
-function dueBadgeVariant(
-  dueAt: string | undefined,
-  nowMs: number,
-): "default" | "secondary" | "destructive" {
-  if (!dueAt) return "secondary";
-  const dueMs = Date.parse(dueAt);
-  if (Number.isNaN(dueMs)) return "secondary";
-  const delta = dueMs - nowMs;
-  if (delta <= 0) return "destructive";
-  if (delta <= 2 * 60 * 60 * 1000) return "default";
-  return "secondary";
-}
 
 function buildDueAtFromOffset(minutes: number): string {
   const mins = Math.max(5, Math.min(14 * 24 * 60, minutes));

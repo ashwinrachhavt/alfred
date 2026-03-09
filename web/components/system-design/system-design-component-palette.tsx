@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { GripVertical, Search, Star } from "lucide-react";
 
+import { safeGetJSON, safeSetJSON } from "@/lib/storage";
 import type { ComponentDefinition } from "@/lib/api/types/system-design";
 import { useSystemDesignComponents } from "@/features/system-design/queries";
 import { cn } from "@/lib/utils";
@@ -24,23 +25,13 @@ const RECENTS_LIMIT = 12;
 
 function readStoredIds(key: string): StoredIds {
   if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as string[]) : [];
-  } catch {
-    return [];
-  }
+  const parsed = safeGetJSON<unknown>(key);
+  return Array.isArray(parsed) ? (parsed as string[]) : [];
 }
 
 function writeStoredIds(key: string, value: StoredIds): void {
   if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Ignore storage failures (private mode, quota, etc.)
-  }
+  safeSetJSON(key, value);
 }
 
 function formatCategory(category: string): string {

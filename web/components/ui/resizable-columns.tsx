@@ -3,6 +3,8 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef } from "react";
 
+import { safeSetItem } from "@/lib/storage";
+
 export type ResizableColumnsProps = {
   left: ReactNode;
   right: ReactNode;
@@ -33,7 +35,7 @@ export function ResizableColumns({
   useEffect(() => {
     if (!storageKey) return;
     try {
-      window.localStorage.setItem(storageKey, String(clampedLeftWidthPx));
+      safeSetItem(storageKey, String(clampedLeftWidthPx));
     } catch {
       // ignore; persistence is optional
     }

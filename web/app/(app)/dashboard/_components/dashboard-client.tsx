@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { formatDueTimestamp } from "@/lib/utils/date-format";
 import {
   defaultDashboardLayout,
   loadDashboardLayout,
@@ -46,25 +47,9 @@ import {
   type DashboardWidgetKey,
 } from "@/features/dashboard/dashboard-layout";
 
-function formatTimestamp(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return null;
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-  }).format(date);
-}
-
-function formatDueTimestamp(value: string | undefined): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return null;
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-  }).format(date);
-}
+/** Local alias so existing call-sites that pass `string | null | undefined` keep working. */
+const formatTimestamp = (value: string | null | undefined): string | null =>
+  formatDueTimestamp(value ?? undefined);
 
 type DashboardWidgetFrameProps = {
   title: string;

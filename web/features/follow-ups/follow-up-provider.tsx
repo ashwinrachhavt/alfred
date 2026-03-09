@@ -12,6 +12,7 @@ import {
   type FollowUpItem,
   type FollowUpSource,
 } from "@/features/follow-ups/follow-up-store";
+import { formatDueLabel } from "@/lib/utils/date-format";
 
 type FollowUpCreateInput = {
   title: string;
@@ -103,22 +104,6 @@ function isDueNow(item: FollowUpItem, nowMs: number): boolean {
   const due = Date.parse(item.dueAt);
   if (Number.isNaN(due)) return false;
   return due <= nowMs;
-}
-
-function formatDueLabel(dueAt: string): string | null {
-  const due = new Date(dueAt);
-  if (Number.isNaN(due.valueOf())) return null;
-  const now = new Date();
-  const sameDay = due.toDateString() === now.toDateString();
-  if (sameDay) {
-    return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(due);
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(due);
 }
 
 export function FollowUpsProvider({ children }: { children: React.ReactNode }) {

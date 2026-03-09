@@ -1,4 +1,5 @@
 import { isRecord } from "@/lib/utils";
+import { safeGetItem, safeSetJSON } from "@/lib/storage";
 
 export type FollowUpSource = "manual" | "task" | "gmail" | "calendar";
 
@@ -84,7 +85,7 @@ function normalizeFollowUpItem(value: unknown): FollowUpItem | null {
 
 export function loadFollowUps(): FollowUpItem[] {
   if (typeof window === "undefined") return [];
-  const raw = window.localStorage.getItem(FOLLOW_UP_STORAGE_KEY);
+  const raw = safeGetItem(FOLLOW_UP_STORAGE_KEY);
   if (!raw) return [];
 
   try {
@@ -116,7 +117,7 @@ export function saveFollowUps(items: FollowUpItem[]): void {
     items,
   };
 
-  window.localStorage.setItem(FOLLOW_UP_STORAGE_KEY, JSON.stringify(payload));
+  safeSetJSON(FOLLOW_UP_STORAGE_KEY, payload);
 }
 
 export function followUpNotificationKey(item: FollowUpItem): string | null {
@@ -126,7 +127,7 @@ export function followUpNotificationKey(item: FollowUpItem): string | null {
 
 export function loadNotifiedFollowUpKeys(): Set<string> {
   if (typeof window === "undefined") return new Set();
-  const raw = window.localStorage.getItem(FOLLOW_UP_NOTIFIED_KEY);
+  const raw = safeGetItem(FOLLOW_UP_NOTIFIED_KEY);
   if (!raw) return new Set();
 
   try {
@@ -140,5 +141,5 @@ export function loadNotifiedFollowUpKeys(): Set<string> {
 
 export function saveNotifiedFollowUpKeys(keys: Set<string>): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(FOLLOW_UP_NOTIFIED_KEY, JSON.stringify(Array.from(keys)));
+  safeSetJSON(FOLLOW_UP_NOTIFIED_KEY, Array.from(keys));
 }

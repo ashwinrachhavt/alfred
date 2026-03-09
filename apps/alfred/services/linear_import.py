@@ -8,7 +8,7 @@ filtering and deduplication via stable hash ``linear:{identifier}``.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from alfred.connectors.linear_connector import LinearConnector
@@ -57,7 +57,7 @@ def import_linear(
 
     if since:
         start_date = since if isinstance(since, str) else since.strftime("%Y-%m-%d")
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+        end_date = datetime.now(UTC).strftime("%Y-%m-%d")
         issues, error = connector.get_issues_by_date_range(
             start_date=start_date,
             end_date=end_date,

@@ -6,6 +6,7 @@ import { ExternalLink, Loader2, RefreshCcw, Save } from "lucide-react";
 
 import type { NotionPageMarkdownResponse, NotionPageSearchResult } from "@/lib/api/types/notion";
 import { formatErrorMessage } from "@/lib/utils";
+import { formatIsoDate } from "@/lib/utils/date-format";
 import { useUpdateNotionPageMarkdown } from "@/features/notion/mutations";
 import { useNotionPageSearch } from "@/features/notion/queries";
 import { MarkdownNotesEditor } from "@/components/editor/markdown-notes-editor";
@@ -17,12 +18,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-
-function formatIsoDate(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const match = iso.match(/^(\d{4}-\d{2}-\d{2})/);
-  return match ? match[1] : null;
-}
 
 function PageRow({
   page,

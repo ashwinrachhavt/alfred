@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import type { NotionHistoryPage } from "@/lib/api/types/notion";
 import { formatErrorMessage } from "@/lib/utils";
+import { toDateInputValue } from "@/lib/utils/date-format";
 import { useNotionHistory } from "@/features/notion/queries";
 import { NotionNotetaker } from "@/app/(app)/notion/_components/notion-notetaker";
 import { NotionConnect } from "@/app/(app)/notion/_components/notion-connect";
@@ -16,12 +17,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-
-function toDateInputValue(iso: string): string {
-  // Accepts ISO strings like "2026-01-10T14:30:00Z" and returns "2026-01-10".
-  const match = iso.match(/^(\d{4}-\d{2}-\d{2})/);
-  return match ? match[1] : "";
-}
 
 function safeCopy(text: string): void {
   void navigator.clipboard

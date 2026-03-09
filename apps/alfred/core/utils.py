@@ -15,7 +15,7 @@ def utcnow_naive() -> datetime:
     Prefer `utcnow()` for new code.
     """
 
-    return datetime.utcnow()
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 STAGE_TO_DELTA: dict[int, timedelta] = {
