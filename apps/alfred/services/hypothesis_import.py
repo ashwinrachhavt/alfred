@@ -13,6 +13,7 @@ from typing import Any
 
 from alfred.connectors.hypothesis_connector import HypothesisClient
 from alfred.schemas.documents import DocumentIngest
+from alfred.schemas.imports import CONTENT_TYPE_HYPOTHESIS_ANNOTATION, ImportStats
 from alfred.services.doc_storage_pg import DocStorageService
 
 logger = logging.getLogger(__name__)
@@ -116,21 +117,17 @@ def import_hypothesis(
         uri = ann.get("uri", "unknown")
         by_uri[uri].append(ann)
 
-    created = 0
-    updated = 0
-    skipped = 0
-    errors: list[dict[str, str]] = []
-    documents: list[dict[str, str]] = []
+    stats = ImportStats()
 
     for annotation in annotations:
         annotation_id = annotation.get("id")
         if not annotation_id:
-            skipped += 1
+            stats.skipped += 1
             continue
 
         uri = annotation.get("uri")
         if not uri:
-            skipped += 1
+            stats.skipped += 1
             continue
 
         try:
@@ -139,14 +136,14 @@ def import_hypothesis(
 
             # Skip annotations with neither quote nor note
             if not quote and not note:
-                skipped += 1
+                stats.skipped += 1
                 continue
 
             markdown = _render_annotation_markdown(annotation, quote)
             cleaned_text = markdown.strip()
 
             if not cleaned_text:
-                skipped += 1
+                stats.skipped += 1
                 continue
 
             # Title from the annotated document
@@ -175,7 +172,7 @@ def import_hypothesis(
             ingest = DocumentIngest(
                 source_url=uri,
                 title=title,
-                content_type="hypothesis_annotation",
+                content_type=CONTENT_TYPE_HYPOTHESIS_ANNOTATION,
                 raw_markdown=markdown,
                 cleaned_text=cleaned_text,
                 hash=stable_hash,
@@ -195,27 +192,20 @@ def import_hypothesis(
                         raw_markdown=markdown,
                         metadata_update={"source": "hypothesis", "hypothesis": hypothesis_meta},
                     )
-                    updated += 1
+                    stats.updated += 1
                 except Exception:
                     logger.debug("Skipping update for duplicate %s", doc_id)
-                    skipped += 1
+                    stats.skipped += 1
             else:
-                created += 1
+                stats.created += 1
 
-            documents.append({"annotation_id": annotation_id, "document_id": doc_id})
+            stats.documents.append({"annotation_id": annotation_id, "document_id": doc_id})
 
         except Exception as exc:
             logger.exception("Hypothesis import failed for annotation %s", annotation_id)
-            errors.append({"annotation_id": str(annotation_id), "error": str(exc)})
+            stats.errors.append({"annotation_id": str(annotation_id), "error": str(exc)})
 
-    return {
-        "ok": True,
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "errors": errors,
-        "documents": documents,
-    }
+    return stats.to_dict()
 
 
 __all__ = ["import_hypothesis"]

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from alfred.core.dependencies import get_doc_storage_service
 from alfred.core.settings import settings
+from alfred.schemas.imports import ImportResponse
 from alfred.services.doc_storage_pg import DocStorageService
 from alfred.services.rss_import import import_rss
 
@@ -18,11 +19,6 @@ logger = logging.getLogger(__name__)
 class RssImportRequest(BaseModel):
     feed_urls: list[str] = Field(..., min_length=1)
     limit: int | None = Field(default=None, ge=1, le=5000)
-
-
-class ImportResponse(BaseModel):
-    status: str
-    result: dict[str, Any] | None = None
 
 
 @router.get("/status")

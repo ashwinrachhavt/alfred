@@ -12,6 +12,14 @@ from typing import Any
 from alfred.connectors.github_connector import GitHubClient
 from alfred.core.settings import settings
 from alfred.schemas.documents import DocumentIngest
+from alfred.schemas.imports import (
+    CONTENT_TYPE_GITHUB_DISCUSSION,
+    CONTENT_TYPE_GITHUB_GIST,
+    CONTENT_TYPE_GITHUB_ISSUE,
+    CONTENT_TYPE_GITHUB_README,
+    CONTENT_TYPE_GITHUB_STARRED,
+    ImportStats,
+)
 from alfred.services.doc_storage_pg import DocStorageService
 
 logger = logging.getLogger(__name__)
@@ -73,18 +81,14 @@ def import_readmes(
     repos_cfg = repos if repos is not None else settings.github_repos
     repo_pairs = _resolve_repos(client, repos_cfg or None)
 
-    created = 0
-    updated = 0
-    skipped = 0
-    errors: list[dict[str, str]] = []
-    documents: list[dict[str, str]] = []
+    stats = ImportStats()
 
     for owner, repo in repo_pairs:
         slug = f"{owner}/{repo}"
         try:
             readme = client.get_readme(owner, repo)
             if not readme:
-                skipped += 1
+                stats.skipped += 1
                 logger.debug("No README for %s", slug)
                 continue
 
@@ -104,7 +108,7 @@ def import_readmes(
             ingest = DocumentIngest(
                 source_url=html_url,
                 title=f"{slug} — README",
-                content_type="github_readme",
+                content_type=CONTENT_TYPE_GITHUB_README,
                 raw_markdown=readme,
                 cleaned_text=readme,
                 hash=stable_hash,
@@ -122,27 +126,21 @@ def import_readmes(
                         raw_markdown=readme,
                         metadata_update={"source": "github", "github": repo_meta},
                     )
-                    updated += 1
+                    stats.updated += 1
                 except Exception:
                     logger.debug("Skipping update for duplicate %s", doc_id)
-                    skipped += 1
+                    stats.skipped += 1
             else:
-                created += 1
+                stats.created += 1
 
-            documents.append({"repo": slug, "document_id": doc_id})
+            stats.documents.append({"repo": slug, "document_id": doc_id})
         except Exception as exc:
             logger.exception("GitHub README import failed for %s", slug)
-            errors.append({"repo": slug, "error": str(exc)})
+            stats.errors.append({"repo": slug, "error": str(exc)})
 
-    return {
-        "ok": True,
-        "type": "github_readme",
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "errors": errors,
-        "documents": documents,
-    }
+    result = stats.to_dict()
+    result["type"] = "github_readme"
+    return result
 
 
 def import_issues(
@@ -158,11 +156,7 @@ def import_issues(
     repos_cfg = repos if repos is not None else settings.github_repos
     repo_pairs = _resolve_repos(client, repos_cfg or None)
 
-    created = 0
-    updated = 0
-    skipped = 0
-    errors: list[dict[str, str]] = []
-    documents: list[dict[str, str]] = []
+    stats = ImportStats()
 
     for owner, repo in repo_pairs:
         slug = f"{owner}/{repo}"
@@ -171,7 +165,7 @@ def import_issues(
             for issue in issues:
                 number = issue.get("number")
                 if number is None:
-                    skipped += 1
+                    stats.skipped += 1
                     continue
 
                 issue_url = issue.get("html_url", f"https://github.com/{slug}/issues/{number}")
@@ -191,7 +185,7 @@ def import_issues(
                 ingest = DocumentIngest(
                     source_url=issue_url,
                     title=f"{slug}#{number}: {issue.get('title', 'Untitled')}",
-                    content_type="github_issue",
+                    content_type=CONTENT_TYPE_GITHUB_ISSUE,
                     raw_markdown=markdown,
                     cleaned_text=markdown,
                     hash=stable_hash,
@@ -209,27 +203,21 @@ def import_issues(
                             raw_markdown=markdown,
                             metadata_update={"source": "github", "github_issue": issue_meta},
                         )
-                        updated += 1
+                        stats.updated += 1
                     except Exception:
                         logger.debug("Skipping update for duplicate %s", doc_id)
-                        skipped += 1
+                        stats.skipped += 1
                 else:
-                    created += 1
+                    stats.created += 1
 
-                documents.append({"repo": slug, "issue": number, "document_id": doc_id})
+                stats.documents.append({"repo": slug, "issue": number, "document_id": doc_id})
         except Exception as exc:
             logger.exception("GitHub issue import failed for %s", slug)
-            errors.append({"repo": slug, "error": str(exc)})
+            stats.errors.append({"repo": slug, "error": str(exc)})
 
-    return {
-        "ok": True,
-        "type": "github_issue",
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "errors": errors,
-        "documents": documents,
-    }
+    result = stats.to_dict()
+    result["type"] = "github_issue"
+    return result
 
 
 def _render_discussion_markdown(discussion: dict[str, Any], slug: str) -> str:
@@ -319,11 +307,7 @@ def import_starred(
     """Import README files from starred repos into the document store."""
     client = client or GitHubClient()
 
-    created = 0
-    updated = 0
-    skipped = 0
-    errors: list[dict[str, str]] = []
-    documents: list[dict[str, str]] = []
+    stats = ImportStats()
 
     starred = client.list_starred()
     if limit:
@@ -334,13 +318,13 @@ def import_starred(
         repo = repo_data.get("name", "")
         slug = f"{owner}/{repo}"
         if not owner or not repo:
-            skipped += 1
+            stats.skipped += 1
             continue
 
         try:
             readme = client.get_readme(owner, repo)
             if not readme:
-                skipped += 1
+                stats.skipped += 1
                 logger.debug("No README for starred repo %s", slug)
                 continue
 
@@ -359,7 +343,7 @@ def import_starred(
             ingest = DocumentIngest(
                 source_url=html_url,
                 title=f"{slug} — Starred README",
-                content_type="github_starred",
+                content_type=CONTENT_TYPE_GITHUB_STARRED,
                 raw_markdown=readme,
                 cleaned_text=readme,
                 hash=stable_hash,
@@ -377,27 +361,21 @@ def import_starred(
                         raw_markdown=readme,
                         metadata_update={"source": "github", "github_starred": repo_meta},
                     )
-                    updated += 1
+                    stats.updated += 1
                 except Exception:
                     logger.debug("Skipping update for duplicate %s", doc_id)
-                    skipped += 1
+                    stats.skipped += 1
             else:
-                created += 1
+                stats.created += 1
 
-            documents.append({"repo": slug, "document_id": doc_id})
+            stats.documents.append({"repo": slug, "document_id": doc_id})
         except Exception as exc:
             logger.exception("GitHub starred import failed for %s", slug)
-            errors.append({"repo": slug, "error": str(exc)})
+            stats.errors.append({"repo": slug, "error": str(exc)})
 
-    return {
-        "ok": True,
-        "type": "github_starred",
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "errors": errors,
-        "documents": documents,
-    }
+    result = stats.to_dict()
+    result["type"] = "github_starred"
+    return result
 
 
 def import_gists(
@@ -410,11 +388,7 @@ def import_gists(
     """Import gists from GitHub into the document store."""
     client = client or GitHubClient()
 
-    created = 0
-    updated = 0
-    skipped = 0
-    errors: list[dict[str, str]] = []
-    documents: list[dict[str, str]] = []
+    stats = ImportStats()
 
     gists = client.list_gists(since=since)
     if limit:
@@ -423,7 +397,7 @@ def import_gists(
     for gist_summary in gists:
         gist_id = gist_summary.get("id", "")
         if not gist_id:
-            skipped += 1
+            stats.skipped += 1
             continue
 
         try:
@@ -446,7 +420,7 @@ def import_gists(
             ingest = DocumentIngest(
                 source_url=html_url,
                 title=f"Gist: {description}",
-                content_type="github_gist",
+                content_type=CONTENT_TYPE_GITHUB_GIST,
                 raw_markdown=markdown,
                 cleaned_text=markdown,
                 hash=stable_hash,
@@ -464,27 +438,21 @@ def import_gists(
                         raw_markdown=markdown,
                         metadata_update={"source": "github", "github_gist": gist_meta},
                     )
-                    updated += 1
+                    stats.updated += 1
                 except Exception:
                     logger.debug("Skipping update for duplicate %s", doc_id)
-                    skipped += 1
+                    stats.skipped += 1
             else:
-                created += 1
+                stats.created += 1
 
-            documents.append({"gist_id": gist_id, "document_id": doc_id})
+            stats.documents.append({"gist_id": gist_id, "document_id": doc_id})
         except Exception as exc:
             logger.exception("GitHub gist import failed for %s", gist_id)
-            errors.append({"gist_id": gist_id, "error": str(exc)})
+            stats.errors.append({"gist_id": gist_id, "error": str(exc)})
 
-    return {
-        "ok": True,
-        "type": "github_gist",
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "errors": errors,
-        "documents": documents,
-    }
+    result = stats.to_dict()
+    result["type"] = "github_gist"
+    return result
 
 
 def import_discussions(
@@ -499,11 +467,7 @@ def import_discussions(
     repos_cfg = repos if repos is not None else settings.github_repos
     repo_pairs = _resolve_repos(client, repos_cfg or None)
 
-    created = 0
-    updated = 0
-    skipped = 0
-    errors: list[dict[str, str]] = []
-    documents: list[dict[str, str]] = []
+    stats = ImportStats()
 
     for owner, repo in repo_pairs:
         slug = f"{owner}/{repo}"
@@ -515,7 +479,7 @@ def import_discussions(
             for discussion in discussions:
                 number = discussion.get("number")
                 if number is None:
-                    skipped += 1
+                    stats.skipped += 1
                     continue
 
                 discussion_url = f"https://github.com/{slug}/discussions/{number}"
@@ -540,7 +504,7 @@ def import_discussions(
                 ingest = DocumentIngest(
                     source_url=discussion_url,
                     title=f"{slug} Discussion #{number}: {discussion.get('title', 'Untitled')}",
-                    content_type="github_discussion",
+                    content_type=CONTENT_TYPE_GITHUB_DISCUSSION,
                     raw_markdown=markdown,
                     cleaned_text=markdown,
                     hash=stable_hash,
@@ -558,27 +522,21 @@ def import_discussions(
                             raw_markdown=markdown,
                             metadata_update={"source": "github", "github_discussion": disc_meta},
                         )
-                        updated += 1
+                        stats.updated += 1
                     except Exception:
                         logger.debug("Skipping update for duplicate %s", doc_id)
-                        skipped += 1
+                        stats.skipped += 1
                 else:
-                    created += 1
+                    stats.created += 1
 
-                documents.append({"repo": slug, "discussion": number, "document_id": doc_id})
+                stats.documents.append({"repo": slug, "discussion": number, "document_id": doc_id})
         except Exception as exc:
             logger.exception("GitHub discussion import failed for %s", slug)
-            errors.append({"repo": slug, "error": str(exc)})
+            stats.errors.append({"repo": slug, "error": str(exc)})
 
-    return {
-        "ok": True,
-        "type": "github_discussion",
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "errors": errors,
-        "documents": documents,
-    }
+    result = stats.to_dict()
+    result["type"] = "github_discussion"
+    return result
 
 
 def import_github(

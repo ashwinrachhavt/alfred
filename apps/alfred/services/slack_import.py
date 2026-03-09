@@ -12,6 +12,11 @@ from typing import Any
 
 from alfred.connectors.slack_connector import SlackClient
 from alfred.schemas.documents import DocumentIngest
+from alfred.schemas.imports import (
+    CONTENT_TYPE_SLACK_BOOKMARK,
+    CONTENT_TYPE_SLACK_CHANNEL,
+    ImportStats,
+)
 from alfred.services.doc_storage_pg import DocStorageService
 
 logger = logging.getLogger(__name__)
@@ -81,11 +86,7 @@ def import_slack_channels(
     else:
         channels = client.list_channels()
 
-    created = 0
-    updated = 0
-    skipped = 0
-    errors: list[dict[str, str]] = []
-    documents: list[dict[str, str]] = []
+    stats = ImportStats()
 
     for ch in channels:
         channel_id = ch["id"]
@@ -101,7 +102,7 @@ def import_slack_channels(
 
             messages = client.channel_history(channel_id, **history_kwargs)
             if not messages:
-                skipped += 1
+                stats.skipped += 1
                 logger.debug("No messages in channel %s", channel_name)
                 continue
 
@@ -127,7 +128,7 @@ def import_slack_channels(
             ingest = DocumentIngest(
                 source_url=url,
                 title=title,
-                content_type="slack_channel",
+                content_type=CONTENT_TYPE_SLACK_CHANNEL,
                 raw_markdown=markdown,
                 cleaned_text=markdown,
                 hash=stable_hash,
@@ -145,27 +146,21 @@ def import_slack_channels(
                         raw_markdown=markdown,
                         metadata_update=meta,
                     )
-                    updated += 1
+                    stats.updated += 1
                 except Exception:
                     logger.debug("Skipping update for duplicate %s", doc_id)
-                    skipped += 1
+                    stats.skipped += 1
             else:
-                created += 1
+                stats.created += 1
 
-            documents.append({"channel": channel_name, "document_id": doc_id})
+            stats.documents.append({"channel": channel_name, "document_id": doc_id})
         except Exception as exc:
             logger.exception("Slack channel import failed for %s", channel_id)
-            errors.append({"channel": channel_id, "error": str(exc)})
+            stats.errors.append({"channel": channel_id, "error": str(exc)})
 
-    return {
-        "ok": True,
-        "type": "slack_channel",
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "errors": errors,
-        "documents": documents,
-    }
+    result = stats.to_dict()
+    result["type"] = "slack_channel"
+    return result
 
 
 # ------------------------------------------------------------------
@@ -197,11 +192,7 @@ def import_slack_bookmarks(
     else:
         channels = client.list_channels()
 
-    created = 0
-    updated = 0
-    skipped = 0
-    errors: list[dict[str, str]] = []
-    documents: list[dict[str, str]] = []
+    stats = ImportStats()
 
     for ch in channels:
         channel_id = ch["id"]
@@ -211,7 +202,7 @@ def import_slack_bookmarks(
             bookmarks = client.list_bookmarks(channel_id)
 
             if not bookmarks:
-                skipped += 1
+                stats.skipped += 1
                 continue
 
             for bm in bookmarks:
@@ -240,7 +231,7 @@ def import_slack_bookmarks(
                 ingest = DocumentIngest(
                     source_url=bm_link or f"https://app.slack.com/client/{channel_id}",
                     title=bm_title,
-                    content_type="slack_bookmark",
+                    content_type=CONTENT_TYPE_SLACK_BOOKMARK,
                     raw_markdown=markdown,
                     cleaned_text=markdown,
                     hash=stable_hash,
@@ -258,31 +249,25 @@ def import_slack_bookmarks(
                             raw_markdown=markdown,
                             metadata_update=meta,
                         )
-                        updated += 1
+                        stats.updated += 1
                     except Exception:
                         logger.debug("Skipping update for duplicate %s", doc_id)
-                        skipped += 1
+                        stats.skipped += 1
                 else:
-                    created += 1
+                    stats.created += 1
 
-                documents.append({
+                stats.documents.append({
                     "channel": channel_name,
                     "bookmark": bm_title,
                     "document_id": doc_id,
                 })
         except Exception as exc:
             logger.exception("Slack bookmark import failed for channel %s", channel_id)
-            errors.append({"channel": channel_id, "error": str(exc)})
+            stats.errors.append({"channel": channel_id, "error": str(exc)})
 
-    return {
-        "ok": True,
-        "type": "slack_bookmark",
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "errors": errors,
-        "documents": documents,
-    }
+    result = stats.to_dict()
+    result["type"] = "slack_bookmark"
+    return result
 
 
 # ------------------------------------------------------------------

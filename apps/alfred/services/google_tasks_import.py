@@ -17,6 +17,7 @@ from google.oauth2.credentials import Credentials
 from alfred.connectors.google_tasks_connector import GoogleTasksConnector
 from alfred.core.exceptions import ConfigurationError
 from alfred.schemas.documents import DocumentIngest
+from alfred.schemas.imports import CONTENT_TYPE_GOOGLE_TASKS, ImportStats
 from alfred.services.doc_storage_pg import DocStorageService
 from alfred.services.google_oauth import load_credentials, persist_credentials
 
@@ -153,19 +154,15 @@ class GoogleTasksImporter:
                 "documents": [],
             }
 
-        created = 0
-        updated = 0
-        skipped = 0
-        errors: list[dict[str, str]] = []
-        documents: list[dict[str, str]] = []
+        stats = ImportStats()
 
         for tasklist in task_lists:
-            if limit is not None and (created + updated) >= limit:
+            if limit is not None and (stats.created + stats.updated) >= limit:
                 break
 
             tasklist_id = tasklist.get("id")
             if not tasklist_id:
-                skipped += 1
+                stats.skipped += 1
                 continue
 
             try:
@@ -175,11 +172,11 @@ class GoogleTasksImporter:
                     show_hidden=include_completed,
                 )
                 if task_error:
-                    errors.append({"tasklist_id": tasklist_id, "error": task_error})
+                    stats.errors.append({"tasklist_id": tasklist_id, "error": task_error})
                     continue
 
                 if not tasks:
-                    skipped += 1
+                    stats.skipped += 1
                     continue
 
                 title = tasklist.get("title") or "Untitled List"
@@ -203,7 +200,7 @@ class GoogleTasksImporter:
                 ingest = DocumentIngest(
                     source_url=source_url,
                     title=title,
-                    content_type="google_tasks",
+                    content_type=CONTENT_TYPE_GOOGLE_TASKS,
                     raw_markdown=markdown,
                     cleaned_text=cleaned_text,
                     hash=stable_hash,
@@ -222,27 +219,20 @@ class GoogleTasksImporter:
                             raw_markdown=markdown,
                             metadata_update={"source": "google_tasks", "google_tasks": gtasks_meta},
                         )
-                        updated += 1
+                        stats.updated += 1
                     except Exception:
                         logger.debug("Skipping update for duplicate %s", doc_id)
-                        skipped += 1
+                        stats.skipped += 1
                 else:
-                    created += 1
+                    stats.created += 1
 
-                documents.append({"tasklist_id": tasklist_id, "document_id": doc_id})
+                stats.documents.append({"tasklist_id": tasklist_id, "document_id": doc_id})
 
             except Exception as exc:
                 logger.exception("Google Tasks import failed for list %s", tasklist_id)
-                errors.append({"tasklist_id": str(tasklist_id), "error": str(exc)})
+                stats.errors.append({"tasklist_id": str(tasklist_id), "error": str(exc)})
 
-        return {
-            "ok": True,
-            "created": created,
-            "updated": updated,
-            "skipped": skipped,
-            "errors": errors,
-            "documents": documents,
-        }
+        return stats.to_dict()
 
 
 def import_google_tasks(

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from alfred.core.dependencies import get_doc_storage_service
+from alfred.schemas.imports import ImportResponse
 from alfred.services.doc_storage_pg import DocStorageService
 from alfred.services.semantic_scholar_import import import_semantic_scholar
 
@@ -19,11 +20,6 @@ class SemanticScholarImportRequest(BaseModel):
     api_key: str | None = None
     limit: int | None = Field(default=None, ge=1, le=5000)
     year: str | None = None
-
-
-class ImportResponse(BaseModel):
-    status: str
-    result: dict[str, Any] | None = None
 
 
 @router.get("/status")

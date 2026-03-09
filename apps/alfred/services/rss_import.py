@@ -12,6 +12,7 @@ from typing import Any
 
 from alfred.connectors.rss_connector import RSSClient
 from alfred.schemas.documents import DocumentIngest
+from alfred.schemas.imports import CONTENT_TYPE_RSS_ENTRY, ImportStats
 from alfred.services.doc_storage_pg import DocStorageService
 
 logger = logging.getLogger(__name__)
@@ -72,11 +73,7 @@ def import_rss(
     """
     client = RSSClient()
 
-    created = 0
-    updated = 0
-    skipped = 0
-    errors: list[dict[str, str]] = []
-    documents: list[dict[str, str]] = []
+    stats = ImportStats()
     total_processed = 0
 
     feeds = client.fetch_multiple(feed_urls)
@@ -91,7 +88,7 @@ def import_rss(
 
             entry_link = entry.get("link", "")
             if not entry_link:
-                skipped += 1
+                stats.skipped += 1
                 continue
 
             try:
@@ -100,7 +97,7 @@ def import_rss(
                 cleaned_text = markdown.strip()
 
                 if not cleaned_text:
-                    skipped += 1
+                    stats.skipped += 1
                     continue
 
                 stable_hash = _stable_hash(entry_link)
@@ -116,7 +113,7 @@ def import_rss(
                 ingest = DocumentIngest(
                     source_url=entry_link,
                     title=title,
-                    content_type="rss_entry",
+                    content_type=CONTENT_TYPE_RSS_ENTRY,
                     raw_markdown=markdown,
                     cleaned_text=cleaned_text,
                     hash=stable_hash,
@@ -136,31 +133,24 @@ def import_rss(
                             raw_markdown=markdown,
                             metadata_update={"source": "rss", "rss": rss_meta},
                         )
-                        updated += 1
+                        stats.updated += 1
                     except Exception:
                         logger.debug("Skipping update for duplicate %s", doc_id)
-                        skipped += 1
+                        stats.skipped += 1
                 else:
-                    created += 1
+                    stats.created += 1
 
-                documents.append({"entry_link": entry_link, "document_id": doc_id})
+                stats.documents.append({"entry_link": entry_link, "document_id": doc_id})
                 total_processed += 1
 
             except Exception as exc:
                 logger.exception("RSS import failed for entry: %s", entry_link)
-                errors.append({"entry_link": entry_link, "error": str(exc)})
+                stats.errors.append({"entry_link": entry_link, "error": str(exc)})
 
         if limit is not None and total_processed >= limit:
             break
 
-    return {
-        "ok": True,
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "errors": errors,
-        "documents": documents,
-    }
+    return stats.to_dict()
 
 
 __all__ = ["import_rss"]

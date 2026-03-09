@@ -11,6 +11,7 @@ from typing import Any
 
 from alfred.connectors.pocket_connector import PocketClient
 from alfred.schemas.documents import DocumentIngest
+from alfred.schemas.imports import CONTENT_TYPE_POCKET_ARTICLE, ImportStats
 from alfred.services.doc_storage_pg import DocStorageService
 
 logger = logging.getLogger(__name__)
@@ -82,21 +83,17 @@ def import_pocket(
     if limit is not None:
         items = items[:limit]
 
-    created = 0
-    updated = 0
-    skipped = 0
-    errors: list[dict[str, str]] = []
-    documents: list[dict[str, str]] = []
+    stats = ImportStats()
 
     for item in items:
         item_id = item.get("item_id")
         if not item_id:
-            skipped += 1
+            stats.skipped += 1
             continue
 
         source_url = item.get("resolved_url") or item.get("given_url")
         if not source_url:
-            skipped += 1
+            stats.skipped += 1
             continue
 
         try:
@@ -105,7 +102,7 @@ def import_pocket(
             cleaned_text = (item.get("excerpt") or markdown).strip()
 
             if not cleaned_text:
-                skipped += 1
+                stats.skipped += 1
                 continue
 
             stable_hash = f"pocket:{item_id}"
@@ -124,7 +121,7 @@ def import_pocket(
             ingest = DocumentIngest(
                 source_url=source_url,
                 title=title,
-                content_type="pocket_article",
+                content_type=CONTENT_TYPE_POCKET_ARTICLE,
                 raw_markdown=markdown,
                 cleaned_text=cleaned_text,
                 hash=stable_hash,
@@ -144,27 +141,20 @@ def import_pocket(
                         raw_markdown=markdown,
                         metadata_update={"source": "pocket", "pocket": pocket_meta},
                     )
-                    updated += 1
+                    stats.updated += 1
                 except Exception:
                     logger.debug("Skipping update for duplicate %s", doc_id)
-                    skipped += 1
+                    stats.skipped += 1
             else:
-                created += 1
+                stats.created += 1
 
-            documents.append({"item_id": str(item_id), "document_id": doc_id})
+            stats.documents.append({"item_id": str(item_id), "document_id": doc_id})
 
         except Exception as exc:
             logger.exception("Pocket import failed for item %s", item_id)
-            errors.append({"item_id": str(item_id), "error": str(exc)})
+            stats.errors.append({"item_id": str(item_id), "error": str(exc)})
 
-    return {
-        "ok": True,
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "errors": errors,
-        "documents": documents,
-    }
+    return stats.to_dict()
 
 
 __all__ = ["import_pocket"]

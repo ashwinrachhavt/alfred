@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from alfred.core.dependencies import get_doc_storage_service
 from alfred.core.settings import settings
+from alfred.schemas.imports import ImportResponse
 from alfred.services.doc_storage_pg import DocStorageService
 from alfred.services.readwise_import import import_readwise
 
@@ -21,11 +22,6 @@ class ImportRequest(BaseModel):
     limit: int | None = Field(default=None, ge=1, le=10_000)
     category: str | None = None
     run_inline: bool = False
-
-
-class ImportResponse(BaseModel):
-    status: str
-    result: dict[str, Any] | None = None
 
 
 @router.post("/import", response_model=ImportResponse)

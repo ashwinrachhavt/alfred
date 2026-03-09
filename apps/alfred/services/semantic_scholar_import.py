@@ -11,6 +11,7 @@ from typing import Any
 
 from alfred.connectors.semantic_scholar_connector import SemanticScholarClient
 from alfred.schemas.documents import DocumentIngest
+from alfred.schemas.imports import CONTENT_TYPE_ACADEMIC_PAPER, ImportStats
 from alfred.services.doc_storage_pg import DocStorageService
 
 logger = logging.getLogger(__name__)
@@ -105,16 +106,12 @@ def import_semantic_scholar(
             logger.warning("Failed to fetch details for paper %s, using search data", paper_id)
             detailed_papers.append(paper)
 
-    created = 0
-    updated = 0
-    skipped = 0
-    errors: list[dict[str, str]] = []
-    documents: list[dict[str, str]] = []
+    stats = ImportStats()
 
     for paper in detailed_papers:
         paper_id = paper.get("paperId")
         if not paper_id:
-            skipped += 1
+            stats.skipped += 1
             continue
 
         try:
@@ -149,7 +146,7 @@ def import_semantic_scholar(
             ingest = DocumentIngest(
                 source_url=source_url,
                 title=title,
-                content_type="academic_paper",
+                content_type=CONTENT_TYPE_ACADEMIC_PAPER,
                 raw_markdown=markdown,
                 cleaned_text=cleaned_text,
                 hash=stable_hash,
@@ -169,27 +166,20 @@ def import_semantic_scholar(
                         raw_markdown=markdown,
                         metadata_update={"source": "semantic_scholar", "semantic_scholar": s2_meta},
                     )
-                    updated += 1
+                    stats.updated += 1
                 except Exception:
                     logger.debug("Skipping update for duplicate %s", doc_id)
-                    skipped += 1
+                    stats.skipped += 1
             else:
-                created += 1
+                stats.created += 1
 
-            documents.append({"paper_id": paper_id, "document_id": doc_id})
+            stats.documents.append({"paper_id": paper_id, "document_id": doc_id})
 
         except Exception as exc:
             logger.exception("Semantic Scholar import failed for paper %s", paper_id)
-            errors.append({"paper_id": str(paper_id), "error": str(exc)})
+            stats.errors.append({"paper_id": str(paper_id), "error": str(exc)})
 
-    return {
-        "ok": True,
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "errors": errors,
-        "documents": documents,
-    }
+    return stats.to_dict()
 
 
 __all__ = ["import_semantic_scholar"]

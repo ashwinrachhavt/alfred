@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from alfred.core.dependencies import get_doc_storage_service
 from alfred.core.settings import settings
+from alfred.schemas.imports import ImportResponse
 from alfred.services.doc_storage_pg import DocStorageService
 from alfred.services.github_import import (
     import_discussions,
@@ -47,11 +48,6 @@ class DiscussionsImportRequest(BaseModel):
     repos: list[str] = Field(default_factory=list)
     limit: int | None = Field(default=None, ge=1, le=10_000)
     run_inline: bool = False
-
-
-class ImportResponse(BaseModel):
-    status: str
-    result: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from alfred.core.dependencies import get_doc_storage_service
 from alfred.core.settings import settings
+from alfred.schemas.imports import ImportResponse
 from alfred.services.doc_storage_pg import DocStorageService
 from alfred.services.google_tasks_import import import_google_tasks
 
@@ -20,11 +21,6 @@ class GoogleTasksImportRequest(BaseModel):
     namespace: str | None = None
     include_completed: bool = False
     limit: int | None = Field(default=None, ge=1, le=5000)
-
-
-class ImportResponse(BaseModel):
-    status: str
-    result: dict[str, Any] | None = None
 
 
 @router.get("/status")

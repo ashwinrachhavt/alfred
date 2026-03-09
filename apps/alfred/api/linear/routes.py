@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from alfred.core.dependencies import get_doc_storage_service
 from alfred.core.settings import settings
+from alfred.schemas.imports import ImportResponse
 from alfred.services.doc_storage_pg import DocStorageService
 from alfred.services.linear import LinearService, get_linear_service
 from alfred.services.linear_import import import_linear
@@ -20,11 +21,6 @@ class LinearImportRequest(BaseModel):
     token: str | None = None
     limit: int | None = Field(default=None, ge=1, le=5000)
     since: str | None = None
-
-
-class LinearImportResponse(BaseModel):
-    status: str
-    result: dict[str, Any] | None = None
 
 
 @router.get("/status")
@@ -79,11 +75,11 @@ def list_issues(
     return {"count": len(items), "items": items}
 
 
-@router.post("/import", response_model=LinearImportResponse)
+@router.post("/import", response_model=ImportResponse)
 def start_linear_import(
     payload: LinearImportRequest,
     svc: DocStorageService = Depends(get_doc_storage_service),
-) -> LinearImportResponse:
+) -> ImportResponse:
     try:
         result = import_linear(
             doc_store=svc,
@@ -93,8 +89,8 @@ def start_linear_import(
         )
     except Exception as exc:
         logger.exception("Linear import failed")
-        return LinearImportResponse(
+        return ImportResponse(
             status="error",
             result={"ok": False, "error": str(exc)},
         )
-    return LinearImportResponse(status="completed", result=result)
+    return ImportResponse(status="completed", result=result)

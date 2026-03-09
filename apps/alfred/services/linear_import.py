@@ -14,6 +14,7 @@ from typing import Any
 from alfred.connectors.linear_connector import LinearConnector
 from alfred.core.settings import settings
 from alfred.schemas.documents import DocumentIngest
+from alfred.schemas.imports import CONTENT_TYPE_LINEAR_ISSUE, ImportStats
 from alfred.services.doc_storage_pg import DocStorageService
 
 logger = logging.getLogger(__name__)
@@ -77,16 +78,12 @@ def import_linear(
     else:
         issues = connector.get_all_issues(include_comments=True, limit=effective_limit)
 
-    created = 0
-    updated = 0
-    skipped = 0
-    errors: list[dict[str, str]] = []
-    documents: list[dict[str, str]] = []
+    stats = ImportStats()
 
     for issue in issues:
         identifier = issue.get("identifier")
         if not identifier:
-            skipped += 1
+            stats.skipped += 1
             continue
 
         try:
@@ -118,7 +115,7 @@ def import_linear(
             ingest = DocumentIngest(
                 source_url=source_url,
                 title=title,
-                content_type="linear_issue",
+                content_type=CONTENT_TYPE_LINEAR_ISSUE,
                 raw_markdown=markdown,
                 cleaned_text=cleaned_text,
                 hash=stable_hash,
@@ -138,27 +135,20 @@ def import_linear(
                         raw_markdown=markdown,
                         metadata_update={"source": "linear", "linear": linear_meta},
                     )
-                    updated += 1
+                    stats.updated += 1
                 except Exception:
                     logger.debug("Skipping update for duplicate %s", doc_id)
-                    skipped += 1
+                    stats.skipped += 1
             else:
-                created += 1
+                stats.created += 1
 
-            documents.append({"identifier": identifier, "document_id": doc_id})
+            stats.documents.append({"identifier": identifier, "document_id": doc_id})
 
         except Exception as exc:
             logger.exception("Linear import failed for issue %s", identifier)
-            errors.append({"identifier": str(identifier), "error": str(exc)})
+            stats.errors.append({"identifier": str(identifier), "error": str(exc)})
 
-    return {
-        "ok": True,
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "errors": errors,
-        "documents": documents,
-    }
+    return stats.to_dict()
 
 
 __all__ = ["import_linear"]

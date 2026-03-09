@@ -21,6 +21,7 @@ from google.oauth2.credentials import Credentials
 from alfred.connectors.google_drive_connector import GOOGLE_DOCS_MIME_TYPE, GoogleDriveConnector
 from alfred.core.exceptions import ConfigurationError
 from alfred.schemas.documents import DocumentIngest
+from alfred.schemas.imports import CONTENT_TYPE_GOOGLE_DOC, ImportStats
 from alfred.services.doc_storage_pg import DocStorageService
 from alfred.services.google_oauth import load_credentials, persist_credentials
 
@@ -140,31 +141,27 @@ class GoogleDriveImporter:
                 "documents": [],
             }
 
-        created = 0
-        updated = 0
-        skipped = 0
-        errors: list[dict[str, str]] = []
-        documents: list[dict[str, str]] = []
+        stats = ImportStats()
 
         for file_meta in files:
-            if limit is not None and (created + updated) >= limit:
+            if limit is not None and (stats.created + stats.updated) >= limit:
                 break
 
             file_id = file_meta.get("id")
             if not file_id:
-                skipped += 1
+                stats.skipped += 1
                 continue
 
             try:
                 # Export the Google Doc as plain text
                 text, export_error = await self.connector.export_doc(file_id, mime_type="text/plain")
                 if export_error:
-                    errors.append({"file_id": file_id, "error": export_error})
+                    stats.errors.append({"file_id": file_id, "error": export_error})
                     continue
 
                 cleaned_text = (text or "").strip()
                 if not cleaned_text:
-                    skipped += 1
+                    stats.skipped += 1
                     continue
 
                 name = file_meta.get("name", "Untitled")
@@ -184,7 +181,7 @@ class GoogleDriveImporter:
                 ingest = DocumentIngest(
                     source_url=source_url,
                     title=name,
-                    content_type="google_doc",
+                    content_type=CONTENT_TYPE_GOOGLE_DOC,
                     cleaned_text=cleaned_text,
                     hash=stable_hash,
                     metadata={"source": "google_drive", "google_drive": drive_meta},
@@ -200,27 +197,20 @@ class GoogleDriveImporter:
                             cleaned_text=cleaned_text,
                             metadata_update={"source": "google_drive", "google_drive": drive_meta},
                         )
-                        updated += 1
+                        stats.updated += 1
                     except Exception:
                         logger.debug("Skipping update for duplicate %s", doc_id)
-                        skipped += 1
+                        stats.skipped += 1
                 else:
-                    created += 1
+                    stats.created += 1
 
-                documents.append({"file_id": file_id, "document_id": doc_id})
+                stats.documents.append({"file_id": file_id, "document_id": doc_id})
 
             except Exception as exc:
                 logger.exception("Google Drive import failed for %s", file_id)
-                errors.append({"file_id": str(file_id), "error": str(exc)})
+                stats.errors.append({"file_id": str(file_id), "error": str(exc)})
 
-        return {
-            "ok": True,
-            "created": created,
-            "updated": updated,
-            "skipped": skipped,
-            "errors": errors,
-            "documents": documents,
-        }
+        return stats.to_dict()
 
 
 def import_google_drive_docs(

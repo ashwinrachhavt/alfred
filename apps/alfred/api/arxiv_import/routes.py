@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from alfred.core.dependencies import get_doc_storage_service
+from alfred.schemas.imports import ImportResponse
 from alfred.services.arxiv_import import import_arxiv
 from alfred.services.doc_storage_pg import DocStorageService
 
@@ -21,11 +22,6 @@ class ImportRequest(BaseModel):
     date_to: str | None = None
     max_results: int = Field(default=50, ge=1, le=5_000)
     run_inline: bool = False
-
-
-class ImportResponse(BaseModel):
-    status: str
-    result: dict[str, Any] | None = None
 
 
 @router.post("/import", response_model=ImportResponse)

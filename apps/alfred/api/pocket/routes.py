@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from alfred.core.dependencies import get_doc_storage_service
 from alfred.core.settings import settings
+from alfred.schemas.imports import ImportResponse
 from alfred.services.doc_storage_pg import DocStorageService
 from alfred.services.pocket_import import import_pocket
 
@@ -21,11 +22,6 @@ class PocketImportRequest(BaseModel):
     limit: int | None = Field(default=None, ge=1, le=5000)
     since: str | None = None
     tag: str | None = None
-
-
-class ImportResponse(BaseModel):
-    status: str
-    result: dict[str, Any] | None = None
 
 
 @router.get("/status")

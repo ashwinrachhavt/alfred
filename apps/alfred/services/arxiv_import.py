@@ -12,6 +12,7 @@ from typing import Any
 
 from alfred.connectors.arxiv_connector import ArxivConnector
 from alfred.schemas.documents import DocumentIngest
+from alfred.schemas.imports import CONTENT_TYPE_ARXIV_PAPER, ImportStats
 from alfred.services.doc_storage_pg import DocStorageService
 
 logger = logging.getLogger(__name__)
@@ -104,18 +105,14 @@ def import_arxiv(
             "documents": [],
         }
 
-    created = 0
-    updated = 0
-    skipped = 0
-    errors: list[dict[str, str]] = []
-    documents: list[dict[str, str]] = []
+    stats = ImportStats()
 
     for doc in docs:
         metadata = doc.metadata or {}
         entry_id = metadata.get("entry_id") or ""
 
         if not entry_id:
-            skipped += 1
+            stats.skipped += 1
             continue
 
         try:
@@ -147,7 +144,7 @@ def import_arxiv(
             ingest = DocumentIngest(
                 source_url=source_url,
                 title=title,
-                content_type="arxiv_paper",
+                content_type=CONTENT_TYPE_ARXIV_PAPER,
                 raw_markdown=markdown,
                 cleaned_text=cleaned_text,
                 hash=stable_hash,
@@ -167,27 +164,20 @@ def import_arxiv(
                         raw_markdown=markdown,
                         metadata_update={"source": "arxiv", "arxiv": arxiv_meta},
                     )
-                    updated += 1
+                    stats.updated += 1
                 except Exception:
                     logger.debug("Skipping update for duplicate %s", doc_id)
-                    skipped += 1
+                    stats.skipped += 1
             else:
-                created += 1
+                stats.created += 1
 
-            documents.append({"entry_id": entry_id, "document_id": doc_id})
+            stats.documents.append({"entry_id": entry_id, "document_id": doc_id})
 
         except Exception as exc:
             logger.exception("ArXiv import failed for paper %s", entry_id)
-            errors.append({"entry_id": str(entry_id), "error": str(exc)})
+            stats.errors.append({"entry_id": str(entry_id), "error": str(exc)})
 
-    return {
-        "ok": True,
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "errors": errors,
-        "documents": documents,
-    }
+    return stats.to_dict()
 
 
 __all__ = ["import_arxiv"]

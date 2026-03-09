@@ -11,6 +11,7 @@ from typing import Any
 
 from alfred.connectors.todoist_connector import TodoistClient
 from alfred.schemas.documents import DocumentIngest
+from alfred.schemas.imports import CONTENT_TYPE_TODOIST_PROJECT, ImportStats
 from alfred.services.doc_storage_pg import DocStorageService
 
 logger = logging.getLogger(__name__)
@@ -105,16 +106,12 @@ def import_todoist(
     if limit is not None:
         projects = projects[:limit]
 
-    created = 0
-    updated = 0
-    skipped = 0
-    errors: list[dict[str, str]] = []
-    documents: list[dict[str, str]] = []
+    stats = ImportStats()
 
     for project in projects:
         pid = str(project.get("id", ""))
         if not pid:
-            skipped += 1
+            stats.skipped += 1
             continue
 
         try:
@@ -125,7 +122,7 @@ def import_todoist(
                 completed_tasks = client.list_completed_tasks(project_id=pid)
 
             if not tasks and not (completed_tasks or []):
-                skipped += 1
+                stats.skipped += 1
                 continue
 
             name = project.get("name") or "Untitled Project"
@@ -154,7 +151,7 @@ def import_todoist(
             ingest = DocumentIngest(
                 source_url=source_url,
                 title=name,
-                content_type="todoist_project",
+                content_type=CONTENT_TYPE_TODOIST_PROJECT,
                 raw_markdown=markdown,
                 cleaned_text=cleaned_text,
                 hash=stable_hash,
@@ -174,27 +171,20 @@ def import_todoist(
                         raw_markdown=markdown,
                         metadata_update={"source": "todoist", "todoist": todoist_meta},
                     )
-                    updated += 1
+                    stats.updated += 1
                 except Exception:
                     logger.debug("Skipping update for duplicate %s", doc_id)
-                    skipped += 1
+                    stats.skipped += 1
             else:
-                created += 1
+                stats.created += 1
 
-            documents.append({"project_id": pid, "document_id": doc_id})
+            stats.documents.append({"project_id": pid, "document_id": doc_id})
 
         except Exception as exc:
             logger.exception("Todoist import failed for project %s", pid)
-            errors.append({"project_id": pid, "error": str(exc)})
+            stats.errors.append({"project_id": pid, "error": str(exc)})
 
-    return {
-        "ok": True,
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "errors": errors,
-        "documents": documents,
-    }
+    return stats.to_dict()
 
 
 __all__ = ["import_todoist"]

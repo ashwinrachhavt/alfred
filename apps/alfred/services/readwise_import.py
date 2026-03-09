@@ -12,6 +12,7 @@ from typing import Any
 
 from alfred.connectors.readwise_connector import ReadwiseClient
 from alfred.schemas.documents import DocumentIngest
+from alfred.schemas.imports import CONTENT_TYPE_READWISE, ImportStats
 from alfred.services.doc_storage_pg import DocStorageService
 
 logger = logging.getLogger(__name__)
@@ -90,21 +91,17 @@ def import_readwise(
     if limit is not None:
         books = books[:limit]
 
-    created = 0
-    updated = 0
-    skipped = 0
-    errors: list[dict[str, str]] = []
-    documents: list[dict[str, str]] = []
+    stats = ImportStats()
 
     for book in books:
         book_id = book.get("user_book_id")
         if not book_id:
-            skipped += 1
+            stats.skipped += 1
             continue
 
         highlights = book.get("highlights") or []
         if not highlights:
-            skipped += 1
+            stats.skipped += 1
             continue
 
         try:
@@ -137,7 +134,7 @@ def import_readwise(
             ingest = DocumentIngest(
                 source_url=source_url,
                 title=title,
-                content_type="readwise",
+                content_type=CONTENT_TYPE_READWISE,
                 raw_markdown=markdown,
                 cleaned_text=cleaned_text,
                 hash=stable_hash,
@@ -157,27 +154,20 @@ def import_readwise(
                         raw_markdown=markdown,
                         metadata_update={"source": "readwise", "readwise": readwise_meta},
                     )
-                    updated += 1
+                    stats.updated += 1
                 except Exception:
                     logger.debug("Skipping update for duplicate %s", doc_id)
-                    skipped += 1
+                    stats.skipped += 1
             else:
-                created += 1
+                stats.created += 1
 
-            documents.append({"book_id": str(book_id), "document_id": doc_id})
+            stats.documents.append({"book_id": str(book_id), "document_id": doc_id})
 
         except Exception as exc:
             logger.exception("Readwise import failed for book %s", book_id)
-            errors.append({"book_id": str(book_id), "error": str(exc)})
+            stats.errors.append({"book_id": str(book_id), "error": str(exc)})
 
-    return {
-        "ok": True,
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "errors": errors,
-        "documents": documents,
-    }
+    return stats.to_dict()
 
 
 __all__ = ["import_readwise", "ReadwiseClient"]
