@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useSyncExternalStore } from "react";
 
+import { safeGetItem, safeSetJSON } from "@/lib/storage";
 import type { SystemDesignSession } from "@/lib/api/types/system-design";
 
 import { useCreateSystemDesignSession } from "@/features/system-design/mutations";
@@ -46,7 +47,7 @@ let _cachedParsedRecents: RecentSystemDesignSession[] = EMPTY_RECENTS;
 function readRecentsSnapshot(): RecentSystemDesignSession[] {
   if (typeof window === "undefined") return [];
 
-  const raw = window.localStorage.getItem(RECENTS_KEY);
+  const raw = safeGetItem(RECENTS_KEY);
   if (raw === _cachedRawRecents) return _cachedParsedRecents;
 
   _cachedRawRecents = raw;
@@ -136,7 +137,7 @@ export function SystemDesignStartClient({
       const next = [toRecentSession(session), ...recents]
         .filter((item, idx, arr) => arr.findIndex((x) => x.id === item.id) === idx)
         .slice(0, 10);
-      window.localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
+      safeSetJSON(RECENTS_KEY, next);
       notifyRecentsChanged();
 
       router.push(`/system-design/sessions/${session.id}`);

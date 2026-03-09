@@ -1,4 +1,5 @@
 import type { TaskStatusResponse } from "@/lib/api/types/tasks";
+import { safeGetItem, safeSetJSON } from "@/lib/storage";
 
 export type TaskSource = "company_research" | "interview_prep" | "generic";
 
@@ -51,7 +52,7 @@ function normalizeTask(task: TrackedTask): TrackedTask {
 
 export function loadTrackedTasks(): TrackedTask[] {
   if (typeof window === "undefined") return [];
-  const raw = window.localStorage.getItem(TASK_TRACKER_STORAGE_KEY);
+  const raw = safeGetItem(TASK_TRACKER_STORAGE_KEY);
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as StoredPayload;
@@ -68,12 +69,12 @@ export function saveTrackedTasks(tasks: TrackedTask[]): void {
     version: 1,
     tasks,
   };
-  window.localStorage.setItem(TASK_TRACKER_STORAGE_KEY, JSON.stringify(payload));
+  safeSetJSON(TASK_TRACKER_STORAGE_KEY, payload);
 }
 
 export function loadNotifiedTaskIds(): Set<string> {
   if (typeof window === "undefined") return new Set();
-  const raw = window.localStorage.getItem(TASK_TRACKER_NOTIFIED_KEY);
+  const raw = safeGetItem(TASK_TRACKER_NOTIFIED_KEY);
   if (!raw) return new Set();
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -86,5 +87,5 @@ export function loadNotifiedTaskIds(): Set<string> {
 
 export function saveNotifiedTaskIds(ids: Set<string>): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(TASK_TRACKER_NOTIFIED_KEY, JSON.stringify(Array.from(ids)));
+  safeSetJSON(TASK_TRACKER_NOTIFIED_KEY, Array.from(ids));
 }

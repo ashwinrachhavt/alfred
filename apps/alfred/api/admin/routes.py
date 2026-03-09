@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -49,7 +49,7 @@ def learning_concepts_backlog(
     if topic_id is not None:
         base = base.where(LearningResource.topic_id == int(topic_id))
     if min_age_hours and min_age_hours > 0:
-        cutoff = datetime.utcnow() - timedelta(hours=int(min_age_hours))
+        cutoff = datetime.now(UTC) - timedelta(hours=int(min_age_hours))
         base = base.where(LearningResource.added_at <= cutoff)
 
     pending_stmt = base.where(LearningResource.extracted_at.is_(None))
@@ -133,7 +133,7 @@ def document_concepts_backlog(
 
     base = select(func.count()).select_from(DocumentRow)
     if min_age_hours and min_age_hours > 0:
-        cutoff = datetime.utcnow() - timedelta(hours=int(min_age_hours))
+        cutoff = datetime.now(UTC) - timedelta(hours=int(min_age_hours))
         base = base.where(DocumentRow.created_at <= cutoff)
 
     pending_stmt = base.where(DocumentRow.concepts_extracted_at.is_(None))

@@ -1,7 +1,9 @@
 import {
+  Bell,
   BookOpen,
   Calendar,
   LayoutGrid,
+  MessageCircle,
   NotebookPen,
   NotepadText,
   Palette,
@@ -73,6 +75,22 @@ export const appNavItems: AppNavItem[] = [
     href: "/notion",
     icon: NotepadText,
     keywords: ["notion", "integration", "sync", "import"],
+    group: "knowledge",
+  },
+  {
+    key: "rag",
+    title: "RAG",
+    href: "/rag",
+    icon: MessageCircle,
+    keywords: ["rag", "chat", "qa"],
+    group: "knowledge",
+  },
+  {
+    key: "follow-ups",
+    title: "Follow-ups",
+    href: "/follow-ups",
+    icon: Bell,
+    keywords: ["follow ups", "follow-ups", "reminders", "pending", "nudge"],
     group: "knowledge",
   },
   {

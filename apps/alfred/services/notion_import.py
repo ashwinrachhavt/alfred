@@ -26,6 +26,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 from alfred.core.exceptions import ConfigurationError
 from alfred.core.settings import settings
 from alfred.schemas.documents import DocumentIngest
+from alfred.schemas.imports import CONTENT_TYPE_NOTION, ImportStats
 from alfred.services.doc_storage_pg import DocStorageService
 from alfred.services.notion_markdown import NotionMarkdownRenderer
 from alfred.services.notion_oauth import list_connected_workspaces, load_oauth_token
@@ -107,18 +108,14 @@ class NotionPageImporter:
         """Import pages from Notion into Alfred's document store."""
 
         since_dt = _parse_iso(since) if since else None
-        created = 0
-        updated = 0
-        skipped = 0
-        errors: list[dict[str, str]] = []
-        documents: list[dict[str, str]] = []
+        stats = ImportStats()
 
         for page in self._iter_pages(
             limit=limit, since=since_dt, include_archived=include_archived
         ):
             page_id = page.get("id")
             if not page_id:
-                skipped += 1
+                stats.skipped += 1
                 continue
 
             try:
@@ -143,7 +140,7 @@ class NotionPageImporter:
                 ingest = DocumentIngest(
                     source_url=source_url,
                     title=title,
-                    content_type="notion",
+                    content_type=CONTENT_TYPE_NOTION,
                     raw_markdown=markdown,
                     cleaned_text=cleaned_text,
                     hash=stable_hash,
@@ -153,30 +150,27 @@ class NotionPageImporter:
                 res = doc_store.ingest_document_store_only(ingest)
                 doc_id = str(res["id"])
                 if res.get("duplicate"):
-                    updated += 1
-                    doc_store.update_document_text(
-                        doc_id,
-                        title=title,
-                        cleaned_text=cleaned_text,
-                        raw_markdown=markdown,
-                        metadata_update={"source": "notion", "notion": notion_meta},
-                    )
+                    try:
+                        doc_store.update_document_text(
+                            doc_id,
+                            title=title,
+                            cleaned_text=cleaned_text,
+                            raw_markdown=markdown,
+                            metadata_update={"source": "notion", "notion": notion_meta},
+                        )
+                        stats.updated += 1
+                    except Exception:
+                        logger.debug("Skipping update for duplicate %s", doc_id)
+                        stats.skipped += 1
                 else:
-                    created += 1
+                    stats.created += 1
 
-                documents.append({"page_id": page_id, "document_id": doc_id})
+                stats.documents.append({"page_id": page_id, "document_id": doc_id})
             except Exception as exc:  # pragma: no cover - network/runtime dependent
                 logger.exception("Notion import failed for %s", page_id)
-                errors.append({"page_id": str(page_id), "error": str(exc)})
+                stats.errors.append({"page_id": str(page_id), "error": str(exc)})
 
-        return {
-            "ok": True,
-            "created": created,
-            "updated": updated,
-            "skipped": skipped,
-            "errors": errors,
-            "documents": documents,
-        }
+        return stats.to_dict()
 
     # ------------------------
     # Notion API wrappers

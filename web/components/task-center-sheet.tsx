@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
+import { formatRelativeTimestamp } from "@/lib/utils/date-format";
 import { useFollowUps } from "@/features/follow-ups/follow-up-provider";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 
@@ -73,20 +74,6 @@ function TaskStatusPill({
       {status.status}
     </span>
   );
-}
-
-function formatRelativeTimestamp(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  const now = Date.now();
-  const deltaMs = now - date.getTime();
-  const deltaMinutes = Math.floor(deltaMs / 60_000);
-  if (deltaMinutes < 1) return "just now";
-  if (deltaMinutes < 60) return `${deltaMinutes}m ago`;
-  const deltaHours = Math.floor(deltaMinutes / 60);
-  if (deltaHours < 24) return `${deltaHours}h ago`;
-  const deltaDays = Math.floor(deltaHours / 24);
-  return `${deltaDays}d ago`;
 }
 
 export function TaskCenterSheet() {

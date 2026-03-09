@@ -85,4 +85,7 @@ next-env.d.ts
 .npm-cache
 
 *.next
-*.pnpm-store
+*.pnpm-store.mcp.json
+Alfred/
+
+.mcp*

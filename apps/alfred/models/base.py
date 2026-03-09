@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlmodel import Field, SQLModel
 
@@ -10,8 +10,8 @@ from sqlmodel import Field, SQLModel
 class TimestampMixin(SQLModel):
     """Adds created/updated timestamps (app-managed)."""
 
-    created_at: datetime | None = Field(default_factory=lambda: datetime.utcnow())
-    updated_at: datetime | None = Field(default_factory=lambda: datetime.utcnow())
+    created_at: datetime | None = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime | None = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class Model(TimestampMixin, SQLModel):

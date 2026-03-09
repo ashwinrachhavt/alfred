@@ -1,3 +1,5 @@
+import { safeGetItem, safeSetJSON } from "@/lib/storage";
+
 export type DashboardWidgetKey =
   | "recent-documents"
   | "company-research"
@@ -40,7 +42,7 @@ export function loadDashboardLayout(
 ): DashboardLayout {
   if (typeof window === "undefined") return defaultDashboardLayout();
 
-  const raw = window.localStorage.getItem(DASHBOARD_LAYOUT_STORAGE_KEY);
+  const raw = safeGetItem(DASHBOARD_LAYOUT_STORAGE_KEY);
   if (!raw) return defaultDashboardLayout();
 
   try {
@@ -78,5 +80,5 @@ export function saveDashboardLayout(layout: DashboardLayout): void {
     hidden: Array.from(layout.hidden),
   };
 
-  window.localStorage.setItem(DASHBOARD_LAYOUT_STORAGE_KEY, JSON.stringify(payload));
+  safeSetJSON(DASHBOARD_LAYOUT_STORAGE_KEY, payload);
 }

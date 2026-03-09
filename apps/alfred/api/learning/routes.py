@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -265,7 +265,7 @@ def due_reviews(
     session: Session = Depends(get_db_session),
 ) -> list[ReviewOut]:
     svc = LearningService(session)
-    return [_review_out(r) for r in svc.list_due_reviews(now=datetime.utcnow(), limit=100)]
+    return [_review_out(r) for r in svc.list_due_reviews(now=datetime.now(UTC), limit=100)]
 
 
 @router.post("/reviews/{review_id}/complete", response_model=ReviewOut)

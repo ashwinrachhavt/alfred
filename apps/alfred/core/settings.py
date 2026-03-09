@@ -77,6 +77,17 @@ class Settings(BaseSettings):
     notion_client_secret: SecretStr | None = Field(default=None, alias="NOTION_CLIENT_SECRET")
     notion_redirect_uri: AnyHttpUrl | None = Field(default=None, alias="NOTION_REDIRECT_URI")
 
+    # Readwise
+    readwise_token: SecretStr | None = Field(default=None, alias="READWISE_TOKEN")
+
+    # GitHub
+    github_token: SecretStr | None = Field(default=None, alias="GITHUB_TOKEN")
+    github_repos: list[str] = Field(
+        default=[],
+        alias="GITHUB_REPOS",
+        description="Repos to sync, e.g. ['owner/repo1', 'owner/repo2']. Empty = all user repos.",
+    )
+
     @field_validator("notion_redirect_uri", mode="before")
     @classmethod
     def _empty_str_to_none(cls, v: object) -> object:
@@ -104,6 +115,8 @@ class Settings(BaseSettings):
         default=[
             "https://www.googleapis.com/auth/gmail.readonly",
             "https://www.googleapis.com/auth/gmail.metadata",
+            "https://www.googleapis.com/auth/drive.readonly",
+            "https://www.googleapis.com/auth/tasks.readonly",
         ],
         alias="GOOGLE_SCOPES",
     )
@@ -116,6 +129,25 @@ class Settings(BaseSettings):
     )
 
     gmail_push_oidc_audience: str | None = Field(default=None, alias="GMAIL_PUSH_OIDC_AUDIENCE")
+
+    # Google Drive
+    enable_google_drive: bool = Field(default=False, alias="ENABLE_GOOGLE_DRIVE")
+
+    # Pocket
+    pocket_consumer_key: str | None = Field(default=None, alias="POCKET_CONSUMER_KEY")
+    pocket_access_token: SecretStr | None = Field(default=None, alias="POCKET_ACCESS_TOKEN")
+
+    # Todoist
+    todoist_token: SecretStr | None = Field(default=None, alias="TODOIST_TOKEN")
+
+    # Hypothes.is
+    hypothesis_token: SecretStr | None = Field(default=None, alias="HYPOTHESIS_TOKEN")
+
+    # Semantic Scholar (optional — free tier works without key)
+    semantic_scholar_api_key: str | None = Field(default=None, alias="SEMANTIC_SCHOLAR_API_KEY")
+
+    # RSS feed URLs (comma-separated or JSON list)
+    rss_feed_urls: list[str] = Field(default=[], alias="RSS_FEED_URLS")
 
     # MCP / tools
     enable_mcp: bool = True

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from datetime import UTC
 
 from sqlalchemy import JSON, Column, Text
 from sqlmodel import Field, SQLModel
@@ -11,7 +12,7 @@ class OutreachRun(SQLModel, table=True):
     __tablename__ = "outreach_runs"
 
     id: int | None = Field(default=None, primary_key=True)
-    created_at: dt.datetime = Field(default_factory=lambda: dt.datetime.utcnow())
+    created_at: dt.datetime = Field(default_factory=lambda: dt.datetime.now(UTC))
     company: str = Field(index=True, max_length=255)
     source: str = Field(max_length=32)
     count: int = Field(default=0)
@@ -22,7 +23,7 @@ class OutreachContact(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     run_id: int = Field(foreign_key="outreach_runs.id", index=True)
-    created_at: dt.datetime = Field(default_factory=lambda: dt.datetime.utcnow())
+    created_at: dt.datetime = Field(default_factory=lambda: dt.datetime.now(UTC))
     company: str = Field(index=True, max_length=255)
     name: str = Field(default="", max_length=255)
     title: str = Field(default="", max_length=255)
@@ -35,7 +36,7 @@ class OutreachMessage(SQLModel, table=True):
     __tablename__ = "outreach_messages"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    created_at: dt.datetime = Field(default_factory=lambda: dt.datetime.utcnow())
+    created_at: dt.datetime = Field(default_factory=lambda: dt.datetime.now(UTC))
     sent_at: dt.datetime | None = Field(default=None)
 
     company: str = Field(index=True, max_length=255)

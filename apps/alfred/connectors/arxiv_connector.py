@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Sequence
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from langchain_community.retrievers import ArxivRetriever
@@ -84,7 +84,7 @@ def _compose_query(
 
     if date_from or date_to:
         start = _normalize_date(date_from or "00010101")
-        end = _normalize_date(date_to or datetime.utcnow().strftime("%Y%m%d"))
+        end = _normalize_date(date_to or datetime.now(UTC).strftime("%Y%m%d"))
         if start and end:
             parts.append(f"submittedDate:[{start} TO {end}]")
 

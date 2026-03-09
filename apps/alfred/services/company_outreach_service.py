@@ -632,7 +632,7 @@ class OutreachService:
         providers: Sequence[ContactProvider] | None,
     ) -> list[dict[str, Any]]:
         ttl_hours = max(0, int(getattr(settings, "outreach_cache_ttl_hours", 0)))
-        cutoff = (dt.datetime.utcnow() - dt.timedelta(hours=ttl_hours)) if ttl_hours > 0 else None
+        cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(hours=ttl_hours)) if ttl_hours > 0 else None
         selected = {p.value for p in providers} if providers else None
 
         sess_ctx = self.session or next(get_session())
@@ -797,7 +797,7 @@ class OutreachService:
                         reply_to=settings.smtp_from_email,
                     )
                     message.status = "sent"
-                    message.sent_at = dt.datetime.utcnow()
+                    message.sent_at = dt.datetime.now(dt.UTC)
                 except Exception as exc:  # pragma: no cover - network path
                     logger.warning("SMTP send failed: %s", exc)
                     message.status = "failed"

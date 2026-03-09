@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { toast } from "sonner";
 
+import { safeGetItem, safeSetJSON } from "@/lib/storage";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { processUnifiedInterview } from "@/lib/api/interviews-unified";
 import type { UnifiedInterviewOperation } from "@/lib/api/types/interviews-unified";
@@ -177,7 +178,7 @@ export function InterviewPrepClient() {
   const { trackTask } = useTaskTracker();
 
   useEffect(() => {
-    const persisted = parsePersistedState(window.localStorage.getItem(STORAGE_KEY));
+    const persisted = parsePersistedState(safeGetItem(STORAGE_KEY));
     if (!persisted) return;
     setCompany(persisted.company);
     setRole(persisted.role);
@@ -211,7 +212,7 @@ export function InterviewPrepClient() {
       targetLengthWords,
       practiceSessionId,
     };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
+    safeSetJSON(STORAGE_KEY, nextState);
   }, [
     company,
     role,

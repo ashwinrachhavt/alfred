@@ -7,6 +7,11 @@ import { Bell, CheckCircle2, Clock, ExternalLink, Search, Trash2 } from "lucide-
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
+import {
+  formatDue,
+  dueBadgeVariant,
+  isSnoozedUntilFuture,
+} from "@/lib/utils/date-format";
 import { useFollowUps } from "@/features/follow-ups/follow-up-provider";
 
 import { Badge } from "@/components/ui/badge";
@@ -44,33 +49,8 @@ function fromLocalDateTimeInput(value: string): string | null {
   return date.toISOString();
 }
 
-function formatDue(value: string): string | null {
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return null;
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function dueVariant(dueAt: string | undefined): "secondary" | "default" | "destructive" {
-  if (!dueAt) return "secondary";
-  const dueMs = Date.parse(dueAt);
-  if (Number.isNaN(dueMs)) return "secondary";
-  const delta = dueMs - Date.now();
-  if (delta <= 0) return "destructive";
-  if (delta <= 2 * 60 * 60 * 1000) return "default";
-  return "secondary";
-}
-
-function isSnoozedUntilFuture(value: string | undefined): boolean {
-  if (!value) return false;
-  const until = Date.parse(value);
-  if (Number.isNaN(until)) return false;
-  return until > Date.now();
-}
+/** Local alias — delegates to the centralized `dueBadgeVariant`. */
+const dueVariant = (dueAt: string | undefined) => dueBadgeVariant(dueAt);
 
 export function FollowUpsClient({
   initialTitle,

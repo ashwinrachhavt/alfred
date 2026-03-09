@@ -6,7 +6,7 @@ reviews, and lightweight concept graph tables for visualization.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import JSON, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlmodel import Field
@@ -47,7 +47,7 @@ class LearningResource(Model, table=True):
     notes: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
 
     added_at: datetime = Field(
-        default_factory=lambda: datetime.utcnow(), sa_column=Column(DateTime, nullable=False)
+        default_factory=lambda: datetime.now(UTC), sa_column=Column(DateTime, nullable=False)
     )
     extracted_at: datetime | None = Field(default=None, sa_column=Column(DateTime, nullable=True))
 
@@ -81,7 +81,7 @@ class LearningQuizAttempt(Model, table=True):
     responses: list[dict] | None = Field(default=None, sa_column=Column(JSON, nullable=True))
     score: float = Field(default=0.0, sa_column=Column(Float, nullable=False))
     submitted_at: datetime = Field(
-        default_factory=lambda: datetime.utcnow(), sa_column=Column(DateTime, nullable=False)
+        default_factory=lambda: datetime.now(UTC), sa_column=Column(DateTime, nullable=False)
     )
 
 
