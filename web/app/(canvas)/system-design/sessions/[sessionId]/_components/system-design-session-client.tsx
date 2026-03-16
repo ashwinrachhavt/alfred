@@ -6,22 +6,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { formatErrorMessage } from "@/lib/utils";
 
 import {
-  analyzeSystemDesign,
   autosaveSystemDesignDiagram,
-  evaluateSystemDesign,
   getSystemDesignKnowledgeDraft,
-  getSystemDesignQuestions,
   getSystemDesignSession,
-  getSystemDesignSuggestions,
   publishSystemDesignSession,
   updateSystemDesignNotes,
   updateSystemDesignSession,
 } from "@/lib/api/system-design";
 import type {
-  DiagramAnalysis,
-  DiagramEvaluation,
-  DiagramQuestion,
-  DiagramSuggestion,
   ExcalidrawData,
   SystemDesignKnowledgeDraft,
   SystemDesignPublishRequest,
@@ -44,7 +36,6 @@ import { Textarea } from "@/components/ui/textarea";
 
 import { SessionHeader } from "./session-header";
 import { SessionCanvas } from "./session-canvas";
-import { SessionCoachPanel } from "./session-coach-panel";
 import { SessionAiDialog } from "./session-dialogs";
 
 type AutosaveState = "idle" | "dirty" | "saving" | "saved" | "error";
@@ -54,10 +45,6 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   const [isLoading, setIsLoading] = useState(true);
   const [isActionRunning, setIsActionRunning] = useState(false);
 
-  const [analysis, setAnalysis] = useState<DiagramAnalysis | null>(null);
-  const [questions, setQuestions] = useState<DiagramQuestion[] | null>(null);
-  const [suggestions, setSuggestions] = useState<DiagramSuggestion[]>([]);
-  const [evaluation, setEvaluation] = useState<DiagramEvaluation | null>(null);
   const [knowledgeDraft, setKnowledgeDraft] = useState<SystemDesignKnowledgeDraft | null>(null);
 
   const [problemStatement, setProblemStatement] = useState("");
@@ -99,7 +86,6 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   // Panel visibility state
   const [showDiagram, setShowDiagram] = useState(true);
   const [showEditor, setShowEditor] = useState(true);
-  const [showCoach, setShowCoach] = useState(false);
 
   const [isComponentPaletteOpen, setIsComponentPaletteOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
@@ -118,10 +104,8 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
 
   // Panel widths (percentages)
   const [diagramWidth, setDiagramWidth] = useState(60);
-  const [coachWidth, setCoachWidth] = useState(400);
 
   const isDraggingDiagram = useRef(false);
-  const isDraggingCoach = useRef(false);
 
   const generateDiagramFromPrompt = async () => {
     if (!aiPrompt.trim()) return;
@@ -260,19 +244,14 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   }, [session]);
 
   const mainGridTemplateColumns = useMemo(() => {
-    const hasMiddle = showEditor;
     const hasLeft = showDiagram;
-    const hasRight = showCoach;
+    const hasMiddle = showEditor;
 
-    if (hasLeft && hasMiddle && hasRight) return `${diagramWidth}% auto 1fr auto ${coachWidth}px`;
     if (hasLeft && hasMiddle) return `${diagramWidth}% auto 1fr`;
-    if (hasMiddle && hasRight) return `1fr auto ${coachWidth}px`;
-    if (hasLeft && hasRight) return `1fr auto ${coachWidth}px`;
     if (hasLeft) return "1fr";
     if (hasMiddle) return "1fr";
-    if (hasRight) return "1fr";
     return "1fr";
-  }, [coachWidth, diagramWidth, showCoach, showDiagram, showEditor]);
+  }, [diagramWidth, showDiagram, showEditor]);
 
   // Resize handlers
   const handleDiagramResize = (e: MouseEvent) => {
@@ -280,12 +259,6 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
     const containerWidth = containerRef.current.offsetWidth;
     const newWidth = (e.clientX / containerWidth) * 100;
     setDiagramWidth(Math.max(20, Math.min(80, newWidth)));
-  };
-
-  const handleCoachResize = (e: MouseEvent) => {
-    if (!isDraggingCoach.current) return;
-    const newWidth = window.innerWidth - e.clientX;
-    setCoachWidth(Math.max(300, Math.min(600, newWidth)));
   };
 
   const startDiagramResize = () => {
@@ -302,22 +275,6 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
     document.body.style.userSelect = "";
     document.removeEventListener("mousemove", handleDiagramResize);
     document.removeEventListener("mouseup", stopDiagramResize);
-  };
-
-  const startCoachResize = () => {
-    isDraggingCoach.current = true;
-    setIsResizing(true);
-    document.body.style.userSelect = "none";
-    document.addEventListener("mousemove", handleCoachResize);
-    document.addEventListener("mouseup", stopCoachResize);
-  };
-
-  const stopCoachResize = () => {
-    isDraggingCoach.current = false;
-    setIsResizing(false);
-    document.body.style.userSelect = "";
-    document.removeEventListener("mousemove", handleCoachResize);
-    document.removeEventListener("mouseup", stopCoachResize);
   };
 
   async function flushAutosave() {
@@ -553,10 +510,8 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
         onSessionUpdated={setSession}
         showDiagram={showDiagram}
         showEditor={showEditor}
-        showCoach={showCoach}
         onToggleDiagram={() => setShowDiagram((prev) => !prev)}
         onToggleEditor={() => setShowEditor((prev) => !prev)}
-        onToggleCoach={() => setShowCoach((prev) => !prev)}
         isComponentPaletteOpen={isComponentPaletteOpen}
         onComponentPaletteOpenChange={setIsComponentPaletteOpen}
         isExportOpen={isExportOpen}
@@ -666,65 +621,6 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
           </div>
         )}
 
-        {/* Resize Handle for Coach */}
-        {showCoach && (showDiagram || showEditor) && (
-          <div
-            className="group bg-border hover:bg-primary relative w-1 cursor-col-resize transition-colors"
-            onMouseDown={startCoachResize}
-          >
-            <div className="absolute inset-y-0 -right-1 -left-1 z-10" />
-            <div className="bg-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full p-1 opacity-0 transition-opacity group-hover:opacity-100">
-              <div className="bg-primary-foreground h-8 w-0.5" />
-            </div>
-          </div>
-        )}
-
-        {/* Coach Panel - Collapsible */}
-        {showCoach && (
-          <SessionCoachPanel
-            actionError={actionError}
-            isActionRunning={isActionRunning}
-            autosaveState={autosaveState}
-            analysis={analysis}
-            questions={questions}
-            suggestions={suggestions}
-            evaluation={evaluation}
-            knowledgeDraft={knowledgeDraft}
-            publishLearningTopics={publishLearningTopics}
-            publishZettels={publishZettels}
-            topicTitle={topicTitle}
-            publishResult={publishResult}
-            onPublishLearningTopicsChange={setPublishLearningTopics}
-            onPublishZettelsChange={setPublishZettels}
-            onTopicTitleChange={setTopicTitle}
-            onFlushAutosave={() => void flushAutosave()}
-            onAnalyze={() => void runAction(() => analyzeSystemDesign(sessionId), setAnalysis)}
-            onQuestions={() => void runAction(() => getSystemDesignQuestions(sessionId), setQuestions)}
-            onSuggestions={() => void runAction(() => getSystemDesignSuggestions(sessionId), setSuggestions)}
-            onEvaluate={() => void runAction(() => evaluateSystemDesign(sessionId), setEvaluation)}
-            onGenerateDraft={() =>
-              void runAction(() => getSystemDesignKnowledgeDraft(sessionId), setKnowledgeDraft)
-            }
-            onPublish={() =>
-              void runAction(
-                async () => {
-                  const payload: SystemDesignPublishRequest = {
-                    create_learning_topics: publishLearningTopics,
-                    create_zettels: publishZettels,
-                    topic_title: topicTitle.trim() || null,
-                    topic_tags: [],
-                    zettel_tags: [],
-                  };
-                  return publishSystemDesignSession(sessionId, payload);
-                },
-                (result) => {
-                  setPublishResult(result);
-                  setSession(result.session);
-                },
-              )
-            }
-          />
-        )}
       </div>
     </div>
   );

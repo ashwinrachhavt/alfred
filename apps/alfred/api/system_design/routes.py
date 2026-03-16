@@ -10,12 +10,7 @@ from alfred.core.dependencies import get_system_design_service
 from alfred.schemas.system_design import (
     AutosaveRequest,
     ComponentDefinition,
-    DesignPrompt,
-    DiagramAnalysis,
-    DiagramEvaluation,
     DiagramExportRequest,
-    DiagramQuestion,
-    DiagramSuggestion,
     DiagramVersion,
     ScaleEstimateRequest,
     ScaleEstimateResponse,
@@ -187,61 +182,6 @@ def update_share_settings(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
     return session
-
-
-@router.post("/sessions/{session_id}/analyze", response_model=DiagramAnalysis)
-def analyze_session(
-    session_id: str,
-    svc: SystemDesignService = Depends(get_system_design_service),
-) -> DiagramAnalysis:
-    session = svc.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found.")
-    return svc.analyze(session.diagram)
-
-
-@router.post("/sessions/{session_id}/questions", response_model=list[DiagramQuestion])
-def probing_questions(
-    session_id: str,
-    svc: SystemDesignService = Depends(get_system_design_service),
-):
-    session = svc.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found.")
-    return svc.ask_probing_questions(session.diagram)
-
-
-@router.post("/sessions/{session_id}/suggestions", response_model=list[DiagramSuggestion])
-def suggestions(
-    session_id: str,
-    svc: SystemDesignService = Depends(get_system_design_service),
-):
-    session = svc.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found.")
-    return svc.suggest_improvements(session.diagram)
-
-
-@router.post("/sessions/{session_id}/evaluate", response_model=DiagramEvaluation)
-def evaluate(
-    session_id: str,
-    svc: SystemDesignService = Depends(get_system_design_service),
-):
-    session = svc.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found.")
-    return svc.evaluate_design(session.diagram)
-
-
-@router.post("/sessions/{session_id}/prompt", response_model=DesignPrompt)
-def prompt(
-    session_id: str,
-    svc: SystemDesignService = Depends(get_system_design_service),
-) -> DesignPrompt:
-    session = svc.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found.")
-    return svc.present_design_problem(session.problem_statement)
 
 
 @router.post("/sessions/{session_id}/knowledge", response_model=SystemDesignKnowledgeDraft)

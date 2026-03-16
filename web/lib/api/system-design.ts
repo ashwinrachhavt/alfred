@@ -2,11 +2,6 @@ import { apiFetch, apiFetchText, apiPatchJson, apiPostJson } from "@/lib/api/cli
 import type {
   AutosaveRequest,
   ComponentDefinition,
-  DesignPrompt,
-  DiagramAnalysis,
-  DiagramEvaluation,
-  DiagramQuestion,
-  DiagramSuggestion,
   ScaleEstimateRequest,
   ScaleEstimateResponse,
   SystemDesignKnowledgeDraft,
@@ -137,46 +132,6 @@ export async function exportSystemDesignPlantUml(sessionId: string): Promise<str
   return apiFetchText(`/api/system-design/sessions/${sessionId}/export/plantuml`, {
     cache: "no-store",
   });
-}
-
-export async function getSystemDesignPrompt(sessionId: string): Promise<DesignPrompt> {
-  return apiPostJson<DesignPrompt, Record<string, never>>(
-    `/api/system-design/sessions/${sessionId}/prompt`,
-    {},
-    { cache: "no-store" },
-  );
-}
-
-export async function analyzeSystemDesign(sessionId: string): Promise<DiagramAnalysis> {
-  return apiPostJson<DiagramAnalysis, Record<string, never>>(
-    `/api/system-design/sessions/${sessionId}/analyze`,
-    {},
-    { cache: "no-store" },
-  );
-}
-
-export async function getSystemDesignQuestions(sessionId: string): Promise<DiagramQuestion[]> {
-  return apiPostJson<DiagramQuestion[], Record<string, never>>(
-    `/api/system-design/sessions/${sessionId}/questions`,
-    {},
-    { cache: "no-store" },
-  );
-}
-
-export async function getSystemDesignSuggestions(sessionId: string): Promise<DiagramSuggestion[]> {
-  return apiPostJson<DiagramSuggestion[], Record<string, never>>(
-    `/api/system-design/sessions/${sessionId}/suggestions`,
-    {},
-    { cache: "no-store" },
-  );
-}
-
-export async function evaluateSystemDesign(sessionId: string): Promise<DiagramEvaluation> {
-  return apiPostJson<DiagramEvaluation, Record<string, never>>(
-    `/api/system-design/sessions/${sessionId}/evaluate`,
-    {},
-    { cache: "no-store" },
-  );
 }
 
 export async function getSystemDesignKnowledgeDraft(

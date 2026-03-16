@@ -40,10 +40,8 @@ export interface SessionHeaderProps {
 
   showDiagram: boolean;
   showEditor: boolean;
-  showCoach: boolean;
   onToggleDiagram: () => void;
   onToggleEditor: () => void;
-  onToggleCoach: () => void;
 
   isComponentPaletteOpen: boolean;
   onComponentPaletteOpenChange: (open: boolean) => void;
@@ -76,10 +74,8 @@ export function SessionHeader({
   onSessionUpdated,
   showDiagram,
   showEditor,
-  showCoach,
   onToggleDiagram,
   onToggleEditor,
-  onToggleCoach,
   isComponentPaletteOpen,
   onComponentPaletteOpenChange,
   isExportOpen,
@@ -386,28 +382,6 @@ export function SessionHeader({
             <TooltipContent>{showEditor ? "Hide editor" : "Show editor"}</TooltipContent>
           </Tooltip>
 
-          <div className="bg-border mx-1 h-6 w-px" />
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className={cn(
-                  "rounded-lg",
-                  showCoach ? "bg-accent text-accent-foreground hover:bg-accent/80" : "",
-                )}
-                onClick={onToggleCoach}
-              >
-                {showCoach ? (
-                  <PanelRightClose className="size-4" />
-                ) : (
-                  <PanelRightOpen className="size-4" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{showCoach ? "Hide coach" : "Show coach"}</TooltipContent>
-          </Tooltip>
         </div>
 
         <SystemDesignShareDialog session={session} onSessionUpdated={onSessionUpdated} />
