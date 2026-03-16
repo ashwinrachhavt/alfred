@@ -3,7 +3,6 @@ import { safeGetItem, safeSetJSON } from "@/lib/storage";
 export type DashboardWidgetKey =
   | "recent-documents"
   | "company-research"
-  | "follow-ups"
   | "templates";
 
 export const DASHBOARD_LAYOUT_STORAGE_KEY = "alfred:dashboard:layout:v1";
@@ -22,7 +21,6 @@ export type DashboardLayout = {
 const DEFAULT_ORDER: DashboardWidgetKey[] = [
   "recent-documents",
   "company-research",
-  "follow-ups",
   "templates",
 ];
 

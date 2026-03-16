@@ -7,7 +7,6 @@ from starlette.concurrency import run_in_threadpool
 
 from alfred.api.dependencies import get_db_session
 from alfred.core.dependencies import get_system_design_service
-from alfred.schemas.interview_prep import InterviewPrepRecord, InterviewPrepUpdate
 from alfred.schemas.system_design import (
     AutosaveRequest,
     ComponentDefinition,
@@ -33,7 +32,6 @@ from alfred.schemas.system_design import (
     SystemDesignTemplateCreate,
     TemplateDefinition,
 )
-from alfred.services.interview_service import InterviewPrepService
 from alfred.services.learning_service import LearningService
 from alfred.services.system_design import SystemDesignService
 from alfred.services.system_design_export import diagram_to_mermaid, diagram_to_plantuml
@@ -307,19 +305,6 @@ def publish_session(
                 source_url=f"system-design://share/{session.share_id}",
             )
             artifacts.zettel_card_ids.append(card.id or 0)
-
-    if payload.create_interview_prep_items and payload.interview_prep_id:
-        prep_service = InterviewPrepService()
-        prep = prep_service.get(payload.interview_prep_id)
-        if not prep:
-            raise HTTPException(status_code=404, detail="Interview prep record not found.")
-        record = InterviewPrepRecord.model_validate(prep)
-        prep_doc = record.prep_doc
-        prep_doc.likely_questions.extend(draft.interview_prep.likely_questions)
-        prep_doc.technical_topics.extend(draft.interview_prep.technical_topics)
-        update = InterviewPrepUpdate(prep_doc=prep_doc)
-        prep_service.update(payload.interview_prep_id, update)
-        artifacts.interview_prep_id = payload.interview_prep_id
 
     updated = svc.attach_artifacts(session_id, artifacts)
     if not updated:

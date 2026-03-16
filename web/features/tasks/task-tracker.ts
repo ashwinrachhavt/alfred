@@ -1,7 +1,7 @@
 import type { TaskStatusResponse } from "@/lib/api/types/tasks";
 import { safeGetItem, safeSetJSON } from "@/lib/storage";
 
-export type TaskSource = "company_research" | "interview_prep" | "generic";
+export type TaskSource = "company_research" | "generic";
 
 export type TrackedTask = {
   id: string;

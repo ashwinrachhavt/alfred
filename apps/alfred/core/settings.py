@@ -123,11 +123,6 @@ class Settings(BaseSettings):
     gcp_pubsub_topic: str | None = Field(default=None, alias="GCP_PUBSUB_TOPIC")
     token_store_dir: str = Field(default=".alfred_data/tokens", alias="TOKEN_STORE_DIR")
     enable_gmail: bool = Field(default=False, alias="ENABLE_GMAIL")
-    enable_gmail_interview_poll: bool = Field(
-        default=False,
-        alias="ENABLE_GMAIL_INTERVIEW_POLL",
-    )
-
     gmail_push_oidc_audience: str | None = Field(default=None, alias="GMAIL_PUSH_OIDC_AUDIENCE")
 
     # Google Drive
@@ -165,13 +160,6 @@ class Settings(BaseSettings):
 
     mcp_timeout: int = 30
     mcp_max_retries: int = 3
-
-    # OpenWeb Ninja / Glassdoor connector
-    openweb_ninja_api_key: str | None = Field(default=None, alias="OPENWEB_NINJA_API_KEY")
-    openweb_ninja_base_url: str = Field(
-        default="https://api.openwebninja.com/realtime-glassdoor-data",
-        alias="OPENWEB_NINJA_BASE_URL",
-    )
 
     # Langfuse (observability)
     langfuse_public_key: str | None = Field(default=None, alias="LANGFUSE_PUBLIC_KEY")
@@ -279,23 +267,6 @@ class Settings(BaseSettings):
         alias="SYSTEM_DESIGN_SESSIONS_COLLECTION",
     )
 
-    # Interview prep
-    interview_prep_collection: str = Field(
-        default="interview_preps",
-        alias="INTERVIEW_PREP_COLLECTION",
-    )
-    interview_questions_collection: str = Field(
-        default="interview_question_reports",
-        alias="INTERVIEW_QUESTIONS_COLLECTION",
-    )
-    interview_questions_cache_ttl_hours: int = Field(
-        default=24 * 2,
-        alias="INTERVIEW_QUESTIONS_CACHE_TTL_HOURS",
-        ge=0,
-        le=24 * 365,
-        description="0 disables freshness checks (always recompute).",
-    )
-
     # RAG semantic cache (Redis; best-effort)
     rag_answer_cache_ttl_seconds: int = Field(
         default=600,
@@ -312,14 +283,6 @@ class Settings(BaseSettings):
         description="Cosine similarity threshold for semantic cache hits.",
     )
 
-    job_applications_collection: str = Field(
-        default="job_applications",
-        alias="JOB_APPLICATIONS_COLLECTION",
-    )
-    enable_interview_reminders: bool = Field(
-        default=False,
-        alias="ENABLE_INTERVIEW_REMINDERS",
-    )
     enable_interview_calendar_events: bool = Field(
         default=False,
         alias="ENABLE_INTERVIEW_CALENDAR_EVENTS",
@@ -477,31 +440,6 @@ class Settings(BaseSettings):
     recursive_depth: int = Field(default=0, alias="RECURSIVE_DEPTH")
 
     # Outreach discovery
-    apollo_api_key: str | None = Field(default=None, alias="APOLLO_API_KEY")
-    hunter_api_key: str | None = Field(default=None, alias="HUNTER_API_KEY")
-    hunter_timeout_seconds: int = Field(default=15, alias="HUNTER_TIMEOUT_SECONDS", ge=3, le=60)
-    hunter_verify_top_n: int = Field(default=0, alias="HUNTER_VERIFY_TOP_N", ge=0, le=20)
-    snov_client_id: str | None = Field(default=None, alias="SNOV_CLIENT_ID")
-    snov_client_secret: str | None = Field(default=None, alias="SNOV_CLIENT_SECRET")
-    outreach_cache_path: str = Field(
-        default=".alfred_data/outreach_cache.json", alias="OUTREACH_CACHE_PATH"
-    )
-    outreach_cache_ttl_hours: int = Field(
-        default=24, alias="OUTREACH_CACHE_TTL_HOURS", ge=1, le=24 * 14
-    )
-    outreach_contacts_csv: str = Field(
-        default=".alfred_data/outreach_contacts.csv", alias="OUTREACH_CONTACTS_CSV"
-    )
-    outreach_runs_csv: str = Field(
-        default=".alfred_data/outreach_runs.csv", alias="OUTREACH_RUNS_CSV"
-    )
-    outreach_send_enabled: bool = Field(default=False, alias="OUTREACH_SEND_ENABLED")
-    smtp_host: str | None = Field(default=None, alias="SMTP_HOST")
-    smtp_port: int = Field(default=587, alias="SMTP_PORT")
-    smtp_username: str | None = Field(default=None, alias="SMTP_USERNAME")
-    smtp_password: str | None = Field(default=None, alias="SMTP_PASSWORD")
-    smtp_use_tls: bool = Field(default=True, alias="SMTP_USE_TLS")
-    smtp_from_email: str | None = Field(default=None, alias="SMTP_FROM_EMAIL")
 
 
 @lru_cache

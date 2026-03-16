@@ -6,11 +6,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { AppCommandPaletteProvider } from "@/components/app-command-palette";
 import { AssistantProvider, AssistantSheet } from "@/components/assistant-sheet";
-import { FollowUpCenterSheet } from "@/components/follow-up-center-sheet";
 import { TaskCenterSheet } from "@/components/task-center-sheet";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
-import { FollowUpsProvider } from "@/features/follow-ups/follow-up-provider";
 import { TaskTrackerProvider } from "@/features/tasks/task-tracker-provider";
 
 function createQueryClient(): QueryClient {
@@ -37,7 +35,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
       disableTransitionOnChange
     >
       <QueryClientProvider client={queryClient}>
-        <FollowUpsProvider>
           <TaskTrackerProvider>
             <AssistantProvider>
               <AppCommandPaletteProvider>
@@ -49,13 +46,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
                 </a>
                 {children}
                 <TaskCenterSheet />
-                <FollowUpCenterSheet />
                 <AssistantSheet />
                 <Toaster />
               </AppCommandPaletteProvider>
             </AssistantProvider>
           </TaskTrackerProvider>
-        </FollowUpsProvider>
       </QueryClientProvider>
     </ThemeProvider>
   );

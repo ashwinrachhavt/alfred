@@ -89,3 +89,5 @@ next-env.d.ts
 Alfred/
 
 .mcp*
+
+.claude*

@@ -86,19 +86,11 @@ export const appNavItems: AppNavItem[] = [
     group: "knowledge",
   },
   {
-    key: "follow-ups",
-    title: "Follow-ups",
-    href: "/follow-ups",
-    icon: Bell,
-    keywords: ["follow ups", "follow-ups", "reminders", "pending", "nudge"],
-    group: "knowledge",
-  },
-  {
     key: "company",
-    title: "Company Intel",
+    title: "Research",
     href: "/company",
     icon: Sparkles,
-    keywords: ["company", "research", "intel", "intelligence"],
+    keywords: ["research", "deep research", "intel", "intelligence"],
     group: "research",
   },
   {
@@ -115,14 +107,6 @@ export const appNavItems: AppNavItem[] = [
     href: "/system-design",
     icon: Shapes,
     keywords: ["system design", "diagram", "architecture"],
-    group: "practice",
-  },
-  {
-    key: "interview-prep",
-    title: "Interview Prep",
-    href: "/interview-prep",
-    icon: BookOpen,
-    keywords: ["interview", "prep", "questions", "practice"],
     group: "practice",
   },
   {

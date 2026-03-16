@@ -711,7 +711,6 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
                   const payload: SystemDesignPublishRequest = {
                     create_learning_topics: publishLearningTopics,
                     create_zettels: publishZettels,
-                    create_interview_prep_items: false,
                     topic_title: topicTitle.trim() || null,
                     topic_tags: [],
                     zettel_tags: [],

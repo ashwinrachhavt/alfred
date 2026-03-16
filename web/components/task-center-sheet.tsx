@@ -5,18 +5,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import {
-  Bell,
   CheckCircle2,
   CircleDashed,
   ListChecks,
   Trash2,
   XCircle,
 } from "lucide-react";
-import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { formatRelativeTimestamp } from "@/lib/utils/date-format";
-import { useFollowUps } from "@/features/follow-ups/follow-up-provider";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -78,7 +75,6 @@ function TaskStatusPill({
 
 export function TaskCenterSheet() {
   const router = useRouter();
-  const { addFollowUp, setFollowUpCenterOpen } = useFollowUps();
   const {
     tasks,
     statusById,
@@ -168,10 +164,7 @@ export function TaskCenterSheet() {
             action={
               <div className="flex flex-wrap justify-center gap-2">
                 <Button asChild type="button" variant="outline" size="sm">
-                  <Link href="/company">Company</Link>
-                </Button>
-                <Button asChild type="button" variant="outline" size="sm">
-                  <Link href="/interview-prep">Interview Prep</Link>
+                  <Link href="/company">Research</Link>
                 </Button>
               </div>
             }
@@ -224,36 +217,6 @@ export function TaskCenterSheet() {
                           }}
                         >
                           View
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label="Create follow-up"
-                          onClick={() => {
-                            const dueAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-                            const href =
-                              task.href ?? "/dashboard";
-
-                            const created = addFollowUp({
-                              title: `Review: ${task.label}`,
-                              dueAt,
-                              href,
-                              source: "task",
-                              templateLabel: "From Task Center",
-                              meta: {
-                                task_id: task.id,
-                                task_source: task.source,
-                                task_label: task.label,
-                              },
-                            });
-
-                            if (!created) return;
-                            toast.success("Follow-up created.");
-                            setFollowUpCenterOpen(true);
-                          }}
-                        >
-                          <Bell className="h-4 w-4" aria-hidden="true" />
                         </Button>
                         <Button
                           type="button"

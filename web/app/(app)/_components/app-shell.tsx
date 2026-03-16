@@ -8,7 +8,6 @@ import { AppCommandPaletteTrigger } from "@/components/app-command-palette";
 import { AppNavigationMenu } from "@/components/app-navigation-menu";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AssistantTrigger } from "@/components/assistant-sheet";
-import { FollowUpCenterTrigger } from "@/components/follow-up-center-sheet";
 import { TaskCenterTrigger } from "@/components/task-center-sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -47,7 +46,6 @@ export function AppShell({
               <AppCommandPaletteTrigger className="hidden md:flex" />
               <AssistantTrigger />
               <TaskCenterTrigger />
-              <FollowUpCenterTrigger />
               <ThemeToggle />
               {clerkEnabled ? (
                 <>

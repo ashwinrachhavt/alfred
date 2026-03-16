@@ -55,7 +55,6 @@ function nextTaskLabel(source: TaskSource, label: string): string {
   const normalized = label.trim();
   if (normalized) return normalized;
   if (source === "company_research") return "Company research";
-  if (source === "interview_prep") return "Interview prep";
   return "Background task";
 }
 

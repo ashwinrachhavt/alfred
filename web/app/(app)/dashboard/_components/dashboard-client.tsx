@@ -24,10 +24,6 @@ import { GripVertical, LayoutDashboard, Plus, RotateCcw } from "lucide-react";
 import { useAssistant } from "@/components/assistant-sheet";
 import { useRecentCompanyResearchReports } from "@/features/company/queries";
 import { useRecentDocuments } from "@/features/documents/queries";
-import { useFollowUps } from "@/features/follow-ups/follow-up-provider";
-
-import { useNowMs } from "@/hooks/use-now";
-
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -131,20 +127,11 @@ export function DashboardClient() {
   const recentReports = useRecentCompanyResearchReports(6);
   const { setAssistantOpen } = useAssistant();
 
-  const {
-    items: followUpItems,
-    dueNowCount: followUpDueNowCount,
-    openCount: followUpOpenCount,
-    setFollowUpCenterOpen,
-  } = useFollowUps();
-  const nowMs = useNowMs(60_000);
-
   const widgetLabels = React.useMemo<Record<DashboardWidgetKey, string>>(
     () => ({
       "recent-documents": "Recent documents",
       "company-research": "Company research",
 
-      "follow-ups": "Follow-ups",
       templates: "Templates",
     }),
     [],
@@ -155,7 +142,6 @@ export function DashboardClient() {
     loadDashboardLayout([
       "recent-documents",
       "company-research",
-      "follow-ups",
       "templates",
     ]),
   );
@@ -180,25 +166,6 @@ export function DashboardClient() {
   );
 
 
-  const visibleFollowUps = React.useMemo(() => {
-    return followUpItems
-      .filter((item) => !item.completedAt)
-      .filter((item) => {
-        if (!item.snoozedUntil) return true;
-        const until = Date.parse(item.snoozedUntil);
-        if (Number.isNaN(until)) return true;
-        return until <= nowMs;
-      })
-      .slice()
-      .sort((a, b) => {
-        const aDue = a.dueAt ? Date.parse(a.dueAt) : Number.POSITIVE_INFINITY;
-        const bDue = b.dueAt ? Date.parse(b.dueAt) : Number.POSITIVE_INFINITY;
-        if (aDue !== bDue) return aDue - bDue;
-        return b.createdAt.localeCompare(a.createdAt);
-      })
-      .slice(0, 5);
-  }, [followUpItems, nowMs]);
-
   const templates: Array<{ title: string; description: string; href: string }> = [
     {
       title: "Company research",
@@ -211,11 +178,6 @@ export function DashboardClient() {
       href: "/system-design?problemStatement=Design%20a%20rate%20limiter%20for%20an%20API",
     },
 
-    {
-      title: "Follow-up: send recap",
-      description: "Create a follow-up due tomorrow.",
-      href: "/follow-ups?title=Send%20recap%20email&dueInMinutes=1440",
-    },
     { title: "Scan Gmail + Calendar", description: "Fetch previews on demand.", href: "/calendar" },
   ];
 
@@ -334,60 +296,6 @@ export function DashboardClient() {
     }
 
 
-    if (key === "follow-ups") {
-      return (
-        <DashboardWidgetFrame
-          title="Follow-ups"
-          description="Pending items and reminders."
-          {...frame}
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge
-              variant={
-                followUpDueNowCount ? "destructive" : followUpOpenCount ? "secondary" : "outline"
-              }
-            >
-              {followUpDueNowCount
-                ? `${followUpDueNowCount} due`
-                : followUpOpenCount
-                  ? `${followUpOpenCount} open`
-                  : "No follow-ups"}
-            </Badge>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setFollowUpCenterOpen(true)}
-            >
-              Open center
-            </Button>
-            <Button asChild type="button" size="sm" variant="ghost">
-              <Link href="/follow-ups">View all</Link>
-            </Button>
-          </div>
-
-          {visibleFollowUps.length ? (
-            <ul className="space-y-2">
-              {visibleFollowUps.map((item) => (
-                <li key={item.id} className="flex items-start justify-between gap-3">
-                  <Link
-                    href={`/follow-ups?focus=${encodeURIComponent(item.id)}`}
-                    className="hover:text-foreground text-sm leading-snug font-medium underline-offset-4 hover:underline"
-                  >
-                    {item.title}
-                  </Link>
-                  <div className="text-muted-foreground shrink-0 text-xs">
-                    {item.dueAt ? formatDueTimestamp(item.dueAt) : "—"}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-muted-foreground text-sm">Nothing pending right now.</p>
-          )}
-        </DashboardWidgetFrame>
-      );
-    }
 
     if (key === "templates") {
       return (
