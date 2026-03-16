@@ -5,10 +5,10 @@
  * correct backend prefix (some FastAPI routers are mounted outside `/api/*`).
  */
 export const apiRoutes = {
-  company: {
-    research: "/api/company/research",
-    researchReportsRecent: "/api/company/research-reports/recent",
-    researchReportById: (reportId: string) => `/api/company/research-reports/${reportId}`,
+  research: {
+    deepResearch: "/api/research/",
+    reportsRecent: "/api/research/reports/recent",
+    reportById: (reportId: string) => `/api/research/reports/${reportId}`,
   },
   documents: {
     explorer: "/api/documents/explorer",

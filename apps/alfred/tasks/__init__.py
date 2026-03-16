@@ -5,7 +5,7 @@ Tasks are imported explicitly here so Celery's autodiscovery can find them via
 task modules.
 """
 
-from . import company_research as company_research
+from . import deep_research as deep_research
 from . import document_concepts as document_concepts
 from . import document_enrichment as document_enrichment
 from . import document_processing as document_processing

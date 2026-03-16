@@ -152,7 +152,7 @@ export function TasksClient({ initialTaskId }: { initialTaskId?: string }) {
     [data?.result],
   );
   const companyReportHref = companyReportId
-    ? `/company?reportId=${encodeURIComponent(companyReportId)}`
+    ? `/research?reportId=${encodeURIComponent(companyReportId)}`
     : null;
   const executiveSummary = useMemo(
     () => extractCompanyResearchExecutiveSummary(data?.result),

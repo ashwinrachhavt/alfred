@@ -17,7 +17,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
     task_modules = (
         [
             "alfred.tasks.mind_palace_agent",
-            "alfred.tasks.company_research",
+            "alfred.tasks.deep_research",
             "alfred.tasks.document_enrichment",
             "alfred.tasks.document_processing",
             "alfred.tasks.document_title_image",
@@ -52,7 +52,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
         ),
         task_routes={
             "alfred.tasks.mind_palace_agent.*": {"queue": "agent"},
-            "alfred.tasks.company_research.*": {"queue": "default"},
+            "alfred.tasks.deep_research.*": {"queue": "default"},
             "alfred.tasks.document_enrichment.*": {"queue": "default"},
             "alfred.tasks.document_processing.*": {"queue": "default"},
             "alfred.tasks.document_title_image.*": {"queue": "default"},
@@ -107,7 +107,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
         celery_app.autodiscover_tasks(["alfred"])
         # Be explicit to avoid "Received unregistered task" when running workers from
         # different entrypoints/working directories.
-        import alfred.tasks.company_research
+        import alfred.tasks.deep_research
         import alfred.tasks.document_concepts
         import alfred.tasks.document_enrichment
         import alfred.tasks.document_processing

@@ -5,29 +5,27 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import type {
-  CompanyResearchPayload,
-  CompanyResearchQueuedResponse,
-} from "@/lib/api/types/company";
-import { useDiscoverCompanyContacts, useStartCompanyResearch } from "@/features/company/mutations";
-import { useCompanyContactsFromDb, useCompanyResearchReport } from "@/features/company/queries";
+  ResearchPayload,
+  ResearchQueuedResponse,
+} from "@/lib/api/types/research";
+import { useStartDeepResearch } from "@/features/research/mutations";
+import { useResearchReport } from "@/features/research/queries";
 import { useTaskStatus } from "@/features/tasks/queries";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 
-function isQueuedResponse(value: unknown): value is CompanyResearchQueuedResponse {
+function isQueuedResponse(value: unknown): value is ResearchQueuedResponse {
   return value !== null && typeof value === "object" && "task_id" in value && "status_url" in value;
 }
 
-function normalizeCompanyResearchResult(value: unknown): CompanyResearchPayload | null {
+function normalizeResearchResult(value: unknown): ResearchPayload | null {
   if (!value || typeof value !== "object") return null;
   if (!("report" in value)) return null;
-  return value as CompanyResearchPayload;
+  return value as ResearchPayload;
 }
 
 function BulletList({ items }: { items: string[] }) {
@@ -41,7 +39,7 @@ function BulletList({ items }: { items: string[] }) {
   );
 }
 
-function ResearchReport({ payload }: { payload: CompanyResearchPayload }) {
+function ResearchReport({ payload }: { payload: ResearchPayload }) {
   const report = payload.report;
 
   return (
@@ -127,54 +125,44 @@ function ResearchReport({ payload }: { payload: CompanyResearchPayload }) {
   );
 }
 
-type CompanyResearchClientProps = {
+type ResearchClientProps = {
   reportId?: string;
-  initialCompany?: string;
+  initialTopic?: string;
   initialRefresh?: boolean;
 };
 
-export function CompanyResearchClient({
+export function ResearchClient({
   reportId,
-  initialCompany,
+  initialTopic,
   initialRefresh,
-}: CompanyResearchClientProps) {
-  const [companyName, setCompanyName] = useState(() => (initialCompany ?? "").trim());
-  const [hasEditedCompanyName, setHasEditedCompanyName] = useState(false);
+}: ResearchClientProps) {
+  const [topic, setTopic] = useState(() => (initialTopic ?? "").trim());
+  const [hasEditedTopic, setHasEditedTopic] = useState(false);
   const [refresh, setRefresh] = useState(() => Boolean(initialRefresh));
-  const [contactsRole, setContactsRole] = useState("");
 
-  const startResearch = useStartCompanyResearch();
-  const discoverContacts = useDiscoverCompanyContacts();
+  const startResearch = useStartDeepResearch();
   const { trackTask } = useTaskTracker();
   const [taskId, setTaskId] = useState<string | null>(null);
   const taskQuery = useTaskStatus(taskId);
-  const reportQuery = useCompanyResearchReport(reportId ?? null);
+  const reportQuery = useResearchReport(reportId ?? null);
 
-  const companyFromReport = useMemo(() => {
-    const normalized = reportQuery.data ? normalizeCompanyResearchResult(reportQuery.data) : null;
+  const topicFromReport = useMemo(() => {
+    const normalized = reportQuery.data ? normalizeResearchResult(reportQuery.data) : null;
     return normalized?.company ?? "";
   }, [reportQuery.data]);
 
-  const effectiveCompanyName = hasEditedCompanyName
-    ? companyName
-    : companyName || companyFromReport;
-  const trimmedCompanyName = effectiveCompanyName.trim();
-
-  const contactsQuery = useCompanyContactsFromDb({
-    name: trimmedCompanyName,
-    role: contactsRole || undefined,
-    limit: 20,
-  });
+  const effectiveTopic = hasEditedTopic ? topic : topic || topicFromReport;
+  const trimmedTopic = effectiveTopic.trim();
 
   const payload = useMemo(() => {
     if (startResearch.data && !isQueuedResponse(startResearch.data)) {
-      return startResearch.data as CompanyResearchPayload;
+      return startResearch.data as ResearchPayload;
     }
     if (taskQuery.data?.ready && taskQuery.data.result) {
-      return normalizeCompanyResearchResult(taskQuery.data.result);
+      return normalizeResearchResult(taskQuery.data.result);
     }
     if (reportQuery.data) {
-      return normalizeCompanyResearchResult(reportQuery.data);
+      return normalizeResearchResult(reportQuery.data);
     }
     return null;
   }, [startResearch.data, taskQuery.data, reportQuery.data]);
@@ -185,9 +173,9 @@ export function CompanyResearchClient({
   return (
     <div className="space-y-6">
       <header className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Company Intelligence</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">Deep Research</h1>
         <p className="text-muted-foreground">
-          Generate a research brief with citations. Runs as a background task when needed.
+          Research any topic in depth. Generates a structured brief with citations.
         </p>
       </header>
 
@@ -198,31 +186,31 @@ export function CompanyResearchClient({
         <CardContent className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
             <div className="space-y-2">
-              <Label htmlFor="companyName">Company</Label>
+              <Label htmlFor="researchTopic">Topic</Label>
               <Input
-                id="companyName"
-                placeholder="e.g. Stripe"
-                value={effectiveCompanyName}
+                id="researchTopic"
+                placeholder="e.g. Transformer architecture, Stripe, quantum computing"
+                value={effectiveTopic}
                 onChange={(event) => {
-                  if (!hasEditedCompanyName) setHasEditedCompanyName(true);
-                  setCompanyName(event.target.value);
+                  if (!hasEditedTopic) setHasEditedTopic(true);
+                  setTopic(event.target.value);
                 }}
               />
             </div>
             <Button
               type="button"
-              disabled={!trimmedCompanyName || startResearch.isPending}
+              disabled={!trimmedTopic || startResearch.isPending}
               onClick={async () => {
-                const name = trimmedCompanyName;
+                const name = trimmedTopic;
                 setTaskId(null);
                 try {
-                  const result = await startResearch.mutateAsync({ name, refresh });
+                  const result = await startResearch.mutateAsync({ topic: name, refresh });
                   if (isQueuedResponse(result)) {
                     setTaskId(result.task_id);
                     trackTask({
                       id: result.task_id,
                       source: "company_research",
-                      label: `Company research: ${name}`,
+                      label: `Research: ${name}`,
                     });
                     toast.message("Research started in background.");
                   } else {
@@ -281,127 +269,6 @@ export function CompanyResearchClient({
                 ? startResearch.error.message
                 : "Request failed."}
             </p>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1">
-            <CardTitle>Contacts</CardTitle>
-            <p className="text-muted-foreground text-sm">
-              Contacts saved in the database for this company.
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={discoverContacts.isPending || !trimmedCompanyName}
-            onClick={async () => {
-              if (!trimmedCompanyName) return;
-              try {
-                await discoverContacts.mutateAsync({
-                  name: trimmedCompanyName,
-                  role: contactsRole || undefined,
-                });
-                await contactsQuery.refetch();
-                toast.success("Contact discovery complete.");
-              } catch (err) {
-                toast.error(
-                  err instanceof Error ? err.message : "Failed to discover contacts from providers.",
-                );
-              }
-            }}
-          >
-            {discoverContacts.isPending ? "Discovering…" : "Discover contacts"}
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-            <div className="space-y-2">
-              <Label htmlFor="contactsRole">Role filter</Label>
-              <Input
-                id="contactsRole"
-                placeholder="e.g. engineering"
-                value={contactsRole}
-                disabled={!trimmedCompanyName}
-                onChange={(event) => setContactsRole(event.target.value)}
-              />
-            </div>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={contactsQuery.isFetching || !trimmedCompanyName}
-              onClick={() => contactsQuery.refetch()}
-            >
-              {contactsQuery.isFetching ? "Refreshing…" : "Refresh list"}
-            </Button>
-          </div>
-
-          {!trimmedCompanyName ? (
-            <EmptyState
-              title="Enter a company to load contacts"
-              description="Type a company name above, then refresh or discover contacts."
-            />
-          ) : null}
-
-          {contactsQuery.isError ? (
-            <p className="text-destructive text-sm">
-              {contactsQuery.error instanceof Error
-                ? contactsQuery.error.message
-                : "Failed to load contacts."}
-            </p>
-          ) : null}
-
-          {contactsQuery.isFetching && !contactsQuery.data ? (
-            <p className="text-muted-foreground text-sm">Loading contacts…</p>
-          ) : null}
-
-          {contactsQuery.data?.items?.length ? (
-            <div className="overflow-hidden rounded-lg border">
-              <div className="bg-muted/30 grid grid-cols-[1fr_1fr_1fr_auto] gap-3 px-3 py-2 text-xs font-medium">
-                <span>Name</span>
-                <span>Title</span>
-                <span>Email</span>
-                <span className="text-right">Meta</span>
-              </div>
-              <div className="divide-y">
-                {contactsQuery.data.items.map((item) => {
-                  const confidencePct = Math.round((item.confidence ?? 0) * 100);
-                  const createdAt = item.created_at ? new Date(item.created_at) : null;
-                  return (
-                    <div
-                      key={`${item.id ?? "row"}-${item.email}`}
-                      className="grid grid-cols-[1fr_1fr_1fr_auto] gap-3 px-3 py-3 text-sm"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{item.name || "—"}</p>
-                        <p className="text-muted-foreground truncate text-xs">{item.company}</p>
-                      </div>
-                      <p className="text-muted-foreground line-clamp-2">{item.title || "—"}</p>
-                      <a
-                        className="text-primary truncate underline-offset-2 hover:underline"
-                        href={`mailto:${item.email}`}
-                      >
-                        {item.email || "—"}
-                      </a>
-                      <div className="flex items-center justify-end gap-2">
-                        <Badge variant="outline">{item.source || "unknown"}</Badge>
-                        <Badge variant="secondary">{confidencePct}%</Badge>
-                        <span className="text-muted-foreground hidden text-xs sm:inline">
-                          {createdAt ? createdAt.toLocaleDateString() : "—"}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : contactsQuery.data && trimmedCompanyName ? (
-            <EmptyState
-              title="No saved contacts yet"
-              description="Discover contacts (if provider keys are configured) or run outreach to populate the table."
-            />
           ) : null}
         </CardContent>
       </Card>

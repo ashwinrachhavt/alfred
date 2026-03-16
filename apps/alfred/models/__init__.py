@@ -3,7 +3,7 @@
 from sqlmodel import Field, SQLModel
 
 from alfred.models.base import Model, TimestampMixin
-from alfred.models.company import CompanyResearchReportRow
+from alfred.models.company import CompanyResearchReportRow  # DB table: company_research_reports
 from alfred.models.datastore import DataStoreRow
 from alfred.models.doc_storage import DocChunkRow, DocumentRow, QuickNoteRow
 from alfred.models.learning import (

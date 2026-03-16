@@ -86,9 +86,9 @@ export const appNavItems: AppNavItem[] = [
     group: "knowledge",
   },
   {
-    key: "company",
+    key: "research",
     title: "Research",
-    href: "/company",
+    href: "/research",
     icon: Sparkles,
     keywords: ["research", "deep research", "intel", "intelligence"],
     group: "research",

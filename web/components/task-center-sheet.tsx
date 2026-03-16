@@ -160,11 +160,11 @@ export function TaskCenterSheet() {
           <EmptyState
             icon={ListChecks}
             title="No tracked tasks yet"
-            description="Start a Company Research or Interview Prep run in background and it will show up here."
+            description="Start a Deep Research run in background and it will show up here."
             action={
               <div className="flex flex-wrap justify-center gap-2">
                 <Button asChild type="button" variant="outline" size="sm">
-                  <Link href="/company">Research</Link>
+                  <Link href="/research">Research</Link>
                 </Button>
               </div>
             }

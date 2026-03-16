@@ -22,7 +22,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, LayoutDashboard, Plus, RotateCcw } from "lucide-react";
 
 import { useAssistant } from "@/components/assistant-sheet";
-import { useRecentCompanyResearchReports } from "@/features/company/queries";
+import { useRecentResearchReports } from "@/features/research/queries";
 import { useRecentDocuments } from "@/features/documents/queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -124,13 +124,13 @@ function SortableWidget({
 
 export function DashboardClient() {
   const recentDocuments = useRecentDocuments(6);
-  const recentReports = useRecentCompanyResearchReports(6);
+  const recentReports = useRecentResearchReports(6);
   const { setAssistantOpen } = useAssistant();
 
   const widgetLabels = React.useMemo<Record<DashboardWidgetKey, string>>(
     () => ({
       "recent-documents": "Recent documents",
-      "company-research": "Company research",
+      "company-research": "Deep research",
 
       templates: "Templates",
     }),
@@ -168,9 +168,9 @@ export function DashboardClient() {
 
   const templates: Array<{ title: string; description: string; href: string }> = [
     {
-      title: "Company research",
+      title: "Deep research",
       description: "Generate a brief with citations.",
-      href: "/company",
+      href: "/research",
     },
     {
       title: "System design session",
@@ -239,7 +239,7 @@ export function DashboardClient() {
     if (key === "company-research") {
       return (
         <DashboardWidgetFrame
-          title="Company research"
+          title="Deep research"
           description="Recent briefs and executive summaries."
           {...frame}
         >
@@ -264,7 +264,7 @@ export function DashboardClient() {
                 <li key={report.id} className="space-y-1">
                   <div className="flex items-start justify-between gap-3">
                     <Link
-                      href={`/company?reportId=${encodeURIComponent(report.id)}`}
+                      href={`/research?reportId=${encodeURIComponent(report.id)}`}
                       className="hover:text-foreground text-sm leading-snug font-medium underline-offset-4 hover:underline"
                     >
                       {report.company}
@@ -287,7 +287,7 @@ export function DashboardClient() {
 
           <div className="flex flex-wrap gap-2">
             <Button asChild size="sm" variant="ghost">
-              <Link href="/company">Open company research</Link>
+              <Link href="/research">Open company research</Link>
             </Button>
             <Badge variant="secondary">Citations</Badge>
           </div>
@@ -351,7 +351,7 @@ export function DashboardClient() {
 
         <div className="flex flex-wrap gap-2">
           <Button asChild size="sm">
-            <Link href="/company">Research a company</Link>
+            <Link href="/research">Research a company</Link>
           </Button>
           <Button
             type="button"

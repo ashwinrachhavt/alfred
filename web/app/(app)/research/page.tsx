@@ -1,21 +1,21 @@
-import { CompanyResearchClient } from "@/app/(app)/company/_components/company-research-client";
+import { ResearchClient } from "@/app/(app)/research/_components/research-client";
 import { Page } from "@/components/layout/page";
 
-type CompanyPageProps = {
+type ResearchPageProps = {
   searchParams?: Promise<{
     reportId?: string | string[];
-    company?: string | string[];
+    topic?: string | string[];
     refresh?: string | string[];
   }>;
 };
 
-export default async function CompanyPage({ searchParams }: CompanyPageProps) {
+export default async function ResearchPage({ searchParams }: ResearchPageProps) {
   const resolvedSearchParams = await searchParams;
   const reportIdValue = resolvedSearchParams?.reportId;
   const reportId = Array.isArray(reportIdValue) ? reportIdValue[0] : reportIdValue;
 
-  const companyValue = resolvedSearchParams?.company;
-  const company = Array.isArray(companyValue) ? companyValue[0] : companyValue;
+  const topicValue = resolvedSearchParams?.topic;
+  const topic = Array.isArray(topicValue) ? topicValue[0] : topicValue;
 
   const refreshValue = resolvedSearchParams?.refresh;
   const refreshRaw = Array.isArray(refreshValue) ? refreshValue[0] : refreshValue;
@@ -23,9 +23,9 @@ export default async function CompanyPage({ searchParams }: CompanyPageProps) {
 
   return (
     <Page>
-      <CompanyResearchClient
+      <ResearchClient
         reportId={reportId}
-        initialCompany={company}
+        initialTopic={topic}
         initialRefresh={refresh}
       />
     </Page>

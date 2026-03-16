@@ -1,6 +1,7 @@
-"""Company research service.
+"""Deep research service.
 
-This is the canonical module for the "company research" feature.
+Generalized research engine — feed it any topic and it produces a structured
+research report backed by web sources.
 """
 
 from __future__ import annotations
@@ -22,14 +23,14 @@ from alfred.core.database import SessionLocal
 from alfred.core.exceptions import ConfigurationError
 from alfred.core.settings import settings
 from alfred.core.utils import utcnow as _utcnow
-from alfred.models.company import CompanyResearchReportRow
+from alfred.models.company import DeepResearchReportRow
 from alfred.prompts import load_prompt
 from alfred.services.datastore import DataStoreService
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = load_prompt("company_researcher", "system.md")
-REPORT_PROMPT = load_prompt("company_researcher", "deep.md")
+SYSTEM_PROMPT = load_prompt("deep_researcher", "system.md")
+REPORT_PROMPT = load_prompt("deep_researcher", "deep.md")
 MAX_CONTEXT_CHARS = 40_000
 TRIMMED_MARKDOWN_CHARS = 12_000
 
@@ -63,7 +64,7 @@ class ReportSection(BaseModel):
     )
 
 
-class CompanyResearchReport(BaseModel):
+class DeepResearchReport(BaseModel):
     company: str
     executive_summary: str
     sections: list[ReportSection]
@@ -73,7 +74,7 @@ class CompanyResearchReport(BaseModel):
     references: list[str] = Field(default_factory=list)
 
 
-class CompanyResearchService:
+class DeepResearchService:
     def __init__(
         self,
         *,
@@ -105,7 +106,7 @@ class CompanyResearchService:
 
         with SessionLocal() as session:
             row = session.exec(
-                select(CompanyResearchReportRow).where(CompanyResearchReportRow.company_key == key)
+                select(DeepResearchReportRow).where(DeepResearchReportRow.company_key == key)
             ).first()
             if row is None:
                 return None
@@ -130,11 +131,11 @@ class CompanyResearchService:
         now = _utcnow()
         with SessionLocal() as session:
             row = session.exec(
-                select(CompanyResearchReportRow).where(CompanyResearchReportRow.company_key == key)
+                select(DeepResearchReportRow).where(DeepResearchReportRow.company_key == key)
             ).first()
 
             if row is None:
-                row = CompanyResearchReportRow(
+                row = DeepResearchReportRow(
                     company_key=key,
                     company=company.strip(),
                     payload=payload,
@@ -157,8 +158,8 @@ class CompanyResearchService:
             except sa.exc.IntegrityError:
                 session.rollback()
                 row = session.exec(
-                    select(CompanyResearchReportRow).where(
-                        CompanyResearchReportRow.company_key == key
+                    select(DeepResearchReportRow).where(
+                        DeepResearchReportRow.company_key == key
                     )
                 ).first()
                 if row is None:
@@ -309,7 +310,7 @@ class CompanyResearchService:
             organization=settings.openai_organization,
         )
         self._llm = llm
-        self._structured_llm = llm.with_structured_output(CompanyResearchReport)
+        self._structured_llm = llm.with_structured_output(DeepResearchReport)
 
     def _collect_sources(self, company: str) -> tuple[list[EnrichedSource], dict[str, Any]]:
         primary = self._search(company, self._get_primary_search())
@@ -375,11 +376,11 @@ class CompanyResearchService:
             return text
         return text[:TRIMMED_MARKDOWN_CHARS] + "\n…"
 
-    def _run_llm(self, company: str, sources: list[EnrichedSource]) -> CompanyResearchReport:
+    def _run_llm(self, company: str, sources: list[EnrichedSource]) -> DeepResearchReport:
         context = self._render_context(sources)
         user_prompt = REPORT_PROMPT.format(company=company, sources=context)
         return cast(
-            CompanyResearchReport,
+            DeepResearchReport,
             self._structured_llm.invoke(
                 [
                     {"role": "system", "content": SYSTEM_PROMPT},
@@ -417,6 +418,6 @@ class CompanyResearchService:
         return payload
 
 
-def generate_company_research(company: str, *, refresh: bool = False) -> dict[str, Any]:
-    service = CompanyResearchService()
-    return service.generate_report(company, refresh=refresh)
+def generate_deep_research(topic: str, *, refresh: bool = False) -> dict[str, Any]:
+    service = DeepResearchService()
+    return service.generate_report(topic, refresh=refresh)

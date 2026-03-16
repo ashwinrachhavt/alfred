@@ -17,7 +17,7 @@ def register_routes(app: FastAPI) -> None:
     # Knowledge import routers
     from alfred.api.arxiv_import import router as arxiv_import_router
     from alfred.api.calendar import router as calendar_router
-    from alfred.api.company import router as company_router
+    from alfred.api.research import router as research_router
     from alfred.api.documents import router as documents_router
     from alfred.api.gdrive import router as gdrive_router
     from alfred.api.github_import import router as github_import_router
@@ -60,7 +60,7 @@ def register_routes(app: FastAPI) -> None:
         notes_router,
         linear_router,
         calendar_router,
-        company_router,
+        research_router,
         web_router,
         documents_router,
         mind_palace_agent_router,

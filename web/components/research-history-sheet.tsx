@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Clock, ExternalLink } from "lucide-react";
 
 import { formatRelativeTimestamp } from "@/lib/utils/date-format";
-import { useRecentCompanyResearchReports } from "@/features/company/queries";
+import { useRecentResearchReports } from "@/features/research/queries";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -20,13 +20,13 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 
-type CompanyResearchHistorySheetProps = {
+type ResearchHistorySheetProps = {
   trigger?: React.ReactElement;
 };
 
-export function CompanyResearchHistorySheet({ trigger }: CompanyResearchHistorySheetProps) {
+export function ResearchHistorySheet({ trigger }: ResearchHistorySheetProps) {
   const router = useRouter();
-  const recent = useRecentCompanyResearchReports(20);
+  const recent = useRecentResearchReports(20);
 
   return (
     <Sheet>
@@ -95,7 +95,7 @@ export function CompanyResearchHistorySheet({ trigger }: CompanyResearchHistoryS
                           variant="secondary"
                           size="sm"
                           onClick={() =>
-                            router.push(`/company?reportId=${encodeURIComponent(item.id)}`)
+                            router.push(`/research?reportId=${encodeURIComponent(item.id)}`)
                           }
                         >
                           Open
@@ -108,7 +108,7 @@ export function CompanyResearchHistorySheet({ trigger }: CompanyResearchHistoryS
                         size="icon"
                         aria-label="Open company page"
                       >
-                        <Link href="/company">
+                        <Link href="/research">
                           <ExternalLink className="h-4 w-4" />
                         </Link>
                       </Button>
@@ -124,7 +124,7 @@ export function CompanyResearchHistorySheet({ trigger }: CompanyResearchHistoryS
               action={
                 <SheetClose asChild>
                   <Button asChild type="button" variant="outline" size="sm">
-                    <Link href="/company">Open Company</Link>
+                    <Link href="/research">Open Company</Link>
                   </Button>
                 </SheetClose>
               }
