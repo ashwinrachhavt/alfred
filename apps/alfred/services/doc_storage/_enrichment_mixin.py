@@ -153,6 +153,29 @@ class EnrichmentMixin:
                 "has_graph": bool(self.graph_service),
             }
 
+    def update_document_enrichment(self, doc_id: str, data: dict[str, Any]) -> None:
+        """Bulk-update enrichment fields on a DocumentRow.
+
+        Used by the pipeline persist node to write extraction/classification
+        results back to the document.
+        """
+        uid = _parse_uuid(doc_id)
+        if uid is None:
+            return
+
+        with _session_scope(self.session) as s:
+            doc = s.get(DocumentRow, uid)
+            if doc is None:
+                return
+
+            for key, value in data.items():
+                if hasattr(doc, key):
+                    setattr(doc, key, value)
+
+            doc.processed_at = datetime.now(UTC)
+            s.add(doc)
+            s.commit()
+
     def list_documents_needing_concepts_extraction(
         self,
         *,
