@@ -24,6 +24,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             "alfred.tasks.learning_concepts",
             "alfred.tasks.document_concepts",
             "alfred.tasks.notion_import",
+            "alfred.tasks.document_pipeline",
         ]
         if include_tasks
         else []
@@ -59,6 +60,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             "alfred.tasks.learning_concepts.*": {"queue": "default"},
             "alfred.tasks.document_concepts.*": {"queue": "default"},
             "alfred.tasks.notion_import.*": {"queue": "default"},
+            "alfred.tasks.document_pipeline.*": {"queue": "default"},
         },
     )
 
@@ -110,6 +112,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
         import alfred.tasks.deep_research
         import alfred.tasks.document_concepts
         import alfred.tasks.document_enrichment
+        import alfred.tasks.document_pipeline
         import alfred.tasks.document_processing
         import alfred.tasks.document_title_image
         import alfred.tasks.learning_concepts

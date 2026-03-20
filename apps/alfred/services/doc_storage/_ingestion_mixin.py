@@ -136,10 +136,28 @@ class IngestionMixin:
             s.add(doc_record)
             s.commit()
             s.refresh(doc_record)
-            return {
-                "id": str(doc_record.id),
-                "duplicate": False,
-            }
+            doc_id = str(doc_record.id)
+
+        # Fire document pipeline (non-blocking)
+        try:
+            from alfred.tasks.document_pipeline import run_document_pipeline
+
+            run_document_pipeline.delay(
+                doc_id=doc_id,
+                user_id=(payload.metadata or {}).get("user_id", ""),
+            )
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Failed to enqueue pipeline task for %s",
+                doc_id,
+                exc_info=True,
+            )
+
+        return {
+            "id": doc_id,
+            "duplicate": False,
+        }
 
     def _ingest_document(
         self,

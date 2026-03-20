@@ -8,6 +8,7 @@ task modules.
 from . import deep_research as deep_research
 from . import document_concepts as document_concepts
 from . import document_enrichment as document_enrichment
+from . import document_pipeline as document_pipeline
 from . import document_processing as document_processing
 from . import document_title_image as document_title_image
 from . import learning_concepts as learning_concepts
