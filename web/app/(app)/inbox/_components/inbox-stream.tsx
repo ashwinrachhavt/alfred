@@ -42,9 +42,22 @@ export function InboxStream() {
           ))}
         </div>
       ) : items.length === 0 ? (
-        <div className="py-16 text-center">
-          <p className="text-muted-foreground">Your knowledge inbox is empty.</p>
-          <p className="text-muted-foreground text-sm mt-1">Connect a source or paste a URL to get started.</p>
+        <div className="flex flex-col items-center py-20 text-center">
+          <div className="mb-6 flex size-16 items-center justify-center rounded-full bg-muted">
+            <svg className="size-8 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+            </svg>
+          </div>
+          <h3 className="text-foreground text-lg font-medium">Your knowledge inbox is empty</h3>
+          <p className="text-muted-foreground mt-2 max-w-sm text-sm">
+            Connect a source like Readwise, Notion, or RSS — or paste a URL to start building your knowledge base.
+          </p>
+          <Button className="mt-6" variant="default" onClick={() => {
+            const { openToolPanel } = require("@/lib/stores/shell-store").useShellStore.getState();
+            openToolPanel("connectors");
+          }}>
+            Connect Sources
+          </Button>
         </div>
       ) : (
         <div className="space-y-2">
