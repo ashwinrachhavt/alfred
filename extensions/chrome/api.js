@@ -11,9 +11,9 @@ const AlfredAPI = {
     if (this._baseUrl) return this._baseUrl;
     try {
       const stored = await this._getStorage("alfredBaseUrl");
-      this._baseUrl = stored || "http://localhost:8000";
+      this._baseUrl = stored || "http://localhost:8080";
     } catch {
-      this._baseUrl = "http://localhost:8000";
+      this._baseUrl = "http://localhost:8080";
     }
     return this._baseUrl;
   },
