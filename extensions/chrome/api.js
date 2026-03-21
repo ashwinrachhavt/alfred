@@ -11,9 +11,9 @@ const AlfredAPI = {
     if (this._baseUrl) return this._baseUrl;
     try {
       const stored = await this._getStorage("alfredBaseUrl");
-      this._baseUrl = stored || "http://localhost:3001";
+      this._baseUrl = stored || "http://localhost:8000";
     } catch {
-      this._baseUrl = "http://localhost:3001";
+      this._baseUrl = "http://localhost:8000";
     }
     return this._baseUrl;
   },
@@ -100,9 +100,12 @@ const AlfredAPI = {
 
   /** Update a note. */
   async updateNote(noteId, { title, content }) {
+    const payload = {};
+    if (title !== undefined) payload.title = title;
+    if (content !== undefined) payload.content_markdown = content;
     return this._fetch(`/api/v1/notes/${noteId}`, {
-      method: "PUT",
-      body: JSON.stringify({ title, content }),
+      method: "PATCH",
+      body: JSON.stringify(payload),
     });
   },
 
