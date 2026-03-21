@@ -180,18 +180,44 @@ const AlfredAPI = {
 
   // ── Capture helpers ────────────────────────────────────────────────
 
-  /** Capture an entire page as a note. */
+  /**
+   * Ingest a page into the document store (Knowledge Inbox).
+   * Uses /api/documents/page/extract which requires raw_text (min 50 chars).
+   * Falls back to creating a note if the text is too short.
+   */
   async capturePage({ url, title, content }) {
-    const noteTitle = `[Capture] ${title || url}`;
-    const noteContent = `**Source:** ${url}\n\n---\n\n${content}`;
-    return this.createNote({ title: noteTitle, content: noteContent });
+    const text = (content || "").trim();
+    if (text.length >= 50) {
+      return this._fetch("/api/documents/page/extract", {
+        method: "POST",
+        body: JSON.stringify({
+          raw_text: text,
+          page_url: url,
+          page_title: title,
+          selection_type: "full_page",
+        }),
+      });
+    }
+    // Fallback for very short content — save as a note
+    return this.createNote({ title: `[Capture] ${title || url}`, content: `**Source:** ${url}\n\n---\n\n${text}` });
   },
 
-  /** Capture a text selection as a note. */
+  /** Capture a text selection into the document store. */
   async captureSelection({ url, title, selectedText }) {
-    const noteTitle = `[Selection] ${title || url}`;
-    const noteContent = `**Source:** ${url}\n\n> ${selectedText.replace(/\n/g, "\n> ")}`;
-    return this.createNote({ title: noteTitle, content: noteContent });
+    const text = (selectedText || "").trim();
+    if (text.length >= 50) {
+      return this._fetch("/api/documents/page/extract", {
+        method: "POST",
+        body: JSON.stringify({
+          raw_text: text,
+          page_url: url,
+          page_title: `[Selection] ${title || url}`,
+          selection_type: "selection",
+        }),
+      });
+    }
+    // Fallback for very short selections — save as a note
+    return this.createNote({ title: `[Selection] ${title || url}`, content: `**Source:** ${url}\n\n> ${text.replace(/\n/g, "\n> ")}` });
   },
 
   /** Summarize selected text using AI edit. */
