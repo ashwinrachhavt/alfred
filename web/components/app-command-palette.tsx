@@ -3,11 +3,11 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { ListChecks, Moon, Search, Sparkles, Sun } from "lucide-react";
+import { ListChecks, Moon, Network, NotebookPen, Search, Sparkles, Sun } from "lucide-react";
 
-import { appNavItems, navGroupLabels, navGroupOrder } from "@/lib/navigation";
+import { pillars } from "@/lib/navigation";
+import { useShellStore } from "@/lib/stores/shell-store";
 import { cn } from "@/lib/utils";
-import { useAssistant } from "@/components/assistant-sheet";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 
 import { Button } from "@/components/ui/button";
@@ -79,7 +79,6 @@ function AppCommandPaletteDialog({
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
   const { activeCount, setTaskCenterOpen } = useTaskTracker();
-  const { setAssistantOpen } = useAssistant();
   const platformShortcut = usePlatformShortcut();
   const themeShortcut = useThemeToggleShortcut();
   const [query, setQuery] = React.useState("");
@@ -103,42 +102,65 @@ function AppCommandPaletteDialog({
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} contentClassName="max-w-xl">
-      <CommandInput placeholder="Search Alfred…" value={query} onValueChange={setQuery} autoFocus />
+      <CommandInput placeholder="Search Alfred..." value={query} onValueChange={setQuery} autoFocus />
       <CommandList>
         <CommandEmpty>No matches.</CommandEmpty>
 
-        {navGroupOrder.map((group) => {
-          const items = appNavItems.filter((item) => item.group === group);
-          if (!items.length) return null;
-          return (
-            <CommandGroup key={group} heading={navGroupLabels[group]}>
-              {items.map((item) => (
+        <CommandGroup heading="Navigation">
+          {pillars.map((p) => {
+            if (p.key === "ai") {
+              return (
                 <CommandItem
-                  key={item.key}
-                  value={[item.title, item.href, ...item.keywords].join(" ")}
-                  onSelect={() => navigateTo(item.href)}
+                  key={p.key}
+                  value="ask alfred assistant rag chat knowledge ai"
+                  onSelect={() => {
+                    useShellStore.getState().toggleAiPanel();
+                    onOpenChange(false);
+                  }}
                 >
-                  <item.icon className="h-4 w-4" aria-hidden="true" />
-                  <span>{item.title}</span>
+                  <Sparkles className="h-4 w-4" aria-hidden="true" />
+                  <span>Ask Alfred</span>
+                  <CommandShortcut>⌘J</CommandShortcut>
                 </CommandItem>
-              ))}
-            </CommandGroup>
-          );
-        })}
+              );
+            }
+            return (
+              <CommandItem
+                key={p.key}
+                value={`${p.title} ${p.key}`}
+                onSelect={() => navigateTo(p.href)}
+              >
+                <p.icon className="h-4 w-4" aria-hidden="true" />
+                <span>{p.title}</span>
+                <CommandShortcut>⌘{p.shortcut}</CommandShortcut>
+              </CommandItem>
+            );
+          })}
+        </CommandGroup>
 
         <CommandSeparator />
 
-        <CommandGroup heading="Assistant">
+        <CommandGroup heading="Tools">
           <CommandItem
-            value="ask alfred assistant rag chat knowledge"
+            value="new note notes write"
             onSelect={() => {
-              setAssistantOpen(true);
+              useShellStore.getState().openToolPanel("notes");
               onOpenChange(false);
             }}
           >
-            <Sparkles className="h-4 w-4" aria-hidden="true" />
-            <span>Ask Alfred</span>
-            <CommandShortcut>⌘J</CommandShortcut>
+            <NotebookPen className="h-4 w-4" aria-hidden="true" />
+            <span>New Note</span>
+            <CommandShortcut>⌘N</CommandShortcut>
+          </CommandItem>
+          <CommandItem
+            value="connectors integrations sources"
+            onSelect={() => {
+              useShellStore.getState().openToolPanel("connectors");
+              onOpenChange(false);
+            }}
+          >
+            <Network className="h-4 w-4" aria-hidden="true" />
+            <span>Connectors</span>
           </CommandItem>
         </CommandGroup>
 

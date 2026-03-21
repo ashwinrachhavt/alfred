@@ -1,4 +1,3 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { auth } from "@clerk/nextjs/server";
@@ -14,8 +13,5 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     }
   }
 
-  const cookieStore = await cookies();
-  const defaultSidebarOpen = cookieStore.get("sidebar_state")?.value !== "false";
-
-  return <AppShell defaultSidebarOpen={defaultSidebarOpen}>{children}</AppShell>;
+  return <AppShell>{children}</AppShell>;
 }

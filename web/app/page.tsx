@@ -10,7 +10,7 @@ export default async function Home() {
     try {
       const { userId } = await auth();
       if (userId) {
-        redirect("/dashboard");
+        redirect("/inbox");
       }
     } catch {
       // Clerk middleware may not have run — fall through to landing.
