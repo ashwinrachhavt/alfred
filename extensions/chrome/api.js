@@ -5,15 +5,29 @@
 const AlfredAPI = {
   _baseUrl: null,
   _workspaceId: null,
+  _defaultUrl: "http://localhost:8080",
 
   /** Resolve the API base URL from storage or fall back to default. */
   async base() {
     if (this._baseUrl) return this._baseUrl;
     try {
       const stored = await this._getStorage("alfredBaseUrl");
-      this._baseUrl = stored || "http://localhost:8080";
+      // Only use stored URL if it was explicitly set and is reachable.
+      // Otherwise fall back to default to avoid stale cached URLs.
+      if (stored && stored !== this._defaultUrl) {
+        try {
+          const resp = await fetch(`${stored}/healthz`, { signal: AbortSignal.timeout(1500) });
+          if (resp.ok) {
+            this._baseUrl = stored;
+            return this._baseUrl;
+          }
+        } catch {
+          // Stored URL unreachable — fall through to default
+        }
+      }
+      this._baseUrl = this._defaultUrl;
     } catch {
-      this._baseUrl = "http://localhost:8080";
+      this._baseUrl = this._defaultUrl;
     }
     return this._baseUrl;
   },
