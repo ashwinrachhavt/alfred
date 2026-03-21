@@ -7,16 +7,13 @@ import { formatErrorMessage } from "@/lib/utils";
 
 import {
   autosaveSystemDesignDiagram,
-  getSystemDesignKnowledgeDraft,
   getSystemDesignSession,
-  publishSystemDesignSession,
   updateSystemDesignNotes,
   updateSystemDesignSession,
 } from "@/lib/api/system-design";
 import type {
   ExcalidrawData,
   SystemDesignKnowledgeDraft,
-  SystemDesignPublishRequest,
   SystemDesignPublishResponse,
   SystemDesignSession,
 } from "@/lib/api/types/system-design";

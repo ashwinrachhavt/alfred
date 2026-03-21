@@ -15,7 +15,7 @@ type Props = {
   onClick: () => void;
 };
 
-export function InboxItem({ id, title, summary, sourceUrl, primaryTopic, createdAt, onClick }: Props) {
+export function InboxItem({ id: _id, title, summary, sourceUrl: _sourceUrl, primaryTopic, createdAt, onClick }: Props) {
   const timeAgo = formatDistanceToNow(new Date(createdAt), { addSuffix: true });
 
   return (

@@ -6,6 +6,8 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Query
 
+from alfred.core.celery_client import get_celery_client
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
@@ -31,17 +33,19 @@ def replay_document(
     force: bool = Query(False),
 ):
     """Replay the pipeline for a document. Dispatches to Celery."""
-    from alfred.tasks.document_pipeline import run_document_pipeline
-
-    result = run_document_pipeline.delay(
-        doc_id=doc_id,
-        force_replay=force,
-        replay_from=from_stage,
+    celery_client = get_celery_client()
+    async_result = celery_client.send_task(
+        "alfred.tasks.document_pipeline.run_document_pipeline",
+        kwargs={
+            "doc_id": doc_id,
+            "force_replay": force,
+            "replay_from": from_stage,
+        },
     )
 
     return {
         "doc_id": doc_id,
-        "task_id": result.id,
+        "task_id": async_result.id,
         "from_stage": from_stage,
         "force": force,
     }
@@ -76,17 +80,21 @@ def replay_batch(
 ):
     """Replay pipeline for documents missing enrichment."""
     from alfred.core.dependencies import get_doc_storage_service
-    from alfred.tasks.document_pipeline import run_document_pipeline
 
+    celery_client = get_celery_client()
     svc = get_doc_storage_service()
     docs = svc.list_documents_needing_concepts_extraction(limit=limit)
 
     task_ids = []
     for doc in docs:
-        result = run_document_pipeline.delay(
-            doc_id=str(doc["id"]),
-            force_replay=force,
+        doc_id = str(doc.id) if hasattr(doc, "id") else str(doc["id"])
+        async_result = celery_client.send_task(
+            "alfred.tasks.document_pipeline.run_document_pipeline",
+            kwargs={
+                "doc_id": doc_id,
+                "force_replay": force,
+            },
         )
-        task_ids.append({"doc_id": str(doc["id"]), "task_id": result.id})
+        task_ids.append({"doc_id": doc_id, "task_id": async_result.id})
 
     return {"queued": len(task_ids), "tasks": task_ids}

@@ -21,9 +21,9 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, LayoutDashboard, Plus, RotateCcw } from "lucide-react";
 
-import { useAssistant } from "@/components/assistant-sheet";
 import { useRecentResearchReports } from "@/features/research/queries";
 import { useRecentDocuments } from "@/features/documents/queries";
+import { useShellStore } from "@/lib/stores/shell-store";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -125,7 +125,7 @@ function SortableWidget({
 export function DashboardClient() {
   const recentDocuments = useRecentDocuments(6);
   const recentReports = useRecentResearchReports(6);
-  const { setAssistantOpen } = useAssistant();
+  const { setAiPanelOpen } = useShellStore();
 
   const widgetLabels = React.useMemo<Record<DashboardWidgetKey, string>>(
     () => ({
@@ -357,7 +357,7 @@ export function DashboardClient() {
             type="button"
             size="sm"
             variant="outline"
-            onClick={() => setAssistantOpen(true)}
+            onClick={() => setAiPanelOpen(true)}
           >
             Ask Alfred
           </Button>

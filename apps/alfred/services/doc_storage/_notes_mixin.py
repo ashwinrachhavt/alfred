@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func
+from sqlmodel import select
 
 from alfred.models.doc_storage import QuickNoteRow
 from alfred.schemas.documents import NoteCreate
@@ -51,7 +52,7 @@ class NotesMixin:
             count_stmt = select(func.count()).select_from(QuickNoteRow)
             if q:
                 count_stmt = count_stmt.where(QuickNoteRow.text.ilike(f"%{q}%"))
-            total = s.exec(count_stmt).one()[0]
+            total = int(s.scalar(count_stmt) or 0)
 
             return {
                 "items": [

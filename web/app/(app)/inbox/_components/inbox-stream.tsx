@@ -53,9 +53,9 @@ export function InboxStream() {
               key={item.id}
               id={item.id}
               title={item.title}
-              summary={item.summary}
-              sourceUrl={item.source_url}
-              primaryTopic={item.primary_topic}
+              summary={item.summary ?? null}
+              sourceUrl={item.source_url ?? null}
+              primaryTopic={item.primary_topic ?? null}
               createdAt={item.created_at}
               onClick={() => setSelectedDocId(item.id)}
             />

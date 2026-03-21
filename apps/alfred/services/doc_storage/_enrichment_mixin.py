@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, update
 from sqlalchemy.orm import load_only
+from sqlmodel import select
 
 from alfred.core.exceptions import BadRequestError, NotFoundError
 from alfred.core.utils import clamp_int
