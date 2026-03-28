@@ -9,7 +9,6 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
-
 class ComponentCategory(str, Enum):
     load_balancer = "load_balancer"
     cache = "cache"
