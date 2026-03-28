@@ -15,13 +15,8 @@ from alfred.core.utils import utcnow as _utcnow
 from alfred.schemas.system_design import (
     AutosaveRequest,
     ComponentDefinition,
-    DesignPrompt,
-    DiagramAnalysis,
-    DiagramEvaluation,
     DiagramExport,
     DiagramExportRequest,
-    DiagramQuestion,
-    DiagramSuggestion,
     DiagramVersion,
     ExcalidrawData,
     ScaleEstimateRequest,

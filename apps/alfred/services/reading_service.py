@@ -14,7 +14,6 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlmodel import Session
 
-from alfred.core.utils import utcnow as _utcnow
 from alfred.models.reading import ReadingSessionRow
 from alfred.schemas.documents import DocumentIngest
 from alfred.services.doc_storage._session import _session_scope

@@ -16,8 +16,8 @@ if TYPE_CHECKING:
     from alfred.connectors.firecrawl_connector import FirecrawlClient
     from alfred.connectors.web_connector import WebConnector
     from alfred.services.agents.mind_palace_agent import KnowledgeAgentService
-    from alfred.services.deep_research_service import DeepResearchService
     from alfred.services.datastore import DataStoreService
+    from alfred.services.deep_research_service import DeepResearchService
     from alfred.services.doc_storage_pg import DocStorageService
     from alfred.services.extraction_service import ExtractionService
     from alfred.services.graph_service import GraphService
