@@ -232,6 +232,9 @@ class DocumentRow(SQLModel, table=True):
     enrichment: dict[str, Any] | None = Field(
         default=None, sa_column=sa.Column(sa.JSON, nullable=True)
     )
+    classification: dict[str, Any] | None = Field(
+        default=None, sa_column=sa.Column(sa.JSON, nullable=True)
+    )
 
     # Concept extraction (graph-like entities/relations for all documents)
     concepts: dict[str, Any] | None = Field(
