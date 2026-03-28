@@ -22,6 +22,6 @@ const sizeClasses: Record<NonNullable<PageProps["size"]>, string> = {
  */
 export function Page({ children, className, size = "default" }: PageProps) {
   return (
-    <div className={cn("mx-auto w-full px-4 py-10", sizeClasses[size], className)}>{children}</div>
+    <div className={cn("mx-auto w-full px-6 py-8", sizeClasses[size], className)}>{children}</div>
   );
 }

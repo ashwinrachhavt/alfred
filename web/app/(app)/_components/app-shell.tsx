@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { useShellStore } from "@/lib/stores/shell-store";
 
 import { AiPanel } from "./ai-panel";
+import { AppSidebar } from "./app-sidebar";
 import { ToolPanel } from "./tool-panel";
 import { TopBar } from "./top-bar";
 
@@ -44,13 +45,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [toggleAiPanel]);
 
   return (
-    <div className="flex h-dvh flex-col">
-      <TopBar />
-      <div className="flex flex-1 overflow-hidden">
-        <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto focus:outline-none">
-          {children}
-        </main>
-        <AiPanel />
+    <div className="flex h-dvh">
+      <AppSidebar />
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <TopBar />
+        <div className="flex flex-1 overflow-hidden">
+          <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto focus:outline-none">
+            {children}
+          </main>
+          <AiPanel />
+        </div>
       </div>
       <ToolPanel />
     </div>

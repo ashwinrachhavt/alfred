@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -25,22 +25,24 @@ export function RetentionCard() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Retention</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="pt-5 space-y-3">
+        <div className="font-mono text-[10px] uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
+          Retention
+        </div>
         {isLoading ? (
           <Skeleton className="h-16 w-full" />
         ) : (
           <>
-            <div className="text-2xl font-bold">
+            <div className="font-data text-3xl font-semibold tabular-nums">
               {Math.round((data?.retention_rate_30d ?? 0) * 100)}%
-              <span className="text-muted-foreground text-sm font-normal ml-2">30-day retention</span>
+              <span className="ml-2 font-mono text-xs font-normal text-muted-foreground">30-day</span>
             </div>
-            <div className="text-muted-foreground text-sm">
+            <div className="font-mono text-xs text-muted-foreground">
               {dueQuery.data?.length ?? 0} concepts due for review
             </div>
-            <Button size="sm" variant="outline">Start Review Session</Button>
+            <Button size="sm" variant="outline" className="font-mono text-xs">
+              Start Review
+            </Button>
           </>
         )}
       </CardContent>

@@ -5,24 +5,39 @@
 const AlfredAPI = {
   _baseUrl: null,
   _workspaceId: null,
-  _defaultUrl: "http://localhost:8080",
+  _defaultUrl: "http://localhost:8000",
 
   /** Resolve the API base URL from storage or fall back to default. */
   async base() {
     if (this._baseUrl) return this._baseUrl;
     try {
+      // One-time migration: clear stale localhost:8080 URL from when that was the default.
+      // SearXNG runs on 8080 and its /healthz returns 200, tricking the old health check.
+      const migrated = await this._getStorage("alfredUrlMigrated_v2");
+      if (!migrated) {
+        const old = await this._getStorage("alfredBaseUrl");
+        if (old && old.includes(":8080")) {
+          await this._setStorage("alfredBaseUrl", null);
+        }
+        await this._setStorage("alfredUrlMigrated_v2", true);
+      }
       const stored = await this._getStorage("alfredBaseUrl");
       // Only use stored URL if it was explicitly set and is reachable.
       // Otherwise fall back to default to avoid stale cached URLs.
       if (stored && stored !== this._defaultUrl) {
         try {
-          const resp = await fetch(`${stored}/healthz`, { signal: AbortSignal.timeout(1500) });
+          // Verify the stored URL is actually Alfred (not another service on that port)
+          // by checking /api/v1/workspaces which only Alfred serves.
+          const resp = await fetch(`${stored}/api/v1/workspaces`, {
+            signal: AbortSignal.timeout(1500),
+            headers: { "Content-Type": "application/json" },
+          });
           if (resp.ok) {
             this._baseUrl = stored;
             return this._baseUrl;
           }
         } catch {
-          // Stored URL unreachable — fall through to default
+          // Stored URL unreachable or not Alfred — fall through to default
         }
       }
       this._baseUrl = this._defaultUrl;

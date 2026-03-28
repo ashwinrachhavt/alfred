@@ -6,8 +6,10 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-dm-sans);
+  --font-serif: var(--font-instrument-serif);
+  --font-mono: var(--font-jetbrains-mono);
+  --font-data: var(--font-geist);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -37,6 +39,9 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -46,73 +51,139 @@
   --radius-4xl: calc(var(--radius) + 16px);
 }
 
+/* ═══════════════════════════════════════════════
+   ALFRED DESIGN SYSTEM — "Literary Terminal"
+   See DESIGN.md for full specification
+   ═══════════════════════════════════════════════ */
+
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --radius: 0.5rem;
+
+  /* Surfaces — warm off-white / stone */
+  --background: #FAF8F5;
+  --foreground: #0F0E0D;
+  --card: #FFFFFF;
+  --card-foreground: #0F0E0D;
+  --popover: #FFFFFF;
+  --popover-foreground: #0F0E0D;
+
+  /* Primary — deep orange accent */
+  --primary: #E8590C;
+  --primary-foreground: #FAF8F5;
+
+  /* Secondary — warm light gray for hover/subtle states */
+  --secondary: #F0EDE8;
+  --secondary-foreground: #0F0E0D;
+
+  /* Muted — softer warm gray */
+  --muted: #F0EDE8;
+  --muted-foreground: #5C5650;
+
+  /* Accent — hover/interactive background tint */
+  --accent: #F0EDE8;
+  --accent-foreground: #0F0E0D;
+
+  /* Destructive */
+  --destructive: #C2410C;
+
+  /* Borders — warm-toned */
+  --border: rgba(15, 14, 13, 0.1);
+  --input: rgba(15, 14, 13, 0.2);
+  --ring: #E8590C;
+
+  /* Semantic */
+  --success: #2D6A4F;
+  --warning: #B45309;
+  --info: #1D4ED8;
+
+  /* Charts — warm palette */
+  --chart-1: #E8590C;
+  --chart-2: #2D6A4F;
+  --chart-3: #B45309;
+  --chart-4: #1D4ED8;
+  --chart-5: #8B6F4E;
+
+  /* Sidebar */
+  --sidebar: #FAF8F5;
+  --sidebar-foreground: #0F0E0D;
+  --sidebar-primary: #E8590C;
+  --sidebar-primary-foreground: #FAF8F5;
+  --sidebar-accent: #F0EDE8;
+  --sidebar-accent-foreground: #0F0E0D;
+  --sidebar-border: rgba(15, 14, 13, 0.1);
+  --sidebar-ring: #E8590C;
+
+  /* Alfred-specific tokens */
+  --alfred-accent-subtle: rgba(232, 89, 12, 0.08);
+  --alfred-accent-muted: rgba(232, 89, 12, 0.15);
+  --alfred-ruled-line: rgba(15, 14, 13, 0.06);
+  --alfred-grain-opacity: 0.03;
+  --alfred-text-tertiary: #8A837B;
+  --alfred-bg-tertiary: #E8E4DF;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Surfaces — warm charcoal */
+  --background: #0F0E0D;
+  --foreground: #FAF8F5;
+  --card: #1A1918;
+  --card-foreground: #FAF8F5;
+  --popover: #1A1918;
+  --popover-foreground: #FAF8F5;
+
+  /* Primary — same orange, lighter hover */
+  --primary: #E8590C;
+  --primary-foreground: #FAF8F5;
+
+  /* Secondary — dark warm gray */
+  --secondary: #252321;
+  --secondary-foreground: #FAF8F5;
+
+  /* Muted */
+  --muted: #252321;
+  --muted-foreground: #A39E97;
+
+  /* Accent — dark interactive tint */
+  --accent: #252321;
+  --accent-foreground: #FAF8F5;
+
+  /* Destructive */
+  --destructive: #E8590C;
+
+  /* Borders */
+  --border: rgba(250, 248, 245, 0.08);
+  --input: rgba(250, 248, 245, 0.15);
+  --ring: #E8590C;
+
+  /* Semantic */
+  --success: #3B9B6F;
+  --warning: #D97706;
+  --info: #3B82F6;
+
+  /* Charts */
+  --chart-1: #E8590C;
+  --chart-2: #3B9B6F;
+  --chart-3: #D97706;
+  --chart-4: #3B82F6;
+  --chart-5: #A8896A;
+
+  /* Sidebar */
+  --sidebar: #1A1918;
+  --sidebar-foreground: #FAF8F5;
+  --sidebar-primary: #E8590C;
+  --sidebar-primary-foreground: #FAF8F5;
+  --sidebar-accent: #252321;
+  --sidebar-accent-foreground: #FAF8F5;
+  --sidebar-border: rgba(250, 248, 245, 0.08);
+  --sidebar-ring: #E8590C;
+
+  /* Alfred-specific tokens */
+  --alfred-accent-subtle: rgba(232, 89, 12, 0.1);
+  --alfred-accent-muted: rgba(232, 89, 12, 0.2);
+  --alfred-ruled-line: rgba(250, 248, 245, 0.04);
+  --alfred-grain-opacity: 0.035;
+  --alfred-text-tertiary: #6B665F;
+  --alfred-bg-tertiary: #252321;
 }
 
 @layer base {
@@ -121,11 +192,103 @@
   }
   body {
     @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
-/* Arcane landing animations */
+/* Grain texture overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  opacity: var(--alfred-grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+  pointer-events: none;
+  z-index: 9999;
+}
 
+/* Ruled line utility */
+.ruled-line {
+  border-top: 1px solid var(--alfred-ruled-line);
+}
+
+/* Typography utilities */
+.font-display {
+  font-family: var(--font-instrument-serif), serif;
+}
+
+.text-tertiary {
+  color: var(--alfred-text-tertiary);
+}
+
+.label-mono {
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Accent subtle backgrounds */
+.bg-accent-subtle {
+  background-color: var(--alfred-accent-subtle);
+}
+
+.bg-accent-muted {
+  background-color: var(--alfred-accent-muted);
+}
+
+/* TipTap editor styles */
+.tiptap .is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--alfred-text-tertiary);
+  pointer-events: none;
+  height: 0;
+  font-style: normal;
+}
+
+.tiptap:focus {
+  outline: none;
+}
+
+.tiptap h1,
+.tiptap h2 {
+  font-family: var(--font-instrument-serif), serif;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+.tiptap h3 {
+  font-family: var(--font-dm-sans), sans-serif;
+  font-weight: 500;
+}
+
+.tiptap pre {
+  font-family: var(--font-jetbrains-mono), monospace;
+}
+
+.tiptap blockquote {
+  border-left-color: var(--primary);
+}
+
+.tiptap hr {
+  border-color: var(--alfred-ruled-line);
+  margin: 1.5em 0;
+}
+
+.tiptap a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.tiptap a:hover {
+  text-decoration: underline;
+}
+
+/* Landing animations */
 @keyframes arcane-float {
   0%, 100% { transform: translateY(0) scale(1); opacity: 0.4; }
   50% { transform: translateY(-18px) scale(1.2); opacity: 0.7; }

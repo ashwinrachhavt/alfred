@@ -173,7 +173,7 @@ export function ResearchClient({
   return (
     <div className="space-y-6">
       <header className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Deep Research</h1>
+        <h1 className="font-serif text-3xl tracking-tight">Deep Research</h1>
         <p className="text-muted-foreground">
           Research any topic in depth. Generates a structured brief with citations.
         </p>

@@ -5,7 +5,7 @@ import Link from "next/link";
 
 import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -25,19 +25,25 @@ export function ConnectionsCard() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Connections</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="pt-5 space-y-3">
+        <div className="font-mono text-[10px] uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
+          Connections
+        </div>
         {isLoading ? (
           <Skeleton className="h-16 w-full" />
         ) : (
           <>
-            <div className="flex gap-6 text-sm">
-              <div><span className="text-2xl font-bold">{density}</span> edges/node</div>
-              <div><span className="text-2xl font-bold">{orphans}</span> orphans</div>
+            <div className="flex gap-6">
+              <div>
+                <div className="font-data text-3xl font-semibold tabular-nums">{density}</div>
+                <div className="font-mono text-[10px] text-muted-foreground">edges/node</div>
+              </div>
+              <div>
+                <div className="font-data text-3xl font-semibold tabular-nums">{orphans}</div>
+                <div className="font-mono text-[10px] text-muted-foreground">orphans</div>
+              </div>
             </div>
-            <Button size="sm" variant="outline" asChild>
+            <Button size="sm" variant="outline" asChild className="font-mono text-xs">
               <Link href="/canvas">Open Canvas</Link>
             </Button>
           </>

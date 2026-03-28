@@ -75,6 +75,40 @@ export async function updateDocumentText(
   );
 }
 
+export type EnrichDocumentResponse = {
+  id: string;
+  status: string;
+  task_id?: string | null;
+  status_url?: string | null;
+};
+
+export async function enrichDocument(
+  id: string,
+  force = false,
+): Promise<EnrichDocumentResponse> {
+  const url = force
+    ? `${apiRoutes.documents.enrich(id)}?force=true`
+    : apiRoutes.documents.enrich(id);
+  return apiPostJson<EnrichDocumentResponse, Record<string, never>>(url, {}, { cache: "no-store" });
+}
+
+export type FetchOrganizeResponse = {
+  id: string;
+  status: string;
+  tokens?: number | null;
+  task_id?: string | null;
+};
+
+export async function fetchAndOrganize(
+  id: string,
+  force = false,
+): Promise<FetchOrganizeResponse> {
+  const url = force
+    ? `${apiRoutes.documents.fetchAndOrganize(id)}?force=true`
+    : apiRoutes.documents.fetchAndOrganize(id);
+  return apiPostJson<FetchOrganizeResponse, Record<string, never>>(url, {}, { cache: "no-store" });
+}
+
 export type GenerateDocumentImageRequest = {
   model?: string;
   size?: string;

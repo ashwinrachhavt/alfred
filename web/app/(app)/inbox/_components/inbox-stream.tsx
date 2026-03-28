@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useExplorerDocuments } from "@/features/documents/queries";
+import { useShellStore } from "@/lib/stores/shell-store";
 
 import { InboxDetail } from "./inbox-detail";
 import { InboxFilters } from "./inbox-filters";
@@ -27,7 +28,24 @@ export function InboxStream() {
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* Header — matches preview mockup */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="font-serif text-[28px] tracking-tight">Inbox</h1>
+          <p className="mt-1 font-mono text-xs text-[var(--alfred-text-tertiary)]">
+            {items.length} items
+          </p>
+        </div>
+        <Button
+          size="sm"
+          className="font-mono text-xs"
+          onClick={() => useShellStore.getState().openToolPanel("connectors")}
+        >
+          + Capture
+        </Button>
+      </div>
+
       <InboxFilters
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -36,9 +54,9 @@ export function InboxStream() {
       />
 
       {isLoading ? (
-        <div className="space-y-3">
+        <div className="space-y-0">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-24 animate-pulse rounded-lg border bg-muted" />
+            <div key={i} className="h-20 animate-pulse border-b border-[var(--alfred-ruled-line)] bg-muted/20" />
           ))}
         </div>
       ) : items.length === 0 ? (
@@ -48,19 +66,16 @@ export function InboxStream() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
             </svg>
           </div>
-          <h3 className="text-foreground text-lg font-medium">Your knowledge inbox is empty</h3>
-          <p className="text-muted-foreground mt-2 max-w-sm text-sm">
+          <h3 className="font-serif text-xl">Your knowledge inbox is empty</h3>
+          <p className="mt-2 max-w-sm text-sm text-muted-foreground">
             Connect a source like Readwise, Notion, or RSS — or paste a URL to start building your knowledge base.
           </p>
-          <Button className="mt-6" variant="default" onClick={() => {
-            const { openToolPanel } = require("@/lib/stores/shell-store").useShellStore.getState();
-            openToolPanel("connectors");
-          }}>
+          <Button className="mt-6 font-mono text-xs" onClick={() => useShellStore.getState().openToolPanel("connectors")}>
             Connect Sources
           </Button>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div>
           {items.map((item) => (
             <InboxItem
               key={item.id}
@@ -78,7 +93,7 @@ export function InboxStream() {
 
       {hasNextPage && (
         <div className="flex justify-center py-4">
-          <Button variant="outline" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
+          <Button variant="outline" onClick={() => fetchNextPage()} disabled={isFetchingNextPage} className="font-mono text-xs">
             {isFetchingNextPage ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
             Load more
           </Button>

@@ -19,6 +19,7 @@ export const apiRoutes = {
     documentImage: (id: string) => `/api/documents/${id}/image`,
     documentImageAsync: (id: string) => `/api/documents/${id}/image/async`,
     enrich: (id: string) => `/api/documents/doc/${id}/enrich`,
+    fetchAndOrganize: (id: string) => `/api/documents/doc/${id}/fetch-and-organize`,
     pageExtract: "/api/documents/page/extract",
   },
   tasks: {

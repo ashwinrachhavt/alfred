@@ -10,8 +10,6 @@ import { cn } from "@/lib/utils";
 import { MarkdownNotesEditor, type MarkdownNotesEditorHandle } from "@/components/editor/markdown-notes-editor";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useUpdateNote, useUploadNoteAsset } from "@/features/notes/mutations";
@@ -20,7 +18,7 @@ import { useNote } from "@/features/notes/queries";
 type AutosaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 
 function formatAutosaveLabel(state: AutosaveState): string {
-  if (state === "saving") return "Saving…";
+  if (state === "saving") return "Saving...";
   if (state === "saved") return "Saved";
   if (state === "error") return "Save failed";
   if (state === "dirty") return "Unsaved";
@@ -144,7 +142,7 @@ export function NoteEditorPanel({
           title="Pick a note"
           description="Select a note on the left, or create a new one."
           action={
-            <Button type="button" onClick={onCreateNote}>
+            <Button type="button" onClick={onCreateNote} className="font-mono text-xs">
               <FilePlus2 className="h-4 w-4" aria-hidden="true" />
               New note
             </Button>
@@ -157,7 +155,7 @@ export function NoteEditorPanel({
 
   if (noteQuery.isLoading) {
     return (
-      <section className="flex h-full min-h-0 flex-col p-5">
+      <section className="flex h-full min-h-0 flex-col p-6">
         <div className="space-y-3">
           <Skeleton className="h-9 w-1/2" />
           <Skeleton className="h-7 w-1/3" />
@@ -169,12 +167,12 @@ export function NoteEditorPanel({
 
   if (noteQuery.isError) {
     return (
-      <section className="flex h-full min-h-0 flex-col p-5">
+      <section className="flex h-full min-h-0 flex-col p-6">
         <EmptyState
           title="Failed to load note"
           description={noteQuery.error instanceof Error ? noteQuery.error.message : "Unknown error"}
           action={
-            <Button type="button" variant="outline" onClick={() => noteQuery.refetch()}>
+            <Button type="button" variant="outline" onClick={() => noteQuery.refetch()} className="font-mono text-xs">
               Retry
             </Button>
           }
@@ -188,9 +186,10 @@ export function NoteEditorPanel({
 
   return (
     <section className="flex h-full min-h-0 flex-col">
-      <header className="flex items-start justify-between gap-3 p-5 pb-3">
-        <div className="min-w-0 flex-1 space-y-2">
-          <Input
+      {/* Title + status bar */}
+      <header className="flex items-start justify-between gap-3 px-8 pt-6 pb-4">
+        <div className="min-w-0 flex-1">
+          <input
             value={title}
             onChange={(e) => {
               const next = e.target.value;
@@ -199,43 +198,53 @@ export function NoteEditorPanel({
               queueSave();
             }}
             onBlur={() => void saveNow()}
-            className={cn(
-              "h-10 border-none px-0 text-2xl font-semibold shadow-none focus-visible:ring-0",
-            )}
+            className="w-full bg-transparent font-serif text-3xl tracking-tight outline-none placeholder:text-[var(--alfred-text-tertiary)]"
             placeholder="Untitled"
           />
-          <div className="text-muted-foreground flex items-center gap-2 text-xs">
-            <span>{statusLabel}</span>
+          <div className="mt-2 flex items-center gap-3">
+            <span
+              className={cn(
+                "font-mono text-[10px] uppercase tracking-widest",
+                autosaveState === "saved" && "text-[var(--success)]",
+                autosaveState === "error" && "text-[var(--destructive)]",
+                autosaveState === "dirty" && "text-[var(--warning)]",
+                autosaveState === "saving" && "text-[var(--alfred-text-tertiary)]",
+                autosaveState === "idle" && "text-[var(--alfred-text-tertiary)]",
+              )}
+            >
+              {statusLabel}
+            </span>
             {autosaveState === "error" ? (
-              <Button type="button" size="sm" variant="ghost" className="h-7 px-2" onClick={() => void saveNow()}>
+              <Button type="button" size="sm" variant="ghost" className="h-6 px-2 font-mono text-[10px]" onClick={() => void saveNow()}>
                 Retry
               </Button>
             ) : null}
           </div>
         </div>
 
-        <div className="flex items-center gap-2 pt-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                size="icon"
-                variant="outline"
-                onClick={() => void saveNow()}
-                disabled={updateNoteMutation.isPending}
-              >
-                <Save className="h-4 w-4" aria-hidden="true" />
-                <span className="sr-only">Save</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Save (⌘S)</TooltipContent>
-          </Tooltip>
-        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              onClick={() => void saveNow()}
+              disabled={updateNoteMutation.isPending}
+              className="mt-1"
+            >
+              <Save className="h-4 w-4" aria-hidden="true" />
+              <span className="sr-only">Save</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Save (S)</TooltipContent>
+        </Tooltip>
       </header>
 
-      <Separator />
+      {/* Ruled line divider */}
+      <div className="mx-8 border-t border-[var(--alfred-ruled-line)]" />
 
-      <div className="min-h-0 flex-1 p-5">
+      {/* Editor */}
+      <div className="min-h-0 flex-1 px-4 py-2">
         <MarkdownNotesEditor
           ref={editorRef}
           markdown={markdown}
@@ -247,8 +256,8 @@ export function NoteEditorPanel({
           onDraftChange={({ tiptapJson }) => {
             draftRef.current.tiptapJson = tiptapJson;
           }}
-          className="h-full"
-          placeholder="Write notes… (Type / for blocks, paste images, select text for AI)"
+          className="h-full border-none shadow-none focus-within:ring-0 focus-within:ring-offset-0"
+          placeholder="Start writing... (Type / for blocks, select text for AI)"
           uploadImage={async (file) => {
             if (!noteId) throw new Error("No note selected.");
             const res = await uploadAssetMutation.mutateAsync(file);

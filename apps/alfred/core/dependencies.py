@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from alfred.services.extraction_service import ExtractionService
     from alfred.services.graph_service import GraphService
     from alfred.services.llm_service import LLMService
+    from alfred.services.reading_service import ReadingService
     from alfred.services.system_design import SystemDesignService
     from alfred.services.web_service import WebService
 
@@ -170,6 +171,16 @@ def get_text_assist_service():
     from alfred.services.text_assist_service import TextAssistService
 
     return TextAssistService(llm_service=get_llm_service(), language_service=get_language_service())
+
+
+@lru_cache(maxsize=1)
+def get_reading_service() -> ReadingService:
+    from alfred.services.reading_service import ReadingService
+
+    return ReadingService(
+        doc_storage=get_doc_storage_service(),
+        llm_service=get_llm_service(),
+    )
 
 
 @lru_cache(maxsize=1)

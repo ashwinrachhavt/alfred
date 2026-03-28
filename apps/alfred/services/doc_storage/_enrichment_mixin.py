@@ -138,7 +138,7 @@ class EnrichmentMixin:
                         "topics": topics_obj,
                         "tags": tags,
                     }
-                ).model_dump()
+                ).model_dump(mode="json")
             except Exception:
                 enrichment_block = None
             if enrichment_block is not None:

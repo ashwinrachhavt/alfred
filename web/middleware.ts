@@ -1,4 +1,5 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware } from "@clerk/nextjs/server";
+// import { createRouteMatcher } from "@clerk/nextjs/server";
 
 /**
  * Public routes that do NOT require authentication.
@@ -9,14 +10,14 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
  * API routes are left public because they are proxied to the FastAPI backend
  * via Next.js rewrites — the backend handles its own auth if needed.
  */
-const isPublicRoute = createRouteMatcher([
-  "/",
-  "/sign-in(.*)",
-  "/sign-up(.*)",
-  "/api(.*)",
-]);
+// const isPublicRoute = createRouteMatcher([
+//   "/",
+//   "/sign-in(.*)",
+//   "/sign-up(.*)",
+//   "/api(.*)",
+// ]);
 
-export default clerkMiddleware(async (auth, request) => {
+export default clerkMiddleware(async (_auth, _request) => {
   // TODO: re-enable auth after Clerk keys are refreshed
   // if (!isPublicRoute(request)) {
   //   await auth.protect();

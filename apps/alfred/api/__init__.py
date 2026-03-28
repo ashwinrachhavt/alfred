@@ -47,6 +47,7 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.whiteboards import router as whiteboards_router
     from alfred.api.wikipedia import router as wikipedia_router
     from alfred.api.writing import router as writing_router
+    from alfred.api.reading import router as reading_router
     from alfred.api.zettels import router as zettels_router
 
     routers = [
@@ -73,6 +74,7 @@ def register_routes(app: FastAPI) -> None:
         pipeline_router,
         whiteboards_router,
         writing_router,
+        reading_router,
         # Knowledge import routers
         readwise_router,
         github_import_router,

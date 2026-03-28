@@ -23,7 +23,7 @@ type AiPanelState = {
   setContext: (ctx: AiContext) => void;
 };
 
-export const useAiPanelStore = create<AiPanelState>((set, get) => ({
+export const useAiPanelStore = create<AiPanelState>((set, _get) => ({
   messages: [],
   isStreaming: false,
   context: { page: "inbox" },

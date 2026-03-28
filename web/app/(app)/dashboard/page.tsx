@@ -8,7 +8,14 @@ export const metadata = { title: "Dashboard — Alfred" };
 
 export default function DashboardPage() {
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-4 py-6">
+    <div className="mx-auto max-w-5xl space-y-8 px-6 py-8">
+      <div>
+        <h1 className="font-serif text-3xl tracking-tight">Knowledge Dashboard</h1>
+        <p className="mt-1 font-mono text-xs uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
+          Last 30 days
+        </p>
+      </div>
+
       <LiveKnowledgeScore />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

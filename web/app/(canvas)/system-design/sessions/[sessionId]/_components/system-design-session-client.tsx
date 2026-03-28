@@ -40,17 +40,17 @@ type AutosaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) {
   const [session, setSession] = useState<SystemDesignSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isActionRunning, setIsActionRunning] = useState(false);
+  const [_isActionRunning, setIsActionRunning] = useState(false);
 
-  const [knowledgeDraft, setKnowledgeDraft] = useState<SystemDesignKnowledgeDraft | null>(null);
+  const [_knowledgeDraft, setKnowledgeDraft] = useState<SystemDesignKnowledgeDraft | null>(null);
 
   const [problemStatement, setProblemStatement] = useState("");
 
-  const [publishLearningTopics, setPublishLearningTopics] = useState(true);
-  const [publishZettels, setPublishZettels] = useState(true);
+  const [_publishLearningTopics] = useState(true);
+  const [_publishZettels] = useState(true);
 
-  const [topicTitle, setTopicTitle] = useState("");
-  const [publishResult, setPublishResult] = useState<SystemDesignPublishResponse | null>(null);
+  const [_topicTitle, _setTopicTitle] = useState("");
+  const [_publishResult, setPublishResult] = useState<SystemDesignPublishResponse | null>(null);
 
   const canvasRef = useRef<ExcalidrawCanvasHandle | null>(null);
   const [canvasSelection, setCanvasSelection] = useState<ExcalidrawCanvasSelection | null>(null);
@@ -60,7 +60,7 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   const containerRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
 
-  const [autosaveState, setAutosaveState] = useState<AutosaveState>("idle");
+  const [_autosaveState, setAutosaveState] = useState<AutosaveState>("idle");
 
   const autosaveTimerRef = useRef<number | null>(null);
   const latestDiagramRef = useRef<ExcalidrawData | null>(null);
@@ -73,6 +73,10 @@ export function SystemDesignSessionClient({ sessionId }: { sessionId: string }) 
   const isApplyingTemplateRef = useRef(false);
 
   const [actionError, setActionError] = useState<string | null>(null);
+  const [, setAnalysis] = useState<unknown>(null);
+  const [, setQuestions] = useState<unknown>(null);
+  const [, setSuggestions] = useState<unknown[]>([]);
+  const [, setEvaluation] = useState<unknown>(null);
 
   const [notesMarkdown, setNotesMarkdown] = useState<string>("");
   const notesTimerRef = useRef<number | null>(null);

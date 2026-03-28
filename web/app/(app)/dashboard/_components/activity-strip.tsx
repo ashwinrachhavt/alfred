@@ -5,7 +5,7 @@ import { useMemo } from "react";
 import { subDays, format, startOfDay } from "date-fns";
 
 import { useExplorerDocuments } from "@/features/documents/queries";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 
 export function ActivityStrip() {
   const { data } = useExplorerDocuments({ limit: 100 });
@@ -30,18 +30,18 @@ export function ActivityStrip() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Activity (7 days)</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-end gap-2 h-16">
+      <CardContent className="pt-5">
+        <div className="mb-4 font-mono text-[10px] uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
+          Activity (7 days)
+        </div>
+        <div className="flex items-end gap-2 h-20">
           {dayCounts.map((d) => (
-            <div key={d.label} className="flex flex-1 flex-col items-center gap-1">
+            <div key={d.label} className="flex flex-1 flex-col items-center gap-1.5">
               <div
-                className="w-full rounded-sm bg-primary"
+                className="w-full rounded-sm bg-primary transition-all duration-200"
                 style={{ height: `${Math.max(4, (d.count / maxCount) * 100)}%` }}
               />
-              <span className="text-muted-foreground text-[10px]">{d.label}</span>
+              <span className="font-mono text-[10px] text-[var(--alfred-text-tertiary)]">{d.label}</span>
             </div>
           ))}
         </div>
