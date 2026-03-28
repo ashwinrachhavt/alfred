@@ -1,75 +1,24 @@
 """Google Calendar Connector."""
 
 import uuid
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytz
 from dateutil.parser import isoparse
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from alfred.connectors.google_oauth_session import GoogleOAuthSession
+from alfred.connectors.google_base import GoogleConnectorBase
 from alfred.core.settings import settings
 
 
-class GoogleCalendarConnector:
+class GoogleCalendarConnector(GoogleConnectorBase):
     """Class for retrieving data from Google Calendar using Google OAuth credentials."""
 
-    def __init__(
-        self,
-        credentials: Credentials,
-        user_id: str | None = None,
-        on_credentials_refreshed: Callable[[Credentials], Awaitable[None] | None] | None = None,
-    ):
-        """
-        Initialize the GoogleCalendarConnector class.
-        Args:
-            credentials: Google OAuth Credentials object
-            user_id: Optional identifier for the user (for logging/metrics only)
-            on_credentials_refreshed: Optional callback invoked after refresh with updated Credentials
-        """
-        self._credentials = credentials
-        self._user_id = user_id
-        self._on_refresh = on_credentials_refreshed
-        self._oauth_session = GoogleOAuthSession(
-            credentials, on_credentials_refreshed=on_credentials_refreshed
-        )
-        self.service = None
-
-    async def _get_credentials(
-        self,
-    ) -> Credentials:
-        """
-        Get valid Google OAuth credentials.
-        Returns:
-            Google OAuth credentials
-        Raises:
-            ValueError: If credentials have not been set
-            RuntimeError: If credential refresh fails
-        """
-        try:
-            self._credentials = await self._oauth_session.get_credentials()
-            return self._credentials
-        except ValueError:
-            raise
-        except Exception as exc:
-            raise RuntimeError(f"Failed to refresh Google OAuth credentials: {exc!s}") from exc
-
-    async def _get_service(self):
-        """Get the Google Calendar service instance using credentials."""
-        if self.service:
-            return self.service
-
-        try:
-            credentials = await self._get_credentials()
-            self.service = build("calendar", "v3", credentials=credentials)
-            return self.service
-        except Exception as exc:
-            raise RuntimeError(f"Failed to create Google Calendar service: {exc!s}") from exc
+    _SERVICE_NAME = "calendar"
+    _SERVICE_VERSION = "v3"
 
     async def create_event(
         self,

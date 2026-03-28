@@ -6,66 +6,19 @@ Provides a thin wrapper around the Gmail API that:
 - Exposes convenience helpers for common Gmail operations
 """
 
-import asyncio
 import base64
 import re
-from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from typing import Any
 
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-
-from alfred.connectors.google_oauth_session import GoogleOAuthSession
+from alfred.connectors.google_base import GoogleConnectorBase
 
 
-class GoogleGmailConnector:
+class GoogleGmailConnector(GoogleConnectorBase):
     """Class for retrieving emails from Gmail using Google OAuth credentials."""
 
-    def __init__(
-        self,
-        credentials: Credentials,
-        user_id: str | None = None,
-        on_credentials_refreshed: Callable[[Credentials], Awaitable[None] | None] | None = None,
-    ):
-        """Initialize the connector."""
-        self._credentials = credentials
-        self._user_id = user_id
-        self._on_refresh = on_credentials_refreshed
-        self._oauth_session = GoogleOAuthSession(
-            credentials, on_credentials_refreshed=on_credentials_refreshed
-        )
-        self.service = None
-
-    async def _get_credentials(
-        self,
-    ) -> Credentials:
-        """Get valid Google OAuth credentials."""
-        try:
-            self._credentials = await self._oauth_session.get_credentials()
-            return self._credentials
-        except ValueError:
-            raise
-        except Exception as exc:
-            raise RuntimeError(f"Failed to refresh Google OAuth credentials: {exc!s}") from exc
-
-    async def _get_service(self):
-        """Get the Gmail service instance using credentials."""
-        if self.service:
-            return self.service
-
-        try:
-            credentials = await self._get_credentials()
-            self.service = build("gmail", "v1", credentials=credentials)
-            return self.service
-        except Exception as exc:
-            raise RuntimeError(f"Failed to create Gmail service: {exc!s}") from exc
-
-    @staticmethod
-    async def _execute(request: Any) -> Any:
-        """Execute a googleapiclient request in a worker thread."""
-
-        return await asyncio.to_thread(request.execute)
+    _SERVICE_NAME = "gmail"
+    _SERVICE_VERSION = "v1"
 
     async def get_user_profile(self) -> tuple[dict[str, Any], str | None]:
         """Fetch user's Gmail profile information."""
