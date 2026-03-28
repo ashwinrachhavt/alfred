@@ -2,6 +2,9 @@
 
 import { useMemo, useState } from "react";
 
+import { Loader2 } from "lucide-react";
+
+import { useZettelCards } from "@/features/zettels/queries";
 import { MOCK_ZETTELS, getDueCount } from "./mock-data";
 import { ViewToolbar, type ViewMode } from "./view-toolbar";
 import { ZettelCard } from "./zettel-card";
@@ -15,19 +18,24 @@ export function KnowledgeHub() {
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  const { data: apiZettels, isLoading } = useZettelCards();
+
+  // Use real API data if available, fall back to mock data
+  const allZettels = apiZettels && apiZettels.length > 0 ? apiZettels : MOCK_ZETTELS;
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return MOCK_ZETTELS;
+    if (!search.trim()) return allZettels;
     const q = search.toLowerCase();
-    return MOCK_ZETTELS.filter(
+    return allZettels.filter(
       (z) =>
         z.title.toLowerCase().includes(q) ||
         z.tags.some((t) => t.toLowerCase().includes(q)) ||
         z.summary.toLowerCase().includes(q),
     );
-  }, [search]);
+  }, [search, allZettels]);
 
-  const selectedZettel = selectedId ? MOCK_ZETTELS.find((z) => z.id === selectedId) ?? null : null;
-  const dueCount = getDueCount(MOCK_ZETTELS);
+  const selectedZettel = selectedId ? allZettels.find((z) => z.id === selectedId) ?? null : null;
+  const dueCount = getDueCount(allZettels);
 
   return (
     <div className="flex h-full flex-col">
@@ -37,7 +45,7 @@ export function KnowledgeHub() {
           <div>
             <h1 className="font-serif text-[28px] tracking-tight">Knowledge</h1>
             <p className="mt-1 font-mono text-xs text-[var(--alfred-text-tertiary)]">
-              {MOCK_ZETTELS.length} zettels · {dueCount} due for review
+              {isLoading ? <Loader2 className="inline size-3 animate-spin" /> : allZettels.length} zettels · {dueCount} due for review
             </p>
           </div>
         </div>
