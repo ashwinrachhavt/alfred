@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from sqlmodel import select
 
 from alfred.core.database import SessionLocal
-from alfred.models.document import DocumentRow
+from alfred.models.doc_storage import DocumentRow
 from alfred.models.taxonomy import TaxonomyNodeRow
 from alfred.schemas.taxonomy import (
     Classification,
@@ -302,8 +302,13 @@ class TaxonomyService:
 
                 for doc in batch:
                     try:
-                        # Get text to classify
-                        text = doc.content or doc.summary or ""
+                        # Get text to classify (cleaned_text or summary dict's text)
+                        text = doc.cleaned_text or ""
+                        if not text.strip() and doc.summary:
+                            # Try to extract text from summary dict
+                            if isinstance(doc.summary, dict):
+                                text = doc.summary.get("text", "") or doc.summary.get("summary", "")
+
                         if not text.strip():
                             stats["skipped"] += 1
                             continue

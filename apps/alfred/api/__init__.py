@@ -48,7 +48,10 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.wikipedia import router as wikipedia_router
     from alfred.api.writing import router as writing_router
     from alfred.api.reading import router as reading_router
+    from alfred.api.agent import router as agent_router
+    from alfred.api.thinking import router as thinking_router
     from alfred.api.zettels import router as zettels_router
+    from alfred.api.taxonomy import router as taxonomy_router
 
     routers = [
         system_router,
@@ -75,6 +78,9 @@ def register_routes(app: FastAPI) -> None:
         whiteboards_router,
         writing_router,
         reading_router,
+        agent_router,
+        thinking_router,
+        taxonomy_router,
         # Knowledge import routers
         readwise_router,
         github_import_router,
