@@ -72,7 +72,7 @@ The core interaction. User types a question, Alfred responds with philosophical 
 5. Stream LLM response via SSE
 6. Post-process: extract knowledge anchors, update context panel, persist message
 
-**Knowledge anchors:** Inline markers in Alfred's response like `[-> Your card: Arendt's Banality]` that highlight the corresponding item in the Context Panel when clicked.
+**Knowledge anchors:** Inline markers in Alfred's response that highlight the corresponding item in the Context Panel when clicked. Implementation: after the LLM response completes, a post-processing step matches surfaced card titles and concepts against the response text using fuzzy string matching. Matches are wrapped in anchor markup and emitted as `anchor` SSE events with card IDs and text offsets. The frontend renders these as clickable orange-underlined spans.
 
 ### 2. Framework Lenses
 
@@ -87,7 +87,8 @@ Toggleable philosophical frameworks that shape Alfred's reasoning. Rendered as c
 | Kantian | Frames through duty and universalizability. |
 | Virtue Ethics | Frames through character and the good life. |
 | Eastern | Buddhist/Daoist/Confucian perspectives. |
-| Custom | User-defined lens with custom instructions. |
+
+Custom user-defined lenses are deferred to v2 after validating lens usage patterns.
 
 Multiple lenses can be active simultaneously. When multiple are active, Alfred presents the question through each and shows where they agree/diverge.
 
@@ -106,12 +107,11 @@ Four collapsible sections:
 - "Add to reading list" creates a stub ZettelCard tagged `gap` + `to-explore`
 - Shows coverage percentage: "Your coverage: 62% (5 of ~8 key concepts)"
 
-**3c. Concept Map**
-- Small interactive force-directed graph
-- Solid nodes = existing concepts in user's knowledge (warm gray)
-- Dashed nodes = gap concepts (orange border)
-- Edges = relationships Alfred has identified
-- Clickable nodes open card detail or gap detail
+**3c. Related Concepts** (MVP: list view, graph visualization deferred to v2)
+- "Your Concepts" — list of concepts from your knowledge base related to this exploration
+- "Missing Concepts" — list of gap concepts you haven't explored
+- Each item clickable to open card detail or gap detail
+- v2: upgrade to interactive force-directed graph
 
 **3d. Exploration Stats**
 - Topics touched, cards referenced, gaps identified, new cards created, frameworks used
@@ -122,7 +122,7 @@ Every exploration is saved as a first-class object:
 - Auto-titled from first message (user can rename)
 - Listed in sidebar under "EXPLORATIONS"
 - Stores: all messages, active lenses per message, knowledge references, detected gaps
-- Can be: resumed, archived, exported as notes
+- Can be: resumed, archived (export to notes deferred to v2)
 
 ### 5. Insight-to-Card Generation
 
@@ -143,60 +143,90 @@ The existing AI Panel (J key toggle) gains:
 
 ## Data Model
 
-### ExplorationThread
+All models inherit from the project's `Model` base class (provides `id`, `created_at`, `updated_at`). All models include `user_id: str` for multi-tenancy (defaults to placeholder while Clerk auth is disabled).
+
+### ExplorationThread (inherits Model)
 
 | Field | Type | Description |
 |-------|------|-------------|
-| id | int | Primary key |
+| user_id | str | User identifier (FK-ready for Clerk re-enablement) |
 | title | str | Auto-generated or user-named |
-| created_at | datetime | Thread creation time |
-| updated_at | datetime | Last activity |
 | status | str | "active" or "archived" |
-| active_lenses | list[str] | Currently active framework lenses |
 | summary | str? | AI-generated thread summary |
 | topic_tags | list[str] | Auto-extracted topic tags |
 
-### ExplorationMessage
+Note: `active_lenses` lives on ExplorationMessage only, not the thread. The thread's "current" lenses = the last message's `active_lenses`.
+
+### ExplorationMessage (inherits Model)
 
 | Field | Type | Description |
 |-------|------|-------------|
-| id | int | Primary key |
+| user_id | str | User identifier |
 | thread_id | int | FK to ExplorationThread |
 | role | str | "user" or "assistant" |
 | content | str | Message text (markdown) |
-| active_lenses | list[str] | Lenses active for this message |
+| active_lenses | list[str] | Lenses active when this message was sent/generated |
 | knowledge_refs | list[int] | IDs of surfaced ZettelCards |
 | document_refs | list[int] | IDs of surfaced Documents |
 | gap_refs | list[dict] | Detected gaps [{concept, description, importance}] |
-| created_at | datetime | Message timestamp |
 
-### KnowledgeGap
+### KnowledgeGap (inherits Model)
 
 | Field | Type | Description |
 |-------|------|-------------|
-| id | int | Primary key |
+| user_id | str | User identifier |
 | concept | str | Gap concept name |
 | description | str | Why this matters |
 | detected_in | int | FK to ExplorationThread where first found |
 | status | str | "open", "exploring", or "resolved" |
 | related_cards | list[int] | ZettelCards that partially cover this |
 | importance | float | 0-1 importance score |
-| created_at | datetime | Detection time |
 | resolved_at | datetime? | When gap was filled |
+
+### Migration
+
+Run `alembic revision --autogenerate -m 'add_philosopher_study_tables'`. Test up/down migrations before deployment. Index on `user_id` for all three tables.
 
 ## API Endpoints
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | POST | `/api/think/threads` | Create new exploration thread |
-| GET | `/api/think/threads` | List all threads (with pagination) |
+| GET | `/api/think/threads` | List threads (`?q=search&status=active&limit=20&skip=0`) |
 | GET | `/api/think/threads/{id}` | Get thread with all messages |
 | POST | `/api/think/threads/{id}/messages` | Send message, get AI response (SSE stream) |
-| PATCH | `/api/think/threads/{id}` | Update thread (title, lenses, status) |
+| PATCH | `/api/think/threads/{id}` | Update thread (title, status) |
 | GET | `/api/think/threads/{id}/context` | Get knowledge context for current thread |
 | POST | `/api/think/threads/{id}/cards` | Create Zettelkasten card from exploration insight |
 | GET | `/api/think/gaps` | List all knowledge gaps across threads |
 | PATCH | `/api/think/gaps/{id}` | Update gap status |
+
+### SSE Event Format
+
+The `POST /api/think/threads/{id}/messages` endpoint streams responses as Server-Sent Events:
+
+```
+event: token
+data: {"content": "chunk of response text"}
+
+event: anchor
+data: {"card_id": 123, "text": "Arendt's Banality of Evil", "offset": 245}
+
+event: context
+data: {"related_cards": [...], "related_docs": [...], "gaps": [...]}
+
+event: done
+data: {"message_id": 456}
+
+event: error
+data: {"message": "LLM provider unavailable", "retryable": true}
+```
+
+- `token` events stream as the LLM generates text
+- `anchor` events fire after response is complete, linking inline references to knowledge base items (post-processed by matching surfaced card titles/concepts against response text)
+- `context` event fires after parallel retrieval completes (may arrive before response is done)
+- `done` signals completion with the persisted message ID
+- `error` signals failure with retry guidance
 
 ## Design System Compliance
 
@@ -208,7 +238,6 @@ All UI follows DESIGN.md:
 - **Knowledge anchors:** Inline orange text with subtle underline, accent color
 - **Gap indicators:** Warning color (#B45309) icon + DM Sans text
 - **Context panel cards:** Standard card styling — bg-card, 1px border, 8px radius, serif title
-- **Graph nodes:** Warm gray fill (existing) / orange stroke-only (gaps)
 - **Dark mode default** with warm charcoal surfaces
 
 ## Error Handling
@@ -217,7 +246,7 @@ All UI follows DESIGN.md:
 |----------|----------|
 | RAG returns no results | Respond from LLM only. Context panel: "No matching knowledge — new frontier for you" |
 | LLM streaming fails | Retry once, then show error + "Try again" button |
-| Gap analysis slow | Render conversation immediately, gaps populate async |
+| Gap analysis slow | Render conversation immediately, gaps populate async via Celery task (`@shared_task def analyze_knowledge_gaps(thread_id, message_id)`). Context Panel shows loading skeleton for gaps section. Target: gaps appear within 2-3 seconds. |
 | Empty state (first use) | Guided prompt suggestions from user's most-tagged topics |
 | Context panel empty | Show onboarding: "Start capturing knowledge to enrich your explorations" |
 
@@ -245,3 +274,24 @@ All UI follows DESIGN.md:
 4. Insights can be captured as Zettelkasten cards in one action
 5. Explorations persist and are browsable/resumable
 6. The experience feels like "thinking with a brilliant friend who's read everything you've read"
+
+## Rate Limiting
+
+20 messages per thread per hour (configurable). Return 429 with `Retry-After` header if exceeded. Prevents runaway LLM costs.
+
+## MVP Scope vs. v2
+
+**MVP (this spec):**
+- Conversation engine with knowledge retrieval
+- 7 predefined framework lenses
+- Knowledge context panel (cards, docs, gaps as lists, stats)
+- Thread persistence and sidebar listing with search
+- Insight-to-card generation
+- AI Panel "Deep Explore" doorway
+- SSE streaming with knowledge anchors
+
+**Deferred to v2:**
+- Custom user-defined lenses
+- Force-directed concept graph visualization
+- Thread export to notes/markdown
+- Thread forking (branch an exploration)
