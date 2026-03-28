@@ -372,7 +372,8 @@ def get_document_details(
     except AlfredException:
         raise
     except Exception as exc:  # pragma: no cover - external IO
-        raise HTTPException(status_code=500, detail="Failed to fetch document") from exc
+        logger.exception("Failed to fetch document details for %s", id)
+        raise HTTPException(status_code=500, detail=f"Failed: {type(exc).__name__}: {exc}") from exc
 
 
 @router.patch("/{id}/text", response_model=DocumentDetailsResponse)

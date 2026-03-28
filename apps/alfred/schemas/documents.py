@@ -220,7 +220,7 @@ class DocumentDetailsResponse(BaseModel):
     tokens: int | None = None
     summary: dict[str, Any] | None = None
     topics: dict[str, Any] | None = None
-    entities: dict[str, Any] | None = None
+    entities: dict[str, Any] | list[Any] | None = None
     tags: list[str] = Field(default_factory=list)
     captured_at: datetime
     day_bucket: date
