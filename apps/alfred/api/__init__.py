@@ -13,6 +13,7 @@ def register_routes(app: FastAPI) -> None:
 
     # Import routers only when registering to avoid heavy side effects during import.
     from alfred.api.admin import router as admin_router
+    from alfred.api.agent import router as agent_router
 
     # Knowledge import routers
     from alfred.api.arxiv_import import router as arxiv_import_router
@@ -33,6 +34,7 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.pipeline import router as pipeline_router
     from alfred.api.pocket import router as pocket_router
     from alfred.api.rag import router as rag_router
+    from alfred.api.reading import router as reading_router
     from alfred.api.readwise import router as readwise_router
     from alfred.api.research import router as research_router
     from alfred.api.rss import router as rss_router
@@ -41,17 +43,15 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.system import router as system_router
     from alfred.api.system_design import router as system_design_router
     from alfred.api.tasks import router as tasks_router
+    from alfred.api.taxonomy import router as taxonomy_router
+    from alfred.api.thinking import router as thinking_router
     from alfred.api.todoist import router as todoist_router
     from alfred.api.tools import router as tools_router
     from alfred.api.web import router as web_router
     from alfred.api.whiteboards import router as whiteboards_router
     from alfred.api.wikipedia import router as wikipedia_router
     from alfred.api.writing import router as writing_router
-    from alfred.api.reading import router as reading_router
-    from alfred.api.agent import router as agent_router
-    from alfred.api.thinking import router as thinking_router
     from alfred.api.zettels import router as zettels_router
-    from alfred.api.taxonomy import router as taxonomy_router
 
     routers = [
         system_router,

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { enrichDocument, fetchAndOrganize, updateDocumentText, type UpdateDocumentTextRequest } from "@/lib/api/documents";
-import { documentDetailsQueryKey, explorerDocumentsQueryKey } from "@/features/documents/queries";
+import { documentDetailsQueryKey } from "@/features/documents/queries";
 
 export function useUpdateDocumentText(docId: string) {
   const queryClient = useQueryClient();

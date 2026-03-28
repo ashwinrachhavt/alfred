@@ -11,7 +11,8 @@ export type ResearchReportSection = {
 };
 
 export type ResearchReport = {
-  company: string;
+  company?: string;
+  topic?: string;
   executive_summary: string;
   sections: ResearchReportSection[];
   risks: string[];
@@ -30,7 +31,8 @@ export type ResearchSource = {
 };
 
 export type ResearchPayload = {
-  company: string;
+  topic?: string;
+  company?: string;
   model?: string;
   generated_at?: string;
   report: ResearchReport;
@@ -42,7 +44,8 @@ export type ResearchResponse = ResearchPayload | ResearchQueuedResponse;
 
 export type ResearchReportSummary = {
   id: string;
-  company: string;
+  topic?: string;
+  company?: string;
   model_name?: string | null;
   generated_at?: string | null;
   updated_at?: string | null;

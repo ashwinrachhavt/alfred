@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import {
   BookOpen,
+  Bot,
   Brain,
   Inbox,
   LayoutDashboard,
@@ -35,6 +36,7 @@ const navSections: NavSection[] = [
   {
     title: "Navigate",
     items: [
+      { label: "Alfred Agent", href: "/agent", icon: Bot, shortcut: "0" },
       { label: "Inbox", href: "/inbox", icon: Inbox, shortcut: "1" },
       { label: "Canvas", href: "/canvas", icon: Network, shortcut: "2" },
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, shortcut: "4" },
