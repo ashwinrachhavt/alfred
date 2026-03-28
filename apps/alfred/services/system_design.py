@@ -40,7 +40,6 @@ from alfred.schemas.system_design import (
 from alfred.services.datastore import DataStoreService
 from alfred.services.llm_service import LLMService
 from alfred.services.system_design_heuristics import component_library, template_library
-from alfred.services.system_design_interviewer import SystemDesignInterviewer
 from alfred.services.system_design_share import hash_password, verify_password
 
 
@@ -78,7 +77,6 @@ class SystemDesignService:
         self._collection = DataStoreService(default_collection=self.collection_name)
         templates_collection = self.templates_collection_name or f"{self.collection_name}_templates"
         self._templates = DataStoreService(default_collection=templates_collection)
-        self._interviewer = SystemDesignInterviewer(llm_service=self.llm_service)
 
     def ensure_indexes(self) -> None:
         return
@@ -118,9 +116,6 @@ class SystemDesignService:
         }
         doc_id = self._templates.insert_one(doc)
         return self._to_template(doc_id, doc | {"_id": doc_id})
-
-    def present_design_problem(self, problem: str) -> DesignPrompt:
-        return self._interviewer.present_design_problem(problem)
 
     def create_session(self, payload: SystemDesignSessionCreate) -> SystemDesignSession:
         now = _utcnow()
@@ -334,20 +329,15 @@ class SystemDesignService:
             return []
         return session.versions
 
-    def analyze(self, diagram: ExcalidrawData) -> DiagramAnalysis:
-        return self._interviewer.analyze_diagram(diagram)
-
-    def ask_probing_questions(self, diagram: ExcalidrawData) -> list[DiagramQuestion]:
-        return self._interviewer.ask_probing_questions(diagram)
-
-    def suggest_improvements(self, diagram: ExcalidrawData) -> list[DiagramSuggestion]:
-        return self._interviewer.suggest_improvements(diagram)
-
-    def evaluate_design(self, diagram: ExcalidrawData) -> DiagramEvaluation:
-        return self._interviewer.evaluate_design(diagram)
-
     def knowledge_draft(self, session: SystemDesignSession) -> SystemDesignKnowledgeDraft:
-        return self._interviewer.knowledge_draft(session)
+        return SystemDesignKnowledgeDraft(
+            topics=[],
+            zettels=[],
+            notes=[
+                f"Problem: {session.problem_statement}",
+                "Capture key assumptions, constraints, and tradeoffs as you iterate.",
+            ],
+        )
 
     def add_export(
         self, session_id: str, payload: DiagramExportRequest

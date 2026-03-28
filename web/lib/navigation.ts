@@ -1,138 +1,18 @@
-import {
-  Bell,
-  BookOpen,
-  Calendar,
-  LayoutGrid,
-  MessageCircle,
-  NotebookPen,
-  NotepadText,
-  Palette,
-  Shapes,
-  Sparkles,
-  type LucideIcon,
-} from "lucide-react";
+import { Brain, Inbox, LayoutDashboard, Network, type LucideIcon } from "lucide-react";
 
-export type NavGroup = "home" | "knowledge" | "research" | "practice" | "developer";
+export type PillarKey = "inbox" | "canvas" | "ai" | "dashboard";
 
-export type AppNavItem = {
-  key: string;
+export type PillarItem = {
+  key: PillarKey;
   title: string;
   href: string;
   icon: LucideIcon;
-  keywords: string[];
-  group: NavGroup;
-  /**
-   * When true, surfaces in the top navigation on wide screens.
-   * The sidebar always shows all primary items.
-   */
-  topNav?: boolean;
+  shortcut: string;
 };
 
-export const navGroupLabels: Record<NavGroup, string> = {
-  home: "Home",
-  knowledge: "Knowledge",
-  research: "Research",
-  practice: "Practice",
-  developer: "Developer",
-};
-
-export const navGroupOrder: NavGroup[] = [
-  "home",
-  "knowledge",
-  "research",
-  "practice",
-  "developer",
+export const pillars: PillarItem[] = [
+  { key: "inbox", title: "Inbox", href: "/inbox", icon: Inbox, shortcut: "1" },
+  { key: "canvas", title: "Canvas", href: "/canvas", icon: Network, shortcut: "2" },
+  { key: "ai", title: "AI", href: "#ai", icon: Brain, shortcut: "3" },
+  { key: "dashboard", title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, shortcut: "4" },
 ];
-
-export const appNavItems: AppNavItem[] = [
-  {
-    key: "dashboard",
-    title: "Dashboard",
-    href: "/dashboard",
-    icon: LayoutGrid,
-    keywords: ["dashboard", "overview", "home"],
-    group: "home",
-  },
-  {
-    key: "library",
-    title: "Library",
-    href: "/library",
-    icon: BookOpen,
-    keywords: ["library", "documents", "notes", "files"],
-    group: "knowledge",
-  },
-  {
-    key: "notes",
-    title: "Notes",
-    href: "/notes",
-    icon: NotebookPen,
-    keywords: ["notes", "markdown", "editor", "tiptap", "second brain"],
-    group: "knowledge",
-  },
-  {
-    key: "notion",
-    title: "Notion",
-    href: "/notion",
-    icon: NotepadText,
-    keywords: ["notion", "integration", "sync", "import"],
-    group: "knowledge",
-  },
-  {
-    key: "rag",
-    title: "RAG",
-    href: "/rag",
-    icon: MessageCircle,
-    keywords: ["rag", "chat", "qa"],
-    group: "knowledge",
-  },
-  {
-    key: "follow-ups",
-    title: "Follow-ups",
-    href: "/follow-ups",
-    icon: Bell,
-    keywords: ["follow ups", "follow-ups", "reminders", "pending", "nudge"],
-    group: "knowledge",
-  },
-  {
-    key: "company",
-    title: "Company Intel",
-    href: "/company",
-    icon: Sparkles,
-    keywords: ["company", "research", "intel", "intelligence"],
-    group: "research",
-  },
-  {
-    key: "calendar",
-    title: "Calendar & Email",
-    href: "/calendar",
-    icon: Calendar,
-    keywords: ["calendar", "email", "gmail", "scan", "inbox"],
-    group: "research",
-  },
-  {
-    key: "system-design",
-    title: "System Design",
-    href: "/system-design",
-    icon: Shapes,
-    keywords: ["system design", "diagram", "architecture"],
-    group: "practice",
-  },
-  {
-    key: "interview-prep",
-    title: "Interview Prep",
-    href: "/interview-prep",
-    icon: BookOpen,
-    keywords: ["interview", "prep", "questions", "practice"],
-    group: "practice",
-  },
-  {
-    key: "design-system",
-    title: "Design System",
-    href: "/design-system",
-    icon: Palette,
-    keywords: ["design system", "ui", "components", "tokens"],
-    group: "developer",
-  },
-];
-
-export const appTopNavItems = appNavItems.filter((item) => item.topNav);

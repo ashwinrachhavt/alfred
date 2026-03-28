@@ -21,6 +21,8 @@ const nextConfig = {
       { source: "/api/company/:path*", destination: `${apiBaseUrl}/company/:path*` },
       { source: "/api/tasks/:path*", destination: `${apiBaseUrl}/tasks/:path*` },
       { source: "/api/rag/:path*", destination: `${apiBaseUrl}/rag/:path*` },
+      { source: "/api/research", destination: `${apiBaseUrl}/research/` },
+      { source: "/api/research/:path*", destination: `${apiBaseUrl}/research/:path*` },
       { source: "/api/:path*", destination: `${apiBaseUrl}/api/:path*` },
     ];
   },

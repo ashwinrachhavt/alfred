@@ -1,8 +1,23 @@
 """Database engine and session helpers (SQLModel-compatible)."""
 
+from __future__ import annotations
+
+import json
 from collections.abc import Generator
+from datetime import date, datetime
 
 from sqlalchemy import create_engine
+
+
+def _json_serializer(obj: object) -> str:
+    """JSON serializer for SQLAlchemy JSON columns that handles datetime."""
+
+    def _default(o: object) -> str:
+        if isinstance(o, (datetime, date)):
+            return o.isoformat()
+        raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+
+    return json.dumps(obj, default=_default)
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session
 
@@ -43,7 +58,7 @@ try:
             pool_recycle=int(settings.db_pool_recycle_seconds),
         )
 
-    engine = create_engine(DB_URL, **engine_kwargs)
+    engine = create_engine(DB_URL, json_serializer=_json_serializer, **engine_kwargs)
 except ModuleNotFoundError as exc:  # pragma: no cover - runtime dependency hint
     if settings.database_url.startswith("postgres"):
         raise ConfigurationError(

@@ -16,7 +16,7 @@ export default async function NotesPage({ searchParams }: NotesPageProps) {
   const initialNoteId = first(params?.note) ?? null;
 
   return (
-    <div className="h-[calc(100dvh-4.25rem)] w-full">
+    <div className="h-[calc(100dvh-3.5rem)] w-full">
       <NotesWorkbenchClient initialNoteId={initialNoteId} />
     </div>
   );

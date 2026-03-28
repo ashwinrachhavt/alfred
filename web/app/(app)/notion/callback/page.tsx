@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 
@@ -14,7 +14,7 @@ type ExchangeResponse = {
   error?: string | null;
 };
 
-export default function NotionCallbackPage() {
+function NotionCallbackContent() {
   const params = useSearchParams();
   const router = useRouter();
   const exchanged = useRef(false);
@@ -89,5 +89,19 @@ export default function NotionCallbackPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function NotionCallbackPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <Loader2 className="text-muted-foreground h-10 w-10 animate-spin" />
+        </div>
+      }
+    >
+      <NotionCallbackContent />
+    </Suspense>
   );
 }

@@ -54,8 +54,7 @@ function withDefaultHref(task: TrackedTask): TrackedTask {
 function nextTaskLabel(source: TaskSource, label: string): string {
   const normalized = label.trim();
   if (normalized) return normalized;
-  if (source === "company_research") return "Company research";
-  if (source === "interview_prep") return "Interview prep";
+  if (source === "company_research") return "Deep research";
   return "Background task";
 }
 
@@ -88,7 +87,7 @@ function deriveTaskHref(task: TrackedTask, status: TaskStatusResponse | undefine
 
   const reportId = extractCompanyResearchReportId(status.result);
   if (!reportId) return null;
-  return `/company?reportId=${encodeURIComponent(reportId)}`;
+  return `/research?reportId=${encodeURIComponent(reportId)}`;
 }
 
 function deriveTaskLabel(task: TrackedTask, status: TaskStatusResponse | undefined): string | null {
@@ -98,7 +97,7 @@ function deriveTaskLabel(task: TrackedTask, status: TaskStatusResponse | undefin
 
   const company = extractCompanyResearchCompanyName(status.result);
   if (!company) return null;
-  return `Company research: ${company}`;
+  return `Deep research: ${company}`;
 }
 
 function mergeTask(existing: TrackedTask, next: TrackedTask): TrackedTask {

@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type NotesSidebarProps = {
@@ -66,8 +65,10 @@ function TreeList({
             <button
               type="button"
               className={cn(
-                "hover:bg-accent flex w-full items-center gap-2 truncate rounded-md px-2 py-1 text-left text-sm",
-                isSelected && "bg-accent text-accent-foreground",
+                "flex w-full items-center gap-2 truncate rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                isSelected
+                  ? "border-l-2 border-primary bg-[var(--alfred-accent-subtle)] text-foreground"
+                  : "border-l-2 border-transparent text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground",
               )}
               style={{ paddingLeft: `${8 + depth * 12}px` }}
               onClick={() => onSelectNoteId(node.note.id)}
@@ -109,13 +110,15 @@ export function NotesSidebar({
   const filtered = useMemo(() => filterTree(nodes, search), [nodes, search]);
 
   return (
-    <aside className="bg-muted/20 flex h-full min-h-0 flex-col border-r">
-      <header className="flex items-center justify-between gap-2 p-3">
+    <aside className="flex h-full min-h-0 flex-col border-r bg-card">
+      <header className="flex items-center justify-between gap-2 border-b p-3">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium">
+          <p className="truncate font-serif text-lg">
             {workspace ? `${workspace.icon ?? "📓"} ${workspace.name}` : "Notes"}
           </p>
-          <p className="text-muted-foreground truncate text-xs">Markdown-first pages</p>
+          <p className="truncate font-mono text-[10px] uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
+            Markdown-first pages
+          </p>
         </div>
         <Button type="button" size="icon" variant="outline" onClick={onCreateNote}>
           <FilePlus2 className="h-4 w-4" aria-hidden="true" />
@@ -123,23 +126,21 @@ export function NotesSidebar({
         </Button>
       </header>
 
-      <div className="px-3 pb-3">
+      <div className="px-3 py-3">
         <div className="relative">
-          <Search className="text-muted-foreground absolute top-2.5 left-2 h-4 w-4" aria-hidden="true" />
+          <Search className="absolute top-2.5 left-2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
           <Input
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search notes…"
+            placeholder="Search notes..."
             className="pl-8"
           />
         </div>
       </div>
 
-      <Separator />
-
-      <div className="flex-1 overflow-y-auto p-3">
+      <div className="flex-1 overflow-y-auto px-2 pb-3">
         {isLoading ? (
-          <div className="space-y-2">
+          <div className="space-y-2 px-1">
             <Skeleton className="h-7 w-11/12" />
             <Skeleton className="h-7 w-9/12" />
             <Skeleton className="h-7 w-10/12" />
@@ -155,9 +156,9 @@ export function NotesSidebar({
         ) : (
           <EmptyState
             title={nodes.length ? "No matches" : "No notes yet"}
-            description={nodes.length ? "Try a different search." : "Create your first note to start dogfooding."}
+            description={nodes.length ? "Try a different search." : "Create your first note to get started."}
             action={
-              <Button type="button" onClick={onCreateNote}>
+              <Button type="button" onClick={onCreateNote} className="font-mono text-xs">
                 New note
               </Button>
             }

@@ -424,10 +424,24 @@
 
   // ── Floating Action Button (always visible) ────────────────────────
 
+  function openSidePanel() {
+    try {
+      chrome.runtime.sendMessage({ type: "OPEN_SIDE_PANEL" });
+    } catch {
+      // Fallback if messaging fails — just toggle the dock
+      toggleDock();
+    }
+  }
+
   function buildFab() {
-    const fab = el("div", { id: "alfred-fab", onClick: toggleDock }, [
-      el("span", { class: "alfred-fab-letter" }, "A"),
+    const fab = el("div", { id: "alfred-fab" }, [
+      el("span", { class: "alfred-fab-letter", onClick: toggleDock }, "A"),
     ]);
+    // Long-press or right-click opens side panel
+    fab.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      openSidePanel();
+    });
     document.body.appendChild(fab);
   }
 
@@ -437,6 +451,35 @@
   } else {
     document.addEventListener("DOMContentLoaded", buildFab);
   }
+
+  // ── Message handler for side panel ──────────────────────────────────
+
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg && msg.type === "GET_ARTICLE_TEXT") {
+      // Extract the main article text, falling back to body text
+      let text = "";
+      const article = document.querySelector("article");
+      if (article) {
+        text = article.innerText;
+      } else {
+        // Try common content selectors
+        const main =
+          document.querySelector("[role='main']") ||
+          document.querySelector("main") ||
+          document.querySelector(".post-content") ||
+          document.querySelector(".entry-content") ||
+          document.querySelector(".article-body");
+        text = main ? main.innerText : document.body.innerText;
+      }
+
+      sendResponse({
+        url: location.href,
+        title: document.title,
+        text: (text || "").slice(0, 50000),
+      });
+      return true; // async response
+    }
+  });
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────
 
@@ -462,6 +505,12 @@
     if (e.altKey && e.key.toLowerCase() === "p") {
       e.preventDefault();
       captureFullPage();
+    }
+
+    // Alt+J — open AI reading mode side panel
+    if (e.altKey && e.key.toLowerCase() === "j") {
+      e.preventDefault();
+      openSidePanel();
     }
   });
 })();

@@ -3,9 +3,7 @@
  *
  * Consolidates duplicate helpers that were previously scattered across
  * task-center-sheet, company-research-history-sheet,
- * interview-prep-session-history-sheet, follow-up-center-sheet,
- * follow-ups-client, follow-up-provider, dashboard-client,
- * notion-client, and notion-notetaker.
+ * dashboard-client, notion-client, and notion-notetaker.
  */
 
 // ---------------------------------------------------------------------------

@@ -71,7 +71,7 @@ export function NotionClient() {
   return (
     <div className="space-y-8">
       <header className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Notion</h1>
+        <h1 className="font-serif text-3xl tracking-tight">Notion</h1>
         <p className="text-muted-foreground text-sm">
           Review pages visible to the configured Notion integration (server-side token).
         </p>

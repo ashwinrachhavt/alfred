@@ -21,7 +21,6 @@ import { Bold, FileText, Italic, Loader2, PenLine, Wand2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { completeText, rewriteText, summarizeText } from "@/lib/api/ai-assist";
 
 function readEditorMarkdown(editor: Editor): string {
@@ -54,6 +53,7 @@ export type MarkdownNotesEditorProps = {
 
 type SlashCommand = {
   title: string;
+  description: string;
   keywords: string[];
   run: (editor: Editor) => void;
 };
@@ -116,7 +116,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
         Markdown,
         Typography,
         Placeholder.configure({
-          placeholder: placeholder ?? "Write notes… (Select text for AI)",
+          placeholder: placeholder ?? "Start writing...",
           emptyEditorClass: "is-editor-empty",
         }),
       ],
@@ -134,7 +134,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
       const end = editor.view.coordsAtPos(to);
 
       setMenuPosition({
-        top: start.top - 40,
+        top: start.top - 48,
         left: (start.left + end.left) / 2,
       });
     }, []);
@@ -143,41 +143,49 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
       () => [
         {
           title: "Heading 1",
+          description: "Large section heading",
           keywords: ["h1", "heading", "title"],
           run: (editor) => editor.chain().focus().toggleHeading({ level: 1 }).run(),
         },
         {
           title: "Heading 2",
+          description: "Medium section heading",
           keywords: ["h2", "heading", "subtitle"],
           run: (editor) => editor.chain().focus().toggleHeading({ level: 2 }).run(),
         },
         {
           title: "Heading 3",
+          description: "Small section heading",
           keywords: ["h3", "heading"],
           run: (editor) => editor.chain().focus().toggleHeading({ level: 3 }).run(),
         },
         {
           title: "Bulleted list",
+          description: "Unordered list of items",
           keywords: ["bullet", "list", "ul"],
           run: (editor) => editor.chain().focus().toggleBulletList().run(),
         },
         {
           title: "Numbered list",
+          description: "Ordered list of items",
           keywords: ["number", "list", "ol"],
           run: (editor) => editor.chain().focus().toggleOrderedList().run(),
         },
         {
           title: "Quote",
+          description: "Blockquote for emphasis",
           keywords: ["quote", "blockquote"],
           run: (editor) => editor.chain().focus().toggleBlockquote().run(),
         },
         {
           title: "Code block",
+          description: "Code with syntax highlighting",
           keywords: ["code", "block", "snippet"],
           run: (editor) => editor.chain().focus().toggleCodeBlock().run(),
         },
         {
           title: "Divider",
+          description: "Horizontal ruled line",
           keywords: ["divider", "hr", "separator"],
           run: (editor) => editor.chain().focus().setHorizontalRule().run(),
         },
@@ -248,10 +256,24 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
         attributes: {
           class: cn(
             "prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[150px] px-4 py-3",
-            "prose-headings:font-semibold prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg",
-            "prose-pre:bg-muted prose-pre:text-foreground",
-            "prose-blockquote:border-l-primary prose-blockquote:bg-muted/30 prose-blockquote:py-1 prose-blockquote:px-3 prose-blockquote:not-italic",
-            "prose-img:rounded-xl prose-img:border prose-img:shadow-sm",
+            // Headings: Instrument Serif
+            "prose-headings:font-serif prose-headings:tracking-tight prose-headings:font-normal",
+            "prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl",
+            // Body: DM Sans (inherits from font-sans)
+            "prose-p:leading-relaxed",
+            // Code: JetBrains Mono
+            "prose-code:font-mono prose-code:text-[13px] prose-code:bg-secondary prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-sm prose-code:before:content-none prose-code:after:content-none",
+            "prose-pre:bg-secondary prose-pre:text-foreground prose-pre:font-mono prose-pre:text-[13px] prose-pre:rounded-md",
+            // Blockquote: accent left border
+            "prose-blockquote:border-l-primary prose-blockquote:bg-[var(--alfred-accent-subtle)] prose-blockquote:py-1 prose-blockquote:px-4 prose-blockquote:not-italic prose-blockquote:rounded-r-md",
+            // Images
+            "prose-img:rounded-lg prose-img:border prose-img:shadow-sm",
+            // Links: accent color
+            "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
+            // HR: ruled line
+            "prose-hr:border-[var(--alfred-ruled-line)]",
+            // Strong: slightly heavier
+            "prose-strong:font-semibold",
           ),
         },
       },
@@ -294,25 +316,11 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
       [editor],
     );
 
-    useEffect(() => {
-      uploadImageRef.current = uploadImage;
-    }, [uploadImage]);
-
-    useEffect(() => {
-      onKeyboardCommandRef.current = onKeyboardCommand;
-    }, [onKeyboardCommand]);
-
-    useEffect(() => {
-      slashQueryRef.current = slashQuery;
-    }, [slashQuery]);
-
-    useEffect(() => {
-      slashCommandsRef.current = filteredSlashCommands;
-    }, [filteredSlashCommands]);
-
-    useEffect(() => {
-      slashActiveIndexRef.current = slashActiveIndex;
-    }, [slashActiveIndex]);
+    useEffect(() => { uploadImageRef.current = uploadImage; }, [uploadImage]);
+    useEffect(() => { onKeyboardCommandRef.current = onKeyboardCommand; }, [onKeyboardCommand]);
+    useEffect(() => { slashQueryRef.current = slashQuery; }, [slashQuery]);
+    useEffect(() => { slashCommandsRef.current = filteredSlashCommands; }, [filteredSlashCommands]);
+    useEffect(() => { slashActiveIndexRef.current = slashActiveIndex; }, [slashActiveIndex]);
 
     useEffect(() => {
       if (slashQuery === null) {
@@ -320,7 +328,6 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
         if (slashActiveIndex !== 0) setSlashActiveIndex(0);
         return;
       }
-
       slashActiveIndexRef.current = 0;
       if (slashActiveIndex !== 0) setSlashActiveIndex(0);
     }, [slashActiveIndex, slashQuery]);
@@ -533,14 +540,15 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
     return (
       <div
         className={cn(
-          "bg-background ring-offset-background focus-within:ring-ring relative flex h-full w-full flex-col overflow-hidden rounded-xl border focus-within:ring-2 focus-within:ring-offset-2",
+          "relative flex h-full w-full flex-col overflow-hidden rounded-lg border bg-background",
           readOnly && "opacity-80",
           className,
         )}
       >
+        {/* Slash command menu */}
         {slashMenuPosition && slashQuery !== null && !readOnly ? (
           <div
-            className="bg-popover animate-in fade-in zoom-in-95 fixed z-50 w-72 overflow-hidden rounded-lg border shadow-md duration-100"
+            className="fixed z-50 w-64 overflow-hidden rounded-md border bg-card shadow-lg animate-in fade-in zoom-in-95 duration-100"
             style={{ top: `${slashMenuPosition.top}px`, left: `${slashMenuPosition.left}px` }}
           >
             {filteredSlashCommands.length ? (
@@ -554,24 +562,27 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
                       runSlashCommand(cmd);
                     }}
                     className={cn(
-                      "hover:bg-accent flex w-full items-center justify-between gap-2 rounded-md px-2 py-2 text-left text-sm",
-                      idx === slashActiveIndex && "bg-accent text-accent-foreground",
+                      "flex w-full flex-col gap-0.5 rounded-md px-3 py-2 text-left transition-colors",
+                      idx === slashActiveIndex
+                        ? "bg-[var(--alfred-accent-subtle)] text-foreground"
+                        : "text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground",
                     )}
                   >
-                    <span className="truncate font-medium">{cmd.title}</span>
-                    <span className="text-muted-foreground text-[11px]">/</span>
+                    <span className="text-sm font-medium">{cmd.title}</span>
+                    <span className="font-mono text-[10px] text-[var(--alfred-text-tertiary)]">{cmd.description}</span>
                   </button>
                 ))}
               </div>
             ) : (
-              <div className="text-muted-foreground px-3 py-2 text-xs">No commands</div>
+              <div className="px-3 py-2 font-mono text-[11px] text-[var(--alfred-text-tertiary)]">No commands found</div>
             )}
           </div>
         ) : null}
 
+        {/* AI bubble menu — appears on text selection */}
         {menuPosition && !editor.state.selection.empty && (
           <div
-            className="bg-popover animate-in fade-in zoom-in-95 fixed z-50 flex items-center gap-1 rounded-lg border p-1 shadow-lg duration-100"
+            className="fixed z-50 flex items-center gap-0.5 rounded-md border bg-card p-1 shadow-lg animate-in fade-in zoom-in-95 duration-100"
             style={{
               top: `${menuPosition.top}px`,
               left: `${menuPosition.left}px`,
@@ -584,7 +595,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
               onClick={() => editor.chain().focus().toggleBold().run()}
               className={cn(
                 "h-7 w-7 p-0",
-                editor.isActive("bold") && "bg-accent text-accent-foreground",
+                editor.isActive("bold") && "bg-[var(--alfred-accent-subtle)] text-primary",
               )}
             >
               <Bold className="h-3.5 w-3.5" />
@@ -595,53 +606,53 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
               onClick={() => editor.chain().focus().toggleItalic().run()}
               className={cn(
                 "h-7 w-7 p-0",
-                editor.isActive("italic") && "bg-accent text-accent-foreground",
+                editor.isActive("italic") && "bg-[var(--alfred-accent-subtle)] text-primary",
               )}
             >
               <Italic className="h-3.5 w-3.5" />
             </Button>
 
-            <Separator orientation="vertical" className="mx-1 h-4" />
+            <div className="mx-1 h-4 w-px bg-border" />
 
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 gap-1.5 px-2 text-xs font-medium text-purple-600 hover:bg-purple-50 hover:text-purple-700 dark:text-purple-400 dark:hover:bg-purple-950/30"
+              className="h-7 gap-1.5 px-2 font-mono text-[10px] uppercase tracking-wider text-primary hover:bg-[var(--alfred-accent-subtle)]"
               onClick={() => handleAiAction("rewrite")}
               disabled={!!aiLoading}
             >
               {aiLoading === "rewrite" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="h-3 w-3 animate-spin" />
               ) : (
-                <Wand2 className="h-3.5 w-3.5" />
+                <Wand2 className="h-3 w-3" />
               )}
               Rewrite
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 gap-1.5 px-2 text-xs font-medium text-orange-600 hover:bg-orange-50 hover:text-orange-700 dark:text-orange-400 dark:hover:bg-orange-950/30"
+              className="h-7 gap-1.5 px-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground"
               onClick={() => handleAiAction("summarize")}
               disabled={!!aiLoading}
             >
               {aiLoading === "summarize" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="h-3 w-3 animate-spin" />
               ) : (
-                <FileText className="h-3.5 w-3.5" />
+                <FileText className="h-3 w-3" />
               )}
               Summarize
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 gap-1.5 px-2 text-xs font-medium text-blue-600 hover:bg-blue-50 hover:text-blue-700 dark:text-blue-400 dark:hover:bg-blue-950/30"
+              className="h-7 gap-1.5 px-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground"
               onClick={() => handleAiAction("complete")}
               disabled={!!aiLoading}
             >
               {aiLoading === "complete" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="h-3 w-3 animate-spin" />
               ) : (
-                <PenLine className="h-3.5 w-3.5" />
+                <PenLine className="h-3 w-3" />
               )}
               Continue
             </Button>

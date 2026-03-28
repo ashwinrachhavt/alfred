@@ -7,7 +7,8 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func
+from sqlmodel import select
 
 from alfred.models.doc_storage import DocumentRow
 from alfred.services.doc_storage.semantic_map import (
@@ -115,7 +116,7 @@ class SemanticMapMixin:
         """Return a lightweight version string for semantic map cache invalidation."""
 
         with _session_scope(self.session) as s:
-            ts = s.exec(select(func.max(DocumentRow.updated_at))).one()[0]
+            ts = s.scalar(select(func.max(DocumentRow.updated_at)))
         if isinstance(ts, datetime):
             if ts.tzinfo is None:
                 ts = ts.replace(tzinfo=UTC)

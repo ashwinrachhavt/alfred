@@ -6,8 +6,9 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import load_only
+from sqlmodel import select
 
 from alfred.core.exceptions import BadRequestError
 from alfred.models.doc_storage import DocChunkRow, DocumentRow
@@ -413,7 +414,7 @@ class RetrievalMixin:
 
             stmt = _apply_offset_limit(stmt, skip=skip, limit=limit, max_limit=200)
             rows = s.exec(stmt).all()
-            total = s.exec(count_stmt).one()[0]
+            total = int(s.scalar(count_stmt) or 0)
 
             items = []
             for drow in rows:
@@ -480,7 +481,7 @@ class RetrievalMixin:
 
             stmt = _apply_offset_limit(stmt, skip=skip, limit=limit, max_limit=200)
             rows = s.exec(stmt).all()
-            total = s.exec(count_stmt).one()[0]
+            total = int(s.scalar(count_stmt) or 0)
 
             items = []
             for c in rows:

@@ -37,7 +37,6 @@ export type SystemDesignArtifacts = {
   learning_topic_ids: number[];
   learning_resource_ids: number[];
   zettel_card_ids: number[];
-  interview_prep_id?: string | null;
   published_at?: string | null;
 };
 
@@ -150,33 +149,16 @@ export type SystemDesignZettelDraft = {
   topic?: string | null;
 };
 
-export type SystemDesignInterviewPrepDraft = {
-  likely_questions: Array<{
-    question: string;
-    suggested_answer: string;
-    focus_areas?: string[];
-  }>;
-  technical_topics: Array<{
-    topic: string;
-    priority?: number;
-    notes?: string | null;
-    resources?: string[];
-  }>;
-};
-
 export type SystemDesignKnowledgeDraft = {
   topics: SystemDesignKnowledgeTopic[];
   zettels: SystemDesignZettelDraft[];
-  interview_prep: SystemDesignInterviewPrepDraft;
   notes: string[];
 };
 
 export type SystemDesignPublishRequest = {
   create_learning_topics?: boolean;
   create_zettels?: boolean;
-  create_interview_prep_items?: boolean;
   learning_topic_id?: number | null;
-  interview_prep_id?: string | null;
   topic_title?: string | null;
   topic_tags?: string[];
   zettel_tags?: string[];

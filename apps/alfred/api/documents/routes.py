@@ -168,6 +168,88 @@ def enqueue_document_enrichment(
         raise HTTPException(status_code=500, detail="Failed to enqueue enrichment") from exc
 
 
+class FetchOrganizeResponse(BaseModel):
+    id: str
+    status: str
+    tokens: int | None = None
+    task_id: str | None = None
+
+
+@router.post("/doc/{id}/fetch-and-organize", response_model=FetchOrganizeResponse)
+def fetch_and_organize(
+    id: str,
+    force: bool = Query(False, description="Re-fetch even if content exists"),
+    svc: DocStorageService = Depends(get_doc_storage_service),
+) -> FetchOrganizeResponse:
+    """Fetch full page content from source URL via Firecrawl, store as clean
+    markdown, then trigger enrichment.
+
+    Use when the captured content is too short (e.g. selection or RSS snippet)
+    and the source URL has the full article.
+    """
+    try:
+        doc = svc.get_document_details(id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        # Skip if already has substantial content (unless forced)
+        existing_text = doc.get("cleaned_text") or ""
+        if not force and len(existing_text) > 500:
+            return FetchOrganizeResponse(id=id, status="already_has_content", tokens=doc.get("tokens"))
+
+        source_url = doc.get("source_url") or doc.get("canonical_url")
+        if not source_url or source_url.startswith("about:"):
+            raise HTTPException(status_code=400, detail="No source URL to fetch from")
+
+        # Scrape the page via Firecrawl
+        from alfred.connectors.firecrawl_connector import FirecrawlClient
+
+        fc = FirecrawlClient()
+        result = fc.scrape(source_url)
+
+        if not result.success or not result.markdown:
+            raise HTTPException(status_code=502, detail=f"Failed to fetch page: {result.error}")
+
+        markdown = result.markdown.strip()
+        if len(markdown) < 50:
+            raise HTTPException(status_code=422, detail="Fetched content too short")
+
+        # Update the document with the full markdown content
+        svc.update_document_text(
+            id,
+            raw_markdown=markdown,
+            cleaned_text=markdown,
+        )
+
+        # Trigger enrichment
+        try:
+            celery_client = get_celery_client()
+            async_result = celery_client.send_task(
+                "alfred.tasks.document_enrichment.enrich",
+                kwargs={"doc_id": id, "force": True},
+            )
+            return FetchOrganizeResponse(
+                id=id,
+                status="fetched_and_enriching",
+                tokens=len(markdown.split()),
+                task_id=async_result.id,
+            )
+        except Exception:
+            return FetchOrganizeResponse(
+                id=id,
+                status="fetched",
+                tokens=len(markdown.split()),
+            )
+
+    except HTTPException:
+        raise
+    except AlfredException:
+        raise
+    except Exception as exc:
+        logger.exception("Fetch and organize failed for %s: %s", id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch and organize") from exc
+
+
 @router.get("/{id}/image")
 def get_document_image(
     id: str,
@@ -290,7 +372,8 @@ def get_document_details(
     except AlfredException:
         raise
     except Exception as exc:  # pragma: no cover - external IO
-        raise HTTPException(status_code=500, detail="Failed to fetch document") from exc
+        logger.exception("Failed to fetch document details for %s", id)
+        raise HTTPException(status_code=500, detail=f"Failed: {type(exc).__name__}: {exc}") from exc
 
 
 @router.patch("/{id}/text", response_model=DocumentDetailsResponse)

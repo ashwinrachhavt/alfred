@@ -17,19 +17,14 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
     task_modules = (
         [
             "alfred.tasks.mind_palace_agent",
-            "alfred.tasks.company_research",
-            "alfred.tasks.company_insights",
-            "alfred.tasks.company_interviews",
+            "alfred.tasks.deep_research",
             "alfred.tasks.document_enrichment",
             "alfred.tasks.document_processing",
             "alfred.tasks.document_title_image",
-            "alfred.tasks.gmail_interviews",
-            "alfred.tasks.interview_prep",
-            "alfred.tasks.interviews_unified",
             "alfred.tasks.learning_concepts",
             "alfred.tasks.document_concepts",
             "alfred.tasks.notion_import",
-            "alfred.tasks.paraform_company_report",
+            "alfred.tasks.document_pipeline",
         ]
         if include_tasks
         else []
@@ -58,43 +53,18 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
         ),
         task_routes={
             "alfred.tasks.mind_palace_agent.*": {"queue": "agent"},
-            "alfred.tasks.company_research.*": {"queue": "default"},
-            "alfred.tasks.company_insights.*": {"queue": "default"},
-            "alfred.tasks.company_interviews.*": {"queue": "default"},
+            "alfred.tasks.deep_research.*": {"queue": "default"},
             "alfred.tasks.document_enrichment.*": {"queue": "default"},
             "alfred.tasks.document_processing.*": {"queue": "default"},
             "alfred.tasks.document_title_image.*": {"queue": "default"},
-            "alfred.tasks.gmail_interviews.*": {"queue": "default"},
-            "alfred.tasks.interview_prep.*": {"queue": "default"},
-            "alfred.tasks.interviews_unified.*": {"queue": "agent"},
             "alfred.tasks.learning_concepts.*": {"queue": "default"},
             "alfred.tasks.document_concepts.*": {"queue": "default"},
             "alfred.tasks.notion_import.*": {"queue": "default"},
-            "alfred.tasks.paraform_company_report.*": {"queue": "default"},
+            "alfred.tasks.document_pipeline.*": {"queue": "default"},
         },
     )
 
     beat_schedule: dict[str, object] = {}
-    if settings.enable_interview_reminders:
-        beat_schedule |= {
-            # Run hourly to catch 3d/1d/1h reminders without needing precise timing.
-            "interview-reminders-hourly": {
-                "task": "alfred.tasks.interview_prep.send_reminders",
-                "schedule": crontab(minute=0),
-                "kwargs": {"horizon_days": 14},
-                "options": {"queue": "default"},
-            }
-        }
-
-    if settings.enable_gmail and settings.enable_gmail_interview_poll:
-        beat_schedule |= {
-            "gmail-interview-poll-every-15m": {
-                "task": "alfred.tasks.gmail.poll_interviews",
-                "schedule": crontab(minute="*/15"),
-                "kwargs": {"days_back": 7, "max_results": 25},
-                "options": {"queue": "default"},
-            }
-        }
 
     if settings.enable_learning_concept_extraction_nightly:
         beat_schedule |= {
@@ -139,19 +109,14 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
         celery_app.autodiscover_tasks(["alfred"])
         # Be explicit to avoid "Received unregistered task" when running workers from
         # different entrypoints/working directories.
-        import alfred.tasks.company_insights
-        import alfred.tasks.company_interviews
-        import alfred.tasks.company_research
+        import alfred.tasks.deep_research
         import alfred.tasks.document_concepts
         import alfred.tasks.document_enrichment
+        import alfred.tasks.document_pipeline
         import alfred.tasks.document_processing
         import alfred.tasks.document_title_image
-        import alfred.tasks.gmail_interviews
-        import alfred.tasks.interview_prep
-        import alfred.tasks.interviews_unified
         import alfred.tasks.learning_concepts
         import alfred.tasks.mind_palace_agent
-        import alfred.tasks.notion_import
-        import alfred.tasks.paraform_company_report  # noqa: F401
+        import alfred.tasks.notion_import  # noqa: F401
 
     return celery_app

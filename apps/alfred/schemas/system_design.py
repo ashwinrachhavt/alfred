@@ -8,7 +8,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from alfred.schemas.interview_prep import LikelyQuestion, TechnicalTopic
 
 
 class ComponentCategory(str, Enum):
@@ -83,7 +82,6 @@ class SystemDesignArtifacts(BaseModel):
     learning_topic_ids: list[int] = Field(default_factory=list)
     learning_resource_ids: list[int] = Field(default_factory=list)
     zettel_card_ids: list[int] = Field(default_factory=list)
-    interview_prep_id: str | None = None
     published_at: datetime | None = None
 
 
@@ -211,26 +209,16 @@ class SystemDesignZettelDraft(BaseModel):
     topic: str | None = None
 
 
-class SystemDesignInterviewPrepDraft(BaseModel):
-    likely_questions: list[LikelyQuestion] = Field(default_factory=list)
-    technical_topics: list[TechnicalTopic] = Field(default_factory=list)
-
-
 class SystemDesignKnowledgeDraft(BaseModel):
     topics: list[SystemDesignKnowledgeTopic] = Field(default_factory=list)
     zettels: list[SystemDesignZettelDraft] = Field(default_factory=list)
-    interview_prep: SystemDesignInterviewPrepDraft = Field(
-        default_factory=SystemDesignInterviewPrepDraft
-    )
     notes: list[str] = Field(default_factory=list)
 
 
 class SystemDesignPublishRequest(BaseModel):
     create_learning_topics: bool = True
     create_zettels: bool = True
-    create_interview_prep_items: bool = False
     learning_topic_id: int | None = None
-    interview_prep_id: str | None = None
     topic_title: str | None = None
     topic_tags: list[str] = Field(default_factory=list)
     zettel_tags: list[str] = Field(default_factory=list)
