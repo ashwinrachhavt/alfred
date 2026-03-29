@@ -11,6 +11,7 @@ import { useDocumentDetails } from "@/features/documents/queries";
 import { useEnrichDocument, useFetchAndOrganize } from "@/features/documents/mutations";
 import { useZettelsByDocument } from "@/features/zettels/queries";
 import { CreateZettelDialog } from "@/app/(app)/knowledge/_components/create-zettel-dialog";
+import { ReaderMode } from "./reader-mode";
 
 type Props = {
  docId: string;
@@ -22,6 +23,7 @@ export function InboxDetail({ docId, onClose }: Props) {
  const enrichMutation = useEnrichDocument(docId);
  const fetchMutation = useFetchAndOrganize(docId);
  const [enrichStatus, setEnrichStatus] = useState<"idle" | "fetching" | "enriching" | "done">("idle");
+ const [readerOpen, setReaderOpen] = useState(false);
 
  useEffect(() => {
  const handler = (e: KeyboardEvent) => {
@@ -127,6 +129,14 @@ export function InboxDetail({ docId, onClose }: Props) {
  {enrichStatus === "done" && (
  <span className="text-[10px] text-green-600">Organized ✓</span>
  )}
+		 {data?.cleaned_text && (
+			<button
+			 onClick={() => setReaderOpen(true)}
+			 className="text-xs font-medium tracking-wide text-primary hover:underline"
+			>
+			 Read
+			</button>
+		 )}
  {data?.source_url && (
  <Button variant="ghost" size="icon" className="size-7" asChild>
  <a href={data.source_url} target="_blank" rel="noopener noreferrer" title="Open source">
@@ -247,6 +257,15 @@ export function InboxDetail({ docId, onClose }: Props) {
  )}
  </div>
  </div>
+
+		 <ReaderMode
+		 isOpen={readerOpen}
+		 onClose={() => setReaderOpen(false)}
+		 title={data?.title || ""}
+		 sourceUrl={data?.source_url}
+		 summary={summary || undefined}
+		 content={data?.cleaned_text || data?.raw_markdown || ""}
+		 />
  </>
  );
 }
