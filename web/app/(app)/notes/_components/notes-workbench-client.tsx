@@ -8,7 +8,7 @@ import { safeGetItem } from "@/lib/storage";
 import type { Workspace } from "@/lib/api/types/notes";
 
 import { ResizableColumns } from "@/components/ui/resizable-columns";
-import { useCreateNote, useCreateWorkspace } from "@/features/notes/mutations";
+import { useCreateNote, useCreateWorkspace, useDeleteNote } from "@/features/notes/mutations";
 import { useNoteTree, useWorkspaces } from "@/features/notes/queries";
 
 import { NoteEditorPanel } from "./note-editor-panel";
@@ -71,6 +71,16 @@ export function NotesWorkbenchClient({ initialNoteId }: { initialNoteId: string 
 
   const treeQuery = useNoteTree(workspaceId);
   const createNote = useCreateNote({ workspaceId });
+  const deleteNoteMutation = useDeleteNote({
+    workspaceId,
+    onSuccess: () => {
+      toast.success("Note deleted");
+      // If the deleted note was selected, clear selection
+      if (selectedNoteId) {
+        router.push("/notes");
+      }
+    },
+  });
 
   const selectedNoteId = searchParams.get("note") || initialNoteId || null;
 
@@ -108,6 +118,7 @@ export function NotesWorkbenchClient({ initialNoteId }: { initialNoteId: string 
             onSearchChange={setTreeSearch}
             onCreateNote={onCreateNote}
             onSelectNoteId={onSelectNoteId}
+            onDeleteNote={(noteId) => deleteNoteMutation.mutate(noteId)}
           />
         }
         right={<NoteEditorPanel noteId={selectedNoteId} workspaceId={workspaceId} onCreateNote={onCreateNote} />}

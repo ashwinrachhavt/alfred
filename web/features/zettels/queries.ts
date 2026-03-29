@@ -4,6 +4,25 @@ import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
 import type { Zettel, BloomLevel } from "@/app/(app)/knowledge/_components/mock-data";
 
+type ApiGraphEdge = {
+  from: number;
+  to: number;
+  type: string;
+};
+
+type ApiGraphNode = {
+  id: number;
+  title: string;
+  topic: string | null;
+  tags: string[];
+  degree: number;
+};
+
+type ApiGraphSummary = {
+  nodes: ApiGraphNode[];
+  edges: ApiGraphEdge[];
+};
+
 type ApiZettelCard = {
   id: number;
   title: string;
@@ -20,14 +39,17 @@ type ApiZettelCard = {
   updated_at: string;
 };
 
-function mapApiToZettel(card: ApiZettelCard): Zettel {
+function mapApiToZettel(
+  card: ApiZettelCard,
+  connectedIds: Set<string> = new Set(),
+): Zettel {
   return {
     id: String(card.id),
     title: card.title,
     content: card.content || "",
     summary: card.content || card.summary || "",
     tags: card.tags || [],
-    connections: [],
+    connections: Array.from(connectedIds),
     bloomLevel: Math.max(1, Math.min(6, Math.round(card.confidence * 6))) as BloomLevel,
     bloomHistory: [],
     source: {
@@ -50,9 +72,31 @@ export function useZettelCards() {
     queryKey: ["zettels", "cards"],
     queryFn: async () => {
       const cards = await apiFetch<ApiZettelCard[]>(apiRoutes.zettels.cards, { cache: "no-store" });
-      return cards.map(mapApiToZettel);
+      return cards.map((card) => mapApiToZettel(card));
     },
     staleTime: 10_000,
+  });
+}
+
+export function useZettelGraph() {
+  return useQuery({
+    queryKey: ["zettels", "graph"],
+    queryFn: async () => {
+      const graph = await apiFetch<ApiGraphSummary>(apiRoutes.zettels.graph, {
+        cache: "no-store",
+      });
+      const adjacency = new Map<string, Set<string>>();
+      for (const edge of graph.edges) {
+        const from = String(edge.from);
+        const to = String(edge.to);
+        if (!adjacency.has(from)) adjacency.set(from, new Set());
+        if (!adjacency.has(to)) adjacency.set(to, new Set());
+        adjacency.get(from)!.add(to);
+        adjacency.get(to)!.add(from);
+      }
+      return adjacency;
+    },
+    staleTime: 30_000,
   });
 }
 

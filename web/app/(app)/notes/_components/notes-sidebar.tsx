@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { FilePlus2, Search } from "lucide-react";
+import { useMemo, useState } from "react";
+import { FilePlus2, Search, Trash2 } from "lucide-react";
 
 import type { NoteTreeResponse, Workspace } from "@/lib/api/types/notes";
 
@@ -10,6 +10,14 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type NotesSidebarProps = {
   workspace: Workspace | null;
@@ -19,6 +27,7 @@ type NotesSidebarProps = {
   onSearchChange: (next: string) => void;
   onSelectNoteId: (noteId: string) => void;
   onCreateNote: () => void;
+  onDeleteNote?: (noteId: string) => void;
   isLoading?: boolean;
 };
 
@@ -48,11 +57,13 @@ function TreeList({
   depth,
   selectedNoteId,
   onSelectNoteId,
+  onRequestDelete,
 }: {
   nodes: TreeNode[];
   depth: number;
   selectedNoteId: string | null;
   onSelectNoteId: (noteId: string) => void;
+  onRequestDelete?: (noteId: string, title: string) => void;
 }) {
   return (
     <ul className="space-y-0.5">
@@ -61,23 +72,40 @@ function TreeList({
         const icon = node.note.icon?.trim() || "📄";
 
         return (
-          <li key={node.note.id}>
-            <button
-              type="button"
-              className={cn(
-                "flex w-full items-center gap-2 truncate rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-                isSelected
-                  ? "border-l-2 border-primary bg-[var(--alfred-accent-subtle)] text-foreground"
-                  : "border-l-2 border-transparent text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground",
+          <li key={node.note.id} className="group/note relative">
+            <div className="flex items-center">
+              <button
+                type="button"
+                className={cn(
+                  "flex flex-1 items-center gap-2 truncate rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                  isSelected
+                    ? "border-l-2 border-primary bg-[var(--alfred-accent-subtle)] text-foreground"
+                    : "border-l-2 border-transparent text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground",
+                )}
+                style={{ paddingLeft: `${8 + depth * 12}px` }}
+                onClick={() => onSelectNoteId(node.note.id)}
+              >
+                <span className="text-sm" aria-hidden="true">
+                  {icon}
+                </span>
+                <span className="truncate">{node.note.title || "Untitled"}</span>
+              </button>
+
+              {onRequestDelete && (
+                <button
+                  type="button"
+                  className="shrink-0 p-1 rounded transition-colors mr-1 text-muted-foreground/0 group-hover/note:text-muted-foreground/60 hover:!text-[var(--error)]"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRequestDelete(node.note.id, node.note.title || "Untitled");
+                  }}
+                  aria-label="Delete note"
+                  title="Delete note"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
               )}
-              style={{ paddingLeft: `${8 + depth * 12}px` }}
-              onClick={() => onSelectNoteId(node.note.id)}
-            >
-              <span className="text-sm" aria-hidden="true">
-                {icon}
-              </span>
-              <span className="truncate">{node.note.title || "Untitled"}</span>
-            </button>
+            </div>
 
             {node.children.length ? (
               <div className="pt-0.5">
@@ -86,6 +114,7 @@ function TreeList({
                   depth={depth + 1}
                   selectedNoteId={selectedNoteId}
                   onSelectNoteId={onSelectNoteId}
+                  onRequestDelete={onRequestDelete}
                 />
               </div>
             ) : null}
@@ -104,10 +133,20 @@ export function NotesSidebar({
   onSearchChange,
   onSelectNoteId,
   onCreateNote,
+  onDeleteNote,
   isLoading,
 }: NotesSidebarProps) {
   const nodes = useMemo(() => tree?.items ?? [], [tree]);
   const filtered = useMemo(() => filterTree(nodes, search), [nodes, search]);
+
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+
+  const handleConfirmDelete = () => {
+    if (deleteTarget && onDeleteNote) {
+      onDeleteNote(deleteTarget.id);
+    }
+    setDeleteTarget(null);
+  };
 
   return (
     <aside className="flex h-full min-h-0 flex-col border-r bg-card">
@@ -152,6 +191,11 @@ export function NotesSidebar({
             depth={0}
             selectedNoteId={selectedNoteId}
             onSelectNoteId={onSelectNoteId}
+            onRequestDelete={
+              onDeleteNote
+                ? (id, title) => setDeleteTarget({ id, title })
+                : undefined
+            }
           />
         ) : (
           <EmptyState
@@ -165,6 +209,31 @@ export function NotesSidebar({
           />
         )}
       </div>
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-serif">Delete note</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete &ldquo;{deleteTarget?.title}&rdquo;? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDelete}
+              className="font-mono text-xs"
+            >
+              <Trash2 className="mr-1.5 size-3.5" />
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </aside>
   );
 }

@@ -17,11 +17,13 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import { Bold, FileText, Italic, Loader2, PenLine, Wand2 } from "lucide-react";
+import { Bold, BookOpen, FileText, Italic, Loader2, MessageCircle, PenLine, Search, Wand2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { completeText, rewriteText, summarizeText } from "@/lib/api/ai-assist";
+import { useShellStore } from "@/lib/stores/shell-store";
+import { useAgentStore } from "@/lib/stores/agent-store";
 
 function readEditorMarkdown(editor: Editor): string {
   const maybeGetMarkdown = (editor as unknown as { getMarkdown?: () => string }).getMarkdown;
@@ -188,6 +190,82 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           description: "Horizontal ruled line",
           keywords: ["divider", "hr", "separator"],
           run: (editor) => editor.chain().focus().setHorizontalRule().run(),
+        },
+        // --- AI Slash Commands ---
+        {
+          title: "Ask Alfred",
+          description: "Ask AI a question about this note",
+          keywords: ["ask", "ai", "question", "alfred"],
+          run: () => {
+            useShellStore.getState().setAiPanelOpen(true);
+            setTimeout(() => {
+              const input = document.querySelector<HTMLTextAreaElement>('[aria-label="AI Assistant"] textarea');
+              input?.focus();
+            }, 250);
+          },
+        },
+        {
+          title: "Generate",
+          description: "Generate a section with AI",
+          keywords: ["generate", "write", "create", "ai"],
+          run: () => {
+            useShellStore.getState().setAiPanelOpen(true);
+            setTimeout(() => {
+              const input = document.querySelector<HTMLTextAreaElement>('[aria-label="AI Assistant"] textarea');
+              if (input) {
+                input.focus();
+                input.value = "Generate a section about: ";
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+              }
+            }, 250);
+          },
+        },
+        {
+          title: "Research",
+          description: "Search knowledge base for related info",
+          keywords: ["research", "search", "find", "kb"],
+          run: () => {
+            useShellStore.getState().setAiPanelOpen(true);
+            setTimeout(() => {
+              const input = document.querySelector<HTMLTextAreaElement>('[aria-label="AI Assistant"] textarea');
+              if (input) {
+                input.focus();
+                input.value = "Research and find related knowledge about: ";
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+              }
+            }, 250);
+          },
+        },
+        {
+          title: "Summarize above",
+          description: "Summarize everything above the cursor",
+          keywords: ["summarize", "summary", "above"],
+          run: (editor) => {
+            const { from } = editor.state.selection;
+            const textAbove = editor.state.doc.textBetween(0, from, "\n");
+            if (!textAbove.trim()) {
+              toast("Nothing above the cursor to summarize");
+              return;
+            }
+            useShellStore.getState().setAiPanelOpen(true);
+            void useAgentStore.getState().sendMessage(`Summarize the following text:\n\n${textAbove.slice(-3000)}`);
+          },
+        },
+        {
+          title: "Translate",
+          description: "Translate selected text to another language",
+          keywords: ["translate", "language"],
+          run: () => {
+            useShellStore.getState().setAiPanelOpen(true);
+            setTimeout(() => {
+              const input = document.querySelector<HTMLTextAreaElement>('[aria-label="AI Assistant"] textarea');
+              if (input) {
+                input.focus();
+                input.value = "Translate the following to ";
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+              }
+            }, 250);
+          },
         },
       ],
       [],
@@ -655,6 +733,68 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
                 <PenLine className="h-3 w-3" />
               )}
               Continue
+            </Button>
+
+            <div className="mx-1 h-4 w-px bg-border" />
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 px-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground"
+              onClick={() => {
+                const { from, to } = editor.state.selection;
+                const selected = editor.state.doc.textBetween(from, to, " ");
+                useShellStore.getState().setAiPanelOpen(true);
+                if (selected) {
+                  void useAgentStore.getState().sendMessage(`Explain this in simpler terms:\n\n${selected}`);
+                }
+                setMenuPosition(null);
+              }}
+              disabled={!!aiLoading}
+            >
+              <BookOpen className="h-3 w-3" />
+              Explain
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 px-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground"
+              onClick={() => {
+                const { from, to } = editor.state.selection;
+                const selected = editor.state.doc.textBetween(from, to, " ");
+                useShellStore.getState().setAiPanelOpen(true);
+                if (selected) {
+                  void useAgentStore.getState().sendMessage(`Research this topic in my knowledge base:\n\n${selected}`);
+                }
+                setMenuPosition(null);
+              }}
+              disabled={!!aiLoading}
+            >
+              <Search className="h-3 w-3" />
+              Research
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 px-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground"
+              onClick={() => {
+                const { from, to } = editor.state.selection;
+                const selected = editor.state.doc.textBetween(from, to, " ");
+                useShellStore.getState().setAiPanelOpen(true);
+                setTimeout(() => {
+                  const input = document.querySelector<HTMLTextAreaElement>('[aria-label="AI Assistant"] textarea');
+                  if (input && selected) {
+                    input.focus();
+                    input.value = selected;
+                    input.dispatchEvent(new Event("input", { bubbles: true }));
+                  }
+                }, 250);
+                setMenuPosition(null);
+              }}
+              disabled={!!aiLoading}
+            >
+              <MessageCircle className="h-3 w-3" />
+              Ask Alfred
             </Button>
           </div>
         )}

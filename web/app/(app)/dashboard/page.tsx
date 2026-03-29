@@ -3,6 +3,7 @@ import { RetentionCard } from "./_components/retention-card";
 import { CoverageCard } from "./_components/coverage-card";
 import { ConnectionsCard } from "./_components/connections-card";
 import { ActivityStrip } from "./_components/activity-strip";
+import { TaxonomySection } from "./_components/taxonomy-section";
 
 export const metadata = { title: "Dashboard — Alfred" };
 
@@ -23,6 +24,8 @@ export default function DashboardPage() {
         <CoverageCard />
         <ConnectionsCard />
       </div>
+
+      <TaxonomySection />
 
       <ActivityStrip />
     </div>

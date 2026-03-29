@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
+import { streamSSE } from "@/lib/api/sse";
 
 // --- Types ---
 
@@ -61,6 +62,12 @@ export type AgentThread = {
   messageCount: number;
 };
 
+export type NoteContext = {
+  noteId: string;
+  title: string;
+  contentPreview: string;
+};
+
 // --- Philosophical Lenses ---
 
 export const PHILOSOPHICAL_LENSES = [
@@ -73,6 +80,36 @@ export const PHILOSOPHICAL_LENSES = [
   { id: "eastern", label: "Eastern" },
 ] as const;
 
+// --- Token buffer (module-level for 50ms batching) ---
+
+let _tokenBuffer = "";
+let _tokenFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function _flushTokenBuffer(
+  set: (fn: (s: AgentState) => Partial<AgentState>) => void,
+) {
+  if (!_tokenBuffer) return;
+  const buffered = _tokenBuffer;
+  _tokenBuffer = "";
+  _tokenFlushTimer = null;
+  set((s) => {
+    const msgs = s.messages.map((m, i) =>
+      i === s.messages.length - 1 && m.role === "assistant"
+        ? { ...m, content: m.content + buffered }
+        : m,
+    );
+    return { messages: msgs };
+  });
+}
+
+function _clearTokenBuffer() {
+  _tokenBuffer = "";
+  if (_tokenFlushTimer) {
+    clearTimeout(_tokenFlushTimer);
+    _tokenFlushTimer = null;
+  }
+}
+
 // --- Store ---
 
 type AgentState = {
@@ -84,6 +121,7 @@ type AgentState = {
   activeModel: string;
   activeToolCalls: ToolCall[];
   abortController: AbortController | null;
+  noteContext: NoteContext | null;
 
   // Actions
   sendMessage: (text: string) => Promise<void>;
@@ -95,6 +133,8 @@ type AgentState = {
   loadThread: (threadId: number) => Promise<void>;
   deleteThread: (threadId: number) => Promise<void>;
   clearMessages: () => void;
+  setNoteContext: (ctx: NoteContext | null) => void;
+  loadThreadByNoteId: (noteId: string) => Promise<void>;
 };
 
 export const useAgentStore = create<AgentState>((set, get) => ({
@@ -106,6 +146,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   activeModel: "gpt-5.4",
   activeToolCalls: [],
   abortController: null,
+  noteContext: null,
 
   sendMessage: async (text: string) => {
     const state = get();
@@ -151,68 +192,69 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }));
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "";
-      const response = await fetch(`${baseUrl}${apiRoutes.agent.stream}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      // Compose abort signals: user cancel + 60s timeout
+      const timeoutController = new AbortController();
+      const timeoutId = setTimeout(() => timeoutController.abort(), 60000);
+
+      // Compose signals — use AbortSignal.any if available, otherwise manual fallback
+      let composedSignal: AbortSignal;
+      if (typeof AbortSignal.any === "function") {
+        composedSignal = AbortSignal.any([abortController.signal, timeoutController.signal]);
+      } else {
+        // Fallback: forward either abort to a shared controller
+        const shared = new AbortController();
+        const forwardAbort = () => shared.abort();
+        abortController.signal.addEventListener("abort", forwardAbort, { once: true });
+        timeoutController.signal.addEventListener("abort", forwardAbort, { once: true });
+        composedSignal = shared.signal;
+      }
+
+      await streamSSE(
+        apiRoutes.agent.stream,
+        {
           message: text,
           thread_id: state.activeThreadId,
+          note_context: state.noteContext
+            ? {
+                note_id: state.noteContext.noteId,
+                title: state.noteContext.title,
+                content_preview: state.noteContext.contentPreview,
+              }
+            : undefined,
           lens: state.activeLens,
           model: state.activeModel,
           history: state.messages.slice(-20).map((m) => ({
             role: m.role,
             content: m.content,
           })),
-        }),
-        signal: abortController.signal,
-      });
+        },
+        (event, data) => _handleSSEEvent(event, data, set, get),
+        composedSignal,
+      );
 
-      if (!response.ok || !response.body) {
-        throw new Error(`Stream failed: ${response.status}`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        let eventType = "";
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            eventType = line.slice(7).trim();
-          } else if (line.startsWith("data: ") && eventType) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              _handleSSEEvent(eventType, data, set, get);
-            } catch {
-              // Skip malformed JSON
-            }
-            eventType = "";
-          }
-        }
-      }
+      clearTimeout(timeoutId);
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === "AbortError") {
         // User cancelled — expected
       } else {
+        // Flush any buffered tokens before setting error
+        _flushTokenBuffer(set);
         set((s) => {
           const msgs = [...s.messages];
           const last = msgs[msgs.length - 1];
           if (last?.role === "assistant" && !last.content) {
-            last.content = "Sorry, something went wrong. Please try again.";
+            msgs[msgs.length - 1] = { ...last, content: "Sorry, something went wrong. Please try again." };
           }
           return { messages: msgs };
         });
       }
     } finally {
+      // Flush any remaining buffered tokens
+      if (_tokenFlushTimer) {
+        clearTimeout(_tokenFlushTimer);
+        _tokenFlushTimer = null;
+      }
+      _flushTokenBuffer(set);
       set({ isStreaming: false, abortController: null });
     }
   },
@@ -221,6 +263,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const { abortController } = get();
     if (abortController) {
       abortController.abort();
+      _clearTokenBuffer();
       set({ isStreaming: false, abortController: null });
     }
   },
@@ -278,7 +321,40 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }));
   },
 
-  clearMessages: () => set({ messages: [], activeThreadId: null }),
+  clearMessages: () => set({ messages: [], activeThreadId: null, noteContext: null }),
+
+  setNoteContext: (ctx: NoteContext | null) => {
+    const state = get();
+    // Abort any active stream
+    if (state.isStreaming && state.abortController) {
+      state.abortController.abort();
+      _clearTokenBuffer();
+    }
+    // Clear current state and set new note context
+    set({
+      noteContext: ctx,
+      messages: [],
+      activeThreadId: null,
+      isStreaming: false,
+      abortController: null,
+      activeToolCalls: [],
+    });
+    // Load thread for new note if context provided
+    if (ctx) {
+      get().loadThreadByNoteId(ctx.noteId);
+    }
+  },
+
+  loadThreadByNoteId: async (noteId: string) => {
+    try {
+      const threads = await apiFetch<AgentThread[]>(`${apiRoutes.agent.threads}?note_id=${noteId}`);
+      if (threads.length > 0) {
+        await get().loadThread(threads[0].id);
+      }
+    } catch {
+      // Silent — no thread exists yet
+    }
+  },
 }));
 
 // --- SSE event handler ---
@@ -292,14 +368,10 @@ function _handleSSEEvent(
   switch (event) {
     case "token": {
       const content = data.content as string;
-      set((s) => {
-        const msgs = [...s.messages];
-        const last = msgs[msgs.length - 1];
-        if (last?.role === "assistant") {
-          last.content += content;
-        }
-        return { messages: msgs };
-      });
+      _tokenBuffer += content;
+      if (!_tokenFlushTimer) {
+        _tokenFlushTimer = setTimeout(() => _flushTokenBuffer(set), 50);
+      }
       break;
     }
 
@@ -315,18 +387,16 @@ function _handleSSEEvent(
 
     case "tool_result": {
       set((s) => {
-        const tools = [...s.activeToolCalls];
-        const last = tools[tools.length - 1];
-        if (last) {
-          last.result = data.result as Record<string, unknown>;
-          last.status = "done";
-        }
-        // Also add tool calls to the assistant message
-        const msgs = [...s.messages];
-        const lastMsg = msgs[msgs.length - 1];
-        if (lastMsg?.role === "assistant") {
-          lastMsg.toolCalls = [...tools];
-        }
+        const tools = s.activeToolCalls.map((tc, i) =>
+          i === s.activeToolCalls.length - 1
+            ? { ...tc, result: data.result as Record<string, unknown>, status: "done" as const }
+            : tc,
+        );
+        const msgs = s.messages.map((m, i) =>
+          i === s.messages.length - 1 && m.role === "assistant"
+            ? { ...m, toolCalls: [...tools] }
+            : m,
+        );
         return { activeToolCalls: tools, messages: msgs };
       });
       break;
@@ -340,11 +410,11 @@ function _handleSSEEvent(
       } as ArtifactCard;
 
       set((s) => {
-        const msgs = [...s.messages];
-        const last = msgs[msgs.length - 1];
-        if (last?.role === "assistant") {
-          last.artifacts = [...last.artifacts, artifact];
-        }
+        const msgs = s.messages.map((m, i) =>
+          i === s.messages.length - 1 && m.role === "assistant"
+            ? { ...m, artifacts: [...m.artifacts, artifact] }
+            : m,
+        );
         return { messages: msgs };
       });
       break;
@@ -353,11 +423,24 @@ function _handleSSEEvent(
     case "related": {
       const cards = (data.cards as RelatedCard[]) || [];
       set((s) => {
-        const msgs = [...s.messages];
-        const last = msgs[msgs.length - 1];
-        if (last?.role === "assistant") {
-          last.relatedCards = cards;
-        }
+        const msgs = s.messages.map((m, i) =>
+          i === s.messages.length - 1 && m.role === "assistant"
+            ? { ...m, relatedCards: cards }
+            : m,
+        );
+        return { messages: msgs };
+      });
+      break;
+    }
+
+    case "gaps": {
+      const gaps = (data.gaps as GapChip[]) || [];
+      set((s) => {
+        const msgs = s.messages.map((m, i) =>
+          i === s.messages.length - 1 && m.role === "assistant"
+            ? { ...m, gaps }
+            : m,
+        );
         return { messages: msgs };
       });
       break;
@@ -365,18 +448,23 @@ function _handleSSEEvent(
 
     case "error": {
       set((s) => {
-        const msgs = [...s.messages];
-        const last = msgs[msgs.length - 1];
-        if (last?.role === "assistant") {
-          last.content = (data.message as string) || "Something went wrong.";
-        }
+        const msgs = s.messages.map((m, i) =>
+          i === s.messages.length - 1 && m.role === "assistant"
+            ? { ...m, content: (data.message as string) || "Something went wrong." }
+            : m,
+        );
         return { messages: msgs, isStreaming: false };
       });
       break;
     }
 
     case "done":
-      // Stream complete
+      // Flush any remaining buffered tokens
+      if (_tokenFlushTimer) {
+        clearTimeout(_tokenFlushTimer);
+        _tokenFlushTimer = null;
+      }
+      _flushTokenBuffer(set);
       break;
   }
 }

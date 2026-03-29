@@ -1,12 +1,12 @@
-import { Page } from "@/components/layout/page";
-import { AgentChatClient } from "./_components/agent-chat-client";
+import { redirect } from "next/navigation";
 
 export const metadata = { title: "Alfred Agent" };
 
+/**
+ * The standalone /agent page is deprecated.
+ * Agent chat now lives in the global AI panel (Cmd+J).
+ * Redirect to /notes — the AI panel will open via client-side hydration.
+ */
 export default function AgentPage() {
-  return (
-    <Page size="full" className="p-0">
-      <AgentChatClient />
-    </Page>
-  );
+  redirect("/notes");
 }

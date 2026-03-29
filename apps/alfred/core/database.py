@@ -13,7 +13,7 @@ def _json_serializer(obj: object) -> str:
     """JSON serializer for SQLAlchemy JSON columns that handles datetime."""
 
     def _default(o: object) -> str:
-        if isinstance(o, (datetime, date)):
+        if isinstance(o, datetime | date):
             return o.isoformat()
         raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
 

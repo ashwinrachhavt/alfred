@@ -94,7 +94,7 @@ Three typographic voices create hierarchy without relying on color:
 - **Grid:** 12 columns, 32px gutter
 - **Breakpoints:** sm(640px), md(768px), lg(1024px), xl(1280px), 2xl(1440px)
 - **Max content width:** 1200px
-- **App shell:** Sidebar (220px) + Main content + Optional right panel (360px)
+- **App shell:** Sidebar (220px) + Main content + Optional right panel (380px)
 
 ### Border Radius
 | Token | Value | Usage |
