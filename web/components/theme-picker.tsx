@@ -25,6 +25,15 @@ export function ThemePicker() {
 
   const isDark = mounted ? resolvedTheme === "dark" : true;
 
+  // Render a placeholder button until mounted to avoid Radix ID hydration mismatch
+  if (!mounted) {
+    return (
+      <Button type="button" variant="ghost" size="icon" aria-label="Theme settings">
+        <Palette className="size-4" />
+      </Button>
+    );
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
