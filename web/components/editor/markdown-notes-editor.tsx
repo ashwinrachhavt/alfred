@@ -4,6 +4,8 @@ import { type Editor, EditorContent, useEditor } from "@tiptap/react";
 import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import StarterKit from "@tiptap/starter-kit";
+import TaskList from "@tiptap/extension-task-list";
+import TaskItem from "@tiptap/extension-task-item";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Markdown } from "@tiptap/markdown";
 import Typography from "@tiptap/extension-typography";
@@ -113,6 +115,13 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           inline: false,
           allowBase64: true,
         }),
+        TaskList.configure({
+          HTMLAttributes: { class: "task-list" },
+        }),
+        TaskItem.configure({
+          nested: true,
+          HTMLAttributes: { class: "task-item" },
+        }),
         Markdown,
         Typography,
         Placeholder.configure({
@@ -170,6 +179,12 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           description: "Ordered list of items",
           keywords: ["number", "list", "ol"],
           run: (editor) => editor.chain().focus().toggleOrderedList().run(),
+        },
+        {
+          title: "Todo list",
+          description: "Task list with checkboxes",
+          keywords: ["todo", "task", "checkbox", "check"],
+          run: (editor) => editor.chain().focus().toggleTaskList().run(),
         },
         {
           title: "Quote",
