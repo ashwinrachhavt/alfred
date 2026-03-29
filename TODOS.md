@@ -37,3 +37,18 @@
 **How to start:** In `knowledge-hub.tsx` line 169, change `<ReviewStation zettels={MOCK_ZETTELS} />` to `<ReviewStation zettels={allZettels} />`. Then update ReviewStation's review components (flashcard, feynman, quiz) to handle empty arrays gracefully.
 **Depends on:** Session 1 mock fallback removal.
 **Added:** 2026-03-29 via /plan-eng-review
+
+## Landing Page CTAs Non-Functional (Clerk Auth Disabled)
+**What:** "Begin Thinking" and "Create account" buttons on the landing page do nothing because Clerk auth keys are expired.
+**Why:** The hero section renders Clerk `SignInButton`/`SignUpButton` wrappers (because `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is set), but the keys are invalid. The buttons render but the modal never opens. New users have no way to enter the app from the landing page.
+**How to start:** Either refresh the Clerk keys, or remove the env var to fall back to the non-Clerk path (which shows a simple "Begin Thinking" link to /inbox).
+**Effort:** S (human) -> S (CC) | **Priority:** P2
+**Depends on:** Decision on whether to keep Clerk or remove it.
+**Added:** 2026-03-29 via /qa
+
+## "Ozempicization" Zettel Has Wrong Summary (Pipeline Bug)
+**What:** The zettel titled "The Ozempicization of Everything - by kyla scanlon" displays a SQLAlchemy error log as its summary instead of actual article content. Tags are also wrong (`postgresql`, `database_errors`).
+**Why:** The enrichment pipeline captured an API error response instead of article content during ingestion. The AI summarizer processed the error text, producing a summary about database errors.
+**How to start:** Re-run enrichment on this specific zettel, or manually edit the zettel content. Root cause: add error handling to the enrichment pipeline to detect and skip error responses.
+**Effort:** S (human) -> S (CC) | **Priority:** P3
+**Added:** 2026-03-29 via /qa
