@@ -106,11 +106,22 @@ class DocumentTitleImageResponse(BaseModel):
     reason: str | None = None
 
 
-@router.post("/page/extract", response_model=PageResponse)
+@router.post(
+    "/page/extract",
+    response_model=PageResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_page(
     payload: PageRequest,
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> PageResponse:
+    """Save a page instantly and dispatch background enrichment.
+
+    The document is persisted with ``pipeline_status='pending'`` and returned
+    immediately.  The heavy processing (chunking, enrichment, classification,
+    embedding) runs asynchronously via a Celery pipeline task dispatched inside
+    ``ingest_document_store_only``.
+    """
     try:
         cleaned_text = (payload.raw_text or "").strip()
         ingest = DocumentIngest(
@@ -122,21 +133,10 @@ def create_page(
         res = svc.ingest_document_store_only(ingest)
         if res.get("duplicate"):
             return PageResponse(id=res["id"], status="duplicate")
-        try:
-            celery_client = get_celery_client()
-            async_result = celery_client.send_task(
-                "alfred.tasks.document_processing.process",
-                kwargs={"doc_id": res["id"], "force": False},
-            )
-            return PageResponse(
-                id=res["id"],
-                status="queued",
-                task_id=async_result.id,
-                status_url=f"/tasks/{async_result.id}",
-            )
-        except Exception:  # pragma: no cover - external IO
-            logger.exception("Failed to enqueue document processing for %s", res["id"])
-            return PageResponse(id=res["id"], status="stored")
+
+        # The pipeline task is already dispatched by ingest_document_store_only.
+        # No need to dispatch another task here.
+        return PageResponse(id=res["id"], status="accepted")
     except AlfredException:
         raise
     except Exception as exc:  # pragma: no cover - external IO

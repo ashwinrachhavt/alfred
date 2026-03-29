@@ -38,23 +38,11 @@ def _app_with_fake_service(fake: _FakeDocStorage) -> TestClient:
 
 
 def test_page_extract_stores_only(monkeypatch) -> None:
+    """Verify page/extract saves instantly and returns 201 without dispatching
+    a redundant Celery task (the service layer already dispatches the pipeline).
+    """
     fake = _FakeDocStorage()
     client = _app_with_fake_service(fake)
-
-    class _FakeAsyncResult:
-        def __init__(self, task_id: str) -> None:
-            self.id = task_id
-
-    class _FakeCelery:
-        def __init__(self) -> None:
-            self.calls: list[dict[str, Any]] = []
-
-        def send_task(self, name: str, *, kwargs: dict[str, Any]) -> _FakeAsyncResult:
-            self.calls.append({"name": name, "kwargs": kwargs})
-            return _FakeAsyncResult("task-123")
-
-    fake_celery = _FakeCelery()
-    monkeypatch.setattr(doc_routes, "get_celery_client", lambda: fake_celery)
 
     resp = client.post(
         "/api/documents/page/extract",
@@ -65,18 +53,10 @@ def test_page_extract_stores_only(monkeypatch) -> None:
             "selection_type": "full_page",
         },
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 201
     data = resp.json()
-    assert data["status"] == "queued"
+    assert data["status"] == "accepted"
     assert data["id"] == "1"
-    assert data["task_id"] == "task-123"
-    assert data["status_url"] == "/tasks/task-123"
-    assert fake_celery.calls == [
-        {
-            "name": "alfred.tasks.document_processing.process",
-            "kwargs": {"doc_id": "1", "force": False},
-        }
-    ]
 
     assert fake.last_ingest is not None
     assert fake.last_ingest["source_url"] == "https://example.com"
@@ -84,21 +64,16 @@ def test_page_extract_stores_only(monkeypatch) -> None:
     assert fake.last_ingest["content_type"] == "web"
 
 
-def test_page_extract_duplicate_short_circuits(monkeypatch) -> None:
+def test_page_extract_duplicate_short_circuits() -> None:
     fake = _FakeDocStorage()
     fake.duplicate_next = True
     client = _app_with_fake_service(fake)
-
-    def _celery_called() -> None:
-        raise AssertionError("get_celery_client should not be called for duplicates")
-
-    monkeypatch.setattr(doc_routes, "get_celery_client", _celery_called)
 
     resp = client.post(
         "/api/documents/page/extract",
         json={"raw_text": "x" * 60, "page_url": "https://example.com"},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 201
     data = resp.json()
     assert data["status"] == "duplicate"
     assert data["id"] == "dup-id"

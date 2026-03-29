@@ -6,6 +6,7 @@ from sqlmodel import Session
 from alfred.api.dependencies import get_db_session
 from alfred.models.zettel import ZettelReview
 from alfred.schemas.zettel import (
+    AIZettelGenerateRequest,
     BulkUpdateResult,
     CompleteReviewRequest,
     GraphSummary,
@@ -13,6 +14,7 @@ from alfred.schemas.zettel import (
     ZettelCardCreate,
     ZettelCardOut,
     ZettelCardPatch,
+    ZettelCardUpdate,
     ZettelLinkCreate,
     ZettelLinkOut,
     ZettelReviewOut,
@@ -49,12 +51,13 @@ def list_cards(
     q: str | None = None,
     topic: str | None = None,
     tag: str | None = None,
+    document_id: str | None = None,
     limit: int = 50,
     skip: int = 0,
     session: Session = Depends(get_db_session),
 ) -> list[ZettelCardOut]:
     svc = ZettelkastenService(session)
-    cards = svc.list_cards(q=q, topic=topic, tag=tag, limit=limit, skip=skip)
+    cards = svc.list_cards(q=q, topic=topic, tag=tag, document_id=document_id, limit=limit, skip=skip)
     return [_card_out(c) for c in cards]
 
 
@@ -103,6 +106,54 @@ def get_card(card_id: int, session: Session = Depends(get_db_session)) -> Zettel
     return _card_out(card)
 
 
+@router.patch("/cards/{card_id}", response_model=ZettelCardOut)
+def update_card(
+    card_id: int,
+    payload: ZettelCardUpdate,
+    session: Session = Depends(get_db_session),
+) -> ZettelCardOut:
+    svc = ZettelkastenService(session)
+    card = svc.get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    data = payload.model_dump(exclude_unset=True)
+    updated = svc.update_card(card, **data)
+    return _card_out(updated)
+
+
+@router.delete("/cards/{card_id}", status_code=status.HTTP_200_OK)
+def delete_card(
+    card_id: int,
+    session: Session = Depends(get_db_session),
+) -> dict:
+    svc = ZettelkastenService(session)
+    card = svc.get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    svc.archive_card(card, remove_links=True)
+    return {"status": "archived", "id": card_id}
+
+
+@router.post("/cards/generate", response_model=ZettelCardOut, status_code=status.HTTP_201_CREATED)
+def generate_card(
+    payload: AIZettelGenerateRequest,
+    session: Session = Depends(get_db_session),
+) -> ZettelCardOut:
+    if not payload.prompt and not payload.content:
+        raise HTTPException(status_code=400, detail="Either prompt or content is required")
+    svc = ZettelkastenService(session)
+    try:
+        card = svc.generate_card_from_ai(
+            prompt=payload.prompt,
+            content=payload.content,
+            topic=payload.topic,
+            tags=payload.tags,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"AI generation failed: {exc}") from exc
+    return _card_out(card)
+
+
 @router.post(
     "/cards/{card_id}/links",
     response_model=list[ZettelLinkOut],
@@ -135,6 +186,18 @@ def list_links(card_id: int, session: Session = Depends(get_db_session)) -> list
         raise HTTPException(status_code=404, detail="Card not found")
     links = svc.list_links(card_id=card_id)
     return [_link_out(link) for link in links]
+
+
+@router.delete("/links/{link_id}", status_code=status.HTTP_200_OK)
+def delete_link(
+    link_id: int,
+    session: Session = Depends(get_db_session),
+) -> dict:
+    svc = ZettelkastenService(session)
+    deleted = svc.delete_link(link_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Link not found")
+    return {"status": "deleted", "id": link_id}
 
 
 @router.post(

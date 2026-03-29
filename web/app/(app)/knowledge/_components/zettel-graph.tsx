@@ -31,8 +31,9 @@ function ZettelNode({ data }: NodeProps) {
       className="rounded-lg border bg-card px-3 py-2 shadow-sm transition-all"
       style={{
         borderColor: d.isSelected ? "var(--primary)" : "var(--border)",
-        minWidth: 140,
-        maxWidth: 200,
+        minWidth: 120 + d.bloomLevel * 10,
+        maxWidth: 180 + d.bloomLevel * 10,
+        transform: `scale(${0.85 + d.bloomLevel * 0.05})`,
       }}
     >
       <Handle type="target" position={Position.Top} className="!bg-[var(--alfred-text-tertiary)] !size-1.5" />

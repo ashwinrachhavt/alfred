@@ -4,11 +4,11 @@ import { type Editor, EditorContent, useEditor } from "@tiptap/react";
 import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import StarterKit from "@tiptap/starter-kit";
+import TaskList from "@tiptap/extension-task-list";
+import TaskItem from "@tiptap/extension-task-item";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Markdown } from "@tiptap/markdown";
 import Typography from "@tiptap/extension-typography";
-import TaskList from "@tiptap/extension-task-list";
-import TaskItem from "@tiptap/extension-task-item";
 import {
   forwardRef,
   useCallback,
@@ -117,10 +117,15 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           inline: false,
           allowBase64: true,
         }),
+        TaskList.configure({
+          HTMLAttributes: { class: "task-list" },
+        }),
+        TaskItem.configure({
+          nested: true,
+          HTMLAttributes: { class: "task-item" },
+        }),
         Markdown,
         Typography,
-        TaskList,
-        TaskItem.configure({ nested: true }),
         Placeholder.configure({
           placeholder: placeholder ?? "Start writing...",
           emptyEditorClass: "is-editor-empty",
@@ -178,6 +183,12 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           run: (editor) => editor.chain().focus().toggleOrderedList().run(),
         },
         {
+          title: "Todo list",
+          description: "Task list with checkboxes",
+          keywords: ["todo", "task", "checkbox", "check"],
+          run: (editor) => editor.chain().focus().toggleTaskList().run(),
+        },
+        {
           title: "Quote",
           description: "Blockquote for emphasis",
           keywords: ["quote", "blockquote"],
@@ -194,12 +205,6 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           description: "Horizontal ruled line",
           keywords: ["divider", "hr", "separator"],
           run: (editor) => editor.chain().focus().setHorizontalRule().run(),
-        },
-        {
-          title: "To-do list",
-          description: "Checklist with toggleable items",
-          keywords: ["todo", "task", "checklist", "checkbox"],
-          run: (editor) => editor.chain().focus().toggleTaskList().run(),
         },
         {
           title: "Image",

@@ -6,7 +6,8 @@
 .alfred_data/tokens/
 .alfred_data/**/*.json
 
-
+*.pyc
+s
 qdrant_store
 
 /chroma_store

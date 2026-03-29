@@ -84,6 +84,7 @@ export function InboxStream() {
               summary={item.summary ?? null}
               sourceUrl={item.source_url ?? null}
               primaryTopic={item.primary_topic ?? null}
+              pipelineStatus={item.pipeline_status ?? "complete"}
               createdAt={item.created_at}
               onClick={() => setSelectedDocId(item.id)}
             />

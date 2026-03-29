@@ -8,6 +8,7 @@ type Props = {
   summary: string | null;
   sourceUrl: string | null;
   primaryTopic: string | null;
+  pipelineStatus: string;
   createdAt: string;
   onClick: () => void;
 };
@@ -17,14 +18,17 @@ type StatusInfo = {
   className: string;
 };
 
-function getStatus(primaryTopic: string | null, createdAt: string): StatusInfo {
-  const ageMs = Date.now() - new Date(createdAt).getTime();
-  const hourMs = 60 * 60 * 1000;
-
-  if (ageMs < hourMs) {
+function getStatus(pipelineStatus: string, primaryTopic: string | null): StatusInfo {
+  if (pipelineStatus === "pending" || pipelineStatus === "processing") {
     return {
       label: "Processing",
       className: "text-primary bg-[var(--alfred-accent-muted)]",
+    };
+  }
+  if (pipelineStatus === "error") {
+    return {
+      label: "Error",
+      className: "text-destructive bg-destructive/15",
     };
   }
   if (primaryTopic) {
@@ -39,10 +43,10 @@ function getStatus(primaryTopic: string | null, createdAt: string): StatusInfo {
   };
 }
 
-export function InboxItem({ id: _id, title, summary, sourceUrl: _sourceUrl, primaryTopic, createdAt, onClick }: Props) {
+export function InboxItem({ id: _id, title, summary, sourceUrl: _sourceUrl, primaryTopic, pipelineStatus, createdAt, onClick }: Props) {
   const timeAgo = formatDistanceToNow(new Date(createdAt), { addSuffix: false });
-  const status = getStatus(primaryTopic, createdAt);
-  const isRecent = Date.now() - new Date(createdAt).getTime() < 2 * 60 * 60 * 1000;
+  const status = getStatus(pipelineStatus, primaryTopic);
+  const isRecent = pipelineStatus === "pending" || pipelineStatus === "processing";
 
   return (
     <button

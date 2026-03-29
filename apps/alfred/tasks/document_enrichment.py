@@ -97,7 +97,9 @@ def document_enrichment_task(*, doc_id: str, force: bool = False) -> dict:
     """Enrich an existing stored document (LLM + optional graph).
 
     After enrichment, automatically creates a zettel card in the Knowledge Hub
-    from the document's summary and topics. This bridges Inbox → Knowledge.
+    from the document's summary and topics. This bridges Inbox -> Knowledge.
+
+    On success the document's ``pipeline_status`` is set to ``'complete'``.
     """
     svc = get_doc_storage_service()
     logger.info("Running document enrichment task (force=%s) for %s", force, doc_id)
@@ -108,5 +110,13 @@ def document_enrichment_task(*, doc_id: str, force: bool = False) -> dict:
         zettel_id = _create_zettel_from_enrichment(doc_id)
         if zettel_id:
             result["zettel_id"] = zettel_id
+
+    # Mark document as fully processed
+    try:
+        from alfred.tasks.document_pipeline import _set_pipeline_status
+
+        _set_pipeline_status(doc_id, "complete")
+    except Exception:
+        logger.warning("Failed to set pipeline_status=complete for %s", doc_id, exc_info=True)
 
     return result

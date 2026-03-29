@@ -52,6 +52,8 @@ export const apiRoutes = {
     cardById: (id: number) => `/api/zettels/cards/${id}`,
     cardLinks: (id: number) => `/api/zettels/cards/${id}/links`,
     suggestLinks: (id: number) => `/api/zettels/cards/${id}/suggest-links`,
+    deleteLink: (id: number) => `/api/zettels/links/${id}`,
+    generate: "/api/zettels/cards/generate",
     graph: "/api/zettels/graph",
     reviewsDue: "/api/zettels/reviews/due",
   },

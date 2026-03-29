@@ -266,6 +266,10 @@ class ExplorerDocumentItem(BaseModel):
     primary_topic: str | None = None
     source_url: str | None = None
     canonical_url: str | None = None
+    pipeline_status: str = Field(
+        default="complete",
+        description="Processing status: pending, processing, complete, error.",
+    )
 
 
 class ExplorerDocumentsResponse(BaseModel):

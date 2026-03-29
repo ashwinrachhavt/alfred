@@ -293,6 +293,7 @@ class RetrievalMixin:
                 DocumentRow.day_bucket,
                 DocumentRow.source_url,
                 DocumentRow.canonical_url,
+                DocumentRow.pipeline_status,
                 DocumentRow.classification,
                 has_image,
             )
@@ -349,6 +350,7 @@ class RetrievalMixin:
                     "primary_topic": primary_topic,
                     "source_url": doc.source_url,
                     "canonical_url": doc.canonical_url,
+                    "pipeline_status": getattr(doc, "pipeline_status", "complete"),
                     "classification": doc.classification,
                 }
             )

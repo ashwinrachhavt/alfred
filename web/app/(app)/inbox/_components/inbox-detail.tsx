@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from "react";
 
-import { ExternalLink, Loader2, Sparkles, X } from "lucide-react";
+import { BookOpen, ExternalLink, Loader2, Plus, Sparkles, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDocumentDetails } from "@/features/documents/queries";
 import { useEnrichDocument, useFetchAndOrganize } from "@/features/documents/mutations";
+import { useZettelsByDocument } from "@/features/zettels/queries";
+import { useCreateZettel } from "@/features/zettels/mutations";
 
 type Props = {
   docId: string;
@@ -237,6 +239,8 @@ export function InboxDetail({ docId, onClose }: Props) {
                   )}
                 </div>
               )}
+              {/* Zettel Bridge — show existing + create new */}
+              <ZettelBridge docId={docId} data={data} />
             </article>
           ) : (
             <p className="text-muted-foreground">Document not found.</p>
@@ -244,5 +248,92 @@ export function InboxDetail({ docId, onClose }: Props) {
         </div>
       </div>
     </>
+  );
+}
+
+// --- Zettel Bridge: shows zettels created from this document + create new ---
+
+function ZettelBridge({ docId, data }: { docId: string; data: Record<string, unknown> }) {
+  const { data: zettels = [], isLoading: zettelsLoading } = useZettelsByDocument(docId);
+  const createMutation = useCreateZettel();
+
+  const topics = data?.topics as { primary?: string; secondary?: string[] } | null;
+  const summary = data?.summary as { short?: string } | null;
+  const hasEnrichment = Boolean(summary?.short || data?.enrichment);
+
+  const handleCreateFromDocument = () => {
+    createMutation.mutate(
+      {
+        title: String(data?.title || "Untitled"),
+        content: summary?.short || String(data?.cleaned_text || "").slice(0, 500),
+        summary: summary?.short,
+        tags: topics?.secondary?.slice(0, 5).map((t) => String(t).toLowerCase().replace(/_/g, "-")) || [],
+        topic: topics?.primary?.replace(/_/g, "-"),
+        source_url: String(data?.source_url || ""),
+        importance: 5,
+        confidence: 0.5,
+      },
+    );
+  };
+
+  return (
+    <div className="not-prose mt-8 rounded-lg border border-[var(--alfred-ruled-line)] p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <BookOpen className="size-4 text-primary" />
+          <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
+            Knowledge Cards
+          </span>
+        </div>
+        {hasEnrichment && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5 font-mono text-[10px]"
+            onClick={handleCreateFromDocument}
+            disabled={createMutation.isPending}
+          >
+            <Plus className="size-3" />
+            {createMutation.isPending ? "Creating..." : "Create Zettel"}
+          </Button>
+        )}
+      </div>
+
+      {zettelsLoading ? (
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-full" />
+          <Skeleton className="h-8 w-3/4" />
+        </div>
+      ) : zettels.length > 0 ? (
+        <div className="space-y-2">
+          {zettels.map((z) => (
+            <a
+              key={z.id}
+              href={`/knowledge?selected=${z.id}`}
+              className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-[var(--alfred-accent-subtle)] hover:border-primary/30"
+            >
+              <span className="size-2 rounded-full bg-primary shrink-0" />
+              <span className="font-serif text-[13px] truncate">{z.title}</span>
+              {z.tags && z.tags.length > 0 && (
+                <span className="ml-auto font-mono text-[9px] uppercase text-[var(--alfred-text-tertiary)] shrink-0">
+                  {z.tags[0]}
+                </span>
+              )}
+            </a>
+          ))}
+          {createMutation.isSuccess && (
+            <p className="font-mono text-[10px] text-green-600 mt-1">Zettel created successfully</p>
+          )}
+        </div>
+      ) : hasEnrichment ? (
+        <p className="text-[13px] text-muted-foreground">
+          No zettels created from this document yet. Click &quot;Create Zettel&quot; to extract the key concept.
+        </p>
+      ) : (
+        <p className="text-[13px] text-muted-foreground">
+          Enrich this document first to create knowledge cards from it.
+        </p>
+      )}
+    </div>
   );
 }

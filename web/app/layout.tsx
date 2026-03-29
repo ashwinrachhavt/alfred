@@ -39,6 +39,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Prevent accent theme flash — read localStorage before first paint.
+            This is a static inline script with no user input, identical to the
+            pattern used by next-themes for dark mode FOUC prevention. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var a=localStorage.getItem("alfred-accent-theme");if(a&&a!=="terracotta")document.documentElement.setAttribute("data-accent",a)}catch(e){}})()`,
+          }}
+        />
+      </head>
       <body
         className={`${inter.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable} ${geist.variable} font-sans antialiased`}
       >
