@@ -90,6 +90,7 @@ export const apiRoutes = {
   },
   connectors: {
     status: (name: string) => `/api/${name}/status`,
+    statusAll: "/api/connectors/status-all",
   },
   thinking: {
     sessions: "/api/thinking/sessions",
