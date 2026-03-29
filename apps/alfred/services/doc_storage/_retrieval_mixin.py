@@ -294,6 +294,7 @@ class RetrievalMixin:
                 DocumentRow.source_url,
                 DocumentRow.canonical_url,
                 DocumentRow.pipeline_status,
+                DocumentRow.classification,
                 has_image,
             )
 
@@ -350,6 +351,7 @@ class RetrievalMixin:
                     "source_url": doc.source_url,
                     "canonical_url": doc.canonical_url,
                     "pipeline_status": getattr(doc, "pipeline_status", "complete"),
+                    "classification": doc.classification,
                 }
             )
 

@@ -1,4 +1,9 @@
-"""Company-related relational models (Postgres, SQLModel)."""
+"""Research report relational models (Postgres, SQLModel).
+
+Renamed from company_research_reports → research_reports.
+This file is kept as company.py for Alembic migration compatibility;
+the canonical model now lives here as ``ResearchReportRow``.
+"""
 
 from __future__ import annotations
 
@@ -13,22 +18,22 @@ from sqlmodel import Field, SQLModel
 from alfred.core.utils import utcnow as _utcnow
 
 
-class CompanyResearchReportRow(SQLModel, table=True):
-    """Latest generated company research report payload (per company)."""
+class ResearchReportRow(SQLModel, table=True):
+    """Latest generated research report payload (per topic)."""
 
-    __tablename__ = "company_research_reports"
+    __tablename__ = "research_reports"
     __table_args__ = (
-        sa.UniqueConstraint("company_key", name="uq_company_research_reports_company_key"),
-        sa.Index("ix_company_research_reports_company_key", "company_key"),
-        sa.Index("ix_company_research_reports_updated_at", "updated_at"),
+        sa.UniqueConstraint("topic_key", name="uq_research_reports_topic_key"),
+        sa.Index("ix_research_reports_topic_key", "topic_key"),
+        sa.Index("ix_research_reports_updated_at", "updated_at"),
     )
 
     id: uuid.UUID = Field(
         default_factory=uuid.uuid4,
         sa_column=sa.Column(UUID(as_uuid=True), primary_key=True, nullable=False),
     )
-    company_key: str = Field(sa_column=sa.Column(sa.Text, nullable=False))
-    company: str = Field(sa_column=sa.Column(sa.Text, nullable=False))
+    topic_key: str = Field(sa_column=sa.Column(sa.Text, nullable=False))
+    topic: str = Field(sa_column=sa.Column(sa.Text, nullable=False))
     model_name: str | None = Field(default=None, sa_column=sa.Column(sa.Text, nullable=True))
     generated_at: datetime | None = Field(
         default=None, sa_column=sa.Column(sa.DateTime(timezone=True), nullable=True)
@@ -55,4 +60,8 @@ class CompanyResearchReportRow(SQLModel, table=True):
     )
 
 
-__all__ = ["CompanyResearchReportRow"]
+# ── Deprecated re-exports for migration / back-compat ──────────────
+CompanyResearchReportRow = ResearchReportRow
+DeepResearchReportRow = ResearchReportRow
+
+__all__ = ["ResearchReportRow", "CompanyResearchReportRow", "DeepResearchReportRow"]

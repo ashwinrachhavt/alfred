@@ -1,29 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FilePlus2, NotebookPen, Save } from "lucide-react";
+import { FilePlus2, NotebookPen } from "lucide-react";
 import { toast } from "sonner";
 
 import type { NoteResponse } from "@/lib/api/types/notes";
 
-import { cn } from "@/lib/utils";
 import { MarkdownNotesEditor, type MarkdownNotesEditorHandle } from "@/components/editor/markdown-notes-editor";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+// Tooltip import removed — save button removed for seamless autosave
 import { useUpdateNote, useUploadNoteAsset } from "@/features/notes/mutations";
 import { useNote } from "@/features/notes/queries";
 
 type AutosaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 
-function formatAutosaveLabel(state: AutosaveState): string {
-  if (state === "saving") return "Saving...";
-  if (state === "saved") return "Saved";
-  if (state === "error") return "Save failed";
-  if (state === "dirty") return "Unsaved";
-  return " ";
-}
+// Autosave is seamless — no visible status label (Notion-style).
+// Error state shown inline only when save fails.
 
 function normalizeNote(note: NoteResponse | null): { title: string; markdown: string } {
   if (!note) return { title: "", markdown: "" };
@@ -182,62 +176,33 @@ export function NoteEditorPanel({
     );
   }
 
-  const statusLabel = formatAutosaveLabel(autosaveState);
-
   return (
     <section className="flex h-full min-h-0 flex-col">
-      {/* Title + status bar */}
-      <header className="flex items-start justify-between gap-3 px-8 pt-6 pb-4">
-        <div className="min-w-0 flex-1">
-          <input
-            value={title}
-            onChange={(e) => {
-              const next = e.target.value;
-              setTitle(next);
-              draftRef.current.title = next;
-              queueSave();
-            }}
-            onBlur={() => void saveNow()}
-            className="w-full bg-transparent font-serif text-3xl tracking-tight outline-none placeholder:text-[var(--alfred-text-tertiary)]"
-            placeholder="Untitled"
-          />
-          <div className="mt-2 flex items-center gap-3">
-            <span
-              className={cn(
-                "font-mono text-[10px] uppercase tracking-widest",
-                autosaveState === "saved" && "text-[var(--success)]",
-                autosaveState === "error" && "text-[var(--destructive)]",
-                autosaveState === "dirty" && "text-[var(--warning)]",
-                autosaveState === "saving" && "text-[var(--alfred-text-tertiary)]",
-                autosaveState === "idle" && "text-[var(--alfred-text-tertiary)]",
-              )}
-            >
-              {statusLabel}
+      {/* Title — seamless autosave, no visible status (Notion-style) */}
+      <header className="px-8 pt-6 pb-4">
+        <input
+          value={title}
+          onChange={(e) => {
+            const next = e.target.value;
+            setTitle(next);
+            draftRef.current.title = next;
+            queueSave();
+          }}
+          onBlur={() => void saveNow()}
+          className="w-full bg-transparent font-serif text-3xl tracking-tight outline-none placeholder:text-[var(--alfred-text-tertiary)]"
+          placeholder="Untitled"
+        />
+        {/* Only show error state — everything else is silent */}
+        {autosaveState === "error" && (
+          <div className="mt-2 flex items-center gap-2">
+            <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--error)]">
+              Save failed
             </span>
-            {autosaveState === "error" ? (
-              <Button type="button" size="sm" variant="ghost" className="h-6 px-2 font-mono text-[10px]" onClick={() => void saveNow()}>
-                Retry
-              </Button>
-            ) : null}
-          </div>
-        </div>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              onClick={() => void saveNow()}
-              disabled={updateNoteMutation.isPending}
-              className="mt-1"
-            >
-              <Save className="h-4 w-4" aria-hidden="true" />
-              <span className="sr-only">Save</span>
+            <Button type="button" size="sm" variant="ghost" className="h-6 px-2 font-mono text-[10px]" onClick={() => void saveNow()}>
+              Retry
             </Button>
-          </TooltipTrigger>
-          <TooltipContent>Save (S)</TooltipContent>
-        </Tooltip>
+          </div>
+        )}
       </header>
 
       {/* Ruled line divider */}

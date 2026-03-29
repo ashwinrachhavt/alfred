@@ -55,6 +55,10 @@ export async function updateNote(noteId: string, payload: NoteUpdateRequest): Pr
   return apiPatchJson<NoteResponse, NoteUpdateRequest>(apiRoutes.notes.noteById(noteId), payload);
 }
 
+export async function deleteNote(noteId: string): Promise<void> {
+  await apiFetch(apiRoutes.notes.noteById(noteId), { method: "DELETE" });
+}
+
 export async function uploadNoteAsset(noteId: string, file: File): Promise<NoteAssetResponse> {
   const form = new FormData();
   form.append("file", file, file.name);

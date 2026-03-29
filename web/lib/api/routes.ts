@@ -83,7 +83,26 @@ export const apiRoutes = {
   mindPalace: {
     query: "/api/mind-palace/agent/query",
   },
+  agent: {
+    stream: "/api/agent/stream",
+    threads: "/api/agent/threads",
+    threadById: (id: number) => `/api/agent/threads/${id}`,
+  },
   connectors: {
     status: (name: string) => `/api/${name}/status`,
+  },
+  thinking: {
+    sessions: "/api/thinking/sessions",
+    sessionById: (id: number) => `/api/thinking/sessions/${id}`,
+    archive: (id: number) => `/api/thinking/sessions/${id}/archive`,
+    fork: (id: number) => `/api/thinking/sessions/${id}/fork`,
+    decompose: "/api/thinking/decompose",
+  },
+  taxonomy: {
+    domains: "/api/taxonomy/domains",
+    tree: "/api/taxonomy/tree",
+    reclassifyAll: "/api/taxonomy/reclassify-all",
+    nodes: "/api/taxonomy/nodes",
+    nodeBySlug: (slug: string) => `/api/taxonomy/nodes/${slug}`,
   },
 } as const;

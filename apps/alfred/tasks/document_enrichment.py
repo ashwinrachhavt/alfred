@@ -37,14 +37,29 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
     source_url = doc.get("source_url")
     topics = doc.get("topics") or {}
     primary_topic = topics.get("primary") if isinstance(topics, dict) else None
-    secondary_topics = topics.get("secondary", []) if isinstance(topics, dict) else []
     tags = doc.get("tags") or []
 
-    # Combine topic tags
-    all_tags = list(set(
-        ([primary_topic] if primary_topic else [])
-        + (secondary_topics[:5] if secondary_topics else [])
-        + (tags[:3] if tags else [])
+    # Prefer taxonomy classification over raw extraction topics
+    classification = doc.get("classification") or {}
+    domain = classification.get("domain", {})
+    subdomain = classification.get("subdomain", {})
+
+    if domain.get("slug"):
+        classified_topic = domain.get("slug")
+        classified_tags = [t for t in [
+            domain.get("slug"),
+            subdomain.get("slug"),
+            *[mt.get("slug", "") for mt in (classification.get("microtopics") or [])[:3]],
+        ] if t]
+    else:
+        classified_topic = None
+        classified_tags = []
+
+    final_topic = classified_topic or primary_topic
+    final_tags = list(set(
+        classified_tags
+        + ([primary_topic] if primary_topic else [])
+        + (tags[:2] if tags else [])
     ))
 
     # Check if a zettel already exists for this document
@@ -60,8 +75,8 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
         card = zk.create_card(
             title=title,
             content=short_summary,
-            tags=all_tags,
-            topic=primary_topic,
+            tags=final_tags,
+            topic=final_topic,
             source_url=source_url,
             document_id=doc_id,
             importance=5,

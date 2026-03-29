@@ -17,12 +17,12 @@ if TYPE_CHECKING:
     from alfred.connectors.web_connector import WebConnector
     from alfred.services.agents.mind_palace_agent import KnowledgeAgentService
     from alfred.services.datastore import DataStoreService
-    from alfred.services.deep_research_service import DeepResearchService
     from alfred.services.doc_storage_pg import DocStorageService
     from alfred.services.extraction_service import ExtractionService
     from alfred.services.graph_service import GraphService
     from alfred.services.llm_service import LLMService
     from alfred.services.reading_service import ReadingService
+    from alfred.services.research_service import ResearchService
     from alfred.services.system_design import SystemDesignService
     from alfred.services.web_service import WebService
 
@@ -106,16 +106,20 @@ def get_fallback_web_search_connector() -> WebConnector:
 
 
 @lru_cache(maxsize=1)
-def get_deep_research_service() -> DeepResearchService:
-    from alfred.services.deep_research_service import DeepResearchService
+def get_research_service() -> ResearchService:
+    from alfred.services.research_service import ResearchService
 
-    return DeepResearchService(
+    return ResearchService(
         search_results=8,
         primary_search=get_primary_web_search_connector(),
         fallback_search=get_fallback_web_search_connector(),
         firecrawl=get_firecrawl_client(),
         store=get_datastore_service().with_collection(settings.company_research_collection),
     )
+
+
+# Deprecated alias
+get_deep_research_service = get_research_service
 
 
 @lru_cache(maxsize=1)

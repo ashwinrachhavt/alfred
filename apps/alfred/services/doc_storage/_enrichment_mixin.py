@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import func, update
 from sqlalchemy.orm import load_only
@@ -96,6 +99,18 @@ class EnrichmentMixin:
                 include_graph=(self.graph_service is None),
             )
 
+            # Taxonomy classification (best-effort, non-blocking)
+            classification_payload = None
+            try:
+                from alfred.services.taxonomy_service import TaxonomyService
+
+                taxonomy_svc = TaxonomyService(extraction_service=self.extraction_service)
+                classification = taxonomy_svc.classify_and_register(cleaned_text)
+                if classification:
+                    classification_payload = classification.model_dump()
+            except Exception as exc:
+                logger.debug("Taxonomy classification skipped: %s", exc)
+
             summary_obj = None
             topics_obj = None
             tags = enrich.get("tags") or []
@@ -126,6 +141,8 @@ class EnrichmentMixin:
                 updates["embedding"] = embedding_vec
             if entities_obj is not None:
                 updates["entities"] = entities_obj
+            if classification_payload is not None:
+                updates["classification"] = classification_payload
 
             enrichment_block = None
             try:

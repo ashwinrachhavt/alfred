@@ -9,6 +9,12 @@ export type ExplorerDocumentItem = {
   source_url?: string | null;
   canonical_url?: string | null;
   pipeline_status?: string;
+  classification?: {
+    domain?: { slug: string; display: string };
+    subdomain?: { slug: string; display: string };
+    microtopics?: Array<{ slug: string; display: string }>;
+    topic?: { title: string; confidence: number };
+  } | null;
 };
 
 export type ExplorerDocumentsResponse = {

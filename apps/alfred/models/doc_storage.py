@@ -232,6 +232,9 @@ class DocumentRow(SQLModel, table=True):
     enrichment: dict[str, Any] | None = Field(
         default=None, sa_column=sa.Column(sa.JSON, nullable=True)
     )
+    classification: dict[str, Any] | None = Field(
+        default=None, sa_column=sa.Column(sa.JSON, nullable=True)
+    )
 
     # Pipeline processing status: pending -> processing -> complete | error
     pipeline_status: str = Field(

@@ -26,6 +26,17 @@ export function ReviewQuiz({ zettels }: Props) {
   const [selected, setSelected] = useState<number | null>(null);
   const [score, setScore] = useState({ correct: 0, total: 0 });
 
+  // Derive current question safely (may be undefined if index is out of bounds or no quizzes)
+  const zettel = withQuiz[index] as (typeof withQuiz)[number] | undefined;
+  const q = zettel?.quizQuestions[0];
+
+  // useMemo MUST be called unconditionally (React hooks rules)
+  const options = useMemo(
+    () => (q ? shuffleArray([q.correct, ...q.distractors]) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [index, withQuiz.length],
+  );
+
   if (withQuiz.length === 0) {
     return (
       <div className="py-16 text-center">
@@ -34,7 +45,7 @@ export function ReviewQuiz({ zettels }: Props) {
     );
   }
 
-  if (index >= withQuiz.length) {
+  if (index >= withQuiz.length || !zettel || !q) {
     return (
       <div className="mx-auto max-w-md py-12 text-center">
         <p className="font-serif text-2xl">Quiz Complete</p>
@@ -50,14 +61,6 @@ export function ReviewQuiz({ zettels }: Props) {
       </div>
     );
   }
-
-  const zettel = withQuiz[index];
-  const q = zettel.quizQuestions[0];
-  const options = useMemo(
-    () => shuffleArray([q.correct, ...q.distractors]),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [index],
-  );
   const correctIdx = options.indexOf(q.correct);
   const answered = selected !== null;
   const isCorrect = selected === correctIdx;

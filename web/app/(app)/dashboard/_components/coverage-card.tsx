@@ -13,7 +13,10 @@ export function CoverageCard() {
     const items = data?.pages.flatMap((p) => p.items) ?? [];
     const counts: Record<string, number> = {};
     for (const item of items) {
-      const topic = item.primary_topic || "Uncategorized";
+      const topic =
+        item.classification?.domain?.display ??
+        item.primary_topic ??
+        "Uncategorized";
       counts[topic] = (counts[topic] ?? 0) + 1;
     }
     return Object.entries(counts)

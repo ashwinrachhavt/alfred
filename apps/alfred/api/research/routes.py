@@ -11,9 +11,9 @@ from starlette.concurrency import run_in_threadpool
 
 from alfred.core.celery_client import get_celery_client
 from alfred.core.database import SessionLocal
-from alfred.core.dependencies import get_deep_research_service
+from alfred.core.dependencies import get_research_service
 from alfred.core.exceptions import ServiceUnavailableError
-from alfred.models.company import CompanyResearchReportRow
+from alfred.models.company import ResearchReportRow
 
 router = APIRouter(prefix="/research", tags=["research"])
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 class ResearchReportSummary(BaseModel):
     id: str
-    company: str
+    topic: str
     model_name: str | None = None
     generated_at: str | None = None
     updated_at: str | None = None
@@ -37,16 +37,16 @@ def recent_research_reports(
     try:
         with SessionLocal() as session:
             rows = session.exec(
-                select(CompanyResearchReportRow)
-                .order_by(CompanyResearchReportRow.updated_at.desc())
+                select(ResearchReportRow)
+                .order_by(ResearchReportRow.updated_at.desc())
                 .limit(limit)
             ).all()
     except ProgrammingError as exc:
-        if "company_research_reports" in str(exc):
+        if "research_reports" in str(exc):
             raise HTTPException(
                 status_code=503,
                 detail=(
-                    "Database schema is missing `company_research_reports`. "
+                    "Database schema is missing `research_reports`. "
                     "Run migrations (e.g. `make alembic-upgrade DATABASE_URL=...`)."
                 ),
             ) from exc
@@ -65,7 +65,7 @@ def recent_research_reports(
         results.append(
             ResearchReportSummary(
                 id=str(row.id),
-                company=row.company,
+                topic=row.topic,
                 model_name=row.model_name,
                 generated_at=row.generated_at.isoformat() if row.generated_at else None,
                 updated_at=row.updated_at.isoformat() if row.updated_at else None,
@@ -82,19 +82,19 @@ def get_research_report(report_id: uuid.UUID) -> dict:
 
     try:
         with SessionLocal() as session:
-            row = session.get(CompanyResearchReportRow, report_id)
+            row = session.get(ResearchReportRow, report_id)
             if row is None:
                 raise HTTPException(status_code=404, detail="Research report not found")
             payload = dict(row.payload or {})
-            payload.setdefault("company", row.company)
+            payload.setdefault("topic", row.topic)
             payload["id"] = str(row.id)
             return payload
     except ProgrammingError as exc:
-        if "company_research_reports" in str(exc):
+        if "research_reports" in str(exc):
             raise HTTPException(
                 status_code=503,
                 detail=(
-                    "Database schema is missing `company_research_reports`. "
+                    "Database schema is missing `research_reports`. "
                     "Run migrations (e.g. `make alembic-upgrade DATABASE_URL=...`)."
                 ),
             ) from exc
@@ -112,7 +112,7 @@ async def deep_research(
         raise HTTPException(status_code=422, detail="topic is required")
 
     try:
-        service = get_deep_research_service()
+        service = get_research_service()
 
         if background:
             if not refresh:
