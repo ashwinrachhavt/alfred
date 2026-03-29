@@ -130,6 +130,12 @@ def create_page(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Content appears to be a Python error traceback, not page content. Skipping ingestion.",
             )
+
+        # Apply heuristic content cleaning for full-page captures
+        if payload.selection_type == "full_page":
+            from alfred.services.doc_storage._content_cleaner import clean_web_content
+            cleaned_text = clean_web_content(cleaned_text)
+
         ingest = DocumentIngest(
             source_url=(payload.page_url or "about:blank"),
             title=payload.page_title,
