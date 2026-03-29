@@ -123,6 +123,12 @@ export function CreateZettelDialog({
  }, [content]);
 
  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+ // Enter submits (unless inside textarea where Enter = newline)
+ if (e.key === "Enter" && !(e.target instanceof HTMLTextAreaElement)) {
+ e.preventDefault();
+ handleCreate();
+ }
+ // Cmd/Ctrl+Enter always submits (even from textarea)
  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
  e.preventDefault();
  handleCreate();
@@ -131,12 +137,16 @@ export function CreateZettelDialog({
 
  return (
  <Dialog open={open} onOpenChange={onOpenChange}>
- <DialogContent className="sm:max-w-[500px]" onKeyDown={handleKeyDown}>
- <DialogHeader>
+ <DialogContent
+ className="sm:max-w-[600px] max-h-[90vh] flex flex-col p-0 gap-0"
+ onKeyDown={handleKeyDown}
+ >
+ <DialogHeader className="shrink-0 px-6 pt-6 pb-2">
  <DialogTitle className="text-xl">New Zettel</DialogTitle>
  </DialogHeader>
 
- <div className="space-y-4 py-2">
+ {/* Scrollable body */}
+ <div className="flex-1 overflow-y-auto px-6 py-2 space-y-4">
  <div>
  <label className="font-medium text-[9px] uppercase tracking-widest text-[var(--alfred-text-tertiary)] mb-1.5 block">
  Title
@@ -145,7 +155,6 @@ export function CreateZettelDialog({
  value={title}
  onChange={(e) => setTitle(e.target.value)}
  placeholder="Concept name..."
- className=""
  autoFocus
  />
  </div>
@@ -165,11 +174,9 @@ export function CreateZettelDialog({
  value={content}
  onChange={(e) => setContent(e.target.value)}
  onPaste={handleContentPaste}
- placeholder="Detailed explanation..."
- rows={4}
- className={`text-[13px] transition-all ${
- isPasteMode ? "min-h-[300px] max-h-[500px]" : ""
- }`}
+ placeholder="Paste any amount of text here..."
+ rows={isPasteMode ? 12 : 4}
+ className="text-[13px] resize-y min-h-[100px] max-h-[50vh]"
  />
  </div>
 
@@ -222,7 +229,8 @@ export function CreateZettelDialog({
  </div>
  </div>
 
- <DialogFooter>
+ {/* Sticky footer — always visible */}
+ <DialogFooter className="shrink-0 px-6 pb-6 pt-3 border-t">
  <Button variant="outline" onClick={() => onOpenChange(false)} className="text-xs font-medium">
  Cancel
  </Button>
