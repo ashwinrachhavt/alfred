@@ -191,9 +191,20 @@ export function ZettelDetailPanel({ zettel, allZettels, onClose, onSelectZettel 
           <div className="font-mono text-[9px] uppercase tracking-widest text-[var(--alfred-text-tertiary)] mb-2">
             Source
           </div>
-          <p className="text-[12px] text-[var(--alfred-text-tertiary)]">
-            {zettel.source.title}
-          </p>
+          {zettel.source.url ? (
+            <a
+              href={zettel.source.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[12px] text-primary hover:underline truncate block"
+            >
+              {zettel.source.title}
+            </a>
+          ) : (
+            <p className="text-[12px] text-[var(--alfred-text-tertiary)]">
+              {zettel.source.title}
+            </p>
+          )}
           <p className="mt-1 font-mono text-[10px] text-[var(--alfred-text-tertiary)]">
             Captured {capturedAgo} · Reviewed {reviewedAgo}
           </p>

@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
-import { listZettelLinks } from "@/lib/api/zettels";
+import { listZettelLinks, listZettelsByDocument } from "@/lib/api/zettels";
 import type { Zettel, BloomLevel } from "@/app/(app)/knowledge/_components/mock-data";
 
 type ApiZettelCard = {
@@ -85,6 +85,15 @@ export function useZettelLinks(cardId: number | null) {
     queryKey: ["zettels", "links", cardId],
     queryFn: () => listZettelLinks(cardId!),
     enabled: cardId !== null,
+    staleTime: 10_000,
+  });
+}
+
+export function useZettelsByDocument(documentId: string | null) {
+  return useQuery({
+    queryKey: ["zettels", "by-document", documentId],
+    queryFn: () => listZettelsByDocument(documentId!),
+    enabled: documentId !== null,
     staleTime: 10_000,
   });
 }

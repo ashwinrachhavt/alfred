@@ -51,12 +51,13 @@ def list_cards(
     q: str | None = None,
     topic: str | None = None,
     tag: str | None = None,
+    document_id: str | None = None,
     limit: int = 50,
     skip: int = 0,
     session: Session = Depends(get_db_session),
 ) -> list[ZettelCardOut]:
     svc = ZettelkastenService(session)
-    cards = svc.list_cards(q=q, topic=topic, tag=tag, limit=limit, skip=skip)
+    cards = svc.list_cards(q=q, topic=topic, tag=tag, document_id=document_id, limit=limit, skip=skip)
     return [_card_out(c) for c in cards]
 
 

@@ -90,6 +90,11 @@ export async function listZettelCards(): Promise<ApiZettelCard[]> {
   return apiFetch<ApiZettelCard[]>(apiRoutes.zettels.cards, { cache: "no-store" });
 }
 
+export async function listZettelsByDocument(documentId: string): Promise<ApiZettelCard[]> {
+  const url = `${apiRoutes.zettels.cards}?document_id=${encodeURIComponent(documentId)}`;
+  return apiFetch<ApiZettelCard[]>(url, { cache: "no-store" });
+}
+
 export async function getZettelCard(id: number): Promise<ApiZettelCard> {
   return apiFetch<ApiZettelCard>(apiRoutes.zettels.cardById(id));
 }

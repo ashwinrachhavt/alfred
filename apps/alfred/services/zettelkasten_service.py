@@ -92,6 +92,7 @@ class ZettelkastenService:
         q: str | None = None,
         topic: str | None = None,
         tag: str | None = None,
+        document_id: str | None = None,
         limit: int = 50,
         skip: int = 0,
     ) -> list[ZettelCard]:
@@ -105,6 +106,8 @@ class ZettelkastenService:
             )
         if topic:
             stmt = stmt.where(ZettelCard.topic == topic.strip())
+        if document_id:
+            stmt = stmt.where(ZettelCard.document_id == document_id.strip())
         stmt = stmt.offset(clamp_int(skip, lo=0, hi=10_000)).limit(clamp_int(limit, lo=1, hi=200))
         results = list(self.session.exec(stmt))
         if tag:
