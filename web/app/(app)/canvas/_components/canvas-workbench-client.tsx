@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Bot, Layers, Maximize2, Minimize2 } from "lucide-react";
 import { toast } from "sonner";
@@ -42,6 +43,7 @@ export function CanvasWorkbenchClient({ initialCanvasId }: { initialCanvasId: nu
  );
  const [aiPanelOpen, setAiPanelOpen] = useState(false);
  const [isFullscreen, setIsFullscreen] = useState(false);
+ const excalidrawApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
 
  // Derived selected canvas ID from URL
  const urlCanvasParam = searchParams.get("id");
@@ -159,6 +161,18 @@ export function CanvasWorkbenchClient({ initialCanvasId }: { initialCanvasId: nu
  });
  }, []);
 
+ const handleInsertElements = useCallback((elements: unknown[]) => {
+ const api = excalidrawApiRef.current;
+ if (!api) {
+  toast.error("Canvas not ready yet");
+  return;
+ }
+
+ const existingElements = api.getSceneElements();
+ api.updateScene({ elements: [...existingElements, ...elements] as never });
+ toast.success(`Added ${elements.length} elements to canvas`);
+ }, []);
+
  // --- Fullscreen canvas overlay ---
  if (isFullscreen && selectedCanvasId) {
  return (
@@ -170,6 +184,9 @@ export function CanvasWorkbenchClient({ initialCanvasId }: { initialCanvasId: nu
  canvas={activeCanvas}
  onSaveScene={onSaveScene}
  onTitleChange={onTitleChange}
+     onApiReady={(api) => {
+      excalidrawApiRef.current = api;
+     }}
  />
 
  {/* Exit fullscreen button */}
@@ -203,6 +220,7 @@ export function CanvasWorkbenchClient({ initialCanvasId }: { initialCanvasId: nu
  <CanvasAIPanel
  canvasTitle={activeCanvas.title}
  onInsertText={handleInsertText}
+     onInsertElements={handleInsertElements}
  onClose={() => setAiPanelOpen(false)}
  />
  )}
@@ -218,6 +236,9 @@ export function CanvasWorkbenchClient({ initialCanvasId }: { initialCanvasId: nu
  canvas={activeCanvas}
  onSaveScene={onSaveScene}
  onTitleChange={onTitleChange}
+     onApiReady={(api) => {
+      excalidrawApiRef.current = api;
+     }}
  />
  </div>
 
@@ -288,6 +309,7 @@ export function CanvasWorkbenchClient({ initialCanvasId }: { initialCanvasId: nu
  <CanvasAIPanel
  canvasTitle={activeCanvas.title}
  onInsertText={handleInsertText}
+     onInsertElements={handleInsertElements}
  onClose={() => setAiPanelOpen(false)}
  />
  )}

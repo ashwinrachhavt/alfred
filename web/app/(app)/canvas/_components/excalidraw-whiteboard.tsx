@@ -23,6 +23,7 @@ type ExcalidrawWhiteboardProps = {
  canvas: Whiteboard | null;
  onSaveScene: (scene: { elements: unknown[]; appState: Record<string, unknown> }) => void;
  onTitleChange: (title: string) => void;
+ onApiReady?: (api: ExcalidrawAPI) => void;
 };
 
 function extractScene(canvas: Whiteboard | null): {
@@ -42,6 +43,7 @@ export function ExcalidrawWhiteboard({
  canvas,
  onSaveScene,
  onTitleChange,
+ onApiReady,
 }: ExcalidrawWhiteboardProps) {
  const apiRef = useRef<ExcalidrawAPI | null>(null);
  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -154,6 +156,7 @@ export function ExcalidrawWhiteboard({
  key={canvas.id}
  excalidrawAPI={(api: ExcalidrawAPI) => {
  apiRef.current = api;
+        onApiReady?.(api);
  }}
  initialData={
  initialScene

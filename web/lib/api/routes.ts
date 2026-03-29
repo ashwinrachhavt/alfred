@@ -69,6 +69,9 @@ export const apiRoutes = {
     byId: (id: number) => `/api/whiteboards/${id}`,
     revisions: (id: number) => `/api/whiteboards/${id}/revisions`,
   },
+  canvas: {
+    generateDiagram: "/api/canvas/generate-diagram",
+  },
   learning: {
     topics: "/api/learning/topics",
     graph: "/api/learning/graph",

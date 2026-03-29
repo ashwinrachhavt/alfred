@@ -12,6 +12,7 @@ import { safeGetItem, safeSetItem } from "@/lib/storage";
 type CanvasAIPanelProps = {
  canvasTitle: string;
  onInsertText: (text: string) => void;
+ onInsertElements: (elements: unknown[]) => void;
  onClose: () => void;
 };
 
@@ -27,6 +28,26 @@ const MIN_H = 300;
 const MAX_W = 600;
 const DEFAULT_W = 380;
 const DEFAULT_H = 400;
+
+// Keywords that indicate a diagram generation request
+const DIAGRAM_KEYWORDS = [
+ "draw",
+ "diagram",
+ "flowchart",
+ "architecture",
+ "mind map",
+ "chart",
+ "graph",
+ "layout",
+ "schema",
+ "visualize",
+ "sketch",
+];
+
+function isDiagramRequest(text: string): boolean {
+ const lowerText = text.toLowerCase();
+ return DIAGRAM_KEYWORDS.some((keyword) => lowerText.includes(keyword));
+}
 
 function loadPersistedLayout(): { x: number; y: number; w: number; h: number } {
  if (typeof window === "undefined") {
@@ -62,7 +83,7 @@ function clamp(val: number, min: number, max: number) {
  return Math.min(Math.max(val, min), max);
 }
 
-export function CanvasAIPanel({ canvasTitle, onInsertText, onClose }: CanvasAIPanelProps) {
+export function CanvasAIPanel({ canvasTitle, onInsertText, onInsertElements, onClose }: CanvasAIPanelProps) {
  const [messages, setMessages] = useState<Message[]>([]);
  const [input, setInput] = useState("");
  const [isStreaming, setIsStreaming] = useState(false);
@@ -198,9 +219,41 @@ export function CanvasAIPanel({ canvasTitle, onInsertText, onClose }: CanvasAIPa
  const controller = new AbortController();
  abortRef.current = controller;
 
- let buffer = "";
-
  try {
+ // Check if this is a diagram request
+ if (isDiagramRequest(text)) {
+ // Generate diagram using the diagram API
+ const response = await fetch(apiRoutes.canvas.generateDiagram, {
+ method: "POST",
+ headers: { "Content-Type": "application/json" },
+ body: JSON.stringify({
+ prompt: text,
+ canvas_context: `Canvas: "${canvasTitle}"`,
+ }),
+ signal: controller.signal,
+ });
+
+ if (!response.ok) {
+ throw new Error("Failed to generate diagram");
+ }
+
+ const data = await response.json() as { elements: unknown[]; description?: string };
+
+ // Insert elements onto canvas
+ onInsertElements(data.elements);
+
+ // Show description as chat message
+ const description = data.description || `Created ${data.elements.length} diagram elements`;
+ setMessages((prev) =>
+ prev.map((m, i) =>
+ i === prev.length - 1 && m.role === "assistant"
+ ? { ...m, content: description }
+ : m,
+ ),
+ );
+ } else {
+ // Regular text response via streaming
+ let buffer = "";
  await streamSSE(
  apiRoutes.agent.stream,
  {
@@ -228,6 +281,7 @@ export function CanvasAIPanel({ canvasTitle, onInsertText, onClose }: CanvasAIPa
  },
  controller.signal,
  );
+ }
  } catch (err: unknown) {
  if (err instanceof DOMException && err.name === "AbortError") {
  // User cancelled
@@ -245,7 +299,7 @@ export function CanvasAIPanel({ canvasTitle, onInsertText, onClose }: CanvasAIPa
  abortRef.current = null;
  scrollToBottom();
  }
- }, [input, isStreaming, messages, canvasTitle, scrollToBottom]);
+ }, [input, isStreaming, messages, canvasTitle, scrollToBottom, onInsertElements]);
 
  return (
  <div
