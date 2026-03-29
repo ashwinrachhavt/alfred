@@ -6,68 +6,18 @@ Provides a thin wrapper around the Google Drive API v3 that:
 - Exposes convenience helpers for listing, exporting, and downloading Drive files
 """
 
-import asyncio
-from collections.abc import Awaitable, Callable
 from typing import Any
 
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-
-from alfred.connectors.google_oauth_session import GoogleOAuthSession
+from alfred.connectors.google_base import GoogleConnectorBase
 
 GOOGLE_DOCS_MIME_TYPE = "application/vnd.google-apps.document"
 
 
-class GoogleDriveConnector:
+class GoogleDriveConnector(GoogleConnectorBase):
     """Class for interacting with Google Drive using Google OAuth credentials."""
 
-    def __init__(
-        self,
-        credentials: Credentials,
-        user_id: str | None = None,
-        on_credentials_refreshed: Callable[[Credentials], Awaitable[None] | None] | None = None,
-    ):
-        """Initialize the connector.
-
-        Args:
-            credentials: Google OAuth Credentials object.
-            user_id: Optional identifier for the user (for logging/metrics only).
-            on_credentials_refreshed: Optional callback invoked after refresh with updated Credentials.
-        """
-        self._credentials = credentials
-        self._user_id = user_id
-        self._on_refresh = on_credentials_refreshed
-        self._oauth_session = GoogleOAuthSession(
-            credentials, on_credentials_refreshed=on_credentials_refreshed
-        )
-        self.service = None
-
-    async def _get_credentials(self) -> Credentials:
-        """Get valid Google OAuth credentials."""
-        try:
-            self._credentials = await self._oauth_session.get_credentials()
-            return self._credentials
-        except ValueError:
-            raise
-        except Exception as exc:
-            raise RuntimeError(f"Failed to refresh Google OAuth credentials: {exc!s}") from exc
-
-    async def _get_service(self):
-        """Get the Google Drive service instance using credentials."""
-        if self.service:
-            return self.service
-
-        try:
-            credentials = await self._get_credentials()
-            self.service = build("drive", "v3", credentials=credentials)
-            return self.service
-        except Exception as exc:
-            raise RuntimeError(f"Failed to create Google Drive service: {exc!s}") from exc
-
-    @staticmethod
-    async def _execute(request: Any) -> Any:
-        """Execute a googleapiclient request in a worker thread."""
-        return await asyncio.to_thread(request.execute)
+    _SERVICE_NAME = "drive"
+    _SERVICE_VERSION = "v3"
 
     async def list_files(
         self,

@@ -193,9 +193,9 @@ def fetch_and_organize(
             raise HTTPException(status_code=404, detail="Document not found")
 
         # Skip if already has substantial content (unless forced)
+        min_existing_content_length = 500
         existing_text = doc.get("cleaned_text") or ""
-        _MIN_SUBSTANTIAL_CONTENT_LEN = 500
-        if not force and len(existing_text) > _MIN_SUBSTANTIAL_CONTENT_LEN:
+        if not force and len(existing_text) > min_existing_content_length:
             return FetchOrganizeResponse(id=id, status="already_has_content", tokens=doc.get("tokens"))
 
         source_url = doc.get("source_url") or doc.get("canonical_url")
@@ -211,9 +211,9 @@ def fetch_and_organize(
         if not result.success or not result.markdown:
             raise HTTPException(status_code=502, detail=f"Failed to fetch page: {result.error}")
 
+        min_fetch_length = 50
         markdown = result.markdown.strip()
-        _MIN_FETCH_CONTENT_LEN = 50
-        if len(markdown) < _MIN_FETCH_CONTENT_LEN:
+        if len(markdown) < min_fetch_length:
             raise HTTPException(status_code=422, detail="Fetched content too short")
 
         # Update the document with the full markdown content

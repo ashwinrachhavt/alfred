@@ -12,7 +12,8 @@ from typing import Any
 
 from alfred.connectors.readwise_connector import ReadwiseClient
 from alfred.schemas.documents import DocumentIngest
-from alfred.schemas.imports import CONTENT_TYPE_READWISE, ImportStats
+from alfred.schemas.imports import CONTENT_TYPE_READWISE
+from alfred.services.base_import import BaseImportService
 from alfred.services.doc_storage_pg import DocStorageService
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,76 @@ def _render_book_markdown(book: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+class ReadwiseImportService(BaseImportService):
+    """Import Readwise books and highlights into Alfred's document store."""
+
+    def __init__(
+        self,
+        *,
+        doc_store: DocStorageService,
+        token: str | None = None,
+        category: str | None = None,
+        limit: int | None = None,
+    ) -> None:
+        super().__init__(doc_store=doc_store, source_name="readwise")
+        self._token = token
+        self._category = category
+        self._limit = limit
+
+    def fetch_items(self, *, since: datetime | str | None = None, **kwargs: Any) -> list[dict[str, Any]]:
+        client = ReadwiseClient(token=self._token)
+        updated_after = None
+        if since:
+            updated_after = since if isinstance(since, str) else since.isoformat()
+
+        books = client.export_highlights(updated_after=updated_after)
+
+        if self._category:
+            books = [b for b in books if b.get("category") == self._category]
+        if self._limit is not None:
+            books = books[: self._limit]
+
+        return books
+
+    def map_to_document(self, item: dict[str, Any]) -> DocumentIngest:
+        book_id = item.get("user_book_id")
+        title = item.get("title") or "Untitled"
+        markdown = _render_book_markdown(item)
+
+        source_url = (
+            item.get("readwise_url") or item.get("source_url") or f"readwise://{book_id}"
+        )
+
+        book_tags = item.get("book_tags") or []
+        tag_names = [t.get("name") for t in book_tags if t.get("name")]
+
+        readwise_meta = {
+            "user_book_id": book_id,
+            "category": item.get("category"),
+            "source": item.get("source"),
+            "author": item.get("author"),
+            "cover_image_url": item.get("cover_image_url"),
+            "source_url": item.get("source_url"),
+            "readwise_url": item.get("readwise_url"),
+            "asin": item.get("asin"),
+            "num_highlights": len(item.get("highlights") or []),
+        }
+
+        return DocumentIngest(
+            source_url=source_url,
+            title=title,
+            content_type=CONTENT_TYPE_READWISE,
+            raw_markdown=markdown,
+            cleaned_text=markdown.strip(),
+            hash=f"readwise:{book_id}",
+            tags=tag_names or None,
+            metadata={"source": "readwise", "readwise": readwise_meta},
+        )
+
+    def item_id(self, item: dict[str, Any]) -> str:
+        return str(item.get("user_book_id", "unknown"))
+
+
 def import_readwise(
     *,
     doc_store: DocStorageService,
@@ -68,106 +139,11 @@ def import_readwise(
     limit: int | None = None,
     category: str | None = None,
 ) -> dict[str, Any]:
-    """Import Readwise books and highlights into Alfred's document store.
-
-    Args:
-        doc_store: The document storage service.
-        token: Optional explicit Readwise API token.
-        since: ISO 8601 datetime for incremental sync.
-        limit: Max number of books to import.
-        category: Filter by category (books, articles, tweets, etc.).
-    """
-    client = ReadwiseClient(token=token)
-
-    updated_after = None
-    if since:
-        updated_after = since if isinstance(since, str) else since.isoformat()
-
-    books = client.export_highlights(updated_after=updated_after)
-
-    if category:
-        books = [b for b in books if b.get("category") == category]
-
-    if limit is not None:
-        books = books[:limit]
-
-    stats = ImportStats()
-
-    for book in books:
-        book_id = book.get("user_book_id")
-        if not book_id:
-            stats.skipped += 1
-            continue
-
-        highlights = book.get("highlights") or []
-        if not highlights:
-            stats.skipped += 1
-            continue
-
-        try:
-            title = book.get("title") or "Untitled"
-            markdown = _render_book_markdown(book)
-            cleaned_text = markdown.strip()
-
-            source_url = (
-                book.get("readwise_url")
-                or book.get("source_url")
-                or f"readwise://{book_id}"
-            )
-            stable_hash = f"readwise:{book_id}"
-
-            book_tags = book.get("book_tags") or []
-            tag_names = [t.get("name") for t in book_tags if t.get("name")]
-
-            readwise_meta = {
-                "user_book_id": book_id,
-                "category": book.get("category"),
-                "source": book.get("source"),
-                "author": book.get("author"),
-                "cover_image_url": book.get("cover_image_url"),
-                "source_url": book.get("source_url"),
-                "readwise_url": book.get("readwise_url"),
-                "asin": book.get("asin"),
-                "num_highlights": len(highlights),
-            }
-
-            ingest = DocumentIngest(
-                source_url=source_url,
-                title=title,
-                content_type=CONTENT_TYPE_READWISE,
-                raw_markdown=markdown,
-                cleaned_text=cleaned_text,
-                hash=stable_hash,
-                tags=tag_names or None,
-                metadata={"source": "readwise", "readwise": readwise_meta},
-            )
-
-            res = doc_store.ingest_document_store_only(ingest)
-            doc_id = str(res["id"])
-
-            if res.get("duplicate"):
-                try:
-                    doc_store.update_document_text(
-                        doc_id,
-                        title=title,
-                        cleaned_text=cleaned_text,
-                        raw_markdown=markdown,
-                        metadata_update={"source": "readwise", "readwise": readwise_meta},
-                    )
-                    stats.updated += 1
-                except Exception:
-                    logger.debug("Skipping update for duplicate %s", doc_id)
-                    stats.skipped += 1
-            else:
-                stats.created += 1
-
-            stats.documents.append({"book_id": str(book_id), "document_id": doc_id})
-
-        except Exception as exc:
-            logger.exception("Readwise import failed for book %s", book_id)
-            stats.errors.append({"book_id": str(book_id), "error": str(exc)})
-
-    return stats.to_dict()
+    """Convenience wrapper preserving the existing function signature."""
+    svc = ReadwiseImportService(
+        doc_store=doc_store, token=token, category=category, limit=limit
+    )
+    return svc.run_import(since=since)
 
 
-__all__ = ["import_readwise", "ReadwiseClient"]
+__all__ = ["ReadwiseImportService", "import_readwise"]
