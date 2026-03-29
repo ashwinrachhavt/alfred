@@ -17,24 +17,37 @@ import { useCreateZettel } from "@/features/zettels/mutations";
 type Props = {
  open: boolean;
  onOpenChange: (open: boolean) => void;
+ defaultTitle?: string;
+ defaultContent?: string;
+ defaultSummary?: string;
+ defaultTags?: string[];
+ defaultTopic?: string;
 };
 
-export function CreateZettelDialog({ open, onOpenChange }: Props) {
- const [title, setTitle] = useState("");
- const [content, setContent] = useState("");
- const [summary, setSummary] = useState("");
- const [tags, setTags] = useState("");
- const [topic, setTopic] = useState("");
+export function CreateZettelDialog({
+ open,
+ onOpenChange,
+ defaultTitle = "",
+ defaultContent = "",
+ defaultSummary = "",
+ defaultTags = [],
+ defaultTopic = "",
+}: Props) {
+ const [title, setTitle] = useState(defaultTitle);
+ const [content, setContent] = useState(defaultContent);
+ const [summary, setSummary] = useState(defaultSummary);
+ const [tags, setTags] = useState(defaultTags.join(", "));
+ const [topic, setTopic] = useState(defaultTopic);
 
  const createMutation = useCreateZettel();
 
  const reset = useCallback(() => {
- setTitle("");
- setContent("");
- setSummary("");
- setTags("");
- setTopic("");
- }, []);
+ setTitle(defaultTitle);
+ setContent(defaultContent);
+ setSummary(defaultSummary);
+ setTags(defaultTags.join(", "));
+ setTopic(defaultTopic);
+ }, [defaultTitle, defaultContent, defaultSummary, defaultTags, defaultTopic]);
 
  const handleCreate = useCallback(() => {
  if (!title.trim()) return;

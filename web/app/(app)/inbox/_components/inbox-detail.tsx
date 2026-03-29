@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useDocumentDetails } from "@/features/documents/queries";
 import { useEnrichDocument, useFetchAndOrganize } from "@/features/documents/mutations";
 import { useZettelsByDocument } from "@/features/zettels/queries";
-import { useCreateZettel } from "@/features/zettels/mutations";
+import { CreateZettelDialog } from "@/app/(app)/knowledge/_components/create-zettel-dialog";
 
 type Props = {
  docId: string;
@@ -255,28 +255,21 @@ export function InboxDetail({ docId, onClose }: Props) {
 
 function ZettelBridge({ docId, data }: { docId: string; data: Record<string, unknown> }) {
  const { data: zettels = [], isLoading: zettelsLoading } = useZettelsByDocument(docId);
- const createMutation = useCreateZettel();
+ const [dialogOpen, setDialogOpen] = useState(false);
 
  const topics = data?.topics as { primary?: string; secondary?: string[] } | null;
  const summary = data?.summary as { short?: string } | null;
  const hasEnrichment = Boolean(summary?.short || data?.enrichment);
 
- const handleCreateFromDocument = () => {
- createMutation.mutate(
- {
- title: String(data?.title || "Untitled"),
- content: summary?.short || String(data?.cleaned_text || "").slice(0, 500),
- summary: summary?.short,
- tags: topics?.secondary?.slice(0, 5).map((t) => String(t).toLowerCase().replace(/_/g, "-")) || [],
- topic: topics?.primary?.replace(/_/g, "-"),
- source_url: String(data?.source_url || ""),
- importance: 5,
- confidence: 0.5,
- },
- );
- };
+ // Prepare default values for the dialog
+ const defaultTitle = String(data?.title || "");
+ const defaultContent = summary?.short || String(data?.cleaned_text || "").slice(0, 500);
+ const defaultSummary = summary?.short || "";
+ const defaultTags = topics?.secondary?.slice(0, 5).map((t) => String(t).toLowerCase().replace(/_/g, "-")) || [];
+ const defaultTopic = topics?.primary?.replace(/_/g, "-") || "";
 
  return (
+ <>
  <div className="not-prose mt-8 rounded-lg border border-[var(--alfred-ruled-line)] p-4">
  <div className="flex items-center justify-between mb-3">
  <div className="flex items-center gap-2">
@@ -284,17 +277,21 @@ function ZettelBridge({ docId, data }: { docId: string; data: Record<string, unk
  <span className="font-medium text-[10px] uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
  Knowledge Cards
  </span>
+ {zettels.length > 0 && (
+ <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[9px]">
+ {zettels.length}
+ </Badge>
+ )}
  </div>
  {hasEnrichment && (
  <Button
  size="sm"
  variant="outline"
- className="h-7 gap-1.5 text-[10px]"
- onClick={handleCreateFromDocument}
- disabled={createMutation.isPending}
+ className="h-7 gap-1.5 text-xs font-medium tracking-wide"
+ onClick={() => setDialogOpen(true)}
  >
  <Plus className="size-3" />
- {createMutation.isPending ? "Creating..." : "Create Zettel"}
+ Create More
  </Button>
  )}
  </div>
@@ -321,13 +318,10 @@ function ZettelBridge({ docId, data }: { docId: string; data: Record<string, unk
  )}
  </a>
  ))}
- {createMutation.isSuccess && (
- <p className="text-[10px] text-green-600 mt-1">Zettel created successfully</p>
- )}
  </div>
  ) : hasEnrichment ? (
  <p className="text-[13px] text-muted-foreground">
- No zettels created from this document yet. Click &quot;Create Zettel&quot; to extract the key concept.
+ No zettels created from this document yet. Click &quot;Create More&quot; to extract key concepts.
  </p>
  ) : (
  <p className="text-[13px] text-muted-foreground">
@@ -335,5 +329,16 @@ function ZettelBridge({ docId, data }: { docId: string; data: Record<string, unk
  </p>
  )}
  </div>
+
+ <CreateZettelDialog
+ open={dialogOpen}
+ onOpenChange={setDialogOpen}
+ defaultTitle={defaultTitle}
+ defaultContent={defaultContent}
+ defaultSummary={defaultSummary}
+ defaultTags={defaultTags}
+ defaultTopic={defaultTopic}
+ />
+ </>
  );
 }
