@@ -37,8 +37,8 @@ export function LiveKnowledgeScore() {
   }, [explorerData]);
 
   const connections = useMemo(() => {
-    const nodeCount = graphQuery.data?.nodes.length ?? 0;
-    const edgeCount = graphQuery.data?.edges.length ?? 0;
+    const nodeCount = graphQuery.data?.nodes?.length ?? 0;
+    const edgeCount = graphQuery.data?.edges?.length ?? 0;
     if (nodeCount === 0) return 0;
     return Math.min(100, Math.round((edgeCount / nodeCount) * 25));
   }, [graphQuery.data]);

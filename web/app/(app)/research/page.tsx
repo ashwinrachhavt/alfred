@@ -22,7 +22,7 @@ export default async function ResearchPage({ searchParams }: ResearchPageProps) 
   const refresh = refreshRaw === "true" || refreshRaw === "1";
 
   return (
-    <Page>
+    <Page size="full" className="p-0">
       <ResearchClient
         reportId={reportId}
         initialTopic={topic}

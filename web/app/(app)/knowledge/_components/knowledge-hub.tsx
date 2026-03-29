@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 
 import { Loader2 } from "lucide-react";
 
-import { useZettelCards } from "@/features/zettels/queries";
+import { useZettelCards, useZettelGraph } from "@/features/zettels/queries";
 import { MOCK_ZETTELS, getDueCount } from "./mock-data";
 import { ViewToolbar, type ViewMode } from "./view-toolbar";
 import { ZettelCard } from "./zettel-card";
@@ -18,7 +18,17 @@ export function KnowledgeHub() {
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const { data: apiZettels, isLoading } = useZettelCards();
+  const { data: rawApiZettels, isLoading } = useZettelCards();
+  const { data: adjacency } = useZettelGraph();
+
+  const apiZettels = useMemo(() => {
+    if (!rawApiZettels) return undefined;
+    if (!adjacency || typeof adjacency.get !== "function") return rawApiZettels;
+    return rawApiZettels.map((z) => ({
+      ...z,
+      connections: Array.from(adjacency.get(String(z.id)) ?? []),
+    }));
+  }, [rawApiZettels, adjacency]);
 
   // Use real API data if available, fall back to mock data
   const allZettels = apiZettels && apiZettels.length > 0 ? apiZettels : MOCK_ZETTELS;

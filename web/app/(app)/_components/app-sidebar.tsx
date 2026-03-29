@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import {
   BookOpen,
+  Bot,
   Brain,
   Inbox,
   LayoutDashboard,
@@ -24,6 +25,7 @@ type NavItem = {
   href: string;
   icon: LucideIcon;
   shortcut?: string;
+  action?: "toggle-ai-panel";
 };
 
 type NavSection = {
@@ -35,6 +37,7 @@ const navSections: NavSection[] = [
   {
     title: "Navigate",
     items: [
+      { label: "Alfred AI", href: "#ai", icon: Bot, shortcut: "0", action: "toggle-ai-panel" },
       { label: "Inbox", href: "/inbox", icon: Inbox, shortcut: "1" },
       { label: "Canvas", href: "/canvas", icon: Network, shortcut: "2" },
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, shortcut: "4" },
@@ -58,16 +61,19 @@ const navSections: NavSection[] = [
 ];
 
 function SidebarNavItem({ item, isActive }: { item: NavItem; isActive: boolean }) {
-  return (
-    <Link
-      href={item.href}
-      className={cn(
-        "group flex items-center gap-2.5 border-l-2 px-5 py-1.5 font-mono text-xs tracking-wide transition-colors",
-        isActive
-          ? "border-primary bg-[var(--alfred-accent-subtle)] text-primary"
-          : "border-transparent text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground",
-      )}
-    >
+  const { toggleAiPanel, aiPanelOpen } = useShellStore();
+
+  const classes = cn(
+    "group flex items-center gap-2.5 border-l-2 px-5 py-1.5 font-mono text-xs tracking-wide transition-colors",
+    item.action === "toggle-ai-panel" && aiPanelOpen
+      ? "border-primary bg-[var(--alfred-accent-subtle)] text-primary"
+      : isActive
+        ? "border-primary bg-[var(--alfred-accent-subtle)] text-primary"
+        : "border-transparent text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground",
+  );
+
+  const inner = (
+    <>
       <item.icon className="size-4 shrink-0 opacity-50 group-hover:opacity-100" />
       <span>{item.label}</span>
       {item.shortcut && (
@@ -75,6 +81,20 @@ function SidebarNavItem({ item, isActive }: { item: NavItem; isActive: boolean }
           {item.shortcut}
         </kbd>
       )}
+    </>
+  );
+
+  if (item.action === "toggle-ai-panel") {
+    return (
+      <button type="button" onClick={toggleAiPanel} className={classes}>
+        {inner}
+      </button>
+    );
+  }
+
+  return (
+    <Link href={item.href} className={classes}>
+      {inner}
     </Link>
   );
 }

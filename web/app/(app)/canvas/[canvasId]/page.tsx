@@ -1,11 +1,14 @@
-import { CanvasWorkspace } from "../_components/canvas-workspace";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Canvas — Alfred" };
+type CanvasDetailPageProps = {
+  params: Promise<{ canvasId: string }>;
+};
 
-export default function CanvasDetailPage() {
-  return (
-    <div className="h-[calc(100dvh-3rem)]">
-      <CanvasWorkspace />
-    </div>
-  );
+/**
+ * Redirect /canvas/[canvasId] to /canvas?id=[canvasId] for backwards compatibility.
+ * The main canvas page now handles everything via query params.
+ */
+export default async function CanvasDetailPage({ params }: CanvasDetailPageProps) {
+  const { canvasId } = await params;
+  redirect(`/canvas?id=${encodeURIComponent(canvasId)}`);
 }

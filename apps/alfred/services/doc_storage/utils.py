@@ -155,8 +155,17 @@ def best_effort_cover_url(meta: dict[str, Any] | None) -> str | None:
 def best_effort_primary_topic(
     topics: dict[str, Any] | None,
     meta: dict[str, Any] | None,
+    classification: dict[str, Any] | None = None,
 ) -> str | None:
     """Extract a primary topic from persisted topics and enrichment payloads."""
+
+    # Prefer classification domain display name when available
+    if classification:
+        domain = classification.get("domain")
+        if isinstance(domain, dict):
+            display = domain.get("display")
+            if isinstance(display, str) and display.strip():
+                return display.strip()
 
     topics = topics or {}
     meta = meta or {}

@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   createNote,
   createWorkspace,
+  deleteNote,
   updateNote,
   uploadNoteAsset,
 } from "@/lib/api/notes";
@@ -47,6 +48,21 @@ export function useUpdateNote(noteId: string, params: { workspaceId?: string | n
       if (workspaceId) {
         await queryClient.invalidateQueries({ queryKey: noteTreeQueryKey(workspaceId) });
       }
+    },
+  });
+}
+
+export function useDeleteNote(params: { workspaceId?: string | null; onSuccess?: () => void } = {}) {
+  const queryClient = useQueryClient();
+  const workspaceId = params.workspaceId ?? null;
+
+  return useMutation({
+    mutationFn: (noteId: string) => deleteNote(noteId),
+    onSuccess: async () => {
+      if (workspaceId) {
+        await queryClient.invalidateQueries({ queryKey: noteTreeQueryKey(workspaceId) });
+      }
+      params.onSuccess?.();
     },
   });
 }
