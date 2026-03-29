@@ -3,7 +3,7 @@
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 
 import { AppCommandPaletteTrigger } from "@/components/app-command-palette";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { ThemePicker } from "@/components/theme-picker";
 import { Button } from "@/components/ui/button";
 import { isClerkEnabled } from "@/lib/auth";
 
@@ -23,7 +23,7 @@ export function TopBar() {
         {/* Right: utilities */}
         <div className="flex items-center gap-1.5">
           <AppCommandPaletteTrigger />
-          <ThemeToggle />
+          <ThemePicker />
           {clerkEnabled ? (
             <>
               <SignedOut>

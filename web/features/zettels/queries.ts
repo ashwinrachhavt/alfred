@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
+import { listZettelLinks } from "@/lib/api/zettels";
 import type { Zettel, BloomLevel } from "@/app/(app)/knowledge/_components/mock-data";
 
 type ApiZettelCard = {
@@ -20,14 +21,30 @@ type ApiZettelCard = {
   updated_at: string;
 };
 
-function mapApiToZettel(card: ApiZettelCard): Zettel {
+type GraphEdge = { from: number; to: number; type: string };
+type GraphSummary = { nodes: unknown[]; edges: GraphEdge[] };
+
+function buildConnectionMap(edges: GraphEdge[]): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const edge of edges) {
+    const fromKey = String(edge.from);
+    const toKey = String(edge.to);
+    if (!map.has(fromKey)) map.set(fromKey, []);
+    if (!map.get(fromKey)!.includes(toKey)) {
+      map.get(fromKey)!.push(toKey);
+    }
+  }
+  return map;
+}
+
+function mapApiToZettel(card: ApiZettelCard, connections: string[]): Zettel {
   return {
     id: String(card.id),
     title: card.title,
     content: card.content || "",
     summary: card.content || card.summary || "",
     tags: card.tags || [],
-    connections: [],
+    connections,
     bloomLevel: Math.max(1, Math.min(6, Math.round(card.confidence * 6))) as BloomLevel,
     bloomHistory: [],
     source: {
@@ -49,9 +66,25 @@ export function useZettelCards() {
   return useQuery({
     queryKey: ["zettels", "cards"],
     queryFn: async () => {
-      const cards = await apiFetch<ApiZettelCard[]>(apiRoutes.zettels.cards, { cache: "no-store" });
-      return cards.map(mapApiToZettel);
+      const [cards, graph] = await Promise.all([
+        apiFetch<ApiZettelCard[]>(apiRoutes.zettels.cards, { cache: "no-store" }),
+        apiFetch<GraphSummary>(apiRoutes.zettels.graph, { cache: "no-store" }),
+      ]);
+
+      const connectionMap = buildConnectionMap(graph.edges);
+      return cards
+        .filter((c) => c.status !== "archived")
+        .map((c) => mapApiToZettel(c, connectionMap.get(String(c.id)) || []));
     },
+    staleTime: 10_000,
+  });
+}
+
+export function useZettelLinks(cardId: number | null) {
+  return useQuery({
+    queryKey: ["zettels", "links", cardId],
+    queryFn: () => listZettelLinks(cardId!),
+    enabled: cardId !== null,
     staleTime: 10_000,
   });
 }

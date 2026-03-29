@@ -186,6 +186,127 @@
   --alfred-bg-tertiary: #252321;
 }
 
+/* ═══════════════════════════════════════════════
+   ACCENT COLOR THEMES
+   Terracotta (#E8590C) is the default — no override needed.
+   Each [data-accent] selector overrides accent-dependent tokens.
+   ═══════════════════════════════════════════════ */
+
+/* --- Sage (#5B8A72) --- */
+[data-accent="sage"] {
+  --primary: #5B8A72;
+  --primary-foreground: #FAF8F5;
+  --ring: #5B8A72;
+  --chart-1: #5B8A72;
+  --sidebar-primary: #5B8A72;
+  --sidebar-ring: #5B8A72;
+  --alfred-accent-subtle: rgba(91, 138, 114, 0.08);
+  --alfred-accent-muted: rgba(91, 138, 114, 0.15);
+}
+[data-accent="sage"].dark,
+.dark[data-accent="sage"] {
+  --primary: #6B9E84;
+  --ring: #6B9E84;
+  --destructive: #6B9E84;
+  --chart-1: #6B9E84;
+  --sidebar-primary: #6B9E84;
+  --sidebar-ring: #6B9E84;
+  --alfred-accent-subtle: rgba(91, 138, 114, 0.1);
+  --alfred-accent-muted: rgba(91, 138, 114, 0.2);
+}
+
+/* --- Amber (#C28B2D) --- */
+[data-accent="amber"] {
+  --primary: #C28B2D;
+  --primary-foreground: #FAF8F5;
+  --ring: #C28B2D;
+  --chart-1: #C28B2D;
+  --sidebar-primary: #C28B2D;
+  --sidebar-ring: #C28B2D;
+  --alfred-accent-subtle: rgba(194, 139, 45, 0.08);
+  --alfred-accent-muted: rgba(194, 139, 45, 0.15);
+}
+[data-accent="amber"].dark,
+.dark[data-accent="amber"] {
+  --primary: #D4A03E;
+  --ring: #D4A03E;
+  --destructive: #D4A03E;
+  --chart-1: #D4A03E;
+  --sidebar-primary: #D4A03E;
+  --sidebar-ring: #D4A03E;
+  --alfred-accent-subtle: rgba(194, 139, 45, 0.1);
+  --alfred-accent-muted: rgba(194, 139, 45, 0.2);
+}
+
+/* --- Crimson (#B83A3A) --- */
+[data-accent="crimson"] {
+  --primary: #B83A3A;
+  --primary-foreground: #FAF8F5;
+  --ring: #B83A3A;
+  --chart-1: #B83A3A;
+  --sidebar-primary: #B83A3A;
+  --sidebar-ring: #B83A3A;
+  --alfred-accent-subtle: rgba(184, 58, 58, 0.08);
+  --alfred-accent-muted: rgba(184, 58, 58, 0.15);
+}
+[data-accent="crimson"].dark,
+.dark[data-accent="crimson"] {
+  --primary: #CC4E4E;
+  --ring: #CC4E4E;
+  --destructive: #CC4E4E;
+  --chart-1: #CC4E4E;
+  --sidebar-primary: #CC4E4E;
+  --sidebar-ring: #CC4E4E;
+  --alfred-accent-subtle: rgba(184, 58, 58, 0.1);
+  --alfred-accent-muted: rgba(184, 58, 58, 0.2);
+}
+
+/* --- Indigo (#5B6ABF) --- */
+[data-accent="indigo"] {
+  --primary: #5B6ABF;
+  --primary-foreground: #FAF8F5;
+  --ring: #5B6ABF;
+  --chart-1: #5B6ABF;
+  --sidebar-primary: #5B6ABF;
+  --sidebar-ring: #5B6ABF;
+  --alfred-accent-subtle: rgba(91, 106, 191, 0.08);
+  --alfred-accent-muted: rgba(91, 106, 191, 0.15);
+}
+[data-accent="indigo"].dark,
+.dark[data-accent="indigo"] {
+  --primary: #6E7DD1;
+  --ring: #6E7DD1;
+  --destructive: #6E7DD1;
+  --chart-1: #6E7DD1;
+  --sidebar-primary: #6E7DD1;
+  --sidebar-ring: #6E7DD1;
+  --alfred-accent-subtle: rgba(91, 106, 191, 0.1);
+  --alfred-accent-muted: rgba(91, 106, 191, 0.2);
+}
+
+/* --- Copper (#B87343) --- */
+[data-accent="copper"] {
+  --primary: #B87343;
+  --primary-foreground: #FAF8F5;
+  --ring: #B87343;
+  --chart-1: #B87343;
+  --sidebar-primary: #B87343;
+  --sidebar-ring: #B87343;
+  --alfred-accent-subtle: rgba(184, 115, 67, 0.08);
+  --alfred-accent-muted: rgba(184, 115, 67, 0.15);
+}
+[data-accent="copper"].dark,
+.dark[data-accent="copper"] {
+  --primary: #CA8756;
+  --ring: #CA8756;
+  --destructive: #CA8756;
+  --chart-1: #CA8756;
+  --sidebar-primary: #CA8756;
+  --sidebar-ring: #CA8756;
+  --alfred-accent-subtle: rgba(184, 115, 67, 0.1);
+  --alfred-accent-muted: rgba(184, 115, 67, 0.2);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -286,6 +407,17 @@ body::before {
 
 .tiptap a:hover {
   text-decoration: underline;
+}
+
+/* Zettel relation pulse — uses primary color via color-mix for theme compatibility */
+@keyframes zettel-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 50%, transparent); }
+  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--primary) 15%, transparent); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.zettel-pulse {
+  animation: zettel-pulse 0.8s ease-out 2;
 }
 
 /* Landing animations */

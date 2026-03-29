@@ -148,6 +148,19 @@ class ZettelkastenService:
         self.session.refresh(card)
         return card
 
+    def archive_card(self, card: ZettelCard, *, remove_links: bool = True) -> ZettelCard:
+        """Soft-delete a card by setting status to 'archived' and optionally removing its links."""
+        card.status = "archived"
+        card.updated_at = _utcnow()
+        self.session.add(card)
+        if remove_links:
+            links = self.list_links(card_id=card.id or 0)
+            for link in links:
+                self.session.delete(link)
+        self.session.commit()
+        self.session.refresh(card)
+        return card
+
     # ---------------
     # Links
     # ---------------
@@ -209,6 +222,26 @@ class ZettelkastenService:
             (ZettelLink.from_card_id == card_id) | (ZettelLink.to_card_id == card_id)
         )
         return list(self.session.exec(stmt))
+
+    def delete_link(self, link_id: int) -> bool:
+        """Delete a link by ID. Returns True if deleted, False if not found."""
+        link = self.session.get(ZettelLink, link_id)
+        if not link:
+            return False
+        # Also delete the reverse link if it exists (bidirectional)
+        if link.bidirectional:
+            reverse = self.session.exec(
+                select(ZettelLink).where(
+                    (ZettelLink.from_card_id == link.to_card_id)
+                    & (ZettelLink.to_card_id == link.from_card_id)
+                    & (ZettelLink.type == link.type)
+                )
+            ).first()
+            if reverse:
+                self.session.delete(reverse)
+        self.session.delete(link)
+        self.session.commit()
+        return True
 
     # ---------------
     # Reviews (spaced repetition)
@@ -461,3 +494,75 @@ class ZettelkastenService:
             if len(suggestions) >= limit:
                 break
         return suggestions
+
+    # ---------------
+    # AI generation
+    # ---------------
+    def generate_card_from_ai(
+        self,
+        *,
+        prompt: str | None = None,
+        content: str | None = None,
+        topic: str | None = None,
+        tags: list[str] | None = None,
+    ) -> ZettelCard:
+        """Use an LLM to generate a structured zettel card from a prompt or content."""
+        import json
+
+        from alfred.core.llm_factory import get_chat_model
+
+        if not prompt and not content:
+            raise ValueError("Either prompt or content must be provided")
+
+        system_msg = (
+            "You are a knowledge card generator. Given a topic/prompt or raw content, "
+            "create a single atomic knowledge card (zettel). Return ONLY valid JSON with these fields:\n"
+            '{"title": "...", "content": "...", "summary": "...", "tags": ["..."], '
+            '"topic": "...", "importance": 5, "confidence": 0.7}\n'
+            "Rules:\n"
+            "- title: concise concept name (max 80 chars)\n"
+            "- content: detailed explanation (2-4 sentences)\n"
+            "- summary: one-sentence distillation\n"
+            "- tags: 2-5 relevant tags (lowercase, no spaces)\n"
+            "- topic: primary domain\n"
+            "- importance: 0-10 (how foundational is this concept)\n"
+            "- confidence: 0.0-1.0 (how well-established is this knowledge)"
+        )
+
+        user_msg = ""
+        if prompt:
+            user_msg += f"Generate a knowledge card about: {prompt}\n"
+        if content:
+            user_msg += f"Extract the key concept from this content:\n{content}\n"
+        if topic:
+            user_msg += f"Primary topic/domain: {topic}\n"
+        if tags:
+            user_msg += f"Suggested tags: {', '.join(tags)}\n"
+
+        llm = get_chat_model()
+        response = llm.invoke([
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": user_msg},
+        ])
+
+        raw = response.content if hasattr(response, "content") else str(response)
+        raw = raw.strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+            if raw.endswith("```"):
+                raw = raw[:-3]
+            raw = raw.strip()
+
+        data = json.loads(raw)
+
+        return self.create_card(
+            title=data.get("title", "Untitled"),
+            content=data.get("content"),
+            summary=data.get("summary"),
+            tags=data.get("tags") or tags or [],
+            topic=data.get("topic") or topic,
+            importance=data.get("importance", 5),
+            confidence=data.get("confidence", 0.7),
+            status="active",
+        )
