@@ -5,6 +5,8 @@ from sqlmodel import Session
 
 from alfred.api.dependencies import get_db_session
 from alfred.models.zettel import ZettelReview
+from pydantic import BaseModel, Field
+
 from alfred.schemas.zettel import (
     AIZettelGenerateRequest,
     BulkUpdateResult,
@@ -258,3 +260,92 @@ def complete_review(
         raise HTTPException(status_code=404, detail="Review not found")
     updated = svc.complete_review(review=review, score=payload.score)
     return _review_out(updated)
+
+
+class TagSuggestionRequest(BaseModel):
+    text: str = Field(..., min_length=10, max_length=10000)
+
+
+class TagSuggestionResponse(BaseModel):
+    tags: list[str]
+
+
+@router.post("/suggest-tags", response_model=TagSuggestionResponse)
+def suggest_tags(payload: TagSuggestionRequest) -> TagSuggestionResponse:
+    """Suggest tags for given text content."""
+    # Simple approach: extract key phrases
+    # Use word frequency + topic extraction
+    words = payload.text.lower().split()
+    # Count word frequency, filter common words, return top 5
+    from collections import Counter
+
+    stop_words = {
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "can",
+        "shall",
+        "to",
+        "of",
+        "in",
+        "for",
+        "on",
+        "with",
+        "at",
+        "by",
+        "from",
+        "as",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "between",
+        "and",
+        "but",
+        "or",
+        "not",
+        "no",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
+        "they",
+        "them",
+        "their",
+        "we",
+        "our",
+        "you",
+        "your",
+        "he",
+        "she",
+        "his",
+        "her",
+    }
+    filtered = [w for w in words if len(w) > 3 and w not in stop_words and w.isalpha()]
+    counter = Counter(filtered)
+    tags = [word for word, _ in counter.most_common(5)]
+    return TagSuggestionResponse(tags=tags)
