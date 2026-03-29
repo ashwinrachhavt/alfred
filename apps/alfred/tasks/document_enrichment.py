@@ -10,15 +10,20 @@ logger = logging.getLogger(__name__)
 
 
 def _create_zettel_from_enrichment(doc_id: str) -> str | None:
-    """Create a zettel card from an enriched document's summary and topics.
+    """Create multiple atomic zettel cards from an enriched document using LLM decomposition.
 
     This is the bridge between the Inbox (documents) and the Knowledge Hub (zettels).
-    Each enriched document produces one atomic zettel with its short summary as content.
-    The zettel links back to the source document via document_id.
+    Each enriched document is decomposed into 2-10 atomic zettels (one per key concept).
+    Each zettel links back to the source document via document_id.
 
-    Returns the zettel card ID if created, None if skipped.
+    Returns comma-separated zettel card IDs if created, None if skipped.
     """
     from alfred.api.dependencies import get_db_session
+    from alfred.core.llm_factory import get_chat_model
+    from alfred.services.zettel_decomposer import (
+        build_decomposition_prompt,
+        parse_decomposition_response,
+    )
     from alfred.services.zettelkasten_service import ZettelkastenService
 
     svc = get_doc_storage_service()
@@ -26,67 +31,122 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
     if not doc:
         return None
 
-    # Skip if no enrichment/summary — nothing to create a zettel from
-    summary = doc.get("summary") or {}
-    short_summary = summary.get("short", "").strip() if isinstance(summary, dict) else ""
-    if not short_summary:
-        logger.info("Skipping zettel creation for %s — no summary", doc_id)
-        return None
-
-    title = doc.get("title") or "Untitled"
-    source_url = doc.get("source_url")
-    topics = doc.get("topics") or {}
-    primary_topic = topics.get("primary") if isinstance(topics, dict) else None
-    tags = doc.get("tags") or []
-
-    # Prefer taxonomy classification over raw extraction topics
-    classification = doc.get("classification") or {}
-    domain = classification.get("domain", {})
-    subdomain = classification.get("subdomain", {})
-
-    if domain.get("slug"):
-        classified_topic = domain.get("slug")
-        classified_tags = [t for t in [
-            domain.get("slug"),
-            subdomain.get("slug"),
-            *[mt.get("slug", "") for mt in (classification.get("microtopics") or [])[:3]],
-        ] if t]
-    else:
-        classified_topic = None
-        classified_tags = []
-
-    final_topic = classified_topic or primary_topic
-    final_tags = list(set(
-        classified_tags
-        + ([primary_topic] if primary_topic else [])
-        + (tags[:2] if tags else [])
-    ))
-
-    # Check if a zettel already exists for this document
+    # Check if zettels already exist for this document (skip if so)
     session = next(get_db_session())
     try:
         zk = ZettelkastenService(session=session)
-        existing = zk.list_cards(q=None, topic=None, limit=1000)
-        for card in existing:
-            if getattr(card, "document_id", None) == doc_id:
-                logger.info("Zettel already exists for document %s", doc_id)
-                return str(card.id)
+        existing = zk.list_cards(document_id=doc_id, limit=100)
+        if existing:
+            logger.info("Zettels already exist for document %s (count: %d)", doc_id, len(existing))
+            return ",".join(str(card.id) for card in existing)
 
-        card = zk.create_card(
-            title=title,
-            content=short_summary,
-            tags=final_tags,
-            topic=final_topic,
-            source_url=source_url,
-            document_id=doc_id,
-            importance=5,
-            confidence=0.7,
-            status="active",
-        )
-        logger.info("Created zettel %s from document %s", card.id, doc_id)
-        return str(card.id)
+        # Gather document context
+        title = doc.get("title") or "Untitled"
+        source_url = doc.get("source_url")
+        cleaned_text = doc.get("cleaned_text", "")
+        summary = doc.get("summary") or {}
+        short_summary = summary.get("short", "").strip() if isinstance(summary, dict) else ""
+        topics = doc.get("topics") or {}
+        primary_topic = topics.get("primary") if isinstance(topics, dict) else None
+        tags = doc.get("tags") or []
+
+        # Prefer taxonomy classification over raw extraction topics
+        classification = doc.get("classification") or {}
+        domain = classification.get("domain", {})
+        subdomain = classification.get("subdomain", {})
+
+        if domain.get("slug"):
+            classified_topic = domain.get("slug")
+            classified_tags = [t for t in [
+                domain.get("slug"),
+                subdomain.get("slug"),
+                *[mt.get("slug", "") for mt in (classification.get("microtopics") or [])[:3]],
+            ] if t]
+        else:
+            classified_topic = None
+            classified_tags = []
+
+        final_topic = classified_topic or primary_topic
+        final_tags = list(set(
+            classified_tags
+            + ([primary_topic] if primary_topic else [])
+            + (tags[:2] if tags else [])
+        ))
+
+        # Try LLM decomposition
+        created_ids = []
+        try:
+            if not cleaned_text or not short_summary:
+                logger.info("Skipping decomposition for %s — no cleaned_text or summary", doc_id)
+                raise ValueError("No content to decompose")
+
+            # Build prompt and call LLM
+            prompt = build_decomposition_prompt(
+                title=title,
+                summary=short_summary,
+                cleaned_text=cleaned_text,
+                topics=topics,
+            )
+
+            llm = get_chat_model()
+            response = llm.invoke([
+                {"role": "system", "content": "You are a knowledge card generator. Return only valid JSON."},
+                {"role": "user", "content": prompt},
+            ])
+
+            # Parse response
+            raw = response.content if hasattr(response, "content") else str(response)
+            card_dicts = parse_decomposition_response(raw)
+
+            if not card_dicts:
+                logger.warning("LLM decomposition returned no cards for document %s", doc_id)
+                raise ValueError("No cards from decomposition")
+
+            # Create each card
+            for card_dict in card_dicts:
+                # Merge document tags with card-specific tags
+                card_tags = list(set(final_tags + card_dict.get("tags", [])))
+
+                card = zk.create_card(
+                    title=card_dict["title"],
+                    content=card_dict["content"],
+                    tags=card_tags,
+                    topic=final_topic,
+                    source_url=source_url,
+                    document_id=doc_id,
+                    importance=5,
+                    confidence=0.7,
+                    status="active",
+                )
+                created_ids.append(str(card.id))
+                logger.info("Created zettel %s from document %s", card.id, doc_id)
+
+        except Exception as exc:
+            # Fallback: create single zettel from summary
+            logger.warning("LLM decomposition failed for %s: %s — falling back to single card", doc_id, exc)
+
+            if not short_summary:
+                logger.info("Skipping fallback zettel creation for %s — no summary", doc_id)
+                return None
+
+            card = zk.create_card(
+                title=title,
+                content=short_summary,
+                tags=final_tags,
+                topic=final_topic,
+                source_url=source_url,
+                document_id=doc_id,
+                importance=5,
+                confidence=0.7,
+                status="active",
+            )
+            created_ids.append(str(card.id))
+            logger.info("Created fallback zettel %s from document %s", card.id, doc_id)
+
+        return ",".join(created_ids) if created_ids else None
+
     except Exception:
-        logger.exception("Failed to create zettel from document %s", doc_id)
+        logger.exception("Failed to create zettels from document %s", doc_id)
         return None
     finally:
         session.close()
