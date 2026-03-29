@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
-import { DM_Sans, Instrument_Serif, JetBrains_Mono, Geist } from "next/font/google";
+import { Inter, Instrument_Serif, JetBrains_Mono, Geist } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import "@excalidraw/excalidraw/index.css";
 
 import { Providers } from "@/app/providers";
 
-const dmSans = DM_Sans({
-  variable: "--font-dm-sans",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
@@ -40,7 +40,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${dmSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable} ${geist.variable} font-sans antialiased`}
+        className={`${inter.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable} ${geist.variable} font-sans antialiased`}
       >
         <ClerkProvider>
           <Providers>{children}</Providers>

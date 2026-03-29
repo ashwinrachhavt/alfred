@@ -96,6 +96,30 @@ class TaxonomyTreeNode(BaseModel):
     children: list[TaxonomyTreeNode] = []
 
 
+class CreateTaxonomyNodeRequest(BaseModel):
+    """Request to create a new taxonomy node."""
+
+    name: str
+    parent_slug: str | None = None
+    level: int  # 1 = domain, 2 = subdomain, 3 = microtopic
+    description: str | None = None
+
+
+class UpdateTaxonomyNodeRequest(BaseModel):
+    """Request to update a taxonomy node."""
+
+    name: str | None = None
+    parent_slug: str | None = None
+    description: str | None = None
+
+
+class DeleteTaxonomyNodeResponse(BaseModel):
+    """Response after deleting a taxonomy node."""
+
+    deleted_slug: str
+    children_reassigned: int
+
+
 __all__ = [
     "to_slug",
     "to_display_name",
@@ -103,4 +127,7 @@ __all__ = [
     "Classification",
     "TaxonomyNodeResponse",
     "TaxonomyTreeNode",
+    "CreateTaxonomyNodeRequest",
+    "UpdateTaxonomyNodeRequest",
+    "DeleteTaxonomyNodeResponse",
 ]

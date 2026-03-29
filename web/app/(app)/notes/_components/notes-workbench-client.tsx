@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { safeGetItem } from "@/lib/storage";
-import type { Workspace } from "@/lib/api/types/notes";
+import type { NoteTreeNode, Workspace } from "@/lib/api/types/notes";
 
 import { ResizableColumns } from "@/components/ui/resizable-columns";
 import { useCreateNote, useCreateWorkspace, useDeleteNote } from "@/features/notes/mutations";
@@ -13,6 +13,25 @@ import { useNoteTree, useWorkspaces } from "@/features/notes/queries";
 
 import { NoteEditorPanel } from "./note-editor-panel";
 import { NotesSidebar } from "./notes-sidebar";
+
+/** Flatten tree into an ordered list of note IDs (depth-first). */
+function flattenTree(nodes: NoteTreeNode[]): string[] {
+  const ids: string[] = [];
+  for (const node of nodes) {
+    ids.push(node.note.id);
+    ids.push(...flattenTree(node.children));
+  }
+  return ids;
+}
+
+/** Given the current tree and a deleted note ID, find the best next note to select. */
+function findNextNoteId(items: NoteTreeNode[], deletedId: string): string | null {
+  const flat = flattenTree(items);
+  const idx = flat.indexOf(deletedId);
+  if (idx === -1) return flat[0] ?? null;
+  // Prefer next sibling, then previous, then first available
+  return flat[idx + 1] ?? flat[idx - 1] ?? null;
+}
 
 function readStoredNumber(key: string, fallback: number): number {
   if (typeof window === "undefined") return fallback;
@@ -71,18 +90,35 @@ export function NotesWorkbenchClient({ initialNoteId }: { initialNoteId: string 
 
   const treeQuery = useNoteTree(workspaceId);
   const createNote = useCreateNote({ workspaceId });
+
+  // Track the note to navigate to after a delete completes
+  const postDeleteTargetRef = useRef<string | null>(null);
+
   const deleteNoteMutation = useDeleteNote({
     workspaceId,
     onSuccess: () => {
       toast.success("Note deleted");
-      // If the deleted note was selected, clear selection
-      if (selectedNoteId) {
-        router.push("/notes");
+      const target = postDeleteTargetRef.current;
+      postDeleteTargetRef.current = null;
+      if (target) {
+        router.replace(`/notes?note=${encodeURIComponent(target)}`);
+      } else {
+        router.replace("/notes");
       }
     },
   });
 
   const selectedNoteId = searchParams.get("note") || initialNoteId || null;
+
+  // Auto-select first note when the tree loads and nothing is selected
+  useEffect(() => {
+    if (!selectedNoteId && treeQuery.data?.items?.length) {
+      const firstId = flattenTree(treeQuery.data.items)[0];
+      if (firstId) {
+        router.replace(`/notes?note=${encodeURIComponent(firstId)}`);
+      }
+    }
+  }, [selectedNoteId, treeQuery.data, router]);
 
   const onSelectNoteId = (noteId: string) => {
     router.push(`/notes?note=${encodeURIComponent(noteId)}`);
@@ -118,7 +154,12 @@ export function NotesWorkbenchClient({ initialNoteId }: { initialNoteId: string 
             onSearchChange={setTreeSearch}
             onCreateNote={onCreateNote}
             onSelectNoteId={onSelectNoteId}
-            onDeleteNote={(noteId) => deleteNoteMutation.mutate(noteId)}
+            onDeleteNote={(noteId) => {
+              // Compute next note BEFORE the tree is invalidated
+              const items = treeQuery.data?.items ?? [];
+              postDeleteTargetRef.current = findNextNoteId(items, noteId);
+              deleteNoteMutation.mutate(noteId);
+            }}
           />
         }
         right={<NoteEditorPanel noteId={selectedNoteId} workspaceId={workspaceId} onCreateNote={onCreateNote} />}

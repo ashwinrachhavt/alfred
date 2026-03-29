@@ -100,5 +100,7 @@ export const apiRoutes = {
     domains: "/api/taxonomy/domains",
     tree: "/api/taxonomy/tree",
     reclassifyAll: "/api/taxonomy/reclassify-all",
+    nodes: "/api/taxonomy/nodes",
+    nodeBySlug: (slug: string) => `/api/taxonomy/nodes/${slug}`,
   },
 } as const;

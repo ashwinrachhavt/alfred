@@ -10,7 +10,10 @@ from dotenv import load_dotenv
 from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-load_dotenv()
+# Explicitly load .env from project root so Celery workers find it regardless of CWD
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]  # apps/alfred/core/settings.py -> repo root
+_dotenv_path = _PROJECT_ROOT / ".env"
+load_dotenv(_dotenv_path if _dotenv_path.exists() else None)
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "alfred.db"
 

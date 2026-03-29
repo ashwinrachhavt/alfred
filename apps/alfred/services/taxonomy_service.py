@@ -12,8 +12,10 @@ from alfred.models.doc_storage import DocumentRow
 from alfred.models.taxonomy import TaxonomyNodeRow
 from alfred.schemas.taxonomy import (
     Classification,
+    CreateTaxonomyNodeRequest,
     TaxonomyRef,
     TaxonomyTreeNode,
+    UpdateTaxonomyNodeRequest,
     to_display_name,
     to_slug,
 )
@@ -265,6 +267,149 @@ class TaxonomyService:
                 root_nodes.append(tree_node)
 
         return root_nodes
+
+    def create_node(self, req: CreateTaxonomyNodeRequest) -> TaxonomyNodeRow:
+        """Create a new taxonomy node.
+
+        Args:
+            req: CreateTaxonomyNodeRequest with name, level, optional parent_slug.
+
+        Returns:
+            The created TaxonomyNodeRow.
+
+        Raises:
+            ValueError: If slug already exists or parent not found.
+        """
+        slug = to_slug(req.name)
+        if not slug:
+            raise ValueError("Name produces an empty slug")
+
+        with SessionLocal() as session:
+            existing = session.exec(
+                select(TaxonomyNodeRow).where(TaxonomyNodeRow.slug == slug)
+            ).first()
+            if existing:
+                raise ValueError(f"Taxonomy node with slug '{slug}' already exists")
+
+            if req.parent_slug:
+                parent = session.exec(
+                    select(TaxonomyNodeRow).where(TaxonomyNodeRow.slug == req.parent_slug)
+                ).first()
+                if parent is None:
+                    raise ValueError(f"Parent node '{req.parent_slug}' not found")
+
+            node = TaxonomyNodeRow(
+                slug=slug,
+                display_name=req.name.strip(),
+                level=req.level,
+                parent_slug=req.parent_slug,
+                description=req.description,
+                sort_order=0,
+            )
+            session.add(node)
+            session.commit()
+            session.refresh(node)
+            logger.info("Created taxonomy node: %s (level %s)", slug, req.level)
+            return node
+
+    def update_node(self, slug: str, req: UpdateTaxonomyNodeRequest) -> TaxonomyNodeRow:
+        """Update an existing taxonomy node (rename, move parent, update description).
+
+        Args:
+            slug: Current slug of the node to update.
+            req: UpdateTaxonomyNodeRequest with optional new name, parent_slug, description.
+
+        Returns:
+            The updated TaxonomyNodeRow.
+
+        Raises:
+            ValueError: If node not found, or new slug conflicts.
+        """
+        with SessionLocal() as session:
+            node = session.exec(
+                select(TaxonomyNodeRow).where(TaxonomyNodeRow.slug == slug)
+            ).first()
+            if node is None:
+                raise ValueError(f"Taxonomy node '{slug}' not found")
+
+            if req.name is not None:
+                new_slug = to_slug(req.name)
+                if new_slug != slug:
+                    conflict = session.exec(
+                        select(TaxonomyNodeRow).where(TaxonomyNodeRow.slug == new_slug)
+                    ).first()
+                    if conflict:
+                        raise ValueError(f"Slug '{new_slug}' already taken")
+                    # Update children that reference old slug
+                    children = session.exec(
+                        select(TaxonomyNodeRow).where(TaxonomyNodeRow.parent_slug == slug)
+                    ).all()
+                    for child in children:
+                        child.parent_slug = new_slug
+                        session.add(child)
+                    node.slug = new_slug
+                node.display_name = req.name.strip()
+
+            if req.parent_slug is not None:
+                if req.parent_slug:
+                    parent = session.exec(
+                        select(TaxonomyNodeRow).where(
+                            TaxonomyNodeRow.slug == req.parent_slug
+                        )
+                    ).first()
+                    if parent is None:
+                        raise ValueError(f"Parent node '{req.parent_slug}' not found")
+                node.parent_slug = req.parent_slug or None
+
+            if req.description is not None:
+                node.description = req.description
+
+            node.updated_at = datetime.now(UTC)
+            session.add(node)
+            session.commit()
+            session.refresh(node)
+            logger.info("Updated taxonomy node: %s", node.slug)
+            return node
+
+    def delete_node(self, slug: str, reassign_parent: str | None = None) -> dict:
+        """Delete a taxonomy node and optionally reassign its children.
+
+        Args:
+            slug: Slug of the node to delete.
+            reassign_parent: If provided, reassign children to this parent slug.
+                If None, children are deleted via CASCADE.
+
+        Returns:
+            Dict with deleted_slug and children_reassigned count.
+
+        Raises:
+            ValueError: If node not found.
+        """
+        with SessionLocal() as session:
+            node = session.exec(
+                select(TaxonomyNodeRow).where(TaxonomyNodeRow.slug == slug)
+            ).first()
+            if node is None:
+                raise ValueError(f"Taxonomy node '{slug}' not found")
+
+            children = session.exec(
+                select(TaxonomyNodeRow).where(TaxonomyNodeRow.parent_slug == slug)
+            ).all()
+            children_count = len(children)
+
+            if reassign_parent and children:
+                for child in children:
+                    child.parent_slug = reassign_parent
+                    session.add(child)
+
+            session.delete(node)
+            session.commit()
+            logger.info(
+                "Deleted taxonomy node: %s (children reassigned: %d)",
+                slug,
+                children_count,
+            )
+            return {"deleted_slug": slug, "children_reassigned": children_count}
 
     def reclassify_all(self, batch_size: int = 10) -> dict[str, int]:
         """Iterate all documents, classify each, store result.

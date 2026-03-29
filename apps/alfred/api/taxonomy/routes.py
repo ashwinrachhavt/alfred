@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from alfred.core.dependencies import get_extraction_service
-from alfred.schemas.taxonomy import TaxonomyNodeResponse, TaxonomyTreeNode
+from alfred.schemas.taxonomy import (
+    CreateTaxonomyNodeRequest,
+    DeleteTaxonomyNodeResponse,
+    TaxonomyNodeResponse,
+    TaxonomyTreeNode,
+    UpdateTaxonomyNodeRequest,
+)
 from alfred.services.taxonomy_service import TaxonomyService
 
 router = APIRouter(prefix="/api/taxonomy", tags=["taxonomy"])
@@ -63,21 +69,98 @@ def get_tree(
 
 
 @router.post("/reclassify-all")
-def reclassify_all(
-    svc: TaxonomyService = Depends(_get_taxonomy_service),
-) -> dict[str, int]:
-    """Batch reclassify all documents using the taxonomy classifier.
+def reclassify_all() -> dict[str, str]:
+    """Dispatch async batch reclassification via Celery.
 
-    This endpoint will:
-    1. Iterate through all documents in the database
-    2. Classify each document using the extraction service
-    3. Store the classification result in the document's classification field
-    4. Ensure all taxonomy nodes exist in the database
+    Returns a task_id that can be polled via GET /api/tasks/{task_id}.
+    """
+    from alfred.tasks.taxonomy_reclassify import reclassify_all_task
+
+    result = reclassify_all_task.delay()
+    logger.info("Dispatched reclassify-all task: %s", result.id)
+    return {"task_id": result.id, "status": "started"}
+
+
+@router.post("/nodes", response_model=TaxonomyNodeResponse)
+def create_node(
+    req: CreateTaxonomyNodeRequest,
+    svc: TaxonomyService = Depends(_get_taxonomy_service),
+) -> TaxonomyNodeResponse:
+    """Create a new taxonomy node.
+
+    Args:
+        req: Node name, level, optional parent_slug and description.
 
     Returns:
-        Stats dict with counts: total, classified, failed, skipped
+        The created taxonomy node.
     """
-    logger.info("Starting batch reclassification of all documents")
-    stats = svc.reclassify_all()
-    logger.info("Batch reclassification complete: %s", stats)
-    return stats
+    try:
+        node = svc.create_node(req)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return TaxonomyNodeResponse(
+        id=node.id,
+        slug=node.slug,
+        display_name=node.display_name,
+        level=node.level,
+        parent_slug=node.parent_slug,
+        description=node.description,
+        sort_order=node.sort_order,
+    )
+
+
+@router.patch("/nodes/{slug}", response_model=TaxonomyNodeResponse)
+def update_node(
+    slug: str,
+    req: UpdateTaxonomyNodeRequest,
+    svc: TaxonomyService = Depends(_get_taxonomy_service),
+) -> TaxonomyNodeResponse:
+    """Update an existing taxonomy node (rename, move parent, update description).
+
+    Args:
+        slug: Current slug of the node to update.
+        req: Fields to update (name, parent_slug, description).
+
+    Returns:
+        The updated taxonomy node.
+    """
+    try:
+        node = svc.update_node(slug, req)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return TaxonomyNodeResponse(
+        id=node.id,
+        slug=node.slug,
+        display_name=node.display_name,
+        level=node.level,
+        parent_slug=node.parent_slug,
+        description=node.description,
+        sort_order=node.sort_order,
+    )
+
+
+@router.delete("/nodes/{slug}", response_model=DeleteTaxonomyNodeResponse)
+def delete_node(
+    slug: str,
+    reassign_parent: str | None = Query(
+        None, description="Parent slug to reassign children to"
+    ),
+    svc: TaxonomyService = Depends(_get_taxonomy_service),
+) -> DeleteTaxonomyNodeResponse:
+    """Delete a taxonomy node.
+
+    Args:
+        slug: Slug of the node to delete.
+        reassign_parent: Optional parent slug to reassign children to.
+
+    Returns:
+        Deletion result with count of reassigned children.
+    """
+    try:
+        result = svc.delete_node(slug, reassign_parent=reassign_parent)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return DeleteTaxonomyNodeResponse(
+        deleted_slug=result["deleted_slug"],
+        children_reassigned=result["children_reassigned"],
+    )

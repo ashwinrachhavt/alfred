@@ -15,3 +15,21 @@ export type TaxonomyTreeNode = {
   doc_count: number;
   children: TaxonomyTreeNode[];
 };
+
+export type CreateTaxonomyNodePayload = {
+  name: string;
+  level: number;
+  parent_slug?: string | null;
+  description?: string | null;
+};
+
+export type UpdateTaxonomyNodePayload = {
+  name?: string;
+  parent_slug?: string | null;
+  description?: string | null;
+};
+
+export type DeleteTaxonomyNodeResponse = {
+  deleted_slug: string;
+  children_reassigned: number;
+};

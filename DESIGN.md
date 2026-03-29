@@ -17,7 +17,7 @@
 Three typographic voices create hierarchy without relying on color:
 
 - **Display/Hero:** Instrument Serif — literary character, no PKM tool uses serifs. Says "intellectual, authoritative" instead of "tech startup"
-- **Body:** DM Sans — clean humanist sans with personality, excellent readability at all sizes
+- **Body:** Inter — clean, modern geometric sans. Excellent readability, what Notion and modern apps use
 - **UI/Labels/Nav/Metadata:** JetBrains Mono — creates a "system layer" that feels machine-like and precise. Used for navigation items, timestamps, counts, tags, section overlines, and all metadata
 - **Data/Tables:** Geist (tabular-nums) — already in the project, excellent for numeric data alignment
 - **Code:** JetBrains Mono
@@ -29,9 +29,9 @@ Three typographic voices create hierarchy without relying on color:
 | Display | Instrument Serif | 64px / 4rem | 1.1 | 400 | Landing page hero |
 | H1 | Instrument Serif | 42px / 2.625rem | 1.15 | 400 | Page titles |
 | H2 | Instrument Serif | 28px / 1.75rem | 1.2 | 400 | Section headers |
-| H3 | DM Sans | 20px / 1.25rem | 1.3 | 500 | Subsection headers |
-| Body | DM Sans | 16px / 1rem | 1.6 | 400 | Default reading text |
-| Body Small | DM Sans | 14px / 0.875rem | 1.5 | 400 | Secondary text, helpers |
+| H3 | Inter | 20px / 1.25rem | 1.3 | 500 | Subsection headers |
+| Body | Inter | 16px / 1rem | 1.6 | 400 | Default reading text |
+| Body Small | Inter | 14px / 0.875rem | 1.5 | 400 | Secondary text, helpers |
 | Label | JetBrains Mono | 12px / 0.75rem | 1.5 | 400 | Nav items, metadata, timestamps |
 | Overline | JetBrains Mono | 10px / 0.625rem | 1.5 | 500 | Section labels, categories (uppercase, 0.1em tracking) |
 
@@ -158,13 +158,13 @@ Three typographic voices create hierarchy without relying on color:
 
 ### Data Tables
 - Header: JetBrains Mono, 10px, uppercase, 0.1em tracking, tertiary color
-- Body: DM Sans, 14px
+- Body: Inter, 14px
 - Numeric columns: Geist, tabular-nums, 500 weight
 - Row hover: accent-subtle background
 - Dividers: ruled-line token
 
 ### Inputs
-- Font: DM Sans, 14px
+- Font: Inter, 14px
 - Label: JetBrains Mono, 11px, 0.05em tracking
 - Border: 1px solid `--border-strong`
 - Focus: border-color transitions to accent
@@ -174,7 +174,7 @@ Three typographic voices create hierarchy without relying on color:
 - Left border: 3px solid semantic color
 - Background: semantic color at 8% opacity
 - Text: semantic color
-- Font: DM Sans, 14px
+- Font: Inter, 14px
 
 ## Decisions Log
 | Date | Decision | Rationale |

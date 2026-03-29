@@ -7,6 +7,8 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Markdown } from "@tiptap/markdown";
 import Typography from "@tiptap/extension-typography";
+import TaskList from "@tiptap/extension-task-list";
+import TaskItem from "@tiptap/extension-task-item";
 import {
   forwardRef,
   useCallback,
@@ -117,6 +119,8 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
         }),
         Markdown,
         Typography,
+        TaskList,
+        TaskItem.configure({ nested: true }),
         Placeholder.configure({
           placeholder: placeholder ?? "Start writing...",
           emptyEditorClass: "is-editor-empty",
@@ -190,6 +194,42 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           description: "Horizontal ruled line",
           keywords: ["divider", "hr", "separator"],
           run: (editor) => editor.chain().focus().setHorizontalRule().run(),
+        },
+        {
+          title: "To-do list",
+          description: "Checklist with toggleable items",
+          keywords: ["todo", "task", "checklist", "checkbox"],
+          run: (editor) => editor.chain().focus().toggleTaskList().run(),
+        },
+        {
+          title: "Image",
+          description: "Upload or paste an image",
+          keywords: ["image", "photo", "picture", "img"],
+          run: (editor) => {
+            const input = document.createElement("input");
+            input.type = "file";
+            input.accept = "image/*";
+            input.onchange = async () => {
+              const file = input.files?.[0];
+              if (!file) return;
+              const uploader = uploadImageRef.current;
+              try {
+                const src = uploader ? await uploader(file) : await fileToDataUrl(file);
+                if (!editor.isDestroyed) {
+                  editor.chain().focus().setImage({ src, alt: file.name }).run();
+                }
+              } catch {
+                toast.error("Failed to upload image");
+              }
+            };
+            input.click();
+          },
+        },
+        {
+          title: "Callout",
+          description: "Highlighted blockquote for emphasis",
+          keywords: ["callout", "note", "info", "warning", "tip"],
+          run: (editor) => editor.chain().focus().toggleBlockquote().run(),
         },
         // --- AI Slash Commands ---
         {
@@ -350,6 +390,13 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
             "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
             // HR: ruled line
             "prose-hr:border-[var(--alfred-ruled-line)]",
+            // Task list: checkbox styling
+            "[&_ul[data-type=taskList]]:list-none [&_ul[data-type=taskList]]:pl-2",
+            "[&_li[data-type=taskItem]]:flex [&_li[data-type=taskItem]]:items-start [&_li[data-type=taskItem]]:gap-2 [&_li[data-type=taskItem]]:my-1",
+            "[&_li[data-type=taskItem]>label]:flex [&_li[data-type=taskItem]>label]:items-center [&_li[data-type=taskItem]>label]:mt-0.5 [&_li[data-type=taskItem]>label]:shrink-0",
+            "[&_li[data-type=taskItem]>label>input]:size-4 [&_li[data-type=taskItem]>label>input]:accent-[#E8590C] [&_li[data-type=taskItem]>label>input]:cursor-pointer",
+            "[&_li[data-type=taskItem]>div]:flex-1 [&_li[data-type=taskItem]>div]:min-w-0",
+            "[&_li[data-type=taskItem][data-checked=true]>div]:line-through [&_li[data-type=taskItem][data-checked=true]>div]:opacity-60",
             // Strong: slightly heavier
             "prose-strong:font-semibold",
           ),

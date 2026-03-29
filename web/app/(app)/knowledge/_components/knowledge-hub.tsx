@@ -23,7 +23,7 @@ export function KnowledgeHub() {
 
   const apiZettels = useMemo(() => {
     if (!rawApiZettels) return undefined;
-    if (!adjacency) return rawApiZettels;
+    if (!adjacency || typeof adjacency.get !== "function") return rawApiZettels;
     return rawApiZettels.map((z) => ({
       ...z,
       connections: Array.from(adjacency.get(String(z.id)) ?? []),
