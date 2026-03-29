@@ -8,6 +8,7 @@ export type ExplorerDocumentItem = {
   primary_topic?: string | null;
   source_url?: string | null;
   canonical_url?: string | null;
+  pipeline_status?: string;
 };
 
 export type ExplorerDocumentsResponse = {

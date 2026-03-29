@@ -115,13 +115,14 @@ class IngestionMixin:
             captured_hour=captured_hour,
             day_bucket=day_bucket,
             published_at=payload.published_at,
-            processed_at=payload.processed_at or now,
+            processed_at=None,
             created_at=now,
             updated_at=now,
             session_id=payload.session_id,
             agent_run_id=None,
             meta=payload.metadata or {},
             enrichment=enrichment_block,
+            pipeline_status="pending",
         )
 
         with _session_scope(self.session) as s:

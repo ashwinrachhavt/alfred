@@ -9,6 +9,35 @@ from celery import shared_task
 logger = logging.getLogger(__name__)
 
 
+def _set_pipeline_status(doc_id: str, status: str) -> None:
+    """Update the pipeline_status column on a document row."""
+    try:
+        from datetime import UTC, datetime
+
+        from alfred.core.database import engine
+        from alfred.models.doc_storage import DocumentRow
+        from alfred.services.doc_storage.utils import parse_uuid as _parse_uuid
+
+        uid = _parse_uuid(doc_id)
+        if uid is None:
+            return
+
+        from sqlmodel import Session as SMSession
+
+        with SMSession(engine) as session:
+            doc = session.get(DocumentRow, uid)
+            if doc:
+                doc.pipeline_status = status
+                if status == "complete":
+                    doc.processed_at = datetime.now(UTC)
+                session.add(doc)
+                session.commit()
+    except Exception:
+        logger.warning(
+            "Failed to set pipeline_status=%s for %s", status, doc_id, exc_info=True
+        )
+
+
 @shared_task(
     name="alfred.tasks.document_pipeline.run_document_pipeline",
     bind=True,
@@ -30,6 +59,8 @@ def run_document_pipeline(
         PostgresCheckpointConfig,
         PostgresCheckpointSaver,
     )
+
+    _set_pipeline_status(doc_id, "processing")
 
     dsn = settings.writer_checkpoint_dsn or settings.database_url.replace(
         "postgresql+psycopg", "postgresql"
@@ -60,6 +91,7 @@ def run_document_pipeline(
             result.get("stage"),
             result.get("cache_hits"),
         )
+        _set_pipeline_status(doc_id, "complete")
         return {
             "doc_id": doc_id,
             "status": "completed",
@@ -69,4 +101,5 @@ def run_document_pipeline(
         }
     except Exception as exc:
         logger.exception("Pipeline failed for %s", doc_id)
+        _set_pipeline_status(doc_id, "error")
         raise self.retry(exc=exc) from exc

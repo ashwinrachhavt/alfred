@@ -198,10 +198,10 @@ class DocumentRow(SQLModel, table=True):
     published_at: datetime | None = Field(
         default=None, sa_column=sa.Column(sa.DateTime(timezone=True), nullable=True)
     )
-    processed_at: datetime = Field(
-        default_factory=_utcnow,
+    processed_at: datetime | None = Field(
+        default=None,
         sa_column=sa.Column(
-            sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+            sa.DateTime(timezone=True), nullable=True, server_default=sa.func.now()
         ),
     )
     created_at: datetime = Field(
@@ -231,6 +231,16 @@ class DocumentRow(SQLModel, table=True):
     )
     enrichment: dict[str, Any] | None = Field(
         default=None, sa_column=sa.Column(sa.JSON, nullable=True)
+    )
+
+    # Pipeline processing status: pending -> processing -> complete | error
+    pipeline_status: str = Field(
+        default="complete",
+        sa_column=sa.Column(
+            sa.String(length=24),
+            nullable=False,
+            server_default=sa.text("'complete'"),
+        ),
     )
 
     # Concept extraction (graph-like entities/relations for all documents)
