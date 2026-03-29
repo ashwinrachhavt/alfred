@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Eye, EyeOff, ExternalLink, Loader2, Unlink } from "lucide-react";
+import { Eye, EyeOff, Loader2, Unlink } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 
