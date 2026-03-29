@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 type CanvasDetailPageProps = {
-  params: Promise<{ canvasId: string }>;
+ params: Promise<{ canvasId: string }>;
 };
 
 /**
@@ -9,6 +9,6 @@ type CanvasDetailPageProps = {
  * The main canvas page now handles everything via query params.
  */
 export default async function CanvasDetailPage({ params }: CanvasDetailPageProps) {
-  const { canvasId } = await params;
-  redirect(`/canvas?id=${encodeURIComponent(canvasId)}`);
+ const { canvasId } = await params;
+ redirect(`/canvas?id=${encodeURIComponent(canvasId)}`);
 }

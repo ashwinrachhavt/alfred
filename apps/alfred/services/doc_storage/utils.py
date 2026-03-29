@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import re
 import uuid
 from datetime import UTC, date, datetime
 from typing import Any
@@ -15,6 +16,32 @@ from urllib.parse import urlparse
 
 from alfred.core.exceptions import BadRequestError
 from alfred.core.utils import clamp_int
+
+# Patterns that indicate the content is a Python error traceback or log dump
+# rather than actual article/page content.
+_ERROR_CONTENT_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"Traceback \(most recent call last\)"),
+    re.compile(r'File ".*\.py", line \d+, in '),
+    re.compile(r"sqlalchemy\.exc\.\w+Error"),
+    re.compile(r"psycopg\.errors\.\w+"),
+    re.compile(r"ModuleNotFoundError: No module named"),
+    re.compile(r"raise \w+Error\("),
+]
+
+# Minimum number of pattern matches to classify content as error output.
+_ERROR_PATTERN_THRESHOLD = 2
+
+
+def looks_like_error_content(text: str) -> bool:
+    """Return True if the text appears to be a Python traceback or error log.
+
+    Uses a threshold of multiple pattern matches to avoid false positives
+    on articles that legitimately discuss error handling.
+    """
+    if not text:
+        return False
+    hits = sum(1 for pat in _ERROR_CONTENT_PATTERNS if pat.search(text))
+    return hits >= _ERROR_PATTERN_THRESHOLD
 
 
 def token_count(text: str) -> int:
@@ -295,6 +322,7 @@ __all__ = [
     "encode_cursor",
     "excerpt_for_cover_prompt",
     "first_str",
+    "looks_like_error_content",
     "parse_iso_date",
     "parse_iso_datetime",
     "parse_uuid",

@@ -21,6 +21,7 @@ from alfred.schemas.documents import (
     NotesListResponse,
     SemanticMapResponse,
 )
+from alfred.services.doc_storage.utils import looks_like_error_content
 from alfred.services.doc_storage_pg import DocStorageService
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -124,6 +125,11 @@ def create_page(
     """
     try:
         cleaned_text = (payload.raw_text or "").strip()
+        if looks_like_error_content(cleaned_text):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Content appears to be a Python error traceback, not page content. Skipping ingestion.",
+            )
         ingest = DocumentIngest(
             source_url=(payload.page_url or "about:blank"),
             title=payload.page_title,

@@ -8,5 +8,5 @@ export const metadata = { title: "Alfred Agent" };
  * Redirect to /notes — the AI panel will open via client-side hydration.
  */
 export default function AgentPage() {
-  redirect("/notes");
+ redirect("/notes");
 }
