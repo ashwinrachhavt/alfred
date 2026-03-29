@@ -8,12 +8,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, create_engine
 
 from alfred.api.agent.routes import router as agent_router
 from alfred.api.dependencies import get_db_session
 from alfred.models.thinking import AgentMessageRow, ThinkingSessionRow
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
