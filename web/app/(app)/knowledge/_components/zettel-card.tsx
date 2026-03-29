@@ -24,7 +24,7 @@ export const ZettelCard = forwardRef<HTMLButtonElement, Props>(
           "flex flex-col rounded-lg border p-4 text-left transition-all duration-150",
           isSelected
             ? "border-primary bg-[var(--alfred-accent-subtle)] shadow-sm"
-            : "border-[var(--border)] hover:border-[var(--border-strong)] hover:bg-[var(--alfred-accent-subtle)]",
+            : "border-[var(--border)] hover:border-[var(--border-strong)] hover:bg-[var(--alfred-accent-subtle)] hover:-translate-y-px hover:shadow-sm",
           isPulsing && "zettel-pulse",
         )}
       >
