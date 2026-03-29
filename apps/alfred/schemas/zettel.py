@@ -117,3 +117,27 @@ class BulkUpdateResult(BaseModel):
 
     updated_ids: list[int]
     missing_ids: list[int]
+
+
+class ZettelCardUpdate(BaseModel):
+    """Partial update payload for a single card."""
+
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    content: str | None = None
+    summary: str | None = None
+    tags: list[str] | None = None
+    topic: str | None = Field(default=None, max_length=128)
+    source_url: str | None = Field(default=None, max_length=2048)
+    document_id: str | None = None
+    importance: int | None = Field(default=None, ge=0, le=10)
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    status: str | None = None
+
+
+class AIZettelGenerateRequest(BaseModel):
+    """Request body for AI-powered zettel generation."""
+
+    prompt: str | None = Field(default=None, max_length=5000)
+    content: str | None = Field(default=None, max_length=20000)
+    topic: str | None = Field(default=None, max_length=128)
+    tags: list[str] | None = None
