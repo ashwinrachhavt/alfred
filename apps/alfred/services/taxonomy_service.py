@@ -19,6 +19,7 @@ from alfred.schemas.taxonomy import (
     to_display_name,
     to_slug,
 )
+from alfred.services.taxonomy_canonicalizer import find_canonical_match
 
 logger = logging.getLogger(__name__)
 
@@ -145,33 +146,61 @@ class TaxonomyService:
     ) -> TaxonomyNodeRow:
         """Get or create a taxonomy node.
 
+        Uses smart canonicalization to prevent duplicates. Before creating a new node,
+        checks for exact matches, synonyms, plural/singular variants, and fuzzy matches
+        among existing nodes at the same level.
+
         Args:
             slug: Node slug (normalized)
             level: Hierarchy level (1-3)
             parent_slug: Parent node slug (required for level > 1)
 
         Returns:
-            TaxonomyNodeRow instance
+            TaxonomyNodeRow instance (existing or newly created)
         """
         with SessionLocal() as session:
-            # Try to get existing node
+            # Try to get existing node by exact slug
             node = session.exec(
                 select(TaxonomyNodeRow).where(TaxonomyNodeRow.slug == slug)
             ).first()
 
-            if node is None:
-                # Create new node
-                node = TaxonomyNodeRow(
-                    slug=slug,
-                    display_name=to_display_name(slug),
-                    level=level,
-                    parent_slug=parent_slug,
-                    sort_order=0,
-                )
-                session.add(node)
-                session.commit()
-                session.refresh(node)
-                logger.info("Created taxonomy node: %s (level %s)", slug, level)
+            if node is not None:
+                return node
+
+            # Try canonical matching before creating new node
+            # Get all existing slugs at the same level
+            existing_nodes = session.exec(
+                select(TaxonomyNodeRow).where(TaxonomyNodeRow.level == level)
+            ).all()
+            existing_slugs = [n.slug for n in existing_nodes]
+
+            canonical = find_canonical_match(slug, existing_slugs)
+            if canonical:
+                # Found a canonical match, return the existing node
+                canonical_node = session.exec(
+                    select(TaxonomyNodeRow).where(TaxonomyNodeRow.slug == canonical)
+                ).first()
+                if canonical_node:
+                    logger.info(
+                        "Canonicalized '%s' to existing node '%s' (level %s)",
+                        slug,
+                        canonical,
+                        level,
+                    )
+                    return canonical_node
+
+            # No match found, create new node
+            node = TaxonomyNodeRow(
+                slug=slug,
+                display_name=to_display_name(slug),
+                level=level,
+                parent_slug=parent_slug,
+                sort_order=0,
+            )
+            session.add(node)
+            session.commit()
+            session.refresh(node)
+            logger.info("Created taxonomy node: %s (level %s)", slug, level)
 
             return node
 
