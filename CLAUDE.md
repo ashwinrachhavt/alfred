@@ -8,7 +8,7 @@ Alfred is a knowledge factory for ambitious generalists. It ingests, decomposes,
 - **Frontend:** Next.js 16 / React 19 / TypeScript / Tailwind CSS 4 / shadcn/ui
 - **Vector DB:** Qdrant Cloud
 - **LLMs:** OpenAI (primary), Ollama, Anthropic — provider-agnostic via llm_factory.py
-- **Auth:** Clerk (currently disabled, keys need refresh)
+- **Auth:** Clerk (Google + Notion OAuth)
 
 ### Key Directories
 - `web/` — Next.js frontend
