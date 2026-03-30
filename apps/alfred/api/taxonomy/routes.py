@@ -74,11 +74,14 @@ def reclassify_all() -> dict[str, str]:
 
     Returns a task_id that can be polled via GET /api/tasks/{task_id}.
     """
-    from alfred.tasks.taxonomy_reclassify import reclassify_all_task
+    from alfred.core.celery_client import get_celery_client
 
-    result = reclassify_all_task.delay()
-    logger.info("Dispatched reclassify-all task: %s", result.id)
-    return {"task_id": result.id, "status": "started"}
+    celery_client = get_celery_client()
+    async_result = celery_client.send_task(
+        "alfred.tasks.taxonomy_reclassify.reclassify_all",
+    )
+    logger.info("Dispatched reclassify-all task: %s", async_result.id)
+    return {"task_id": async_result.id, "status": "started"}
 
 
 @router.post("/nodes", response_model=TaxonomyNodeResponse)
