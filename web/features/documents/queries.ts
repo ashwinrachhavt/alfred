@@ -70,6 +70,6 @@ export function useDocumentDetails(docId: string | null) {
     enabled: Boolean(docId),
     queryKey: docId ? documentDetailsQueryKey(docId) : ["documents", "details", "disabled"],
     queryFn: () => getDocumentDetails(docId!),
-    staleTime: 0,
+    staleTime: 30_000,
   });
 }
