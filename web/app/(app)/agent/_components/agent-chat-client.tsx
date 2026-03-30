@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 
 import {
   Brain,
@@ -27,10 +28,13 @@ import {
 } from "@/lib/stores/agent-store";
 import { ArtifactCardComponent } from "@/components/agent/artifact-card";
 import { RelatedCards } from "@/components/agent/related-cards";
-import { EditorDrawer } from "@/components/agent/editor-drawer";
 import { InsightToCard } from "@/components/agent/insight-to-card";
 import { MarkdownMessage } from "@/components/agent/markdown-message";
 import { cn } from "@/lib/utils";
+
+const EditorDrawer = dynamic(() => import("@/components/agent/editor-drawer").then((mod) => ({ default: mod.EditorDrawer })), {
+  ssr: false,
+});
 
 export function AgentChatClient() {
   const {

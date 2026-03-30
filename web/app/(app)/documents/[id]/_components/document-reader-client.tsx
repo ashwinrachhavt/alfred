@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
+import dynamic from "next/dynamic";
 
 import { ArrowLeft, ExternalLink, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -16,9 +17,16 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import { DocumentEditor } from "./document-editor";
-
 import { extractSummary } from "@/lib/utils/format";
+
+const DocumentEditor = dynamic(() => import("./document-editor").then((mod) => ({ default: mod.DocumentEditor })), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full items-center justify-center text-muted-foreground">
+      Loading editor...
+    </div>
+  ),
+});
 
 export function DocumentReaderClient({ docId }: { docId: string }) {
   const taskTracker = useTaskTracker();

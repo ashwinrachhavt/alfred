@@ -2,13 +2,25 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 
 import { ArrowLeft, Loader2, Save } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { MarkdownNotesEditor } from "@/components/editor/markdown-notes-editor";
 import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
+
+const MarkdownNotesEditor = dynamic(
+  () => import("@/components/editor/markdown-notes-editor").then((mod) => ({ default: mod.MarkdownNotesEditor })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center text-muted-foreground">
+        Loading editor...
+      </div>
+    ),
+  },
+);
 
 type ZettelData = {
   id: number;

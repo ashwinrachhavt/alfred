@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import dynamic from "next/dynamic";
 
 import {
   BookmarkPlus,
@@ -30,11 +31,14 @@ import {
 } from "@/lib/stores/agent-store";
 import { ArtifactCardComponent } from "@/components/agent/artifact-card";
 import { RelatedCards } from "@/components/agent/related-cards";
-import { EditorDrawer } from "@/components/agent/editor-drawer";
 import { MarkdownMessage } from "@/components/agent/markdown-message";
 import { useShellStore } from "@/lib/stores/shell-store";
 import { apiFetch } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
+
+const EditorDrawer = dynamic(() => import("@/components/agent/editor-drawer").then((mod) => ({ default: mod.EditorDrawer })), {
+  ssr: false,
+});
 
 // --- Page-contextual suggestions ---
 

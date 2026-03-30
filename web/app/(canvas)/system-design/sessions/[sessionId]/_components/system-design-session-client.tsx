@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 
 import { formatErrorMessage } from "@/lib/utils";
 
@@ -24,12 +25,21 @@ import type {
   ExcalidrawCanvasHandle,
   ExcalidrawCanvasSelection,
 } from "@/components/system-design/excalidraw-canvas";
-import {
-  SystemDesignNotesEditor,
-  type SystemDesignNotesEditorHandle,
-} from "@/components/system-design/system-design-notes-editor";
+import type { SystemDesignNotesEditorHandle } from "@/components/system-design/system-design-notes-editor";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+
+const SystemDesignNotesEditor = dynamic(
+  () => import("@/components/system-design/system-design-notes-editor").then((mod) => ({ default: mod.SystemDesignNotesEditor })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center text-muted-foreground">
+        Loading editor...
+      </div>
+    ),
+  },
+);
 
 import { SessionHeader } from "./session-header";
 import { SessionCanvas } from "./session-canvas";
