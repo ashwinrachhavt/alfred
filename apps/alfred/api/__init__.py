@@ -15,6 +15,7 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.admin import router as admin_router
     from alfred.api.agent import router as agent_router
     from alfred.api.canvas import router as canvas_router
+    from alfred.api.connectors.routes import router as connectors_router
 
     # Knowledge import routers
     from alfred.api.arxiv_import import router as arxiv_import_router
@@ -58,6 +59,7 @@ def register_routes(app: FastAPI) -> None:
         system_router,
         admin_router,
         canvas_router,
+        connectors_router,
         tasks_router,
         intelligence_router,
         rag_router,

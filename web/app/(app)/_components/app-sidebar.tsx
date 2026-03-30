@@ -54,7 +54,7 @@ const navSections: NavSection[] = [
  {
  title: "System",
  items: [
- { label: "Connectors", href: "/notion", icon: Plug },
+ { label: "Connectors", href: "/connectors", icon: Plug },
  { label: "Settings", href: "/settings", icon: Settings },
  ],
  },
