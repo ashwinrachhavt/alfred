@@ -160,18 +160,27 @@ class TaxonomyService:
             ).first()
 
             if node is None:
-                # Create new node
-                node = TaxonomyNodeRow(
-                    slug=slug,
-                    display_name=to_display_name(slug),
-                    level=level,
-                    parent_slug=parent_slug,
-                    sort_order=0,
-                )
-                session.add(node)
-                session.commit()
-                session.refresh(node)
-                logger.info("Created taxonomy node: %s (level %s)", slug, level)
+                # Create new node (handle race condition with duplicate slugs)
+                try:
+                    node = TaxonomyNodeRow(
+                        slug=slug,
+                        display_name=to_display_name(slug),
+                        level=level,
+                        parent_slug=parent_slug,
+                        sort_order=0,
+                    )
+                    session.add(node)
+                    session.commit()
+                    session.refresh(node)
+                    logger.info("Created taxonomy node: %s (level %s)", slug, level)
+                except Exception:
+                    session.rollback()
+                    # Re-fetch — another worker/request may have created it
+                    node = session.exec(
+                        select(TaxonomyNodeRow).where(TaxonomyNodeRow.slug == slug)
+                    ).first()
+                    if node is None:
+                        raise
 
             return node
 
