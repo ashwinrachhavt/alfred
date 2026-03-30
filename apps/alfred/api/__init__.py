@@ -44,6 +44,7 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.system import router as system_router
     from alfred.api.system_design import router as system_design_router
     from alfred.api.tasks import router as tasks_router
+    from alfred.api.tasks_status import router as tasks_status_router
     from alfred.api.taxonomy import router as taxonomy_router
     from alfred.api.thinking import router as thinking_router
     from alfred.api.todoist import router as todoist_router
@@ -59,6 +60,7 @@ def register_routes(app: FastAPI) -> None:
         admin_router,
         connectors_router,
         tasks_router,
+        tasks_status_router,
         intelligence_router,
         rag_router,
         notion_router,
