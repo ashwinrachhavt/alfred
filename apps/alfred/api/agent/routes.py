@@ -26,6 +26,9 @@ class AgentStreamRequest(BaseModel):
     history: list[dict[str, str]] | None = None
     lens: str | None = None
     model: str | None = None
+    intent: str | None = None
+    intent_args: dict | None = None
+    max_iterations: int = 10
 
 
 class ThreadCreateRequest(BaseModel):
@@ -117,6 +120,9 @@ async def agent_stream(
             model=body.model,
             note_context=body.note_context,
             is_disconnected=request.is_disconnected,
+            intent=body.intent,
+            intent_args=body.intent_args,
+            max_iterations=body.max_iterations,
         ):
             yield event
 
