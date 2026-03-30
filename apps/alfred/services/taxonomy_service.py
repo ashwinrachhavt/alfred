@@ -470,10 +470,14 @@ class TaxonomyService:
 
                     except Exception as exc:
                         logger.warning("Failed to classify doc %s: %s", doc.id, exc)
+                        session.rollback()
                         stats["failed"] += 1
 
                 # Commit batch
-                session.commit()
+                try:
+                    session.commit()
+                except Exception:
+                    session.rollback()
                 offset += batch_size
 
         logger.info("Reclassification complete: %s", stats)
