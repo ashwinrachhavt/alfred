@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import type { ConnectorDef } from "@/lib/connector-registry";
 import type { ConnectorStatus } from "@/features/connectors/queries";
+import { NotionImportSection } from "./notion-import-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -191,6 +192,16 @@ export function ConnectorConfigSheet({ connector, status, open, onOpenChange }: 
                 No authentication required. This connector uses open APIs.
               </p>
             </div>
+          )}
+
+          {/* Notion Bulk Import */}
+          {connector.key === "notion" && isConnected && (
+            <NotionImportSection
+              workspaces={
+                (status?.details?.workspaces as { workspace_id: string; workspace_name?: string }[]) ?? []
+              }
+              hasEnvToken={status?.details?.env_token as boolean}
+            />
           )}
 
           {/* Metadata */}
