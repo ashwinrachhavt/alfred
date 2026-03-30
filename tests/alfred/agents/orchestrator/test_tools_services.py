@@ -35,15 +35,12 @@ def test_summarize_content():
     mock_svc = MagicMock()
     mock_svc.summarize_text.return_value = (FakeSummaryPayload(), None)
 
-    with patch(
-        "alfred.agents.orchestrator.tools.services.get_summarization_service",
-        return_value=mock_svc,
-    ):
+    with patch("alfred.core.dependencies.get_summarization_service", return_value=mock_svc):
         tool = make_summarize_tool()
         result = tool.invoke({"text": "Long article text here"})
 
     assert "summarized" in result
-    assert "short summary" in result.lower() or "short" in result
+    assert "short" in result
     mock_svc.summarize_text.assert_called_once()
 
 
@@ -54,16 +51,10 @@ def test_generate_diagram():
     mock_model = MagicMock()
     mock_model.invoke.return_value = MagicMock(content='{"elements": [{"id": "1", "type": "rectangle"}], "description": "A box"}')
 
-    with patch(
-        "alfred.agents.orchestrator.tools.services.get_chat_model",
-        return_value=mock_model,
-    ), patch(
-        "alfred.agents.orchestrator.tools.services.build_diagram_prompt",
-        return_value="prompt text",
-    ), patch(
-        "alfred.agents.orchestrator.tools.services.parse_diagram_response",
-        return_value={"elements": [{"id": "1", "type": "rectangle"}], "description": "A box"},
-    ):
+    with patch("alfred.core.llm_factory.get_chat_model", return_value=mock_model), \
+         patch("alfred.services.excalidraw_agent.build_diagram_prompt", return_value="prompt"), \
+         patch("alfred.services.excalidraw_agent.parse_diagram_response",
+               return_value={"elements": [{"id": "1", "type": "rect"}], "description": "A box"}):
         tool = make_generate_diagram_tool()
         result = tool.invoke({"prompt": "Draw a flowchart"})
 
@@ -95,10 +86,7 @@ def test_create_plan():
     mock_svc = MagicMock()
     mock_svc.create_plan.return_value = FakeExecutionPlan()
 
-    with patch(
-        "alfred.agents.orchestrator.tools.services.get_planning_service",
-        return_value=mock_svc,
-    ):
+    with patch("alfred.core.dependencies.get_planning_service", return_value=mock_svc):
         tool = make_create_plan_tool()
         result = tool.invoke({"goal": "Build a knowledge graph"})
 
@@ -120,10 +108,7 @@ def test_edit_text():
     mock_svc = MagicMock()
     mock_svc.edit.return_value = FakeTextEditResponse()
 
-    with patch(
-        "alfred.agents.orchestrator.tools.services.get_text_assist_service",
-        return_value=mock_svc,
-    ):
+    with patch("alfred.core.dependencies.get_text_assist_service", return_value=mock_svc):
         tool = make_edit_text_tool()
         result = tool.invoke({"text": "Some rough text", "instruction": "Make it concise"})
 
@@ -145,10 +130,7 @@ def test_autocomplete():
     mock_svc = MagicMock()
     mock_svc.autocomplete.return_value = FakeAutocompleteResponse()
 
-    with patch(
-        "alfred.agents.orchestrator.tools.services.get_text_assist_service",
-        return_value=mock_svc,
-    ):
+    with patch("alfred.core.dependencies.get_text_assist_service", return_value=mock_svc):
         tool = make_autocomplete_tool()
         result = tool.invoke({"text": "The reason AI is important is"})
 
