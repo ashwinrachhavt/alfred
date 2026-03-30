@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 
 import { BookOpen, Clock, Plus, RefreshCw, Search, Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -61,15 +61,19 @@ function formatRelativeDate(dateStr: string | null | undefined): string {
 // Report List Item
 // ---------------------------------------------------------------------------
 
-function ReportListItem({
+const ReportListItem = memo(function ReportListItem({
   report,
   isActive,
-  onClick,
+  onSelect,
 }: {
   report: ResearchReportSummary;
   isActive: boolean;
-  onClick: () => void;
+  onSelect: (id: string) => void;
 }) {
+  const handleClick = useCallback(
+    () => onSelect(report.id),
+    [onSelect, report.id],
+  );
   const topic = report.topic ?? report.company ?? "Untitled";
   const summary = report.executive_summary;
   const truncatedSummary = summary && summary.length > 120 ? summary.slice(0, 120) + "..." : summary;
@@ -77,7 +81,7 @@ function ReportListItem({
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={handleClick}
       className={cn(
         "w-full rounded-lg border px-3 py-3 text-left transition-colors",
         isActive
@@ -103,7 +107,7 @@ function ReportListItem({
       ) : null}
     </button>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Report Thread List (left panel)
@@ -121,6 +125,13 @@ function ReportThreadList({
   const reportsQuery = useRecentResearchReports(50);
   const reports = reportsQuery.data ?? [];
   const [search, setSearch] = useState("");
+
+  const handleReportSelect = useCallback(
+    (reportId: string) => {
+      onSelect(reportId);
+    },
+    [onSelect],
+  );
 
   const filtered = useMemo(() => {
     if (!search.trim()) return reports;
@@ -182,7 +193,7 @@ function ReportThreadList({
               key={report.id}
               report={report}
               isActive={selectedId === report.id}
-              onClick={() => onSelect(report.id)}
+              onSelect={handleReportSelect}
             />
           ))
         )}

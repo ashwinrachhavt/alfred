@@ -447,7 +447,7 @@ const PanelMessage = memo(function PanelMessage({
       )}
     </div>
   );
-}
+});
 
 // --- Action Bar ---
 
