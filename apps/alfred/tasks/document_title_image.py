@@ -59,16 +59,20 @@ def batch_generate_document_title_images_task(
         return {"ok": True, "queued": 0, "doc_ids": []}
 
     if enqueue_only:
-        task_ids: list[str] = []
-        for did in doc_ids:
-            async_result = document_title_image_task.delay(
+        from celery import group
+
+        job = group(
+            document_title_image_task.s(
                 doc_id=did,
                 force=bool(force),
                 model=str(model),
                 size=str(size),
                 quality=str(quality),
             )
-            task_ids.append(async_result.id)
+            for did in doc_ids
+        )
+        group_result = job.apply_async()
+        task_ids = [r.id for r in group_result.results]
         return {"ok": True, "queued": len(task_ids), "doc_ids": doc_ids, "task_ids": task_ids}
 
     processed: list[str] = []
