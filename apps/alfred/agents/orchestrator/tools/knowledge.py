@@ -20,7 +20,7 @@ def make_search_kb_tool(zettel_service: Any):
 
     @lc_tool
     def search_kb(query: str, domain_filter: str = "") -> str:
-        """Search the knowledge base for zettels matching a query. Returns JSON with results."""
+        """Search the knowledge base for zettels matching a keyword query. Use this when you have specific keywords to search for. Returns JSON with results."""
         cards = zettel_service.list_cards(
             q=query or None,
             topic=domain_filter or None,
@@ -39,6 +39,33 @@ def make_search_kb_tool(zettel_service: Any):
         return json.dumps({"results": results, "count": len(results)})
 
     return search_kb
+
+
+def make_list_recent_cards_tool(zettel_service: Any):
+    """Create a list_recent_cards tool backed by the given service."""
+
+    @lc_tool
+    def list_recent_cards(topic: str = "", limit: int = 10) -> str:
+        """List recently updated knowledge cards. Use this to browse the knowledge base, answer 'what did I learn', 'show recent cards', or get an overview. Optionally filter by topic. Returns JSON with results."""
+        cards = zettel_service.list_cards(
+            topic=topic or None,
+            sort_by="updated_at",
+            sort_dir="desc",
+            limit=min(limit, 20),
+        )
+        results = [
+            {
+                "zettel_id": c.id,
+                "title": c.title,
+                "summary": (getattr(c, "summary", None) or getattr(c, "content", "") or "")[:200],
+                "topic": getattr(c, "topic", ""),
+                "tags": getattr(c, "tags", []) or [],
+            }
+            for c in cards
+        ]
+        return json.dumps({"results": results, "count": len(results)})
+
+    return list_recent_cards
 
 
 def make_create_zettel_tool(zettel_service: Any):

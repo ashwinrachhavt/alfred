@@ -18,6 +18,7 @@ from alfred.agents.orchestrator.registry import ToolRegistry
 from alfred.agents.orchestrator.tools.knowledge import (
     make_create_zettel_tool,
     make_get_zettel_tool,
+    make_list_recent_cards_tool,
     make_search_kb_tool,
     make_update_zettel_tool,
 )
@@ -33,6 +34,7 @@ def _build_registry(db: Session) -> ToolRegistry:
 
     # Phase 1: Knowledge tools (require DB session)
     registry.register(make_search_kb_tool(zettel_svc))
+    registry.register(make_list_recent_cards_tool(zettel_svc))
     registry.register(make_create_zettel_tool(zettel_svc))
     registry.register(make_get_zettel_tool(zettel_svc))
     registry.register(make_update_zettel_tool(zettel_svc))
@@ -97,7 +99,7 @@ class AgentService:
         lens: str | None = None,
         model: str | None = None,
         note_context: dict | None = None,
-        is_disconnected: Callable[[], bool] | None = None,
+        is_disconnected: Callable[[], Any] | None = None,
         intent: str | None = None,
         intent_args: dict | None = None,
         max_iterations: int = 10,
@@ -159,7 +161,7 @@ class AgentService:
             # Process result messages and yield SSE events
             result_messages = result.get("messages", [])
             for msg in result_messages:
-                if is_disconnected and is_disconnected():
+                if is_disconnected and await is_disconnected():
                     return
 
                 if isinstance(msg, AIMessage):

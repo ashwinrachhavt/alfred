@@ -5,6 +5,7 @@ from __future__ import annotations
 from alfred.agents.orchestrator.tools.knowledge import (
     make_create_zettel_tool,
     make_get_zettel_tool,
+    make_list_recent_cards_tool,
     make_search_kb_tool,
     make_update_zettel_tool,
 )
@@ -58,3 +59,17 @@ def test_update_zettel_not_found(fake_zettel_service):
     tool = make_update_zettel_tool(fake_zettel_service)
     result = tool.invoke({"zettel_id": 999, "title": "Nope"})
     assert "not found" in result.lower()
+
+
+def test_list_recent_cards_returns_all(fake_zettel_service):
+    tool = make_list_recent_cards_tool(fake_zettel_service)
+    result = tool.invoke({})
+    assert "LangGraph Basics" in result
+    assert "Stoic Philosophy" in result
+
+
+def test_list_recent_cards_with_topic_filter(fake_zettel_service):
+    tool = make_list_recent_cards_tool(fake_zettel_service)
+    result = tool.invoke({"topic": "philosophy"})
+    assert "Stoic" in result
+    assert "LangGraph" not in result
