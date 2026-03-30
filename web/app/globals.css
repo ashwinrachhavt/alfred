@@ -329,6 +329,7 @@ body::before {
   background-size: 256px 256px;
   pointer-events: none;
   z-index: 9999;
+  will-change: transform;
 }
 
 /* Ruled line utility */
@@ -517,5 +518,13 @@ body::before {
   }
   to {
     transform: translate3d(0, -50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-arcane-float,
+  .animate-arcane-spin,
+  .animate-atheneum-warp {
+    animation: none !important;
   }
 }
