@@ -53,6 +53,10 @@ class RetrievalMixin:
     """Document retrieval and listing — mixed into DocStorageService."""
 
     session: Any
+    redis_client: Any
+
+    # Implemented on the host dataclass
+    def _bump_semantic_map_version(self) -> None: ...
 
     def get_document_text(self, doc_id: str) -> str | None:
         uid = _parse_uuid(doc_id)
@@ -238,6 +242,8 @@ class RetrievalMixin:
             doc.updated_at = now
             s.add(doc)
             s.commit()
+
+        self._bump_semantic_map_version()
 
         return self.get_document_details(doc_id)
 

@@ -113,15 +113,43 @@ class SemanticMapMixin:
         return items
 
     def _current_semantic_map_version(self) -> str:
-        """Return a lightweight version string for semantic map cache invalidation."""
+        """Return a version string for cache invalidation.
+
+        Checks Redis first for a cached version key (set on document changes).
+        Falls back to DB query only if Redis is unavailable or key is missing.
+        """
+        if self.redis_client is not None:
+            try:
+                cached = self.redis_client.get("semantic_map:version")
+                if cached:
+                    return cached.decode("utf-8") if isinstance(cached, bytes) else cached
+            except Exception:
+                pass
 
         with _session_scope(self.session) as s:
             ts = s.scalar(select(func.max(DocumentRow.updated_at)))
         if isinstance(ts, datetime):
             if ts.tzinfo is None:
                 ts = ts.replace(tzinfo=UTC)
-            return ts.isoformat()
-        return "none"
+            version = ts.isoformat()
+        else:
+            version = "none"
+
+        if self.redis_client is not None:
+            try:
+                self.redis_client.setex("semantic_map:version", 60, version)
+            except Exception:
+                pass
+
+        return version
+
+    def _bump_semantic_map_version(self) -> None:
+        """Invalidate cached semantic map version so next request recomputes."""
+        if self.redis_client is not None:
+            try:
+                self.redis_client.delete("semantic_map:version")
+            except Exception:
+                pass
 
     def _fetch_docs_for_semantic_map(self, *, limit: int) -> list[dict[str, Any]]:
         with _session_scope(self.session) as s:

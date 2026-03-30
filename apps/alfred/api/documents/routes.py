@@ -403,7 +403,7 @@ def list_explorer_documents(
 
 @router.get("/semantic-map", response_model=SemanticMapResponse)
 def get_semantic_map(
-    limit: int = Query(5000, ge=1, le=20_000),
+    limit: int = Query(2000, ge=1, le=20_000),
     refresh: bool = Query(False, description="Force recompute (bypass cache)"),
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> dict:
