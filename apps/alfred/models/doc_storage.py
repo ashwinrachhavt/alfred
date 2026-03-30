@@ -145,6 +145,7 @@ class DocumentRow(SQLModel, table=True):
         sa.Index("ix_documents_topics", "topics", postgresql_using="gin"),
         sa.Index("ix_documents_metadata", "metadata", postgresql_using="gin"),
         sa.Index("ix_documents_tags", "tags", postgresql_using="gin"),
+        sa.Index("ix_documents_pipeline_status", "pipeline_status"),
     )
 
     id: uuid.UUID = Field(
