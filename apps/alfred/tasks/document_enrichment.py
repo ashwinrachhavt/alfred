@@ -16,6 +16,9 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
     Each enriched document is decomposed into 2-10 atomic zettels (one per key concept).
     Each zettel links back to the source document via document_id.
 
+    Auto-created cards get status='draft' so they don't enter the spaced repetition
+    queue until the user reviews and activates them.
+
     Returns comma-separated zettel card IDs if created, None if skipped.
     """
     from alfred.api.dependencies import get_db_session
@@ -31,14 +34,17 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
     if not doc:
         return None
 
-    # Check if zettels already exist for this document (skip if so)
     session = next(get_db_session())
     try:
         zk = ZettelkastenService(session=session)
+
+        # Only skip if auto-created (draft) cards already exist for this document.
+        # Manual cards (status='active') should NOT suppress auto-decomposition.
         existing = zk.list_cards(document_id=doc_id, limit=100)
-        if existing:
-            logger.info("Zettels already exist for document %s (count: %d)", doc_id, len(existing))
-            return ",".join(str(card.id) for card in existing)
+        auto_created = [c for c in existing if c.status == "draft"]
+        if auto_created:
+            logger.info("Auto-created zettels already exist for document %s (count: %d)", doc_id, len(auto_created))
+            return ",".join(str(card.id) for card in auto_created)
 
         # Gather document context
         title = doc.get("title") or "Untitled"
@@ -73,62 +79,57 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
             + (tags[:2] if tags else [])
         ))
 
-        # Try LLM decomposition
-        created_ids = []
-        try:
-            if not cleaned_text or not short_summary:
-                logger.info("Skipping decomposition for %s — no cleaned_text or summary", doc_id)
-                raise ValueError("No content to decompose")
+        created_ids: list[str] = []
 
-            # Build prompt and call LLM
-            prompt = build_decomposition_prompt(
-                title=title,
-                summary=short_summary,
-                cleaned_text=cleaned_text,
-                topics=topics,
-            )
+        # Check if we have enough content for LLM decomposition
+        can_decompose = bool(cleaned_text and short_summary)
 
-            llm = get_chat_model()
-            response = llm.invoke([
-                {"role": "system", "content": "You are a knowledge card generator. Return only valid JSON."},
-                {"role": "user", "content": prompt},
-            ])
-
-            # Parse response
-            raw = response.content if hasattr(response, "content") else str(response)
-            card_dicts = parse_decomposition_response(raw)
-
-            if not card_dicts:
-                logger.warning("LLM decomposition returned no cards for document %s", doc_id)
-                raise ValueError("No cards from decomposition")
-
-            # Create each card
-            for card_dict in card_dicts:
-                # Merge document tags with card-specific tags
-                card_tags = list(set(final_tags + card_dict.get("tags", [])))
-
-                card = zk.create_card(
-                    title=card_dict["title"],
-                    content=card_dict["content"],
-                    tags=card_tags,
-                    topic=final_topic,
-                    source_url=source_url,
-                    document_id=doc_id,
-                    importance=5,
-                    confidence=0.7,
-                    status="active",
+        if can_decompose:
+            try:
+                prompt = build_decomposition_prompt(
+                    title=title,
+                    summary=short_summary,
+                    cleaned_text=cleaned_text,
+                    topics=topics,
                 )
-                created_ids.append(str(card.id))
-                logger.info("Created zettel %s from document %s", card.id, doc_id)
 
-        except Exception as exc:
-            # Fallback: create single zettel from summary
-            logger.warning("LLM decomposition failed for %s: %s — falling back to single card", doc_id, exc)
+                llm = get_chat_model()
+                response = llm.invoke([
+                    {"role": "system", "content": "You are a knowledge card generator. Return only valid JSON."},
+                    {"role": "user", "content": prompt},
+                ])
 
-            if not short_summary:
-                logger.info("Skipping fallback zettel creation for %s — no summary", doc_id)
-                return None
+                raw = response.content if hasattr(response, "content") else str(response)
+                card_dicts = parse_decomposition_response(raw)
 
+                if card_dicts:
+                    for card_dict in card_dicts:
+                        card_tags = list(set(final_tags + card_dict.get("tags", [])))
+                        card = zk.create_card(
+                            title=card_dict["title"],
+                            content=card_dict["content"],
+                            tags=card_tags,
+                            topic=final_topic,
+                            source_url=source_url,
+                            document_id=doc_id,
+                            importance=5,
+                            confidence=0.7,
+                            status="draft",
+                        )
+                        created_ids.append(str(card.id))
+                        logger.info("Created draft zettel %s from document %s", card.id, doc_id)
+                else:
+                    logger.warning("LLM decomposition returned no cards for document %s", doc_id)
+                    can_decompose = False  # fall through to fallback
+
+            except Exception as exc:
+                logger.warning("LLM decomposition failed for %s: %s", doc_id, exc)
+                can_decompose = False  # fall through to fallback
+
+        # Fallback: create single zettel from summary
+        if not created_ids and short_summary:
+            if not can_decompose:
+                logger.info("Falling back to single card for document %s", doc_id)
             card = zk.create_card(
                 title=title,
                 content=short_summary,
@@ -138,10 +139,10 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
                 document_id=doc_id,
                 importance=5,
                 confidence=0.7,
-                status="active",
+                status="draft",
             )
             created_ids.append(str(card.id))
-            logger.info("Created fallback zettel %s from document %s", card.id, doc_id)
+            logger.info("Created fallback draft zettel %s from document %s", card.id, doc_id)
 
         return ",".join(created_ids) if created_ids else None
 

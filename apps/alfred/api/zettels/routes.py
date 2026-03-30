@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 from alfred.api.dependencies import get_db_session
@@ -272,80 +275,39 @@ class TagSuggestionResponse(BaseModel):
 
 @router.post("/suggest-tags", response_model=TagSuggestionResponse)
 def suggest_tags(payload: TagSuggestionRequest) -> TagSuggestionResponse:
-    """Suggest tags for given text content."""
-    # Simple approach: extract key phrases
-    # Use word frequency + topic extraction
-    words = payload.text.lower().split()
-    # Count word frequency, filter common words, return top 5
+    """Suggest tags for given text content using LLM with word-frequency fallback."""
+    from alfred.core.llm_factory import get_chat_model
+
+    _logger = logging.getLogger(__name__)
+
+    try:
+        llm = get_chat_model()
+        response = llm.invoke([
+            {"role": "system", "content": "You suggest concise, lowercase, hyphenated tags for knowledge cards. Return only a JSON array of 3-5 tag strings. No other text."},
+            {"role": "user", "content": f"Suggest tags for this text:\n\n{payload.text[:3000]}"},
+        ])
+
+        import json
+        import re
+
+        raw = response.content if hasattr(response, "content") else str(response)
+        cleaned = re.sub(r"```json\s*", "", raw)
+        cleaned = re.sub(r"```\s*$", "", cleaned).strip()
+        tags = json.loads(cleaned)
+
+        if isinstance(tags, list):
+            return TagSuggestionResponse(tags=[str(t).lower().strip() for t in tags[:5]])
+    except Exception as exc:
+        _logger.warning("LLM tag suggestion failed: %s", exc)
+
+    # Fallback: simple word frequency
     from collections import Counter
 
-    stop_words = {
-        "the",
-        "a",
-        "an",
-        "is",
-        "are",
-        "was",
-        "were",
-        "be",
-        "been",
-        "being",
-        "have",
-        "has",
-        "had",
-        "do",
-        "does",
-        "did",
-        "will",
-        "would",
-        "could",
-        "should",
-        "may",
-        "might",
-        "can",
-        "shall",
-        "to",
-        "of",
-        "in",
-        "for",
-        "on",
-        "with",
-        "at",
-        "by",
-        "from",
-        "as",
-        "into",
-        "through",
-        "during",
-        "before",
-        "after",
-        "above",
-        "below",
-        "between",
-        "and",
-        "but",
-        "or",
-        "not",
-        "no",
-        "this",
-        "that",
-        "these",
-        "those",
-        "it",
-        "its",
-        "they",
-        "them",
-        "their",
-        "we",
-        "our",
-        "you",
-        "your",
-        "he",
-        "she",
-        "his",
-        "her",
-    }
+    words = payload.text.lower().split()
+    stop_words = {"the", "a", "an", "is", "are", "was", "were", "be", "been", "have", "has",
+                  "had", "do", "does", "did", "will", "would", "could", "should", "to", "of",
+                  "in", "for", "on", "with", "at", "by", "from", "as", "and", "but", "or",
+                  "not", "this", "that", "it", "they", "we", "you", "he", "she"}
     filtered = [w for w in words if len(w) > 3 and w not in stop_words and w.isalpha()]
     counter = Counter(filtered)
-    tags = [word for word, _ in counter.most_common(5)]
-    return TagSuggestionResponse(tags=tags)
+    return TagSuggestionResponse(tags=[word for word, _ in counter.most_common(5)])

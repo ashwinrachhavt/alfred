@@ -6,6 +6,30 @@ Conservative approach: only strip very obvious noise patterns.
 
 import re
 
+# Pre-compiled noise patterns (case-insensitive)
+_NOISE_PATTERNS: list[re.Pattern[str]] = [
+    # Cookie banners
+    re.compile(r'^.*(?:accept all cookies|we use cookies|cookie consent|cookie policy|cookies? to improve|cookies? to provide|cookies? to enhance).*$', re.IGNORECASE),
+    # Skip to content links
+    re.compile(r'^.*skip to (?:main )?content.*$', re.IGNORECASE),
+    # Subscribe CTAs
+    re.compile(r'^.*(?:subscribe to (?:our )?newsletter|enter your email.*sign up|sign up now|get (?:weekly|daily) updates).*$', re.IGNORECASE),
+    # Share buttons
+    re.compile(r'^.*(?:share on (?:twitter|facebook|linkedin)|copy link).*$', re.IGNORECASE),
+    # Footer patterns
+    re.compile(r'^©.*(?:all rights reserved|rights reserved).*$', re.IGNORECASE),
+    re.compile(r'^.*all rights reserved\.?$', re.IGNORECASE),
+    re.compile(r'^.*privacy policy.*terms of service.*$', re.IGNORECASE),
+]
+
+_NAV_KEYWORDS = frozenset({
+    'about', 'contact', 'privacy', 'terms', 'policy',
+    'login', 'signup', 'sitemap', 'faq', 'help', 'careers',
+    'accessibility', 'disclaimer', 'legal',
+})
+
+_BLANK_LINE_COLLAPSE = re.compile(r'\n{3,}')
+
 
 def clean_web_content(text: str) -> str:
     """Clean web content by removing common noise patterns.
@@ -23,74 +47,25 @@ def clean_web_content(text: str) -> str:
     lines = text.split('\n')
 
     # Phase 1: Remove specific noise patterns (whole lines only)
-    # Do this FIRST so they don't interfere with navigation detection
-
-    # Cookie banners
-    cookie_patterns = [
-        r'^.*(?:accept all cookies|we use cookies|cookie consent|cookie policy|cookies? to improve|cookies? to provide|cookies? to enhance).*$',
-    ]
-
-    # Skip to content links
-    skip_patterns = [
-        r'^.*skip to (?:main )?content.*$',
-    ]
-
-    # Subscribe CTAs
-    subscribe_patterns = [
-        r'^.*(?:subscribe to (?:our )?newsletter|enter your email.*sign up|sign up now|get (?:weekly|daily) updates).*$',
-    ]
-
-    # Share buttons
-    share_patterns = [
-        r'^.*(?:share on (?:twitter|facebook|linkedin)|copy link).*$',
-    ]
-
-    # Footer patterns (only if the whole line matches)
-    footer_patterns = [
-        r'^©.*(?:all rights reserved|rights reserved).*$',
-        r'^.*all rights reserved\.?$',
-        r'^.*privacy policy.*terms of service.*$',
-    ]
-
-    # Combine all patterns
-    all_patterns = (
-        cookie_patterns +
-        skip_patterns +
-        subscribe_patterns +
-        share_patterns +
-        footer_patterns
-    )
-
     cleaned_lines = []
 
     for line in lines:
         stripped = line.strip()
-        should_remove = False
 
         if not stripped:
             cleaned_lines.append(line)
             continue
 
-        # Check against all patterns (case insensitive)
-        for pattern in all_patterns:
-            if re.match(pattern, stripped, re.IGNORECASE):
-                should_remove = True
-                break
+        should_remove = any(pat.match(stripped) for pat in _NOISE_PATTERNS)
 
         # Check for pipe-separated navigation links
         if not should_remove and '|' in stripped:
             segments = [s.strip() for s in stripped.split('|')]
-            # All segments must be ≤4 words to be considered nav
             if segments and all(len(seg.split()) <= 4 for seg in segments if seg):
-                # Additional check: segments must look like pure navigation links
-                # (each segment is ≤2 words AND 75%+ match nav keywords)
-                nav_keywords = {'about', 'contact', 'privacy', 'terms', 'policy',
-                               'login', 'signup', 'sitemap', 'faq', 'help', 'careers',
-                               'accessibility', 'disclaimer', 'legal'}
                 short_segments = all(len(seg.split()) <= 3 for seg in segments if seg)
                 nav_segments = sum(
                     1 for seg in segments
-                    if seg and any(w.lower() in nav_keywords for w in seg.split())
+                    if seg and any(w.lower() in _NAV_KEYWORDS for w in seg.split())
                 )
                 if short_segments and len(segments) > 0 and nav_segments / len(segments) >= 0.75:
                     should_remove = True
@@ -99,7 +74,6 @@ def clean_web_content(text: str) -> str:
             cleaned_lines.append(line)
 
     # Phase 2: Remove start-of-document navigation cluster
-    # Now that obvious noise is gone, look for nav clusters at the start
     lines = cleaned_lines
     nav_lines_indices = []
     found_real_content = False
@@ -108,11 +82,9 @@ def clean_web_content(text: str) -> str:
         stripped = line.strip()
 
         if not stripped:
-            # Blank line - track but continue
             continue
 
         if not found_real_content:
-            # Check if this looks like navigation (short, no punctuation)
             words = stripped.split()
             is_nav_like = (
                 len(words) <= 3 and
@@ -123,7 +95,6 @@ def clean_web_content(text: str) -> str:
             if is_nav_like:
                 nav_lines_indices.append(i)
             else:
-                # Found substantial content - stop looking for nav
                 found_real_content = True
                 break
         else:
@@ -131,13 +102,11 @@ def clean_web_content(text: str) -> str:
 
     # Remove navigation cluster if we found 4+ nav lines at the start
     if len(nav_lines_indices) >= 4:
-        # Find the first non-blank line after the nav cluster
         last_nav_index = nav_lines_indices[-1]
-        # Skip all lines up to and including the last nav line
         lines = lines[last_nav_index + 1:]
 
     # Phase 3: Collapse excessive blank lines (3+ newlines → 2 newlines)
     text = '\n'.join(lines)
-    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = _BLANK_LINE_COLLAPSE.sub('\n\n', text)
 
     return text.strip()

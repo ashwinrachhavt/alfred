@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { streamSSE } from "@/lib/api/sse";
 import { apiRoutes } from "@/lib/api/routes";
 import { safeGetItem, safeSetItem } from "@/lib/storage";
+import { useAgentStore } from "@/lib/stores/agent-store";
 
 type CanvasAIPanelProps = {
  canvasTitle: string;
@@ -90,6 +91,7 @@ export function CanvasAIPanel({ canvasTitle, onInsertText, onInsertElements, onC
  const abortRef = useRef<AbortController | null>(null);
  const messagesEndRef = useRef<HTMLDivElement>(null);
  const inputRef = useRef<HTMLTextAreaElement>(null);
+ const activeModel = useAgentStore((s) => s.activeModel);
 
  // --- Drag / Resize state ---
  const [pos, setPos] = useState<{ x: number; y: number }>(() => {
@@ -259,7 +261,7 @@ export function CanvasAIPanel({ canvasTitle, onInsertText, onInsertElements, onC
  {
  message:`[Canvas context: "${canvasTitle}"]\n\n${text}`,
  lens: null,
- model: "gpt-5.4",
+ model: activeModel,
  history: messages.slice(-10).map((m) => ({
  role: m.role,
  content: m.content,

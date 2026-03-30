@@ -6,7 +6,6 @@ import {
  Dialog,
  DialogContent,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { useCreateZettel } from "@/features/zettels/mutations";
 import { usePasteDetection } from "@/lib/hooks/use-paste-detection";
 import { apiPostJson } from "@/lib/api/client";

@@ -10,7 +10,7 @@ type ApiZettelCard = {
   title: string;
   content: string | null;
   summary: string | null;
-  tags: string[];
+  tags: string[] | null;
   topic: string | null;
   source_url: string | null;
   document_id: string | null;
