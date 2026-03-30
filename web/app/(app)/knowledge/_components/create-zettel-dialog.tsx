@@ -5,7 +5,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
  Dialog,
  DialogContent,
+ DialogTitle,
 } from "@/components/ui/dialog";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { useCreateZettel } from "@/features/zettels/mutations";
 import { usePasteDetection } from "@/lib/hooks/use-paste-detection";
 import { apiPostJson } from "@/lib/api/client";
@@ -154,6 +156,7 @@ export function CreateZettelDialog({
  return (
    <Dialog open={open} onOpenChange={onOpenChange}>
      <DialogContent className="sm:max-w-[680px] p-0 gap-0 overflow-hidden">
+       <VisuallyHidden><DialogTitle>Create new zettel</DialogTitle></VisuallyHidden>
        {/* Header — minimal */}
        <div className="flex items-center justify-between px-5 pt-4 pb-2">
          <span className="text-sm font-medium text-muted-foreground">New Zettel</span>
