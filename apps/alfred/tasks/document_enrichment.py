@@ -65,13 +65,17 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
     # Check if a zettel already exists for this document
     session = next(get_db_session())
     try:
-        zk = ZettelkastenService(session=session)
-        existing = zk.list_cards(q=None, topic=None, limit=1000)
-        for card in existing:
-            if getattr(card, "document_id", None) == doc_id:
-                logger.info("Zettel already exists for document %s", doc_id)
-                return str(card.id)
+        from sqlmodel import select
+        from alfred.models.zettel import ZettelCard
 
+        existing = session.exec(
+            select(ZettelCard).where(ZettelCard.document_id == doc_id).limit(1)
+        ).first()
+        if existing:
+            logger.info("Zettel already exists for document %s", doc_id)
+            return str(existing.id)
+
+        zk = ZettelkastenService(session=session)
         card = zk.create_card(
             title=title,
             content=short_summary,
