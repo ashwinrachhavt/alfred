@@ -124,7 +124,7 @@ type AgentState = {
   noteContext: NoteContext | null;
 
   // Actions
-  sendMessage: (text: string) => Promise<void>;
+  sendMessage: (text: string, opts?: { intent?: string; intentArgs?: Record<string, unknown> }) => Promise<void>;
   cancelStream: () => void;
   setLens: (lens: string | null) => void;
   setModel: (model: string) => void;
@@ -148,7 +148,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   abortController: null,
   noteContext: null,
 
-  sendMessage: async (text: string) => {
+  sendMessage: async (text: string, opts?: { intent?: string; intentArgs?: Record<string, unknown> }) => {
     const state = get();
 
     // Cancel existing stream if active (cancel + send behavior)
@@ -227,6 +227,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             role: m.role,
             content: m.content,
           })),
+          intent: opts?.intent,
+          intent_args: opts?.intentArgs,
         },
         (event, data) => _handleSSEEvent(event, data, set, get),
         composedSignal,
@@ -390,6 +392,23 @@ function _handleSSEEvent(
         const tools = s.activeToolCalls.map((tc, i) =>
           i === s.activeToolCalls.length - 1
             ? { ...tc, result: data.result as Record<string, unknown>, status: "done" as const }
+            : tc,
+        );
+        const msgs = s.messages.map((m, i) =>
+          i === s.messages.length - 1 && m.role === "assistant"
+            ? { ...m, toolCalls: [...tools] }
+            : m,
+        );
+        return { activeToolCalls: tools, messages: msgs };
+      });
+      break;
+    }
+
+    case "tool_end": {
+      set((s) => {
+        const tools = s.activeToolCalls.map((tc, i) =>
+          i === s.activeToolCalls.length - 1
+            ? { ...tc, result: data as Record<string, unknown>, status: "done" as const }
             : tc,
         );
         const msgs = s.messages.map((m, i) =>
