@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import {
@@ -17,10 +17,13 @@ import {
   Square,
   X,
 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "@/components/ui/button";
 import {
   useAgentStore,
+  useToolCallStore,
+  selectOrderedMessages,
   PHILOSOPHICAL_LENSES,
   type AgentMessage,
   type ArtifactCard,
@@ -55,13 +58,13 @@ const SUGGESTIONS: Record<string, string[]> = {
 export function AiPanel() {
   const { aiPanelOpen, toggleAiPanel } = useShellStore();
   const {
-    messages,
+    messagesById,
+    messageOrder,
     threads,
     activeThreadId,
     isStreaming,
     activeLens,
     activeModel,
-    activeToolCalls,
     noteContext,
     sendMessage,
     cancelStream,
@@ -70,7 +73,34 @@ export function AiPanel() {
     loadThreads,
     createThread,
     clearMessages,
-  } = useAgentStore();
+  } = useAgentStore(
+    useShallow((s) => ({
+      messagesById: s.messagesById,
+      messageOrder: s.messageOrder,
+      threads: s.threads,
+      activeThreadId: s.activeThreadId,
+      isStreaming: s.isStreaming,
+      activeLens: s.activeLens,
+      activeModel: s.activeModel,
+      noteContext: s.noteContext,
+      sendMessage: s.sendMessage,
+      cancelStream: s.cancelStream,
+      setLens: s.setLens,
+      setModel: s.setModel,
+      loadThreads: s.loadThreads,
+      createThread: s.createThread,
+      clearMessages: s.clearMessages,
+    })),
+  );
+
+  const messages = useMemo(
+    () => selectOrderedMessages({ messagesById, messageOrder }),
+    [messagesById, messageOrder],
+  );
+
+  const { activeToolCalls } = useToolCallStore(
+    useShallow((s) => ({ activeToolCalls: s.activeToolCalls })),
+  );
 
   const pathname = usePathname();
   const isOnNotes = pathname?.startsWith("/notes");
@@ -81,13 +111,17 @@ export function AiPanel() {
   const [editingZettelId, setEditingZettelId] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const lastThreadLoadRef = useRef(0);
 
   useEffect(() => {
-    if (aiPanelOpen) {
+    if (!aiPanelOpen) return;
+    const now = Date.now();
+    if (now - lastThreadLoadRef.current > 60_000) {
       loadThreads();
-      // Focus input when panel opens
-      setTimeout(() => inputRef.current?.focus(), 200);
+      lastThreadLoadRef.current = now;
     }
+    // Focus input when panel opens
+    setTimeout(() => inputRef.current?.focus(), 200);
   }, [aiPanelOpen, loadThreads]);
 
   useEffect(() => {
