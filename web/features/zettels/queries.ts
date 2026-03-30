@@ -2,7 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 
 import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
-import { listZettelLinks, listZettelsByDocument } from "@/lib/api/zettels";
+import {
+  listZettelCards as apiListZettelCards,
+  listZettelLinks,
+  listZettelsByDocument,
+  listZettelTopics,
+  listZettelTags,
+  type ZettelFilterParams,
+} from "@/lib/api/zettels";
 import type { Zettel, BloomLevel } from "@/app/(app)/knowledge/_components/mock-data";
 
 type ApiZettelCard = {
@@ -62,12 +69,12 @@ function mapApiToZettel(card: ApiZettelCard, connections: string[]): Zettel {
   };
 }
 
-export function useZettelCards() {
+export function useZettelCards(filters?: ZettelFilterParams) {
   return useQuery({
-    queryKey: ["zettels", "cards"],
+    queryKey: ["zettels", "cards", filters || null],
     queryFn: async () => {
       const [cards, graph] = await Promise.all([
-        apiFetch<ApiZettelCard[]>(apiRoutes.zettels.cards, { cache: "no-store" }),
+        apiListZettelCards(filters),
         apiFetch<GraphSummary>(apiRoutes.zettels.graph, { cache: "no-store" }),
       ]);
 
@@ -77,6 +84,22 @@ export function useZettelCards() {
         .map((c) => mapApiToZettel(c, connectionMap.get(String(c.id)) || []));
     },
     staleTime: 10_000,
+  });
+}
+
+export function useZettelTopics() {
+  return useQuery({
+    queryKey: ["zettel-topics"],
+    queryFn: () => listZettelTopics(),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useZettelTags() {
+  return useQuery({
+    queryKey: ["zettel-tags"],
+    queryFn: () => listZettelTags(),
+    staleTime: 5 * 60 * 1000,
   });
 }
 

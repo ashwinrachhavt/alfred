@@ -11,7 +11,6 @@ from sqlmodel import select
 from alfred.core.database import SessionLocal
 from alfred.models.doc_storage import DocumentRow
 from alfred.models.taxonomy import TaxonomyNodeRow
-from alfred.models.zettel import ZettelCard
 from alfred.schemas.taxonomy import (
     Classification,
     CreateTaxonomyNodeRequest,
@@ -21,7 +20,6 @@ from alfred.schemas.taxonomy import (
     to_display_name,
     to_slug,
 )
-from alfred.services.taxonomy_canonicalizer import find_canonical_match
 
 logger = logging.getLogger(__name__)
 
@@ -148,61 +146,42 @@ class TaxonomyService:
     ) -> TaxonomyNodeRow:
         """Get or create a taxonomy node.
 
-        Uses smart canonicalization to prevent duplicates. Before creating a new node,
-        checks for exact matches, synonyms, plural/singular variants, and fuzzy matches
-        among existing nodes at the same level.
-
         Args:
             slug: Node slug (normalized)
             level: Hierarchy level (1-3)
             parent_slug: Parent node slug (required for level > 1)
 
         Returns:
-            TaxonomyNodeRow instance (existing or newly created)
+            TaxonomyNodeRow instance
         """
         with SessionLocal() as session:
-            # Try to get existing node by exact slug
+            # Try to get existing node
             node = session.exec(
                 select(TaxonomyNodeRow).where(TaxonomyNodeRow.slug == slug)
             ).first()
 
-            if node is not None:
-                return node
-
-            # Try canonical matching before creating new node
-            # Get all existing slugs at the same level
-            existing_nodes = session.exec(
-                select(TaxonomyNodeRow).where(TaxonomyNodeRow.level == level)
-            ).all()
-            existing_slugs = [n.slug for n in existing_nodes]
-
-            canonical = find_canonical_match(slug, existing_slugs)
-            if canonical:
-                # Found a canonical match, return the existing node
-                canonical_node = session.exec(
-                    select(TaxonomyNodeRow).where(TaxonomyNodeRow.slug == canonical)
-                ).first()
-                if canonical_node:
-                    logger.info(
-                        "Canonicalized '%s' to existing node '%s' (level %s)",
-                        slug,
-                        canonical,
-                        level,
+            if node is None:
+                # Create new node (handle race condition with duplicate slugs)
+                try:
+                    node = TaxonomyNodeRow(
+                        slug=slug,
+                        display_name=to_display_name(slug),
+                        level=level,
+                        parent_slug=parent_slug,
+                        sort_order=0,
                     )
-                    return canonical_node
-
-            # No match found, create new node
-            node = TaxonomyNodeRow(
-                slug=slug,
-                display_name=to_display_name(slug),
-                level=level,
-                parent_slug=parent_slug,
-                sort_order=0,
-            )
-            session.add(node)
-            session.commit()
-            session.refresh(node)
-            logger.info("Created taxonomy node: %s (level %s)", slug, level)
+                    session.add(node)
+                    session.commit()
+                    session.refresh(node)
+                    logger.info("Created taxonomy node: %s (level %s)", slug, level)
+                except Exception:
+                    session.rollback()
+                    # Re-fetch — another worker/request may have created it
+                    node = session.exec(
+                        select(TaxonomyNodeRow).where(TaxonomyNodeRow.slug == slug)
+                    ).first()
+                    if node is None:
+                        raise
 
             return node
 
@@ -264,26 +243,18 @@ class TaxonomyService:
             else:
                 nodes = session.exec(stmt).all()
 
-            # Build tree with real counts
-            zettel_counts = self._count_zettels_per_node()
-            return self._build_tree(list(nodes), zettel_counts)
+            # Build tree
+            return self._build_tree(list(nodes))
 
-    def _build_tree(
-        self,
-        nodes: list[TaxonomyNodeRow],
-        zettel_counts: dict[str, int] | None = None,
-    ) -> list[TaxonomyTreeNode]:
+    def _build_tree(self, nodes: list[TaxonomyNodeRow]) -> list[TaxonomyTreeNode]:
         """Build nested tree structure from flat list of nodes.
 
         Args:
             nodes: Flat list of TaxonomyNodeRow instances
-            zettel_counts: Optional map of slug -> zettel count
 
         Returns:
             List of root-level TaxonomyTreeNode instances with nested children
         """
-        counts = zettel_counts or {}
-
         # Create lookup map
         node_map: dict[str, TaxonomyTreeNode] = {}
         for node in nodes:
@@ -291,7 +262,7 @@ class TaxonomyService:
                 slug=node.slug,
                 display_name=node.display_name,
                 level=node.level,
-                doc_count=counts.get(node.slug, 0),
+                doc_count=0,  # TODO: compute from documents
                 children=[],
             )
 
@@ -304,15 +275,6 @@ class TaxonomyService:
                 parent.children.append(tree_node)
             else:
                 root_nodes.append(tree_node)
-
-        # Roll up child counts to parents
-        def _rollup(tree_node: TaxonomyTreeNode) -> int:
-            child_total = sum(_rollup(c) for c in tree_node.children)
-            tree_node.doc_count += child_total
-            return tree_node.doc_count
-
-        for root in root_nodes:
-            _rollup(root)
 
         return root_nodes
 
@@ -459,113 +421,14 @@ class TaxonomyService:
             )
             return {"deleted_slug": slug, "children_reassigned": children_count}
 
-    def _propagate_classification_to_zettels(
-        self,
-        session,
-        doc_id: str,
-        classification: Classification,
-    ) -> int:
-        """Update all zettels linked to a document with its taxonomy classification.
-
-        Returns number of zettels updated.
-        """
-        zettels = session.exec(
-            select(ZettelCard).where(ZettelCard.document_id == doc_id)
-        ).all()
-
-        if not zettels:
-            return 0
-
-        domain = classification.domain
-        subdomain = classification.subdomain
-
-        new_topic = domain.slug if domain else None
-        new_tags = [t for t in [
-            domain.slug if domain else None,
-            subdomain.slug if subdomain else None,
-            *[mt.slug for mt in (classification.microtopics or [])[:3]],
-        ] if t]
-
-        count = 0
-        for zettel in zettels:
-            existing_tags = set(zettel.tags or [])
-            zettel.topic = new_topic
-            zettel.tags = list(set(new_tags) | existing_tags)
-            session.add(zettel)
-            count += 1
-
-        return count
-
-    def _classify_standalone_zettels(self, batch_size: int = 10) -> int:
-        """Classify zettels that have no document_id using their own content."""
-        classified_count = 0
-
-        with SessionLocal() as session:
-            offset = 0
-            while True:
-                batch = session.exec(
-                    select(ZettelCard)
-                    .where(
-                        (ZettelCard.document_id.is_(None))
-                        | (ZettelCard.document_id == "")
-                    )
-                    .where(ZettelCard.status == "active")
-                    .offset(offset)
-                    .limit(batch_size)
-                ).all()
-
-                if not batch:
-                    break
-
-                for zettel in batch:
-                    try:
-                        parts = [zettel.title or ""]
-                        if zettel.content:
-                            parts.append(zettel.content)
-                        if zettel.summary:
-                            parts.append(zettel.summary)
-                        text = " ".join(p.strip() for p in parts if p and p.strip())
-
-                        if not text.strip():
-                            continue
-
-                        classification = self.classify_and_register(text)
-                        if classification:
-                            domain = classification.domain
-                            subdomain = classification.subdomain
-
-                            new_topic = domain.slug if domain else None
-                            new_tags = [t for t in [
-                                domain.slug if domain else None,
-                                subdomain.slug if subdomain else None,
-                                *[mt.slug for mt in (classification.microtopics or [])[:3]],
-                            ] if t]
-
-                            existing_tags = set(zettel.tags or [])
-                            zettel.topic = new_topic
-                            zettel.tags = list(set(new_tags) | existing_tags)
-                            session.add(zettel)
-                            classified_count += 1
-
-                    except Exception as exc:
-                        logger.warning(
-                            "Failed to classify standalone zettel %s: %s",
-                            zettel.id, exc,
-                        )
-
-                session.commit()
-                offset += batch_size
-
-        return classified_count
-
     def reclassify_all(self, batch_size: int = 10) -> dict[str, int]:
-        """Iterate all documents, classify each, store result, and propagate to zettels.
+        """Iterate all documents, classify each, store result.
 
-        Also classifies standalone zettels (no document_id) directly.
+        Args:
+            batch_size: Number of documents to process per batch
 
         Returns:
-            Stats dict with counts: total, classified, failed, skipped,
-            zettels_updated, standalone_classified
+            Stats dict with counts: total, classified, failed, skipped
         """
         if self._extraction_service is None:
             raise RuntimeError("ExtractionService required for reclassification")
@@ -575,14 +438,14 @@ class TaxonomyService:
             "classified": 0,
             "failed": 0,
             "skipped": 0,
-            "zettels_updated": 0,
-            "standalone_classified": 0,
         }
 
         with SessionLocal() as session:
-            total = session.exec(select(DocumentRow)).all()
-            stats["total"] = len(total)
+            stats["total"] = session.exec(
+                select(func.count()).select_from(DocumentRow)
+            ).one()
 
+            # Process in batches
             offset = 0
             while True:
                 batch = session.exec(
@@ -594,8 +457,10 @@ class TaxonomyService:
 
                 for doc in batch:
                     try:
+                        # Get text to classify (cleaned_text or summary dict's text)
                         text = doc.cleaned_text or ""
                         if not text.strip() and doc.summary:
+                            # Try to extract text from summary dict
                             if isinstance(doc.summary, dict):
                                 text = doc.summary.get("text", "") or doc.summary.get("summary", "")
 
@@ -603,65 +468,30 @@ class TaxonomyService:
                             stats["skipped"] += 1
                             continue
 
+                        # Classify
                         classification = self.classify_and_register(text)
                         if classification:
+                            # Store in document
                             doc.classification = classification.model_dump()
                             session.add(doc)
                             stats["classified"] += 1
-
-                            # Propagate to linked zettels
-                            updated = self._propagate_classification_to_zettels(
-                                session, doc.id, classification,
-                            )
-                            stats["zettels_updated"] += updated
                         else:
                             stats["failed"] += 1
 
                     except Exception as exc:
                         logger.warning("Failed to classify doc %s: %s", doc.id, exc)
+                        session.rollback()
                         stats["failed"] += 1
 
-                session.commit()
+                # Commit batch
+                try:
+                    session.commit()
+                except Exception:
+                    session.rollback()
                 offset += batch_size
-
-        # Phase 2: classify standalone zettels (no document_id)
-        stats["standalone_classified"] = self._classify_standalone_zettels(batch_size)
 
         logger.info("Reclassification complete: %s", stats)
         return stats
-
-    def _count_zettels_per_node(self) -> dict[str, int]:
-        """Count zettels associated with each taxonomy node slug.
-
-        Counts by matching zettel.topic (domain) and zettel.tags (subdomain/microtopics).
-        """
-        counts: dict[str, int] = {}
-
-        with SessionLocal() as session:
-            # Count by topic (domain-level)
-            topic_counts = session.exec(
-                select(ZettelCard.topic, func.count(ZettelCard.id))
-                .where(ZettelCard.topic.isnot(None))
-                .where(ZettelCard.status == "active")
-                .group_by(ZettelCard.topic)
-            ).all()
-            for topic_slug, count in topic_counts:
-                if topic_slug:
-                    counts[topic_slug] = count
-
-            # Count by tags (subdomain/microtopic level) — scan active zettels
-            zettels = session.exec(
-                select(ZettelCard)
-                .where(ZettelCard.status == "active")
-                .where(ZettelCard.tags.isnot(None))
-            ).all()
-            for zettel in zettels:
-                for tag in (zettel.tags or []):
-                    # Skip domain-level tags (already counted above via topic)
-                    if tag and tag != zettel.topic:
-                        counts[tag] = counts.get(tag, 0) + 1
-
-        return counts
 
 
 __all__ = ["TaxonomyService", "DOMAIN_SLUG_MAP"]

@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AlertCircle, BookOpen, Loader2, Plus, Sparkles as SparklesIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useZettelCards } from "@/features/zettels/queries";
+import { useZettelCards, useZettelTopics, useZettelTags } from "@/features/zettels/queries";
 import { getDueCount } from "./mock-data";
+import { FilterBar, type ZettelFilters } from "./filter-bar";
 import { ViewToolbar, type ViewMode } from "./view-toolbar";
 import { ZettelCard } from "./zettel-card";
 import { ZettelTable } from "./zettel-table";
@@ -77,7 +78,7 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
 
 export function KnowledgeHub() {
  const [activeView, setActiveView] = useState<ViewMode>("cards");
- const [search, setSearch] = useState("");
+ const [filters, setFilters] = useState<ZettelFilters>({});
  const [selectedId, setSelectedId] = useState<string | null>(null);
  const [pulsingId, setPulsingId] = useState<string | null>(null);
  const [showCreate, setShowCreate] = useState(false);
@@ -85,28 +86,20 @@ export function KnowledgeHub() {
 
  const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
- const { data: allZettels = [], isLoading, isError, refetch } = useZettelCards();
-
- const filtered = useMemo(() => {
- if (!search.trim()) return allZettels;
- const q = search.toLowerCase();
- return allZettels.filter(
- (z) =>
- z.title.toLowerCase().includes(q) ||
- z.tags.some((t) => t.toLowerCase().includes(q)) ||
- z.summary.toLowerCase().includes(q),
- );
- }, [search, allZettels]);
+ // Server-side allZettels data
+ const { data: allZettels = [], isLoading, isError, refetch } = useZettelCards(filters);
+ const { data: availableTopics = [] } = useZettelTopics();
+ const { data: availableTags = [] } = useZettelTags();
 
  const selectedZettel = selectedId ? allZettels.find((z) => z.id === selectedId) ?? null : null;
  const dueCount = getDueCount(allZettels);
 
- // Close detail panel if selected zettel gets filtered out
+ // Close detail panel if selected zettel gets allZettels out
  useEffect(() => {
- if (selectedId && !filtered.some((z) => z.id === selectedId) && search) {
+ if (selectedId && !allZettels.some((z) => z.id === selectedId) && (filters.q || filters.topic || filters.tags?.length)) {
  setSelectedId(null);
  }
- }, [filtered, selectedId, search]);
+ }, [allZettels, selectedId, filters]);
 
  const handleSelectZettel = useCallback((id: string) => {
  setSelectedId(id);
@@ -130,26 +123,30 @@ export function KnowledgeHub() {
  }
  }, []);
 
- // Keyboard navigation for cards view
+ // Keyboard navigation
  const handleKeyDown = useCallback(
  (e: React.KeyboardEvent) => {
- if (activeView !== "cards" || filtered.length === 0) return;
+ // Escape deselects in ALL views
+ if (e.key === "Escape") {
+ setSelectedId(null);
+ return;
+ }
 
- const currentIndex = selectedId ? filtered.findIndex((z) => z.id === selectedId) : -1;
+ // Arrow navigation for cards view only
+ if (activeView !== "cards" || allZettels.length === 0) return;
+ const currentIndex = selectedId ? allZettels.findIndex((z) => z.id === selectedId) : -1;
 
  if (e.key === "ArrowRight" || e.key === "ArrowDown") {
  e.preventDefault();
- const next = Math.min(currentIndex + 1, filtered.length - 1);
- handleSelectZettel(filtered[next].id);
+ const next = Math.min(currentIndex + 1, allZettels.length - 1);
+ handleSelectZettel(allZettels[next].id);
  } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
  e.preventDefault();
  const prev = Math.max(currentIndex - 1, 0);
- handleSelectZettel(filtered[prev].id);
- } else if (e.key === "Escape") {
- setSelectedId(null);
+ handleSelectZettel(allZettels[prev].id);
  }
  },
- [activeView, filtered, selectedId, handleSelectZettel],
+ [activeView, allZettels, selectedId, handleSelectZettel],
  );
 
  return (
@@ -195,8 +192,16 @@ export function KnowledgeHub() {
  <ViewToolbar
  activeView={activeView}
  onViewChange={setActiveView}
- search={search}
- onSearchChange={setSearch}
+ search={filters.q || ""}
+ onSearchChange={(v) => setFilters((f) => ({ ...f, q: v || undefined }))}
+ />
+
+ {/* Filter bar */}
+ <FilterBar
+ filters={filters}
+ onFiltersChange={setFilters}
+ availableTopics={availableTopics}
+ availableTags={availableTags}
  />
 
  {/* Content area */}
@@ -229,7 +234,7 @@ export function KnowledgeHub() {
  <>
  {activeView === "cards" && (
  <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
- {filtered.map((z) => (
+ {allZettels.map((z) => (
  <ZettelCard
  key={z.id}
  ref={(el) => setCardRef(z.id, el)}
@@ -244,7 +249,7 @@ export function KnowledgeHub() {
 
  {activeView === "table" && (
  <ZettelTable
- zettels={filtered}
+ zettels={allZettels}
  selectedId={selectedId}
  onSelect={(id) => setSelectedId(selectedId === id ? null : id)}
  />
@@ -253,7 +258,7 @@ export function KnowledgeHub() {
  {activeView === "graph" && (
  <div className="h-[500px]">
  <ZettelGraph
- zettels={filtered}
+ zettels={allZettels}
  selectedId={selectedId}
  onSelect={(id) => setSelectedId(selectedId === id ? null : id)}
  />
@@ -262,17 +267,17 @@ export function KnowledgeHub() {
 
  {activeView === "timeline" && (
  <ZettelTimeline
- zettels={filtered}
+ zettels={allZettels}
  selectedId={selectedId}
- onSelect={handleSelectZettel}
+ onSelect={(id) => setSelectedId(selectedId === id ? null : id)}
  />
  )}
 
- {filtered.length === 0 && search && (
+ {allZettels.length === 0 && (filters.q || filters.topic || filters.tags?.length || filters.importance_min) && (
  <div className="py-20 text-center">
  <p className="text-xl text-muted-foreground">No matches</p>
  <p className="mt-2 text-xs text-[var(--alfred-text-tertiary)]">
- Try a different search term
+ Try adjusting your filters
  </p>
  </div>
  )}

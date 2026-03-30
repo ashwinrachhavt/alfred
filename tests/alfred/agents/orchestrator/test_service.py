@@ -65,8 +65,9 @@ async def test_stream_turn_yields_tool_events():
 @pytest.mark.asyncio
 async def test_stream_turn_intent_fast_path():
     """Intent with a known tool mapping should bypass the graph and call the tool directly."""
-    from alfred.services.agent.service import AgentService
     import json
+
+    from alfred.services.agent.service import AgentService
 
     mock_registry = MagicMock()
     mock_registry.tools = {"summarize_content": MagicMock()}

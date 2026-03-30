@@ -57,6 +57,8 @@ export const apiRoutes = {
     suggestTags: "/api/zettels/suggest-tags",
     graph: "/api/zettels/graph",
     reviewsDue: "/api/zettels/reviews/due",
+    topics: "/api/zettels/topics",
+    tags: "/api/zettels/tags",
   },
   pipeline: {
     replay: (docId: string) => `/api/pipeline/${docId}/replay`,

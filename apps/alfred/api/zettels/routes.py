@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import logging
-
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
-from sqlmodel import Session
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlmodel import Session, select
 
 from alfred.api.dependencies import get_db_session
-from alfred.models.zettel import ZettelReview
+from alfred.models.zettel import ZettelCard, ZettelReview
 from alfred.schemas.zettel import (
     AIZettelGenerateRequest,
     BulkUpdateResult,
@@ -54,14 +51,53 @@ def list_cards(
     q: str | None = None,
     topic: str | None = None,
     tag: str | None = None,
+    tags: list[str] | None = Query(None),
     document_id: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    importance_min: int | None = None,
+    card_status: str | None = Query("active", alias="status"),
     limit: int = 50,
     skip: int = 0,
     session: Session = Depends(get_db_session),
 ) -> list[ZettelCardOut]:
+    all_tags = list(tags or [])
+    if tag and tag not in all_tags:
+        all_tags.append(tag)
     svc = ZettelkastenService(session)
-    cards = svc.list_cards(q=q, topic=topic, tag=tag, document_id=document_id, limit=limit, skip=skip)
+    cards = svc.list_cards(
+        q=q, topic=topic, tags=all_tags or None,
+        document_id=document_id, sort_by=sort_by, sort_dir=sort_dir,
+        importance_min=importance_min, status=card_status,
+        limit=limit, skip=skip,
+    )
     return [_card_out(c) for c in cards]
+
+
+@router.get("/topics", response_model=list[str])
+def get_topics(session: Session = Depends(get_db_session)) -> list[str]:
+    results = session.exec(
+        select(ZettelCard.topic)
+        .where(ZettelCard.topic.isnot(None))  # type: ignore[union-attr]
+        .where(ZettelCard.status == "active")
+        .distinct()
+        .order_by(ZettelCard.topic)
+    ).all()
+    return [t for t in results if t]
+
+
+@router.get("/tags", response_model=list[str])
+def get_tags(session: Session = Depends(get_db_session)) -> list[str]:
+    cards = session.exec(
+        select(ZettelCard.tags)
+        .where(ZettelCard.tags.isnot(None))  # type: ignore[union-attr]
+        .where(ZettelCard.status == "active")
+    ).all()
+    all_tags: set[str] = set()
+    for tags_list in cards:
+        if isinstance(tags_list, list):
+            all_tags.update(t for t in tags_list if t)
+    return sorted(all_tags)
 
 
 @router.post("/cards/bulk", response_model=dict, status_code=status.HTTP_201_CREATED)
@@ -261,52 +297,3 @@ def complete_review(
         raise HTTPException(status_code=404, detail="Review not found")
     updated = svc.complete_review(review=review, score=payload.score)
     return _review_out(updated)
-
-
-class TagSuggestionRequest(BaseModel):
-    text: str = Field(..., min_length=10, max_length=10000)
-
-
-class TagSuggestionResponse(BaseModel):
-    tags: list[str]
-
-
-@router.post("/suggest-tags", response_model=TagSuggestionResponse)
-def suggest_tags(payload: TagSuggestionRequest) -> TagSuggestionResponse:
-    """Suggest tags for given text content using LLM with word-frequency fallback."""
-    from alfred.core.llm_factory import get_chat_model
-
-    _logger = logging.getLogger(__name__)
-
-    try:
-        llm = get_chat_model()
-        response = llm.invoke([
-            {"role": "system", "content": "You suggest concise, lowercase, hyphenated tags for knowledge cards. Return only a JSON array of 3-5 tag strings. No other text."},
-            {"role": "user", "content": f"Suggest tags for this text:\n\n{payload.text[:3000]}"},
-        ])
-
-        import json
-        import re
-
-        raw = response.content if hasattr(response, "content") else str(response)
-        cleaned = re.sub(r"```json\s*", "", raw)
-        cleaned = re.sub(r"```\s*$", "", cleaned).strip()
-        tags = json.loads(cleaned)
-
-        if isinstance(tags, list):
-            return TagSuggestionResponse(tags=[str(t).lower().strip() for t in tags[:5]])
-    except Exception as exc:
-        _logger.warning("LLM tag suggestion failed: %s", exc)
-
-    # Fallback: simple word frequency
-    from collections import Counter
-
-    words = payload.text.lower().split()
-    stop_words = {"the", "a", "an", "is", "are", "was", "were", "be", "been", "have", "has",
-                  "had", "do", "does", "did", "will", "would", "could", "should", "to", "of",
-                  "in", "for", "on", "with", "at", "by", "from", "as", "and", "but", "or",
-                  "not", "this", "that", "it", "they", "we", "you", "he", "she"}
-    min_word_len = 4
-    filtered = [w for w in words if len(w) >= min_word_len and w not in stop_words and w.isalpha()]
-    counter = Counter(filtered)
-    return TagSuggestionResponse(tags=[word for word, _ in counter.most_common(5)])
