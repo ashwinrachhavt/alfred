@@ -59,13 +59,10 @@ def build_writer_graph():
             return {"output": ws._stub_output(req, preset)}
 
         model_name = settings.writer_model
-        temperature = (
-            float(req.temperature)
-            if req.temperature is not None
-            else float(settings.writer_temperature)
-        )
+        # NOTE: temperature is now always cfg.llm_temperature (removed from cache key)
+        # Per-request temperature customization is no longer supported
         chat = get_chat_model(
-            provider=settings.llm_provider, model=model_name, temperature=temperature
+            provider=settings.llm_provider, model=model_name
         )
 
         sys = load_prompt("writer", "system.md")

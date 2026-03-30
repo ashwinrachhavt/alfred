@@ -94,6 +94,7 @@ class LLMService:
                 model=model,
                 messages=messages,
                 temperature=temperature,
+                timeout=30,
             )
             return resp.choices[0].message.content or ""
 
@@ -128,6 +129,7 @@ class LLMService:
                 model=model,
                 messages=messages,
                 temperature=temperature,
+                timeout=30,
             )
             return resp.choices[0].message.content or ""
 
@@ -167,6 +169,7 @@ class LLMService:
                 messages=messages,
                 temperature=temperature,
                 stream=True,
+                timeout=30,
             )
             for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content:
@@ -242,6 +245,7 @@ class LLMService:
                 {"role": "user", "content": "\n".join(ctx_parts)},
             ],
             temperature=0.2,
+            timeout=30,
         )
         return (resp.choices[0].message.content or "").strip()
 
@@ -357,6 +361,7 @@ class LLMService:
                     "strict": True,
                 },
             },
+            timeout=30,
         )
         raw = resp.choices[0].message.content
         return schema.model_validate_json(raw or "{}")
@@ -457,6 +462,7 @@ class LLMService:
                     "strict": True,
                 },
             },
+            timeout=30,
         )
         raw = resp.choices[0].message.content
         return schema.model_validate_json(raw or "{}")
