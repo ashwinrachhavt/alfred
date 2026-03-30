@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, type ReactNode } from "react";
 import { ChevronRight, RefreshCw, FolderTree, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -383,6 +383,8 @@ function TreeNode({
 function ReclassifyButton() {
  const { mutate, isPending } = useReclassifyAll();
  const [open, setOpen] = useState(false);
+ const [mounted, setMounted] = useState(false);
+ useEffect(() => setMounted(true), []);
 
  const handleConfirm = useCallback(() => {
  setOpen(false);
@@ -395,6 +397,15 @@ function ReclassifyButton() {
  },
  });
  }, [mutate]);
+
+ if (!mounted) {
+ return (
+ <Button size="sm" variant="ghost" className="text-xs gap-1.5">
+ <RefreshCw className="size-3" />
+ Reclassify All
+ </Button>
+ );
+ }
 
  return (
  <Dialog open={open} onOpenChange={setOpen}>
