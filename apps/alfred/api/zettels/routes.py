@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from alfred.api.dependencies import get_db_session
-from alfred.models.zettel import ZettelReview
+from alfred.models.zettel import ZettelCard, ZettelReview
 from alfred.schemas.zettel import (
     AIZettelGenerateRequest,
     BulkUpdateResult,
@@ -84,8 +84,15 @@ def bulk_update_cards(
     updated: list[int] = []
     missing: list[int] = []
 
+    # Batch-fetch all cards in one query
+    requested_ids = [patch.id for patch in payload]
+    rows = session.exec(
+        select(ZettelCard).where(ZettelCard.id.in_(requested_ids))
+    ).all()
+    cards_by_id = {card.id: card for card in rows}
+
     for patch in payload:
-        card = svc.get_card(patch.id)
+        card = cards_by_id.get(patch.id)
         if not card:
             missing.append(patch.id)
             continue
