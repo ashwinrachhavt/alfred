@@ -1,9 +1,9 @@
 "use client";
 
 import {
-  MarkdownNotesEditor,
-  type MarkdownNotesEditorHandle,
-  type MarkdownNotesEditorProps,
+ MarkdownNotesEditor,
+ type MarkdownNotesEditorHandle,
+ type MarkdownNotesEditorProps,
 } from "@/components/editor/markdown-notes-editor";
 
 export type SystemDesignNotesEditorHandle = MarkdownNotesEditorHandle;

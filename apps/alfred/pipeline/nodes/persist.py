@@ -19,6 +19,14 @@ def persist(state: DocumentPipelineState) -> dict[str, Any]:
     """Write enrichment, classification, and chunks back to DocumentRow."""
     doc_id = state["doc_id"]
     svc = _get_doc_storage()
+    errors = state.get("errors", [])
+
+    # If the pipeline flagged errors (e.g. content was a traceback), mark as
+    # error and skip writing bogus enrichment data.
+    if errors:
+        svc.update_document_enrichment(doc_id, {"pipeline_status": "error"})
+        logger.warning("Pipeline for %s ended with errors, marked as error: %s", doc_id, errors)
+        return {"stage": "persist"}
 
     enrichment = state.get("enrichment", {})
     classification = state.get("classification", {})

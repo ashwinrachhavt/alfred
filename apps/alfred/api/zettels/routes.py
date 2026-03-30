@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlmodel import Session
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlmodel import Session, select
 
 from alfred.api.dependencies import get_db_session
-from alfred.models.zettel import ZettelReview
+from alfred.models.zettel import ZettelCard, ZettelReview
 from alfred.schemas.zettel import (
     AIZettelGenerateRequest,
     BulkUpdateResult,
@@ -51,14 +51,53 @@ def list_cards(
     q: str | None = None,
     topic: str | None = None,
     tag: str | None = None,
+    tags: list[str] | None = Query(None),
     document_id: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    importance_min: int | None = None,
+    card_status: str | None = Query("active", alias="status"),
     limit: int = 50,
     skip: int = 0,
     session: Session = Depends(get_db_session),
 ) -> list[ZettelCardOut]:
+    all_tags = list(tags or [])
+    if tag and tag not in all_tags:
+        all_tags.append(tag)
     svc = ZettelkastenService(session)
-    cards = svc.list_cards(q=q, topic=topic, tag=tag, document_id=document_id, limit=limit, skip=skip)
+    cards = svc.list_cards(
+        q=q, topic=topic, tags=all_tags or None,
+        document_id=document_id, sort_by=sort_by, sort_dir=sort_dir,
+        importance_min=importance_min, status=card_status,
+        limit=limit, skip=skip,
+    )
     return [_card_out(c) for c in cards]
+
+
+@router.get("/topics", response_model=list[str])
+def get_topics(session: Session = Depends(get_db_session)) -> list[str]:
+    results = session.exec(
+        select(ZettelCard.topic)
+        .where(ZettelCard.topic.isnot(None))  # type: ignore[union-attr]
+        .where(ZettelCard.status == "active")
+        .distinct()
+        .order_by(ZettelCard.topic)
+    ).all()
+    return [t for t in results if t]
+
+
+@router.get("/tags", response_model=list[str])
+def get_tags(session: Session = Depends(get_db_session)) -> list[str]:
+    cards = session.exec(
+        select(ZettelCard.tags)
+        .where(ZettelCard.tags.isnot(None))  # type: ignore[union-attr]
+        .where(ZettelCard.status == "active")
+    ).all()
+    all_tags: set[str] = set()
+    for tags_list in cards:
+        if isinstance(tags_list, list):
+            all_tags.update(t for t in tags_list if t)
+    return sorted(all_tags)
 
 
 @router.post("/cards/bulk", response_model=dict, status_code=status.HTTP_201_CREATED)

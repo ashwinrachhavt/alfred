@@ -54,8 +54,11 @@ export const apiRoutes = {
     suggestLinks: (id: number) => `/api/zettels/cards/${id}/suggest-links`,
     deleteLink: (id: number) => `/api/zettels/links/${id}`,
     generate: "/api/zettels/cards/generate",
+    suggestTags: "/api/zettels/suggest-tags",
     graph: "/api/zettels/graph",
     reviewsDue: "/api/zettels/reviews/due",
+    topics: "/api/zettels/topics",
+    tags: "/api/zettels/tags",
   },
   pipeline: {
     replay: (docId: string) => `/api/pipeline/${docId}/replay`,
@@ -67,6 +70,9 @@ export const apiRoutes = {
     create: "/api/whiteboards",
     byId: (id: number) => `/api/whiteboards/${id}`,
     revisions: (id: number) => `/api/whiteboards/${id}/revisions`,
+  },
+  canvas: {
+    generateDiagram: "/api/canvas/generate-diagram",
   },
   learning: {
     topics: "/api/learning/topics",

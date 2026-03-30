@@ -3,5 +3,5 @@
 import { AtheneumClient } from "./atheneum/atheneum-client";
 
 export function DocumentsClient() {
-  return <AtheneumClient />;
+ return <AtheneumClient />;
 }

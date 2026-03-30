@@ -7,11 +7,13 @@ document storage services without hard coupling.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from math import sqrt
 
+from sqlalchemy import text as sa_text
 from sqlmodel import Session, select
 
 from alfred.core.utils import STAGE_TO_DELTA, clamp_int
@@ -43,6 +45,14 @@ def _temporal_proximity_days(a: datetime | None, b: datetime | None) -> float | 
 
 LINK_QUALITY_HIGH_CONFIDENCE_THRESHOLD = 0.8
 LINK_QUALITY_MEDIUM_CONFIDENCE_THRESHOLD = 0.6
+
+_ALLOWED_SORT_COLUMNS = {
+    "title": ZettelCard.title,
+    "created_at": ZettelCard.created_at,
+    "updated_at": ZettelCard.updated_at,
+    "importance": ZettelCard.importance,
+    "confidence": ZettelCard.confidence,
+}
 
 
 @dataclass
@@ -91,12 +101,23 @@ class ZettelkastenService:
         *,
         q: str | None = None,
         topic: str | None = None,
-        tag: str | None = None,
+        tags: list[str] | None = None,
         document_id: str | None = None,
+        sort_by: str | None = None,
+        sort_dir: str | None = None,
+        importance_min: int | None = None,
+        status: str | None = "active",
         limit: int = 50,
         skip: int = 0,
     ) -> list[ZettelCard]:
-        stmt = select(ZettelCard).order_by(ZettelCard.updated_at.desc())
+        stmt = select(ZettelCard)
+
+        sort_col = _ALLOWED_SORT_COLUMNS.get(sort_by or "", ZettelCard.updated_at)
+        if sort_dir == "asc":
+            stmt = stmt.order_by(sort_col.asc())  # type: ignore[union-attr]
+        else:
+            stmt = stmt.order_by(sort_col.desc())  # type: ignore[union-attr]
+
         if q:
             like = f"%{q.strip()}%"
             stmt = stmt.where(
@@ -108,11 +129,22 @@ class ZettelkastenService:
             stmt = stmt.where(ZettelCard.topic == topic.strip())
         if document_id:
             stmt = stmt.where(ZettelCard.document_id == document_id.strip())
+        if status:
+            stmt = stmt.where(ZettelCard.status == status)
+        if importance_min is not None:
+            stmt = stmt.where(ZettelCard.importance >= importance_min)
+
+        if tags:
+            for i, t in enumerate(tags):
+                param = f"tag_val_{i}"
+                stmt = stmt.where(
+                    sa_text(f"tags::jsonb @> :{param}::jsonb").bindparams(
+                        **{param: json.dumps([t])}
+                    )
+                )
+
         stmt = stmt.offset(clamp_int(skip, lo=0, hi=10_000)).limit(clamp_int(limit, lo=1, hi=200))
-        results = list(self.session.exec(stmt))
-        if tag:
-            results = [c for c in results if tag in (c.tags or [])]
-        return results
+        return list(self.session.exec(stmt))
 
     def get_card(self, card_id: int) -> ZettelCard | None:
         return self.session.get(ZettelCard, card_id)

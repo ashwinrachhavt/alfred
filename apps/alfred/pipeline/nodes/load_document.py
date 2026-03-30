@@ -8,6 +8,7 @@ import time
 from typing import Any
 
 from alfred.pipeline.state import DocumentPipelineState
+from alfred.services.doc_storage.utils import looks_like_error_content
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,22 @@ def load_document(state: DocumentPipelineState) -> dict[str, Any]:
         raise ValueError(f"Document {doc_id} not found after retry")
 
     cleaned_text = doc.get("cleaned_text") or ""
+
+    if looks_like_error_content(cleaned_text):
+        logger.warning(
+            "Document %s contains error traceback content, marking as error: %s",
+            doc_id,
+            doc.get("title", "untitled"),
+        )
+        return {
+            "title": doc.get("title") or "untitled",
+            "cleaned_text": "",
+            "raw_markdown": "",
+            "content_hash": "",
+            "stage": "load_document",
+            "errors": [{"stage": "load_document", "error": "Content is a Python error traceback, not page content"}],
+        }
+
     content_hash = hashlib.sha256(cleaned_text.encode()).hexdigest()
 
     logger.info("Loaded document %s: %s", doc_id, doc.get("title", "untitled"))

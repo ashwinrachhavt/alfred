@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
+from sqlalchemy import func
 from sqlmodel import select
 
 from alfred.core.database import SessionLocal
@@ -160,18 +161,27 @@ class TaxonomyService:
             ).first()
 
             if node is None:
-                # Create new node
-                node = TaxonomyNodeRow(
-                    slug=slug,
-                    display_name=to_display_name(slug),
-                    level=level,
-                    parent_slug=parent_slug,
-                    sort_order=0,
-                )
-                session.add(node)
-                session.commit()
-                session.refresh(node)
-                logger.info("Created taxonomy node: %s (level %s)", slug, level)
+                # Create new node (handle race condition with duplicate slugs)
+                try:
+                    node = TaxonomyNodeRow(
+                        slug=slug,
+                        display_name=to_display_name(slug),
+                        level=level,
+                        parent_slug=parent_slug,
+                        sort_order=0,
+                    )
+                    session.add(node)
+                    session.commit()
+                    session.refresh(node)
+                    logger.info("Created taxonomy node: %s (level %s)", slug, level)
+                except Exception:
+                    session.rollback()
+                    # Re-fetch — another worker/request may have created it
+                    node = session.exec(
+                        select(TaxonomyNodeRow).where(TaxonomyNodeRow.slug == slug)
+                    ).first()
+                    if node is None:
+                        raise
 
             return node
 
@@ -431,9 +441,9 @@ class TaxonomyService:
         }
 
         with SessionLocal() as session:
-            # Count total documents
-            total = session.exec(select(DocumentRow)).all()
-            stats["total"] = len(total)
+            stats["total"] = session.exec(
+                select(func.count()).select_from(DocumentRow)
+            ).one()
 
             # Process in batches
             offset = 0
@@ -470,10 +480,14 @@ class TaxonomyService:
 
                     except Exception as exc:
                         logger.warning("Failed to classify doc %s: %s", doc.id, exc)
+                        session.rollback()
                         stats["failed"] += 1
 
                 # Commit batch
-                session.commit()
+                try:
+                    session.commit()
+                except Exception:
+                    session.rollback()
                 offset += batch_size
 
         logger.info("Reclassification complete: %s", stats)
