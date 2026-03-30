@@ -20,7 +20,16 @@ def make_search_kb_tool(zettel_service: Any):
 
     @lc_tool
     def search_kb(query: str, domain_filter: str = "") -> str:
-        """Search the knowledge base for zettels matching a keyword query. Use this when you have specific keywords to search for. Returns JSON with results."""
+        """Search the knowledge base for zettels matching a keyword query.
+
+        Use when the user asks about a specific topic, concept, or keyword. Examples:
+        - "What do I know about stoicism?" → search_kb(query="stoicism")
+        - "Find my notes on Rails callbacks" → search_kb(query="Rails callbacks")
+        - "Do I have anything about epistemology?" → search_kb(query="epistemology")
+        - Filter by domain: search_kb(query="callbacks", domain_filter="rails")
+
+        Always try this tool before saying you don't have information on a topic.
+        Returns JSON with matching results (title, summary, tags)."""
         cards = zettel_service.list_cards(
             q=query or None,
             topic=domain_filter or None,
@@ -46,7 +55,15 @@ def make_list_recent_cards_tool(zettel_service: Any):
 
     @lc_tool
     def list_recent_cards(topic: str = "", limit: int = 10) -> str:
-        """List recently updated knowledge cards. Use this to browse the knowledge base, answer 'what did I learn', 'show recent cards', or get an overview. Optionally filter by topic. Returns JSON with results."""
+        """List recently updated knowledge cards for browsing and overview.
+
+        Use for open-ended questions about the knowledge base. Examples:
+        - "What did I learn recently?" → list_recent_cards()
+        - "Show me my latest cards" → list_recent_cards(limit=10)
+        - "What do I know about philosophy?" → list_recent_cards(topic="philosophy")
+        - "Give me an overview of my knowledge" → list_recent_cards(limit=20)
+
+        Returns JSON with recently updated cards sorted by date."""
         cards = zettel_service.list_cards(
             topic=topic or None,
             sort_by="updated_at",
@@ -73,7 +90,15 @@ def make_create_zettel_tool(zettel_service: Any):
 
     @lc_tool
     def create_zettel(title: str, content: str = "", tags: list[str] = [], topic: str = "") -> str:  # noqa: B006
-        """Create a new zettel (atomic knowledge card). Returns JSON with the created card."""
+        """Create a new zettel (atomic knowledge card) in the user's knowledge base.
+
+        Use when the user asks you to save, capture, or remember something. Rules:
+        - Always provide a clear, descriptive title (never "Untitled")
+        - Content should be the atomic insight or knowledge to preserve
+        - Tags should be lowercase keywords for discoverability
+        - Topic should be the broad domain (e.g., "philosophy", "rails", "ai")
+
+        Returns JSON with the created card details."""
         from alfred.schemas.zettel import ZettelCardCreate
 
         data = ZettelCardCreate(
@@ -100,7 +125,11 @@ def make_get_zettel_tool(zettel_service: Any):
 
     @lc_tool
     def get_zettel(zettel_id: int) -> str:
-        """Retrieve a zettel by ID. Returns JSON with the card or an error."""
+        """Retrieve the full content of a specific zettel by its ID.
+
+        Use when you need to read the complete text of a card found via search.
+        Search results only include 200-char summaries — use this to get the full content
+        for deeper discussion, quoting, or analysis."""
         card = zettel_service.get_card(zettel_id)
         if not card:
             return json.dumps({"error": f"Zettel {zettel_id} not found"})
@@ -128,7 +157,10 @@ def make_update_zettel_tool(zettel_service: Any):
         tags: list[str] = [],  # noqa: B006
         topic: str = "",
     ) -> str:
-        """Update an existing zettel. Returns JSON with the updated card or an error."""
+        """Update an existing zettel's title, content, tags, or topic.
+
+        Only provide the fields you want to change — empty strings are ignored.
+        Use get_zettel first to read the current content before updating."""
         from alfred.schemas.zettel import ZettelCardPatch
 
         card = zettel_service.get_card(zettel_id)

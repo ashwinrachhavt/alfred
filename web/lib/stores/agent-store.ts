@@ -213,7 +213,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         apiRoutes.agent.stream,
         {
           message: text,
-          thread_id: state.activeThreadId,
+          thread_id: state.activeThreadId,  // null is fine — backend auto-creates
           note_context: state.noteContext
             ? {
                 note_id: state.noteContext.noteId,
@@ -223,10 +223,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             : undefined,
           lens: state.activeLens,
           model: state.activeModel,
-          history: state.messages.slice(-20).map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
+          // Only send history if no thread (backend loads from DB when thread exists)
+          history: state.activeThreadId
+            ? undefined
+            : state.messages.slice(-20).map((m) => ({
+                role: m.role,
+                content: m.content,
+              })),
           intent: opts?.intent,
           intent_args: opts?.intentArgs,
         },
@@ -474,6 +477,14 @@ function _handleSSEEvent(
         );
         return { messages: msgs, isStreaming: false };
       });
+      break;
+    }
+
+    case "thread_created": {
+      const threadId = data.thread_id as number;
+      if (threadId) {
+        set({ activeThreadId: threadId });
+      }
       break;
     }
 

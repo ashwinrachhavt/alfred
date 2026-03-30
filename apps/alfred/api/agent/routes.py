@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 from typing import Any
@@ -67,41 +68,108 @@ class MessageOut(BaseModel):
     created_at: Any = None
 
 
-@router.post("/stream")
-async def agent_stream(
-    body: AgentStreamRequest,
-    request: Request,
-    db: Session = Depends(get_db_session),
-):
-    """SSE endpoint for agentic chat. Client closes connection to abort."""
-    service = AgentService(db)
+def _get_or_create_thread(
+    db: Session,
+    thread_id: int | None,
+    note_context: dict | None,
+    message: str,
+    lens: str | None = None,
+    model: str | None = None,
+) -> int:
+    """Get an existing thread or auto-create one. Always returns a thread_id."""
 
-    thread_id = body.thread_id
+    # 1. Explicit thread_id — use it
+    if thread_id:
+        return thread_id
 
-    # Get-or-create thread by note_id when no explicit thread_id given
-    if not thread_id and body.note_context and body.note_context.get("note_id"):
-        note_id = body.note_context["note_id"]
+    # 2. Note context — find or create thread for this note
+    if note_context and note_context.get("note_id"):
+        note_id = note_context["note_id"]
         existing = db.exec(
             select(ThinkingSessionRow)
             .where(ThinkingSessionRow.note_id == note_id)
             .where(ThinkingSessionRow.session_type == "agent")
         ).first()
         if existing:
-            thread_id = existing.id
-        else:
-            new_thread = ThinkingSessionRow(
-                title=body.note_context.get("title", "Note conversation"),
-                session_type="agent",
-                status="active",
-                note_id=note_id,
-            )
-            db.add(new_thread)
-            db.commit()
-            db.refresh(new_thread)
-            thread_id = new_thread.id
+            return existing.id
+        new_thread = ThinkingSessionRow(
+            title=note_context.get("title", "Note conversation"),
+            session_type="agent",
+            status="active",
+            note_id=note_id,
+            active_lens=lens,
+            model_id=model,
+        )
+        db.add(new_thread)
+        db.commit()
+        db.refresh(new_thread)
+        return new_thread.id
 
+    # 3. No thread, no note — auto-create a thread from the message
+    title = message[:80].strip() if message else "New conversation"
+    new_thread = ThinkingSessionRow(
+        title=title,
+        session_type="agent",
+        status="active",
+        active_lens=lens,
+        model_id=model,
+    )
+    db.add(new_thread)
+    db.commit()
+    db.refresh(new_thread)
+    return new_thread.id
+
+
+def _persist_message(
+    db: Session,
+    thread_id: int,
+    role: str,
+    content: str,
+    *,
+    tool_calls: list | None = None,
+    artifacts: list | None = None,
+    lens: str | None = None,
+    model: str | None = None,
+) -> AgentMessageRow:
+    """Write a message to the database."""
+    msg = AgentMessageRow(
+        thread_id=thread_id,
+        role=role,
+        content=content,
+        tool_calls=tool_calls,
+        artifacts=artifacts,
+        active_lens=lens,
+        model_used=model,
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    return msg
+
+
+def _sse_event(event: str, data: dict) -> str:
+    """Format a single SSE event."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+@router.post("/stream")
+async def agent_stream(
+    body: AgentStreamRequest,
+    request: Request,
+    db: Session = Depends(get_db_session),
+):
+    """SSE endpoint for agentic chat. Thread-free: auto-creates threads as needed."""
+    service = AgentService(db)
+
+    # Auto-create thread if needed — no more manual thread management required
+    thread_id = _get_or_create_thread(
+        db, body.thread_id, body.note_context, body.message,
+        lens=body.lens, model=body.model,
+    )
+
+    # Load history from DB (last 20 messages)
     history = body.history
-    if thread_id and not history:
+    if not history:
         stmt = (
             select(AgentMessageRow)
             .where(AgentMessageRow.thread_id == thread_id)
@@ -111,7 +179,17 @@ async def agent_stream(
         db_messages = db.exec(stmt).all()
         history = [{"role": m.role, "content": m.content} for m in reversed(db_messages)]
 
+    # Persist user message immediately
+    _persist_message(db, thread_id, "user", body.message, lens=body.lens, model=body.model)
+
     async def event_stream():
+        # Emit thread_id so the frontend knows which thread was created/used
+        yield _sse_event("thread_created", {"thread_id": thread_id})
+
+        assistant_content = ""
+        tool_calls_log: list[dict] = []
+        artifacts_log: list[dict] = []
+
         async for event in service.stream_turn(
             message=body.message,
             thread_id=thread_id,
@@ -126,13 +204,40 @@ async def agent_stream(
         ):
             yield event
 
-        # Update thread timestamp after streaming completes
-        if thread_id:
-            session = db.get(ThinkingSessionRow, thread_id)
-            if session:
-                session.updated_at = datetime.utcnow()
-                db.add(session)
-                db.commit()
+            # Accumulate content for persistence
+            try:
+                for line in event.strip().split("\n"):
+                    if line.startswith("event: "):
+                        evt_type = line[7:]
+                    elif line.startswith("data: "):
+                        evt_data = json.loads(line[6:])
+                        if evt_type == "token":
+                            assistant_content += evt_data.get("content", "")
+                        elif evt_type == "tool_start":
+                            tool_calls_log.append({
+                                "tool": evt_data.get("tool"),
+                                "args": evt_data.get("args", {}),
+                            })
+                        elif evt_type == "artifact":
+                            artifacts_log.append(evt_data)
+            except Exception:
+                pass  # Don't break streaming on accumulation errors
+
+        # Persist assistant message after streaming completes
+        if assistant_content or tool_calls_log or artifacts_log:
+            _persist_message(
+                db, thread_id, "assistant", assistant_content,
+                tool_calls=tool_calls_log or None,
+                artifacts=artifacts_log or None,
+                lens=body.lens, model=body.model,
+            )
+
+        # Update thread timestamp
+        session = db.get(ThinkingSessionRow, thread_id)
+        if session:
+            session.updated_at = datetime.utcnow()
+            db.add(session)
+            db.commit()
 
     return StreamingResponse(
         event_stream(),

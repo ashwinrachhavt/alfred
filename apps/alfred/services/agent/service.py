@@ -126,7 +126,11 @@ class AgentService:
                     return
 
             graph = build_orchestrator_graph(
-                registry, model=model_name, max_iterations=max_iterations,
+                registry,
+                model=model_name,
+                max_iterations=max_iterations,
+                lens=lens,
+                note_context=note_context,
             )
 
             # Build conversation messages from history
