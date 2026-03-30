@@ -63,7 +63,44 @@ async def test_stream_turn_yields_tool_events():
 
 
 @pytest.mark.asyncio
-async def test_stream_turn_with_intent():
+async def test_stream_turn_intent_fast_path():
+    """Intent with a known tool mapping should bypass the graph and call the tool directly."""
+    from alfred.services.agent.service import AgentService
+    import json
+
+    mock_registry = MagicMock()
+    mock_registry.tools = {"summarize_content": MagicMock()}
+    mock_registry.execute.return_value = json.dumps({
+        "action": "summarized",
+        "short": "A concise summary.",
+        "bullets": [],
+        "key_points": [],
+    })
+
+    with patch("alfred.services.agent.service._build_registry", return_value=mock_registry), \
+         patch("alfred.services.agent.service.build_orchestrator_graph") as mock_graph_builder:
+        service = AgentService(db=MagicMock())
+        events = []
+        async for event in service.stream_turn(
+            message="",
+            model="gpt-4.1-mini",
+            intent="summarize",
+            intent_args={"text": "Long article text"},
+        ):
+            events.append(event)
+
+    event_text = "".join(events)
+    # Should have tool_start, tool_end, token, done — but NOT invoke the graph
+    assert "event: tool_start" in event_text
+    assert "event: token" in event_text
+    assert "event: done" in event_text
+    mock_graph_builder.assert_not_called()
+    mock_registry.execute.assert_called_once_with("summarize_content", {"text": "Long article text"})
+
+
+@pytest.mark.asyncio
+async def test_stream_turn_intent_with_message_uses_graph():
+    """Intent with a message should go through the graph (not fast path)."""
     from alfred.services.agent.service import AgentService
 
     mock_graph = MagicMock()
@@ -77,12 +114,12 @@ async def test_stream_turn_with_intent():
         service = AgentService(db=MagicMock())
         events = []
         async for event in service.stream_turn(
-            message="",
+            message="summarize this for me",
             model="gpt-4.1-mini",
             intent="summarize",
-            intent_args={"url": "https://example.com"},
+            intent_args={"text": "article"},
         ):
             events.append(event)
 
-    call_args = mock_graph.invoke.call_args[0][0]
-    assert call_args.get("intent") == "summarize"
+    # Should have used the graph since message was provided
+    mock_graph.invoke.assert_called_once()

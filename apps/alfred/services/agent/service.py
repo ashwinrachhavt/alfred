@@ -64,6 +64,19 @@ def _build_registry(db: Session) -> ToolRegistry:
     return registry
 
 
+# Maps intent names (from frontend) to tool names in the registry.
+# Intents with a mapping here get the fast path (direct tool call, no LLM).
+_INTENT_TO_TOOL: dict[str, str] = {
+    "summarize": "summarize_content",
+    "edit_text": "edit_text",
+    "autocomplete": "autocomplete",
+    "diagram": "generate_diagram",
+    "plan": "create_plan",
+    "research": "research_topic",
+    "write": "compose_writing",
+}
+
+
 def _sse_event(event: str, data: dict[str, Any]) -> str:
     """Format a single SSE event."""
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
@@ -98,6 +111,18 @@ class AgentService:
 
         try:
             registry = _build_registry(self.db)
+
+            # Fast path: intent-driven actions bypass the LLM and call
+            # the matching tool directly. This is faster and deterministic.
+            if intent and not message:
+                tool_name = _INTENT_TO_TOOL.get(intent)
+                if tool_name and tool_name in registry.tools:
+                    async for event in self._execute_intent(
+                        registry, tool_name, intent_args or {}, thread_id,
+                    ):
+                        yield event
+                    return
+
             graph = build_orchestrator_graph(
                 registry, model=model_name, max_iterations=max_iterations,
             )
@@ -117,7 +142,7 @@ class AgentService:
             if message:
                 messages.append(HumanMessage(content=message))
             elif intent:
-                # For intent-driven actions, create a synthetic message
+                # Fallback: intent without a direct tool mapping goes through the graph
                 messages.append(HumanMessage(content=f"[intent: {intent}] {json.dumps(intent_args or {})}"))
 
             # Invoke the graph
@@ -183,3 +208,63 @@ class AgentService:
         yield _sse_event("done", {
             "thread_id": str(thread_id or ""),
         })
+
+    async def _execute_intent(
+        self,
+        registry: ToolRegistry,
+        tool_name: str,
+        args: dict,
+        thread_id: int | None,
+    ) -> AsyncIterator[str]:
+        """Fast path: call a tool directly without LLM reasoning.
+
+        Used for intent-driven actions (frontend buttons) where the tool
+        mapping is known. Yields SSE events for the result.
+        """
+        try:
+            yield _sse_event("tool_start", {"tool": tool_name, "args": args})
+            result_str = registry.execute(tool_name, args)
+            yield _sse_event("tool_end", {
+                "tool": tool_name,
+                "result_summary": str(result_str)[:200],
+            })
+
+            # Parse the tool result and emit as token content
+            try:
+                result_data = json.loads(result_str) if isinstance(result_str, str) else result_str
+            except (json.JSONDecodeError, TypeError):
+                result_data = result_str
+
+            # Extract the most useful text from the result for the token stream
+            if isinstance(result_data, dict):
+                # For text operations, send the output/completion/short as the token
+                text = (
+                    result_data.get("output")
+                    or result_data.get("completion")
+                    or result_data.get("short")
+                    or result_data.get("description")
+                    or str(result_data)
+                )
+                yield _sse_event("token", {"content": text})
+
+                # Emit artifact if applicable
+                if result_data.get("action") in ("created", "found", "updated"):
+                    yield _sse_event("artifact", {
+                        "type": "zettel",
+                        "action": result_data["action"],
+                        "zettel": {
+                            "id": result_data.get("zettel_id"),
+                            "title": result_data.get("title", ""),
+                            "summary": result_data.get("summary", ""),
+                            "topic": result_data.get("topic", ""),
+                            "tags": result_data.get("tags", []),
+                        },
+                    })
+            else:
+                yield _sse_event("token", {"content": str(result_data)})
+
+        except Exception as exc:
+            logger.exception("Intent execution failed: %s", exc)
+            yield _sse_event("error", {"message": f"Intent error: {exc!s}"})
+
+        yield _sse_event("done", {"thread_id": str(thread_id or "")})
