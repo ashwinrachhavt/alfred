@@ -30,6 +30,11 @@ _NAV_KEYWORDS = frozenset({
 
 _BLANK_LINE_COLLAPSE = re.compile(r'\n{3,}')
 
+_MIN_CLEAN_LENGTH = 200
+_MAX_NAV_WORDS = 3
+_NAV_CLUSTER_THRESHOLD = 4
+_NAV_MATCH_RATIO = 0.75
+
 
 def clean_web_content(text: str) -> str:
     """Clean web content by removing common noise patterns.
@@ -41,7 +46,7 @@ def clean_web_content(text: str) -> str:
         Cleaned text with noise patterns removed
     """
     # Don't clean short content (< 200 chars)
-    if len(text) < 200:
+    if len(text) < _MIN_CLEAN_LENGTH:
         return text
 
     lines = text.split('\n')
@@ -61,13 +66,13 @@ def clean_web_content(text: str) -> str:
         # Check for pipe-separated navigation links
         if not should_remove and '|' in stripped:
             segments = [s.strip() for s in stripped.split('|')]
-            if segments and all(len(seg.split()) <= 4 for seg in segments if seg):
-                short_segments = all(len(seg.split()) <= 3 for seg in segments if seg)
+            if segments and all(len(seg.split()) <= _NAV_CLUSTER_THRESHOLD for seg in segments if seg):
+                short_segments = all(len(seg.split()) <= _MAX_NAV_WORDS for seg in segments if seg)
                 nav_segments = sum(
                     1 for seg in segments
                     if seg and any(w.lower() in _NAV_KEYWORDS for w in seg.split())
                 )
-                if short_segments and len(segments) > 0 and nav_segments / len(segments) >= 0.75:
+                if short_segments and len(segments) > 0 and nav_segments / len(segments) >= _NAV_MATCH_RATIO:
                     should_remove = True
 
         if not should_remove:
@@ -87,7 +92,7 @@ def clean_web_content(text: str) -> str:
         if not found_real_content:
             words = stripped.split()
             is_nav_like = (
-                len(words) <= 3 and
+                len(words) <= _MAX_NAV_WORDS and
                 len(words) > 0 and
                 not any(p in stripped for p in ['.', ',', '!', '?', ';', ':'])
             )
@@ -101,7 +106,7 @@ def clean_web_content(text: str) -> str:
             break
 
     # Remove navigation cluster if we found 4+ nav lines at the start
-    if len(nav_lines_indices) >= 4:
+    if len(nav_lines_indices) >= _NAV_CLUSTER_THRESHOLD:
         last_nav_index = nav_lines_indices[-1]
         lines = lines[last_nav_index + 1:]
 

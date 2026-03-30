@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
-import pytest
 
 from alfred.services.excalidraw_agent import (
+    auto_layout,
     build_diagram_prompt,
     parse_diagram_response,
-    auto_layout,
 )
 
 

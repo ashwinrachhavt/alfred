@@ -5,9 +5,8 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
-from sqlmodel import select
-
 from sqlalchemy import func
+from sqlmodel import select
 
 from alfred.core.database import SessionLocal
 from alfred.models.doc_storage import DocumentRow

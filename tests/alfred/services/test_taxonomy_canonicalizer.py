@@ -1,6 +1,5 @@
 """Tests for taxonomy canonicalization service."""
 
-import pytest
 from alfred.services.taxonomy_canonicalizer import find_canonical_match
 
 
@@ -30,7 +29,7 @@ def test_fuzzy_match_synonyms():
     assert find_canonical_match("deep-learning", existing) == "ai-engineering"
 
     # Test system design synonyms
-    existing_with_sd = existing + ["system-design"]
+    existing_with_sd = [*existing, "system-design"]
     assert find_canonical_match("distributed-systems", existing_with_sd) == "system-design"
     assert find_canonical_match("microservices", existing_with_sd) == "system-design"
 
@@ -46,7 +45,7 @@ def test_fuzzy_match_synonyms():
     assert find_canonical_match("existentialism", existing) == "philosophy"
 
     # Test politics synonyms
-    existing_with_politics = existing + ["politics"]
+    existing_with_politics = [*existing, "politics"]
     assert find_canonical_match("geopolitics", existing_with_politics) == "politics"
     assert find_canonical_match("international-relations", existing_with_politics) == "politics"
 

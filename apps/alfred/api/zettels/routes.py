@@ -8,8 +8,6 @@ from sqlmodel import Session
 
 from alfred.api.dependencies import get_db_session
 from alfred.models.zettel import ZettelReview
-from pydantic import BaseModel, Field
-
 from alfred.schemas.zettel import (
     AIZettelGenerateRequest,
     BulkUpdateResult,
@@ -308,6 +306,7 @@ def suggest_tags(payload: TagSuggestionRequest) -> TagSuggestionResponse:
                   "had", "do", "does", "did", "will", "would", "could", "should", "to", "of",
                   "in", "for", "on", "with", "at", "by", "from", "as", "and", "but", "or",
                   "not", "this", "that", "it", "they", "we", "you", "he", "she"}
-    filtered = [w for w in words if len(w) > 3 and w not in stop_words and w.isalpha()]
+    min_word_len = 4
+    filtered = [w for w in words if len(w) >= min_word_len and w not in stop_words and w.isalpha()]
     counter = Counter(filtered)
     return TagSuggestionResponse(tags=[word for word, _ in counter.most_common(5)])

@@ -1,6 +1,5 @@
 """Tests for content cleaner heuristics."""
 
-import pytest
 from alfred.services.doc_storage._content_cleaner import clean_web_content
 
 

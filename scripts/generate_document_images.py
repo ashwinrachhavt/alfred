@@ -35,11 +35,12 @@ import logging
 import uuid
 from collections.abc import Iterable
 
+from sqlalchemy import select
+
 from alfred.core.celery_client import get_celery_client
 from alfred.core.database import SessionLocal
 from alfred.models.doc_storage import DocumentRow
 from alfred.services.doc_storage_pg import DocStorageService
-from sqlalchemy import select
 
 logger = logging.getLogger("scripts.generate_document_images")
 

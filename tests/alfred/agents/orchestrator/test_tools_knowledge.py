@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from alfred.agents.orchestrator.tools.knowledge import (
-    make_search_kb_tool,
     make_create_zettel_tool,
     make_get_zettel_tool,
+    make_search_kb_tool,
     make_update_zettel_tool,
 )
 

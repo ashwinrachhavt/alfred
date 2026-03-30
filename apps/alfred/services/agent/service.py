@@ -27,22 +27,39 @@ logger = logging.getLogger(__name__)
 
 
 def _build_registry(db: Session) -> ToolRegistry:
-    """Build a ToolRegistry with all Phase 1 tools."""
+    """Build a ToolRegistry with all available tools."""
     registry = ToolRegistry()
     zettel_svc = ZettelkastenService(db)
 
+    # Phase 1: Knowledge tools (require DB session)
     registry.register(make_search_kb_tool(zettel_svc))
     registry.register(make_create_zettel_tool(zettel_svc))
     registry.register(make_get_zettel_tool(zettel_svc))
     registry.register(make_update_zettel_tool(zettel_svc))
 
-    # Register sub-graphs (RAG + Writer) — wrapped via try/except
-    # so the agent still works if Qdrant/Redis aren't available
+    # Phase 1: Sub-graphs (RAG + Writer)
     try:
         from alfred.agents.orchestrator.tools.subgraphs import register_subgraphs
         register_subgraphs(registry)
     except Exception:
         logger.warning("Failed to register sub-graph tools (RAG/Writer). Continuing without them.")
+
+    # Phase 2: Service tools (stateless, use cached dependency getters)
+    try:
+        from alfred.agents.orchestrator.tools.services import (
+            make_autocomplete_tool,
+            make_create_plan_tool,
+            make_edit_text_tool,
+            make_generate_diagram_tool,
+            make_summarize_tool,
+        )
+        registry.register(make_summarize_tool())
+        registry.register(make_generate_diagram_tool())
+        registry.register(make_create_plan_tool())
+        registry.register(make_edit_text_tool())
+        registry.register(make_autocomplete_tool())
+    except Exception:
+        logger.warning("Failed to register Phase 2 service tools. Continuing without them.")
 
     return registry
 

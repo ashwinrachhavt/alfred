@@ -4,8 +4,6 @@ Provides fuzzy matching and synonym resolution to prevent duplicate taxonomy nod
 """
 
 from difflib import SequenceMatcher
-from typing import Optional
-
 
 # Hardcoded synonym map: maps various terms to their canonical slugs
 _SYNONYM_MAP = {
@@ -33,9 +31,12 @@ def _normalize_slug(slug: str) -> str:
     return slug.lower().replace("_", "-")
 
 
+_MIN_PLURAL_LENGTH = 3
+
+
 def _strip_plural(slug: str) -> str:
     """Strip common plural suffix if present."""
-    if slug.endswith("s") and len(slug) > 2:
+    if slug.endswith("s") and len(slug) >= _MIN_PLURAL_LENGTH:
         return slug[:-1]
     return slug
 
@@ -45,7 +46,7 @@ def _fuzzy_similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
 
-def find_canonical_match(slug: str, existing_slugs: list[str]) -> Optional[str]:
+def find_canonical_match(slug: str, existing_slugs: list[str]) -> str | None:
     """Find canonical match for a slug among existing slugs.
 
     Priority order:

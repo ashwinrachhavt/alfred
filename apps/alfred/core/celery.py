@@ -119,7 +119,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
         import alfred.tasks.document_title_image
         import alfred.tasks.learning_concepts
         import alfred.tasks.mind_palace_agent
-        import alfred.tasks.notion_import  # noqa: F401
+        import alfred.tasks.notion_import
         import alfred.tasks.taxonomy_reclassify  # noqa: F401
 
     return celery_app
