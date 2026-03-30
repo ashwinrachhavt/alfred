@@ -17,13 +17,13 @@ export function LiveKnowledgeScore() {
   const retentionQuery = useQuery({
     queryKey: ["learning", "retention"],
     queryFn: () => apiFetch<RetentionMetric>(apiRoutes.learning.retentionMetrics),
-    staleTime: 60_000,
+    staleTime: 300_000,
   });
 
   const graphQuery = useQuery({
     queryKey: ["zettels", "graph"],
     queryFn: () => apiFetch<GraphData>(apiRoutes.zettels.graph),
-    staleTime: 60_000,
+    staleTime: 300_000,
   });
 
   const { data: explorerData } = useExplorerDocuments({ limit: 200 });

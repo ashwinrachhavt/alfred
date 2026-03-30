@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 
 import {
@@ -113,9 +113,9 @@ export function AgentChatClient() {
     }
   };
 
-  const handleArtifactClick = (artifact: ArtifactCard) => {
+  const handleArtifactClick = useCallback((artifact: ArtifactCard) => {
     setEditingZettelId(artifact.id);
-  };
+  }, []);
 
   const activeThread = threads.find((t) => t.id === activeThreadId);
 
@@ -304,7 +304,7 @@ export function AgentChatClient() {
 
 // --- Message components ---
 
-function MessageBubble({
+const MessageBubble = memo(function MessageBubble({
   message,
   onArtifactClick,
 }: {
@@ -378,4 +378,4 @@ function MessageBubble({
       )}
     </div>
   );
-}
+});

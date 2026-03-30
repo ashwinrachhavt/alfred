@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
 
@@ -151,9 +151,9 @@ export function AiPanel() {
     }
   };
 
-  const handleArtifactClick = (artifact: ArtifactCard) => {
+  const handleArtifactClick = useCallback((artifact: ArtifactCard) => {
     setEditingZettelId(artifact.id);
-  };
+  }, []);
 
   if (!aiPanelOpen) return null;
 
@@ -376,7 +376,7 @@ export function AiPanel() {
 
 // --- Panel Message Component ---
 
-function PanelMessage({
+const PanelMessage = memo(function PanelMessage({
   message,
   isOnNotes,
   onArtifactClick,

@@ -15,7 +15,7 @@ export function ConnectionsCard() {
   const { data, isLoading } = useQuery({
     queryKey: ["zettels", "graph"],
     queryFn: () => apiFetch<GraphData>(apiRoutes.zettels.graph),
-    staleTime: 60_000,
+    staleTime: 300_000,
   });
 
   const nodeCount = data?.nodes.length ?? 0;

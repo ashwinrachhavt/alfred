@@ -61,7 +61,7 @@ export function useSemanticMap(params: { limit?: number; enabled?: boolean } = {
     enabled: params.enabled ?? true,
     queryKey: semanticMapQueryKey(limit),
     queryFn: () => getSemanticMap({ limit }),
-    staleTime: 10 * 60 * 1000,
+    staleTime: 300_000,
   });
 }
 

@@ -14,13 +14,13 @@ export function RetentionCard() {
   const { data, isLoading } = useQuery({
     queryKey: ["learning", "retention"],
     queryFn: () => apiFetch<RetentionMetric>(apiRoutes.learning.retentionMetrics),
-    staleTime: 60_000,
+    staleTime: 300_000,
   });
 
   const dueQuery = useQuery({
     queryKey: ["zettels", "reviews", "due"],
     queryFn: () => apiFetch<unknown[]>(apiRoutes.zettels.reviewsDue),
-    staleTime: 60_000,
+    staleTime: 300_000,
   });
 
   return (
