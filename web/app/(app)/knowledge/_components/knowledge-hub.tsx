@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, BookOpen, Layers, Loader2, Play, Plus, RefreshCw, Sparkles as SparklesIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useZettelCards, useZettelTopics, useZettelTags } from "@/features/zettels/queries";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
@@ -83,6 +84,8 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
 export function KnowledgeHub() {
  const [activeView, setActiveView] = useState<ViewMode>("cards");
  const [filters, setFilters] = useState<ZettelFilters>({});
+ const [currentPage, setCurrentPage] = useState(1);
+ const pageSize = 24;
  const [selectedId, setSelectedId] = useState<string | null>(null);
  const [pulsingId, setPulsingId] = useState<string | null>(null);
  const [showCreate, setShowCreate] = useState(false);
@@ -94,12 +97,21 @@ export function KnowledgeHub() {
  const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
  // Server-side allZettels data
- const { data: allZettels = [], isLoading, isError, refetch } = useZettelCards(filters);
+ const { data: paginatedData, isLoading, isError, refetch } = useZettelCards(filters, { page: currentPage, pageSize });
+ const allZettels = paginatedData?.items ?? [];
+ const totalCount = paginatedData?.totalCount ?? 0;
+ const totalPages = paginatedData?.totalPages ?? 1;
  const { data: availableTopics = [] } = useZettelTopics();
  const { data: availableTags = [] } = useZettelTags();
 
  const selectedZettel = selectedId ? allZettels.find((z) => z.id === selectedId) ?? null : null;
  const dueCount = getDueCount(allZettels);
+
+ // Reset to page 1 when filters change
+ const handleFiltersChange = useCallback((newFilters: ZettelFilters | ((prev: ZettelFilters) => ZettelFilters)) => {
+   setFilters(newFilters);
+   setCurrentPage(1);
+ }, []);
 
  // Close detail panel if selected zettel gets allZettels out
  useEffect(() => {
@@ -200,7 +212,7 @@ export function KnowledgeHub() {
  {isLoading ? (
  <Loader2 className="inline size-3 animate-spin" />
  ) : (
- allZettels.length
+ <>{allZettels.length} of {totalCount}</>
  )}{" "}
  zettels · {dueCount} due for review
  </p>
@@ -261,13 +273,13 @@ export function KnowledgeHub() {
  activeView={activeView}
  onViewChange={setActiveView}
  search={filters.q || ""}
- onSearchChange={(v) => setFilters((f) => ({ ...f, q: v || undefined }))}
+ onSearchChange={(v) => handleFiltersChange((f) => ({ ...f, q: v || undefined }))}
  />
 
  {/* Filter bar */}
  <FilterBar
  filters={filters}
- onFiltersChange={setFilters}
+ onFiltersChange={handleFiltersChange}
  availableTopics={availableTopics}
  availableTags={availableTags}
  />
@@ -350,6 +362,15 @@ export function KnowledgeHub() {
  </div>
  )}
  </>
+ )}
+
+ {/* Pagination controls */}
+ {!isLoading && !isError && totalPages > 1 && (
+ <PaginationControls
+ currentPage={currentPage}
+ totalPages={totalPages}
+ onPageChange={setCurrentPage}
+ />
  )}
  </div>
 

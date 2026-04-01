@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from math import sqrt
 
-from sqlalchemy import text as sa_text
+from sqlalchemy import func, text as sa_text
 from sqlmodel import Session, select
 
 from alfred.core.utils import STAGE_TO_DELTA, clamp_int
@@ -169,6 +169,47 @@ class ZettelkastenService:
 
         stmt = stmt.offset(clamp_int(skip, lo=0, hi=10_000)).limit(clamp_int(limit, lo=1, hi=200))
         return list(self.session.exec(stmt))
+
+    def count_cards(
+        self,
+        *,
+        q: str | None = None,
+        topic: str | None = None,
+        tags: list[str] | None = None,
+        document_id: str | None = None,
+        importance_min: int | None = None,
+        status: str | None = "active",
+    ) -> int:
+        """Return total count of cards matching the given filters (no pagination)."""
+        stmt = select(func.count()).select_from(ZettelCard)
+
+        if q:
+            like = f"%{q.strip()}%"
+            stmt = stmt.where(
+                ZettelCard.title.ilike(like)
+                | ZettelCard.content.ilike(like)
+                | ZettelCard.summary.ilike(like)
+            )
+        if topic:
+            stmt = stmt.where(ZettelCard.topic == topic.strip())
+        if document_id:
+            stmt = stmt.where(ZettelCard.document_id == document_id.strip())
+        if status:
+            stmt = stmt.where(ZettelCard.status == status)
+        if importance_min is not None:
+            stmt = stmt.where(ZettelCard.importance >= importance_min)
+
+        if tags:
+            for i, t in enumerate(tags):
+                param = f"tag_val_{i}"
+                stmt = stmt.where(
+                    sa_text(f"tags::jsonb @> :{param}::jsonb").bindparams(
+                        **{param: json.dumps([t])}
+                    )
+                )
+
+        result = self.session.exec(stmt).one()
+        return int(result)
 
     def get_card(self, card_id: int) -> ZettelCard | None:
         return self.session.get(ZettelCard, card_id)
