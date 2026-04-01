@@ -22,11 +22,10 @@ def _get_extraction_service():
 
 
 def _get_cache():
-    from alfred.core.dependencies import get_doc_storage_service
+    from alfred.core.database import SessionLocal
     from alfred.pipeline.cache import PipelineStageCache
 
-    svc = get_doc_storage_service()
-    session = svc._get_session()
+    session = SessionLocal()
     return PipelineStageCache(session=session)
 
 
