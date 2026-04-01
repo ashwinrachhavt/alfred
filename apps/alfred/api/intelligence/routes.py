@@ -38,23 +38,25 @@ router = APIRouter(prefix="/api/intelligence", tags=["intelligence"])
 
 @router.post(
     "/plan",
-    response_model=ExecutionPlan,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_202_ACCEPTED,
 )
-def create_plan(
-    payload: PlanCreateRequest,
-    svc: PlanningService = Depends(get_planning_service),
-) -> ExecutionPlan:
-    """Generate a compact execution plan for a goal."""
+def create_plan(payload: PlanCreateRequest) -> dict:
+    """Queue plan generation as a background task."""
+    from alfred.core.celery_client import get_celery_client
 
     try:
-        return svc.create_plan(
-            goal=payload.goal, context=payload.context, max_steps=payload.max_steps
+        celery_client = get_celery_client()
+        async_result = celery_client.send_task(
+            "alfred.tasks.planning.generate_plan",
+            kwargs={
+                "goal": payload.goal,
+                "context": payload.context,
+                "max_steps": payload.max_steps,
+            },
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"task_id": async_result.id, "status": "pending"}
     except Exception as exc:  # pragma: no cover - defensive
-        raise HTTPException(status_code=500, detail="Failed to create plan") from exc
+        raise HTTPException(status_code=500, detail="Failed to enqueue plan generation") from exc
 
 
 @router.post(

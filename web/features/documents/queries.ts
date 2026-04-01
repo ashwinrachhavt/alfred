@@ -61,7 +61,7 @@ export function useSemanticMap(params: { limit?: number; enabled?: boolean } = {
     enabled: params.enabled ?? true,
     queryKey: semanticMapQueryKey(limit),
     queryFn: () => getSemanticMap({ limit }),
-    staleTime: 10 * 60 * 1000,
+    staleTime: 300_000,
   });
 }
 
@@ -70,6 +70,6 @@ export function useDocumentDetails(docId: string | null) {
     enabled: Boolean(docId),
     queryKey: docId ? documentDetailsQueryKey(docId) : ["documents", "details", "disabled"],
     queryFn: () => getDocumentDetails(docId!),
-    staleTime: 0,
+    staleTime: 30_000,
   });
 }

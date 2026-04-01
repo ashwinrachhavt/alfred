@@ -122,6 +122,22 @@ function stableSortByCreatedAtDesc(list: TrackedTask[]): TrackedTask[] {
  return [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+
+function purgeStaleCompleted(
+ tasks: TrackedTask[],
+ statusMap: Record<string, TaskStatusResponse | undefined>,
+): TrackedTask[] {
+ const now = Date.now();
+ return tasks.filter((t) => {
+ const status = statusMap[t.id] ?? t.lastStatus;
+ if (status?.ready && new Date(t.createdAt).getTime() < now - TWENTY_FOUR_HOURS_MS) {
+  return false;
+ }
+ return true;
+ });
+}
+
 export function TaskTrackerProvider({ children }: { children: React.ReactNode }) {
  const router = useRouter();
 
@@ -179,6 +195,20 @@ export function TaskTrackerProvider({ children }: { children: React.ReactNode })
  return count;
  }, 0);
  }, [statusById, tasks]);
+
+ // Auto-purge completed tasks older than 24 hours on mount
+ const hasPurgedRef = React.useRef(false);
+ React.useEffect(() => {
+ if (hasPurgedRef.current) return;
+ hasPurgedRef.current = true;
+ const fresh = purgeStaleCompleted(tasks, statusById);
+ if (fresh.length < tasks.length) {
+  setTasks(stableSortByCreatedAtDesc(fresh));
+  saveTrackedTasks(fresh);
+ }
+ // Only on mount
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, []);
 
  const persistTasks = React.useCallback((updater: (prev: TrackedTask[]) => TrackedTask[]) => {
  setTasks((prev) => {

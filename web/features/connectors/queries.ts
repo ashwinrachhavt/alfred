@@ -22,7 +22,7 @@ export function useConnectorsStatus() {
   return useQuery({
     queryKey: ["connectors", "status-all"],
     queryFn: fetchConnectorsStatusAll,
-    staleTime: 30_000,
+    staleTime: 600_000,
     refetchOnWindowFocus: true,
   });
 }

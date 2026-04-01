@@ -19,15 +19,45 @@ vi.mock("@/lib/api/routes", () => ({
   },
 }));
 
-import { useAgentStore, type NoteContext } from "../agent-store";
+import { useAgentStore, selectOrderedMessages, type NoteContext } from "../agent-store";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
+type MsgInput = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  artifacts?: any[];
+  relatedCards?: any[];
+  gaps?: any[];
+  toolCalls?: any[];
+  timestamp?: number;
+};
+
+function normalize(msgs: MsgInput[]) {
+  const messagesById: Record<string, any> = {};
+  const messageOrder: string[] = [];
+  for (const m of msgs) {
+    const msg = {
+      artifacts: [],
+      relatedCards: [],
+      gaps: [],
+      toolCalls: [],
+      timestamp: Date.now(),
+      ...m,
+    };
+    messagesById[msg.id] = msg;
+    messageOrder.push(msg.id);
+  }
+  return { messagesById, messageOrder };
+}
+
 function resetStore() {
   useAgentStore.setState({
-    messages: [],
+    messagesById: {},
+    messageOrder: [],
     threads: [],
     activeThreadId: null,
     isStreaming: false,
@@ -50,7 +80,8 @@ beforeEach(() => {
 describe("agent-store initial state", () => {
   it("has correct defaults", () => {
     const state = useAgentStore.getState();
-    expect(state.messages).toEqual([]);
+    expect(state.messagesById).toEqual({});
+    expect(state.messageOrder).toEqual([]);
     expect(state.threads).toEqual([]);
     expect(state.activeThreadId).toBeNull();
     expect(state.isStreaming).toBe(false);
@@ -66,18 +97,7 @@ describe("setNoteContext", () => {
   it("sets noteContext and clears messages", () => {
     // Seed some existing state
     useAgentStore.setState({
-      messages: [
-        {
-          id: "user-1",
-          role: "user",
-          content: "old message",
-          artifacts: [],
-          relatedCards: [],
-          gaps: [],
-          toolCalls: [],
-          timestamp: Date.now(),
-        },
-      ],
+      ...normalize([{ id: "user-1", role: "user", content: "old message" }]),
       activeThreadId: 42,
     });
 
@@ -91,7 +111,7 @@ describe("setNoteContext", () => {
 
     const state = useAgentStore.getState();
     expect(state.noteContext).toEqual(ctx);
-    expect(state.messages).toEqual([]);
+    expect(selectOrderedMessages(state)).toEqual([]);
     expect(state.activeThreadId).toBeNull();
     expect(state.isStreaming).toBe(false);
     expect(state.activeToolCalls).toEqual([]);
@@ -111,18 +131,7 @@ describe("setNoteContext", () => {
 describe("clearMessages", () => {
   it("resets messages, activeThreadId, and noteContext", () => {
     useAgentStore.setState({
-      messages: [
-        {
-          id: "u1",
-          role: "user",
-          content: "hi",
-          artifacts: [],
-          relatedCards: [],
-          gaps: [],
-          toolCalls: [],
-          timestamp: Date.now(),
-        },
-      ],
+      ...normalize([{ id: "u1", role: "user", content: "hi" }]),
       activeThreadId: 7,
       noteContext: { noteId: "n", title: "T", contentPreview: "" },
     });
@@ -130,7 +139,7 @@ describe("clearMessages", () => {
     useAgentStore.getState().clearMessages();
 
     const state = useAgentStore.getState();
-    expect(state.messages).toEqual([]);
+    expect(selectOrderedMessages(state)).toEqual([]);
     expect(state.activeThreadId).toBeNull();
     expect(state.noteContext).toBeNull();
   });
@@ -159,30 +168,10 @@ describe("_handleSSEEvent via setState simulation", () => {
   // but we can verify the state shape that gaps events produce.
   it("gaps event updates the last assistant message's gaps", () => {
     // Set up a conversation with an assistant message
-    useAgentStore.setState({
-      messages: [
-        {
-          id: "u1",
-          role: "user",
-          content: "explain monads",
-          artifacts: [],
-          relatedCards: [],
-          gaps: [],
-          toolCalls: [],
-          timestamp: Date.now(),
-        },
-        {
-          id: "a1",
-          role: "assistant",
-          content: "A monad is...",
-          artifacts: [],
-          relatedCards: [],
-          gaps: [],
-          toolCalls: [],
-          timestamp: Date.now(),
-        },
-      ],
-    });
+    useAgentStore.setState(normalize([
+      { id: "u1", role: "user", content: "explain monads" },
+      { id: "a1", role: "assistant", content: "A monad is..." },
+    ]));
 
     // Simulate what _handleSSEEvent("gaps", ...) does internally
     const gapData = [
@@ -191,22 +180,27 @@ describe("_handleSSEEvent via setState simulation", () => {
     ];
 
     useAgentStore.setState((s) => {
-      const msgs = s.messages.map((m, i) =>
-        i === s.messages.length - 1 && m.role === "assistant"
-          ? { ...m, gaps: gapData }
-          : m,
-      );
-      return { messages: msgs };
+      // Update last assistant message's gaps in normalized state
+      const { messageOrder, messagesById } = s;
+      for (let i = messageOrder.length - 1; i >= 0; i--) {
+        const id = messageOrder[i];
+        const msg = messagesById[id];
+        if (msg?.role === "assistant") {
+          return { messagesById: { ...messagesById, [id]: { ...msg, gaps: gapData } } };
+        }
+      }
+      return {};
     });
 
     const state = useAgentStore.getState();
-    const lastMsg = state.messages[state.messages.length - 1];
+    const messages = selectOrderedMessages(state);
+    const lastMsg = messages[messages.length - 1];
     expect(lastMsg.gaps).toHaveLength(2);
     expect(lastMsg.gaps[0].concept).toBe("functors");
     expect(lastMsg.gaps[1].concept).toBe("applicatives");
 
     // First message should be untouched
-    expect(state.messages[0].gaps).toEqual([]);
+    expect(messages[0].gaps).toEqual([]);
   });
 });
 

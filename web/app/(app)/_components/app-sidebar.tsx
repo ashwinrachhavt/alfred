@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import {
+ Bell,
  BookOpen,
  Bot,
  Brain,
@@ -19,6 +20,7 @@ import type { LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useShellStore } from "@/lib/stores/shell-store";
+import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 
 type NavItem = {
  label: string;
@@ -61,11 +63,14 @@ const navSections: NavSection[] = [
 ];
 
 function SidebarNavItem({ item, isActive }: { item: NavItem; isActive: boolean }) {
- const { toggleAiPanel, aiPanelOpen } = useShellStore();
+ const { toggleAiPanel, aiPanelOpen, chatMode } = useShellStore();
+
+ const aiActive = item.action === "toggle-ai-panel" && aiPanelOpen;
+ const aiExpanded = item.action === "toggle-ai-panel" && chatMode === "expanded";
 
  const classes = cn(
  "group flex items-center gap-2.5 border-l-2 px-5 py-1.5 text-xs tracking-wide transition-colors",
- item.action === "toggle-ai-panel" && aiPanelOpen
+ aiActive
  ? "border-primary bg-[var(--alfred-accent-subtle)] text-primary"
  : isActive
  ? "border-primary bg-[var(--alfred-accent-subtle)] text-primary"
@@ -76,6 +81,9 @@ function SidebarNavItem({ item, isActive }: { item: NavItem; isActive: boolean }
  <>
  <item.icon className="size-4 shrink-0 opacity-50 group-hover:opacity-100" />
  <span>{item.label}</span>
+ {aiExpanded && (
+ <span className="ml-1 text-[9px] uppercase tracking-wider text-primary opacity-70">expanded</span>
+ )}
  {item.shortcut && (
  <kbd className="ml-auto text-[10px] text-[var(--alfred-text-tertiary)] opacity-0 group-hover:opacity-100 transition-opacity">
  {item.shortcut}
@@ -93,9 +101,34 @@ function SidebarNavItem({ item, isActive }: { item: NavItem; isActive: boolean }
  }
 
  return (
- <Link href={item.href} className={classes}>
+ <Link href={item.href} prefetch className={classes}>
  {inner}
  </Link>
+ );
+}
+
+function TaskCenterButton() {
+ const { activeCount, setTaskCenterOpen } = useTaskTracker();
+
+ return (
+ <button
+  type="button"
+  onClick={() => setTaskCenterOpen(true)}
+  className="group flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-xs tracking-wide transition-colors text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground"
+ >
+  <span className="relative">
+  <Bell className="size-4" />
+  {activeCount > 0 && (
+   <span className="absolute -top-1 -right-1 flex size-3.5 items-center justify-center rounded-full bg-primary text-[8px] font-bold text-primary-foreground">
+   {activeCount > 9 ? "9+" : activeCount}
+   </span>
+  )}
+  </span>
+  <span>Tasks</span>
+  {activeCount > 0 && (
+  <span className="ml-auto text-[10px] text-primary">{activeCount} active</span>
+  )}
+ </button>
  );
 }
 
@@ -103,6 +136,7 @@ export function AppSidebar() {
  const pathname = usePathname();
  const toggleAiPanel = useShellStore((s) => s.toggleAiPanel);
  const aiPanelOpen = useShellStore((s) => s.aiPanelOpen);
+ const chatMode = useShellStore((s) => s.chatMode);
 
  return (
  <aside className="hidden md:flex w-[220px] shrink-0 flex-col border-r bg-[var(--sidebar)] text-[var(--sidebar-foreground)]">
@@ -129,8 +163,9 @@ export function AppSidebar() {
  ))}
  </nav>
 
- {/* AI toggle at bottom */}
- <div className="border-t p-3">
+ {/* Task center + AI toggle at bottom */}
+ <div className="border-t p-3 space-y-1">
+ <TaskCenterButton />
  <button
  onClick={toggleAiPanel}
  className={cn(
@@ -142,6 +177,9 @@ export function AppSidebar() {
  >
  <Brain className="size-4" />
  <span>AI Assistant</span>
+ {chatMode === "expanded" && (
+ <span className="text-[9px] uppercase tracking-wider opacity-70">expanded</span>
+ )}
  <kbd className="ml-auto text-[10px] opacity-60">J</kbd>
  </button>
  </div>

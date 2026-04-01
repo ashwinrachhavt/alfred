@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { AppCommandPaletteProvider } from "@/components/app-command-palette";
 import { ThemeProvider } from "@/components/theme-provider";
+import { TaskCenterSheet } from "@/components/task-center-sheet";
 import { Toaster } from "@/components/ui/sonner";
 import { TaskTrackerProvider } from "@/features/tasks/task-tracker-provider";
 
@@ -42,6 +43,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
  Skip to content
  </a>
  {children}
+ <TaskCenterSheet />
  <Toaster />
  </AppCommandPaletteProvider>
  </TaskTrackerProvider>

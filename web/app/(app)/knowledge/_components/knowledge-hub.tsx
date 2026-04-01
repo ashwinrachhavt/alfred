@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { AlertCircle, BookOpen, Loader2, Plus, Sparkles as SparklesIcon } from "lucide-react";
+import { AlertCircle, BookOpen, Layers, Loader2, Play, Plus, RefreshCw, Sparkles as SparklesIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useZettelCards, useZettelTopics, useZettelTags } from "@/features/zettels/queries";
+import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
+import { apiPostJson } from "@/lib/api/client";
+import { apiRoutes } from "@/lib/api/routes";
 import { getDueCount } from "./mock-data";
 import { FilterBar, type ZettelFilters } from "./filter-bar";
 import { ViewToolbar, type ViewMode } from "./view-toolbar";
@@ -18,6 +21,7 @@ import { ZettelDetailPanel } from "./zettel-detail-panel";
 import { ReviewStation } from "./review-station";
 import { CreateZettelDialog } from "./create-zettel-dialog";
 import { AIGenerateDialog } from "./ai-generate-dialog";
+import { BulkCreateDialog } from "./bulk-create-dialog";
 
 function CardSkeleton() {
  return (
@@ -83,7 +87,10 @@ export function KnowledgeHub() {
  const [pulsingId, setPulsingId] = useState<string | null>(null);
  const [showCreate, setShowCreate] = useState(false);
  const [showAIGenerate, setShowAIGenerate] = useState(false);
+ const [showBulkCreate, setShowBulkCreate] = useState(false);
+ const [workflowLoading, setWorkflowLoading] = useState<string | null>(null);
 
+ const { trackTask } = useTaskTracker();
  const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
  // Server-side allZettels data
@@ -149,6 +156,38 @@ export function KnowledgeHub() {
  [activeView, allZettels, selectedId, handleSelectZettel],
  );
 
+ const triggerWorkflow = useCallback(async (key: string, label: string, fn: () => Promise<{ task_id: string }>) => {
+   if (workflowLoading) return;
+   setWorkflowLoading(key);
+   try {
+     const res = await fn();
+     if (res.task_id) {
+       trackTask({ id: res.task_id, label, source: "generic" });
+     }
+   } catch {
+     // silently fail — toast from task tracker will handle errors
+   } finally {
+     setWorkflowLoading(null);
+   }
+ }, [workflowLoading, trackTask]);
+
+ const handleReclassifyAll = useCallback(() => {
+   triggerWorkflow("reclassify", "Reclassify All", () =>
+     apiPostJson<{ task_id: string }, Record<string, never>>(apiRoutes.taxonomy.reclassifyAll, {})
+   );
+ }, [triggerWorkflow]);
+
+ const handleReplayBatch = useCallback(() => {
+   triggerWorkflow("enrich", "Bulk Enrich", async () => {
+     const res = await apiPostJson<{ queued: number; tasks: { doc_id: string; task_id: string }[] }, Record<string, never>>(
+       apiRoutes.pipeline.replayBatch, {}
+     );
+     // Track the first task as a representative
+     const firstTask = res.tasks?.[0];
+     return { task_id: firstTask?.task_id ?? "" };
+   });
+ }, [triggerWorkflow]);
+
  return (
  // eslint-disable-next-line jsx-a11y/no-static-element-interactions
  <div className="flex h-full flex-col" onKeyDown={handleKeyDown} tabIndex={-1}>
@@ -167,6 +206,35 @@ export function KnowledgeHub() {
  </p>
  </div>
  <div className="flex items-center gap-2">
+ <Button
+ size="sm"
+ variant="ghost"
+ className="gap-1.5 text-xs text-muted-foreground"
+ onClick={handleReplayBatch}
+ disabled={workflowLoading === "enrich"}
+ >
+ {workflowLoading === "enrich" ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+ Bulk Enrich
+ </Button>
+ <Button
+ size="sm"
+ variant="ghost"
+ className="gap-1.5 text-xs text-muted-foreground"
+ onClick={handleReclassifyAll}
+ disabled={workflowLoading === "reclassify"}
+ >
+ {workflowLoading === "reclassify" ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+ Reclassify
+ </Button>
+ <Button
+ size="sm"
+ variant="outline"
+ className="gap-1.5 text-xs"
+ onClick={() => setShowBulkCreate(true)}
+ >
+ <Layers className="size-3.5" />
+ Bulk Create
+ </Button>
  <Button
  size="sm"
  variant="outline"
@@ -305,6 +373,7 @@ export function KnowledgeHub() {
  {/* Dialogs */}
  <CreateZettelDialog open={showCreate} onOpenChange={setShowCreate} />
  <AIGenerateDialog open={showAIGenerate} onOpenChange={setShowAIGenerate} />
+ <BulkCreateDialog open={showBulkCreate} onOpenChange={setShowBulkCreate} />
  </div>
  );
 }

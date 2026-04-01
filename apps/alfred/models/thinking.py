@@ -62,6 +62,7 @@ class AgentMessageRow(Model, table=True):
     │  artifacts: [{type, action, id, title, ...}] │
     │  related_cards: [{zettel_id, title, reason}] │
     │  gaps: [{concept, description, confidence}]  │
+    │  reasoning_traces: str (o3/o4 reasoning)    │
     └──────────────────────────────────────────────┘
     """
 
@@ -76,6 +77,7 @@ class AgentMessageRow(Model, table=True):
     )
     role: str = Field(sa_column=Column(String(16), nullable=False))
     content: str = Field(default="", sa_column=Column(Text, nullable=False, server_default=""))
+    reasoning_traces: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     tool_calls: list | None = Field(default=None, sa_column=Column(JSON, nullable=True))
     artifacts: list | None = Field(default=None, sa_column=Column(JSON, nullable=True))
     related_cards: list | None = Field(default=None, sa_column=Column(JSON, nullable=True))

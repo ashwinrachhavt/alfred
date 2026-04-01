@@ -1,82 +1,42 @@
-"""Agent service — orchestrates LLM + tool calls via the master LangGraph agent.
+"""Agent service — OpenAI-powered streaming agent with tool calls.
 
-Streams SSE events for the agent chat endpoint.
+Streams SSE events for the agent chat endpoint. Uses AsyncOpenAI directly
+for streaming with function calling, tool dispatch, and reasoning extraction.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import uuid
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from openai import AsyncOpenAI, APITimeoutError, RateLimitError
 from sqlmodel import Session
 
-from alfred.agents.orchestrator.graph import build_orchestrator_graph
-from alfred.agents.orchestrator.registry import ToolRegistry
-from alfred.agents.orchestrator.tools.knowledge import (
-    make_create_zettel_tool,
-    make_get_zettel_tool,
-    make_list_recent_cards_tool,
-    make_search_kb_tool,
-    make_update_zettel_tool,
-)
-from alfred.services.zettelkasten_service import ZettelkastenService
+from alfred.core.settings import settings
+from alfred.services.agent.tools import TOOL_SCHEMAS, execute_tool
 
 logger = logging.getLogger(__name__)
 
+# Max tool-call rounds per turn to prevent infinite loops.
+MAX_TOOL_ROUNDS = 5
 
-def _build_registry(db: Session) -> ToolRegistry:
-    """Build a ToolRegistry with all available tools."""
-    registry = ToolRegistry()
-    zettel_svc = ZettelkastenService(db)
-
-    # Phase 1: Knowledge tools (require DB session)
-    registry.register(make_search_kb_tool(zettel_svc))
-    registry.register(make_list_recent_cards_tool(zettel_svc))
-    registry.register(make_create_zettel_tool(zettel_svc))
-    registry.register(make_get_zettel_tool(zettel_svc))
-    registry.register(make_update_zettel_tool(zettel_svc))
-
-    # Phase 1: Sub-graphs (RAG + Writer)
-    try:
-        from alfred.agents.orchestrator.tools.subgraphs import register_subgraphs
-        register_subgraphs(registry)
-    except Exception:
-        logger.warning("Failed to register sub-graph tools (RAG/Writer). Continuing without them.")
-
-    # Phase 2: Service tools (stateless, use cached dependency getters)
-    try:
-        from alfred.agents.orchestrator.tools.services import (
-            make_autocomplete_tool,
-            make_create_plan_tool,
-            make_edit_text_tool,
-            make_generate_diagram_tool,
-            make_summarize_tool,
-        )
-        registry.register(make_summarize_tool())
-        registry.register(make_generate_diagram_tool())
-        registry.register(make_create_plan_tool())
-        registry.register(make_edit_text_tool())
-        registry.register(make_autocomplete_tool())
-    except Exception:
-        logger.warning("Failed to register Phase 2 service tools. Continuing without them.")
-
-    return registry
-
-
-# Maps intent names (from frontend) to tool names in the registry.
-# Intents with a mapping here get the fast path (direct tool call, no LLM).
-_INTENT_TO_TOOL: dict[str, str] = {
-    "summarize": "summarize_content",
-    "edit_text": "edit_text",
-    "autocomplete": "autocomplete",
-    "diagram": "generate_diagram",
-    "plan": "create_plan",
-    "research": "research_topic",
-    "write": "compose_writing",
+# Timeouts (seconds) per tool type.
+_TOOL_TIMEOUTS: dict[str, int] = {
+    "search_kb": 30,
+    "get_zettel": 30,
+    "create_zettel": 60,
+    "update_zettel": 60,
 }
+
+# Models that use reasoning (o-series).
+_REASONING_MODELS = {"o3", "o3-mini", "o4-mini"}
+
+# Models that require max_completion_tokens instead of max_tokens.
+_MAX_COMPLETION_TOKEN_PREFIXES = ("gpt-5",)
 
 
 def _sse_event(event: str, data: dict[str, Any]) -> str:
@@ -84,11 +44,78 @@ def _sse_event(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
+def _build_system_prompt(
+    lens: str | None = None,
+    note_context: dict | None = None,
+) -> str:
+    """Build a system prompt for the agent."""
+    parts = [
+        "You are Alfred, a knowledge assistant that helps users ingest, decompose, "
+        "connect, and capitalize on what they know. You have access to a knowledge base "
+        "of zettels (atomic knowledge cards). Use the available tools to search, create, "
+        "retrieve, and update knowledge cards when relevant.",
+        "",
+        "Guidelines:",
+        "- Be concise and substantive. Avoid filler.",
+        "- When the user asks about their knowledge, search first before answering.",
+        "- When creating zettels, use clear titles and well-structured markdown content.",
+        "- Surface connections between ideas when you notice them.",
+    ]
+
+    if lens:
+        parts.append("")
+        parts.append(
+            f"The user has selected the '{lens}' lens. Adapt your tone and analytical "
+            f"approach accordingly (e.g., more {lens} framing, terminology, and depth)."
+        )
+
+    if note_context:
+        title = note_context.get("title", "Untitled")
+        preview = note_context.get("content_preview", "")
+        parts.append("")
+        parts.append(f"Context: The user is currently viewing the note '{title}'.")
+        if preview:
+            parts.append(f"Note preview: {preview[:500]}")
+
+    return "\n".join(parts)
+
+
+def _is_reasoning_model(model: str) -> bool:
+    """Check if a model is an o-series reasoning model."""
+    return any(model.startswith(p) for p in _REASONING_MODELS)
+
+
+def _uses_max_completion_tokens(model: str) -> bool:
+    """Check if a model requires max_completion_tokens parameter."""
+    return any(model.startswith(p) for p in _MAX_COMPLETION_TOKEN_PREFIXES) or _is_reasoning_model(model)
+
+
+def _make_client() -> AsyncOpenAI:
+    """Create an AsyncOpenAI client from settings."""
+    kwargs: dict[str, object] = {}
+    if settings.openai_api_key:
+        val = settings.openai_api_key.get_secret_value()
+        if val:
+            kwargs["api_key"] = val
+    if settings.openai_base_url:
+        kwargs["base_url"] = settings.openai_base_url
+    if settings.openai_organization:
+        kwargs["organization"] = settings.openai_organization
+    return AsyncOpenAI(**kwargs)
+
+
 class AgentService:
     """Orchestrates an agentic chat turn with tool calls and streaming."""
 
     def __init__(self, db: Session) -> None:
         self.db = db
+        self._client: AsyncOpenAI | None = None
+
+    @property
+    def client(self) -> AsyncOpenAI:
+        if self._client is None:
+            self._client = _make_client()
+        return self._client
 
     async def stream_turn(
         self,
@@ -106,171 +133,246 @@ class AgentService:
     ) -> AsyncIterator[str]:
         """Stream SSE events for one agent turn.
 
-        Builds the orchestrator graph, invokes it, and yields SSE events
-        for tokens, tool calls, artifacts, and completion.
+        Calls OpenAI with function calling, dispatches tool calls,
+        re-injects results, and streams tokens back as SSE events.
         """
-        model_name = model or "gpt-4.1-mini"
+        model_name = model or settings.llm_model or "gpt-4.1-mini"
 
         try:
-            registry = _build_registry(self.db)
+            # Build conversation messages
+            messages: list[dict[str, Any]] = [
+                {"role": "system", "content": _build_system_prompt(lens, note_context)},
+            ]
 
-            # Fast path: intent-driven actions bypass the LLM and call
-            # the matching tool directly. This is faster and deterministic.
-            if intent and not message:
-                tool_name = _INTENT_TO_TOOL.get(intent)
-                if tool_name and tool_name in registry.tools:
-                    async for event in self._execute_intent(
-                        registry, tool_name, intent_args or {}, thread_id,
-                    ):
-                        yield event
-                    return
-
-            graph = build_orchestrator_graph(
-                registry,
-                model=model_name,
-                max_iterations=max_iterations,
-                lens=lens,
-                note_context=note_context,
-            )
-
-            # Build conversation messages from history
-            messages = []
             if history:
                 for msg in history:
                     role = msg.get("role", "user")
                     content = msg.get("content", "")
-                    if role == "user":
-                        messages.append(HumanMessage(content=content))
-                    else:
-                        messages.append(AIMessage(content=content))
+                    if role in ("user", "assistant", "system"):
+                        messages.append({"role": role, "content": content})
 
-            # Add the current user message
-            if message:
-                messages.append(HumanMessage(content=message))
-            elif intent:
-                # Fallback: intent without a direct tool mapping goes through the graph
-                messages.append(HumanMessage(content=f"[intent: {intent}] {json.dumps(intent_args or {})}"))
+            messages.append({"role": "user", "content": message})
 
-            # Invoke the graph
-            result = graph.invoke({
-                "messages": messages,
-                "thread_id": str(thread_id or "ephemeral"),
-                "model": model_name,
-                "iteration": 0,
-                "note_context": note_context,
-                "intent": intent,
-                "intent_args": intent_args,
-            })
-
-            # Process result messages and yield SSE events
-            result_messages = result.get("messages", [])
-            for msg in result_messages:
+            # Tool loop: call OpenAI, dispatch tools, re-inject, repeat
+            for _round in range(MAX_TOOL_ROUNDS):
                 if is_disconnected and await is_disconnected():
                     return
 
-                if isinstance(msg, AIMessage):
-                    # Emit tool_start events for any tool calls
-                    if getattr(msg, "tool_calls", None):
-                        for tc in msg.tool_calls:
-                            tc_dict = tc if isinstance(tc, dict) else {"name": tc.name, "args": tc.args}
-                            yield _sse_event("tool_start", {
-                                "tool": tc_dict.get("name", "unknown"),
-                                "args": tc_dict.get("args", {}),
-                            })
-                    # Emit token event for content
-                    elif msg.content:
-                        yield _sse_event("token", {"content": msg.content})
+                response_content, tool_calls, reasoning = await self._call_openai_streaming(
+                    messages=messages,
+                    model=model_name,
+                    is_disconnected=is_disconnected,
+                )
 
-                elif isinstance(msg, ToolMessage):
-                    # Emit tool_end event
-                    try:
-                        result_data = json.loads(msg.content) if isinstance(msg.content, str) else msg.content
-                    except (json.JSONDecodeError, TypeError):
-                        result_data = {"raw": str(msg.content)}
+                # Yield reasoning if present (o3/o4 models)
+                if reasoning:
+                    yield _sse_event("reasoning", {"content": reasoning})
 
-                    yield _sse_event("tool_end", {
-                        "tool": getattr(msg, "name", "unknown"),
-                        "result_summary": str(msg.content)[:200],
+                # Yield accumulated content as a single token event
+                if response_content:
+                    yield _sse_event("token", {"content": response_content})
+
+                # No tool calls means we're done
+                if not tool_calls:
+                    break
+
+                # Process tool calls
+                # Add assistant message with tool_calls to conversation
+                assistant_msg: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": response_content or None,
+                    "tool_calls": [
+                        {
+                            "id": tc["call_id"],
+                            "type": "function",
+                            "function": {
+                                "name": tc["name"],
+                                "arguments": json.dumps(tc["args"]),
+                            },
+                        }
+                        for tc in tool_calls
+                    ],
+                }
+                messages.append(assistant_msg)
+
+                for tc in tool_calls:
+                    call_id = tc["call_id"]
+                    tool_name = tc["name"]
+                    tool_args = tc["args"]
+
+                    yield _sse_event("tool_start", {
+                        "call_id": call_id,
+                        "tool": tool_name,
+                        "args": tool_args,
                     })
 
-                    # Emit artifact events for zettel CRUD results
-                    if isinstance(result_data, dict) and result_data.get("action") in ("created", "found", "updated"):
+                    # Execute tool with timeout
+                    timeout = _TOOL_TIMEOUTS.get(tool_name, 30)
+                    try:
+                        result = await asyncio.wait_for(
+                            execute_tool(tool_name, tool_args, self.db),
+                            timeout=timeout,
+                        )
+                    except asyncio.TimeoutError:
+                        result = {"error": f"Tool {tool_name} timed out after {timeout}s"}
+                    except Exception as exc:
+                        result = {"error": f"Tool {tool_name} failed: {exc!s}"}
+
+                    yield _sse_event("tool_result", {
+                        "call_id": call_id,
+                        "result": result,
+                    })
+
+                    # Emit artifact event for zettel CRUD results
+                    if isinstance(result, dict) and result.get("action") in ("created", "found", "updated"):
                         yield _sse_event("artifact", {
                             "type": "zettel",
-                            "action": result_data["action"],
+                            "action": result["action"],
                             "zettel": {
-                                "id": result_data.get("zettel_id"),
-                                "title": result_data.get("title", ""),
-                                "summary": result_data.get("summary", ""),
-                                "topic": result_data.get("topic", ""),
-                                "tags": result_data.get("tags", []),
+                                "id": result.get("zettel_id"),
+                                "title": result.get("title", ""),
+                                "summary": result.get("summary", ""),
+                                "topic": result.get("topic", ""),
+                                "tags": result.get("tags", []),
                             },
                         })
+
+                    # Inject tool result back into conversation for next round
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": json.dumps(result),
+                    })
 
         except Exception as exc:
             logger.exception("Agent stream_turn failed: %s", exc)
             yield _sse_event("error", {"message": f"Agent error: {exc!s}"})
 
-        yield _sse_event("done", {
-            "thread_id": str(thread_id or ""),
-        })
+        yield _sse_event("done", {"thread_id": str(thread_id or "")})
 
-    async def _execute_intent(
+    async def _call_openai_streaming(
         self,
-        registry: ToolRegistry,
-        tool_name: str,
-        args: dict,
-        thread_id: int | None,
-    ) -> AsyncIterator[str]:
-        """Fast path: call a tool directly without LLM reasoning.
+        *,
+        messages: list[dict[str, Any]],
+        model: str,
+        is_disconnected: Callable[[], Any] | None = None,
+    ) -> tuple[str, list[dict[str, Any]], str | None]:
+        """Call OpenAI with streaming and return (content, tool_calls, reasoning).
 
-        Used for intent-driven actions (frontend buttons) where the tool
-        mapping is known. Yields SSE events for the result.
+        Handles retry on timeout and rate limit. Collects streamed deltas
+        into complete content and tool_call objects.
         """
-        try:
-            yield _sse_event("tool_start", {"tool": tool_name, "args": args})
-            result_str = registry.execute(tool_name, args)
-            yield _sse_event("tool_end", {
-                "tool": tool_name,
-                "result_summary": str(result_str)[:200],
+        kwargs = self._build_api_kwargs(model, messages)
+
+        for attempt in range(2):  # 1 retry
+            try:
+                return await self._stream_response(kwargs, model, is_disconnected)
+            except APITimeoutError:
+                if attempt == 0:
+                    logger.warning("OpenAI timeout on attempt 1, retrying...")
+                    continue
+                raise
+            except RateLimitError:
+                if attempt == 0:
+                    logger.warning("OpenAI rate limit hit, waiting 2s and retrying...")
+                    await asyncio.sleep(2)
+                    continue
+                raise
+
+        # Should not reach here, but satisfy type checker
+        return "", [], None  # pragma: no cover
+
+    def _build_api_kwargs(self, model: str, messages: list[dict[str, Any]]) -> dict[str, Any]:
+        """Build the kwargs dict for the OpenAI chat completion call."""
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "tools": TOOL_SCHEMAS,
+            "stream": True,
+            "timeout": 60,
+        }
+
+        # Token limit parameter depends on model
+        if _uses_max_completion_tokens(model):
+            kwargs["max_completion_tokens"] = 4096
+        else:
+            kwargs["max_tokens"] = 4096
+
+        # Reasoning models don't support temperature
+        if not _is_reasoning_model(model):
+            kwargs["temperature"] = settings.llm_temperature
+
+        return kwargs
+
+    async def _stream_response(
+        self,
+        kwargs: dict[str, Any],
+        model: str,
+        is_disconnected: Callable[[], Any] | None = None,
+    ) -> tuple[str, list[dict[str, Any]], str | None]:
+        """Stream a single OpenAI response and collect results.
+
+        Returns (content, tool_calls, reasoning).
+        """
+        content_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        tool_calls_by_index: dict[int, dict[str, Any]] = {}
+
+        stream = await self.client.chat.completions.create(**kwargs)
+
+        async for chunk in stream:
+            if is_disconnected and await is_disconnected():
+                break
+
+            if not chunk.choices:
+                continue
+
+            delta = chunk.choices[0].delta
+
+            # Collect reasoning content (o3/o4 models)
+            # OpenAI returns reasoning in a `reasoning` field on the delta
+            reasoning_content = getattr(delta, "reasoning", None) or getattr(delta, "reasoning_content", None)
+            if reasoning_content:
+                reasoning_parts.append(reasoning_content)
+
+            # Collect regular content
+            if delta.content:
+                content_parts.append(delta.content)
+
+            # Collect tool calls (streamed incrementally)
+            if delta.tool_calls:
+                for tc_delta in delta.tool_calls:
+                    idx = tc_delta.index
+                    if idx not in tool_calls_by_index:
+                        tool_calls_by_index[idx] = {
+                            "call_id": tc_delta.id or f"call_{uuid.uuid4().hex[:8]}",
+                            "name": "",
+                            "args_json": "",
+                        }
+                    entry = tool_calls_by_index[idx]
+                    if tc_delta.id:
+                        entry["call_id"] = tc_delta.id
+                    if tc_delta.function:
+                        if tc_delta.function.name:
+                            entry["name"] = tc_delta.function.name
+                        if tc_delta.function.arguments:
+                            entry["args_json"] += tc_delta.function.arguments
+
+        # Parse collected tool calls
+        tool_calls: list[dict[str, Any]] = []
+        for idx in sorted(tool_calls_by_index.keys()):
+            entry = tool_calls_by_index[idx]
+            try:
+                args = json.loads(entry["args_json"]) if entry["args_json"] else {}
+            except json.JSONDecodeError:
+                args = {}
+            tool_calls.append({
+                "call_id": entry["call_id"],
+                "name": entry["name"],
+                "args": args,
             })
 
-            # Parse the tool result and emit as token content
-            try:
-                result_data = json.loads(result_str) if isinstance(result_str, str) else result_str
-            except (json.JSONDecodeError, TypeError):
-                result_data = result_str
+        content = "".join(content_parts)
+        reasoning = "".join(reasoning_parts) or None
 
-            # Extract the most useful text from the result for the token stream
-            if isinstance(result_data, dict):
-                # For text operations, send the output/completion/short as the token
-                text = (
-                    result_data.get("output")
-                    or result_data.get("completion")
-                    or result_data.get("short")
-                    or result_data.get("description")
-                    or str(result_data)
-                )
-                yield _sse_event("token", {"content": text})
-
-                # Emit artifact if applicable
-                if result_data.get("action") in ("created", "found", "updated"):
-                    yield _sse_event("artifact", {
-                        "type": "zettel",
-                        "action": result_data["action"],
-                        "zettel": {
-                            "id": result_data.get("zettel_id"),
-                            "title": result_data.get("title", ""),
-                            "summary": result_data.get("summary", ""),
-                            "topic": result_data.get("topic", ""),
-                            "tags": result_data.get("tags", []),
-                        },
-                    })
-            else:
-                yield _sse_event("token", {"content": str(result_data)})
-
-        except Exception as exc:
-            logger.exception("Intent execution failed: %s", exc)
-            yield _sse_event("error", {"message": f"Intent error: {exc!s}"})
-
-        yield _sse_event("done", {"thread_id": str(thread_id or "")})
+        return content, tool_calls, reasoning

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import dynamic from "next/dynamic";
 
 import { safeGetItem } from "@/lib/storage";
 import type { NoteTreeNode, Workspace } from "@/lib/api/types/notes";
@@ -11,8 +12,16 @@ import { ResizableColumns } from "@/components/ui/resizable-columns";
 import { useCreateNote, useCreateWorkspace, useDeleteNote } from "@/features/notes/mutations";
 import { useNoteTree, useWorkspaces } from "@/features/notes/queries";
 
-import { NoteEditorPanel } from "./note-editor-panel";
 import { NotesSidebar } from "./notes-sidebar";
+
+const NoteEditorPanel = dynamic(() => import("./note-editor-panel").then((mod) => ({ default: mod.NoteEditorPanel })), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full items-center justify-center text-muted-foreground">
+      Loading editor...
+    </div>
+  ),
+});
 
 /** Flatten tree into an ordered list of note IDs (depth-first). */
 function flattenTree(nodes: NoteTreeNode[]): string[] {

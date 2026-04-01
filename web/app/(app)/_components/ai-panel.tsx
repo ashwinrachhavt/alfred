@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import dynamic from "next/dynamic";
 
 import {
  BookmarkPlus,
@@ -17,21 +18,27 @@ import {
  Square,
  X,
 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "@/components/ui/button";
 import {
- useAgentStore,
- PHILOSOPHICAL_LENSES,
- type AgentMessage,
- type ArtifactCard,
+  useAgentStore,
+  useToolCallStore,
+  selectOrderedMessages,
+  PHILOSOPHICAL_LENSES,
+  type AgentMessage,
+  type ArtifactCard,
 } from "@/lib/stores/agent-store";
 import { ArtifactCardComponent } from "@/components/agent/artifact-card";
 import { RelatedCards } from "@/components/agent/related-cards";
-import { EditorDrawer } from "@/components/agent/editor-drawer";
 import { MarkdownMessage } from "@/components/agent/markdown-message";
 import { useShellStore } from "@/lib/stores/shell-store";
 import { apiFetch } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
+
+const EditorDrawer = dynamic(() => import("@/components/agent/editor-drawer").then((mod) => ({ default: mod.EditorDrawer })), {
+  ssr: false,
+});
 
 // --- Page-contextual suggestions ---
 
@@ -53,42 +60,73 @@ const SUGGESTIONS: Record<string, string[]> = {
 };
 
 export function AiPanel() {
- const { aiPanelOpen, toggleAiPanel } = useShellStore();
- const {
- messages,
- threads,
- activeThreadId,
- isStreaming,
- activeLens,
- activeModel,
- activeToolCalls,
- noteContext,
- sendMessage,
- cancelStream,
- setLens,
- setModel,
- loadThreads,
- createThread,
- clearMessages,
- } = useAgentStore();
+  const { aiPanelOpen, toggleAiPanel } = useShellStore();
+  const {
+    messagesById,
+    messageOrder,
+    threads,
+    activeThreadId,
+    isStreaming,
+    activeLens,
+    activeModel,
+    noteContext,
+    sendMessage,
+    cancelStream,
+    setLens,
+    setModel,
+    loadThreads,
+    createThread,
+    clearMessages,
+  } = useAgentStore(
+    useShallow((s) => ({
+      messagesById: s.messagesById,
+      messageOrder: s.messageOrder,
+      threads: s.threads,
+      activeThreadId: s.activeThreadId,
+      isStreaming: s.isStreaming,
+      activeLens: s.activeLens,
+      activeModel: s.activeModel,
+      noteContext: s.noteContext,
+      sendMessage: s.sendMessage,
+      cancelStream: s.cancelStream,
+      setLens: s.setLens,
+      setModel: s.setModel,
+      loadThreads: s.loadThreads,
+      createThread: s.createThread,
+      clearMessages: s.clearMessages,
+    })),
+  );
+
+  const messages = useMemo(
+    () => selectOrderedMessages({ messagesById, messageOrder }),
+    [messagesById, messageOrder],
+  );
+
+  const { activeToolCalls } = useToolCallStore(
+    useShallow((s) => ({ activeToolCalls: s.activeToolCalls })),
+  );
 
  const pathname = usePathname();
  const isOnNotes = pathname?.startsWith("/notes");
 
- const [input, setInput] = useState("");
- const [showSettings, setShowSettings] = useState(false);
- const [showThreads, setShowThreads] = useState(false);
- const [editingZettelId, setEditingZettelId] = useState<number | null>(null);
- const messagesEndRef = useRef<HTMLDivElement>(null);
- const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [input, setInput] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const [showThreads, setShowThreads] = useState(false);
+  const [editingZettelId, setEditingZettelId] = useState<number | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const lastThreadLoadRef = useRef(0);
 
- useEffect(() => {
- if (aiPanelOpen) {
- loadThreads();
- // Focus input when panel opens
- setTimeout(() => inputRef.current?.focus(), 200);
- }
- }, [aiPanelOpen, loadThreads]);
+  useEffect(() => {
+    if (!aiPanelOpen) return;
+    const now = Date.now();
+    if (now - lastThreadLoadRef.current > 60_000) {
+      loadThreads();
+      lastThreadLoadRef.current = now;
+    }
+    // Focus input when panel opens
+    setTimeout(() => inputRef.current?.focus(), 200);
+  }, [aiPanelOpen, loadThreads]);
 
  useEffect(() => {
  messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -113,9 +151,9 @@ export function AiPanel() {
  }
  };
 
- const handleArtifactClick = (artifact: ArtifactCard) => {
- setEditingZettelId(artifact.id);
- };
+  const handleArtifactClick = useCallback((artifact: ArtifactCard) => {
+    setEditingZettelId(artifact.id);
+  }, []);
 
  if (!aiPanelOpen) return null;
 
@@ -338,10 +376,10 @@ export function AiPanel() {
 
 // --- Panel Message Component ---
 
-function PanelMessage({
- message,
- isOnNotes,
- onArtifactClick,
+const PanelMessage = memo(function PanelMessage({
+  message,
+  isOnNotes,
+  onArtifactClick,
 }: {
  message: AgentMessage;
  isOnNotes: boolean;
@@ -399,17 +437,17 @@ function PanelMessage({
  </div>
  )}
 
- {/* Action bar — visible on hover */}
- {message.content && !message.content.startsWith("Sorry") && (
- <MessageActionBar
- message={message}
- isOnNotes={isOnNotes}
- hasCreatedZettel={hasCreatedZettel}
- />
- )}
- </div>
- );
-}
+      {/* Action bar — visible on hover */}
+      {message.content && !message.content.startsWith("Sorry") && (
+        <MessageActionBar
+          message={message}
+          isOnNotes={isOnNotes}
+          hasCreatedZettel={hasCreatedZettel}
+        />
+      )}
+    </div>
+  );
+});
 
 // --- Action Bar ---
 

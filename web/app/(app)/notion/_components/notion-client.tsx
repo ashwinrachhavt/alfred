@@ -2,12 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import dynamic from "next/dynamic";
 
 import type { NotionHistoryPage } from "@/lib/api/types/notion";
 import { formatErrorMessage } from "@/lib/utils";
 import { toDateInputValue } from "@/lib/utils/date-format";
 import { useNotionHistory } from "@/features/notion/queries";
-import { NotionNotetaker } from "@/app/(app)/notion/_components/notion-notetaker";
 import { NotionConnect } from "@/app/(app)/notion/_components/notion-connect";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -17,6 +17,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+
+const NotionNotetaker = dynamic(() => import("./notion-notetaker").then((mod) => ({ default: mod.NotionNotetaker })), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full items-center justify-center text-muted-foreground">
+      Loading notetaker...
+    </div>
+  ),
+});
 
 function safeCopy(text: string): void {
  void navigator.clipboard

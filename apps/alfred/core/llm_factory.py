@@ -14,12 +14,11 @@ from .settings import LLMProvider, settings
 def get_chat_model(
     provider: LLMProvider | None = None,
     model: str | None = None,
-    temperature: float | None = None,
 ) -> BaseChatModel:
     cfg = settings
     provider = provider or cfg.llm_provider
     model = model or cfg.llm_model
-    temperature = cfg.llm_temperature if temperature is None else temperature
+    temperature = cfg.llm_temperature
 
     if provider == LLMProvider.openai:
         return ChatOpenAI(

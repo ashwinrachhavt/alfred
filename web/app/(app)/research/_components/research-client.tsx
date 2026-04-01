@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 
 import { BookOpen, Clock, Plus, RefreshCw, Search, Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -61,49 +61,53 @@ function formatRelativeDate(dateStr: string | null | undefined): string {
 // Report List Item
 // ---------------------------------------------------------------------------
 
-function ReportListItem({
- report,
- isActive,
- onClick,
+const ReportListItem = memo(function ReportListItem({
+  report,
+  isActive,
+  onSelect,
 }: {
- report: ResearchReportSummary;
- isActive: boolean;
- onClick: () => void;
+  report: ResearchReportSummary;
+  isActive: boolean;
+  onSelect: (id: string) => void;
 }) {
- const topic = report.topic ?? report.company ?? "Untitled";
- const summary = report.executive_summary;
- const truncatedSummary = summary && summary.length > 120 ? summary.slice(0, 120) + "..." : summary;
+  const handleClick = useCallback(
+    () => onSelect(report.id),
+    [onSelect, report.id],
+  );
+  const topic = report.topic ?? report.company ?? "Untitled";
+  const summary = report.executive_summary;
+  const truncatedSummary = summary && summary.length > 120 ? summary.slice(0, 120) + "..." : summary;
 
- return (
- <button
- type="button"
- onClick={onClick}
- className={cn(
- "w-full rounded-lg border px-3 py-3 text-left transition-colors",
- isActive
- ? "border-primary/30 bg-primary/5"
- : "border-transparent hover:bg-muted/50"
- )}
- >
- <div className="flex items-start justify-between gap-2">
- <h3 className="text-sm font-medium leading-snug">{topic}</h3>
- <span className="text-muted-foreground mt-0.5 shrink-0 text-[11px]">
- {formatRelativeDate(report.generated_at ?? report.updated_at)}
- </span>
- </div>
- {truncatedSummary ? (
- <p className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-relaxed">
- {truncatedSummary}
- </p>
- ) : null}
- {report.model_name ? (
- <Badge variant="outline" className="mt-1.5 text-[10px]">
- {report.model_name}
- </Badge>
- ) : null}
- </button>
- );
-}
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      className={cn(
+        "w-full rounded-lg border px-3 py-3 text-left transition-colors",
+        isActive
+          ? "border-primary/30 bg-primary/5"
+          : "border-transparent hover:bg-muted/50"
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="text-sm font-medium leading-snug">{topic}</h3>
+        <span className="text-muted-foreground mt-0.5 shrink-0 text-[11px]">
+          {formatRelativeDate(report.generated_at ?? report.updated_at)}
+        </span>
+      </div>
+      {truncatedSummary ? (
+        <p className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-relaxed">
+          {truncatedSummary}
+        </p>
+      ) : null}
+      {report.model_name ? (
+        <Badge variant="outline" className="mt-1.5 text-[10px]">
+          {report.model_name}
+        </Badge>
+      ) : null}
+    </button>
+  );
+});
 
 // ---------------------------------------------------------------------------
 // Report Thread List (left panel)
@@ -122,15 +126,22 @@ function ReportThreadList({
  const reports = reportsQuery.data ?? [];
  const [search, setSearch] = useState("");
 
- const filtered = useMemo(() => {
- if (!search.trim()) return reports;
- const q = search.toLowerCase();
- return reports.filter((r) => {
- const topic = (r.topic ?? r.company ?? "").toLowerCase();
- const summary = (r.executive_summary ?? "").toLowerCase();
- return topic.includes(q) || summary.includes(q);
- });
- }, [reports, search]);
+  const handleReportSelect = useCallback(
+    (reportId: string) => {
+      onSelect(reportId);
+    },
+    [onSelect],
+  );
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return reports;
+    const q = search.toLowerCase();
+    return reports.filter((r) => {
+      const topic = (r.topic ?? r.company ?? "").toLowerCase();
+      const summary = (r.executive_summary ?? "").toLowerCase();
+      return topic.includes(q) || summary.includes(q);
+    });
+  }, [reports, search]);
 
  return (
  <div className="flex h-full flex-col">
@@ -156,37 +167,37 @@ function ReportThreadList({
 
  <Separator />
 
- <div className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
- {reportsQuery.isLoading ? (
- <div className="space-y-3 px-1 py-2">
- {Array.from({ length: 4 }).map((_, i) => (
- <div key={i} className="space-y-1.5">
- <div className="bg-muted h-4 w-3/4 animate-pulse rounded" />
- <div className="bg-muted h-3 w-full animate-pulse rounded" />
- </div>
- ))}
- </div>
- ) : filtered.length === 0 ? (
- <div className="flex flex-col items-center justify-center py-12 text-center">
- <BookOpen className="text-muted-foreground/50 mb-3 h-8 w-8" />
- <p className="text-muted-foreground text-sm">
- {search ? "No matching reports" : "No research yet"}
- </p>
- <p className="text-muted-foreground mt-1 text-xs">
- {search ? "Try a different search term" : "Generate your first report above"}
- </p>
- </div>
- ) : (
- filtered.map((report) => (
- <ReportListItem
- key={report.id}
- report={report}
- isActive={selectedId === report.id}
- onClick={() => onSelect(report.id)}
- />
- ))
- )}
- </div>
+      <div className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
+        {reportsQuery.isLoading ? (
+          <div className="space-y-3 px-1 py-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="space-y-1.5">
+                <div className="bg-muted h-4 w-3/4 animate-pulse rounded" />
+                <div className="bg-muted h-3 w-full animate-pulse rounded" />
+              </div>
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <BookOpen className="text-muted-foreground/50 mb-3 h-8 w-8" />
+            <p className="text-muted-foreground text-sm">
+              {search ? "No matching reports" : "No research yet"}
+            </p>
+            <p className="text-muted-foreground mt-1 text-xs">
+              {search ? "Try a different search term" : "Generate your first report above"}
+            </p>
+          </div>
+        ) : (
+          filtered.map((report) => (
+            <ReportListItem
+              key={report.id}
+              report={report}
+              isActive={selectedId === report.id}
+              onSelect={handleReportSelect}
+            />
+          ))
+        )}
+      </div>
 
  {reports.length > 0 ? (
  <>

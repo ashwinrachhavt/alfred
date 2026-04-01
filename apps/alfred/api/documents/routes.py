@@ -105,6 +105,7 @@ class DocumentTitleImageResponse(BaseModel):
     cover_image_url: str | None = None
     skipped: bool = False
     reason: str | None = None
+    task_id: str | None = None
 
 
 @router.post(
@@ -193,8 +194,7 @@ def fetch_and_organize(
     force: bool = Query(False, description="Re-fetch even if content exists"),
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> FetchOrganizeResponse:
-    """Fetch full page content from source URL via Firecrawl, store as clean
-    markdown, then trigger enrichment.
+    """Kick off async fetch of full page content from source URL via Firecrawl.
 
     Use when the captured content is too short (e.g. selection or RSS snippet)
     and the source URL has the full article.
@@ -214,54 +214,25 @@ def fetch_and_organize(
         if not source_url or source_url.startswith("about:"):
             raise HTTPException(status_code=400, detail="No source URL to fetch from")
 
-        # Scrape the page via Firecrawl
-        from alfred.connectors.firecrawl_connector import FirecrawlClient
-
-        fc = FirecrawlClient()
-        result = fc.scrape(source_url)
-
-        if not result.success or not result.markdown:
-            raise HTTPException(status_code=502, detail=f"Failed to fetch page: {result.error}")
-
-        min_fetch_length = 50
-        markdown = result.markdown.strip()
-        if len(markdown) < min_fetch_length:
-            raise HTTPException(status_code=422, detail="Fetched content too short")
-
-        # Update the document with the full markdown content
-        svc.update_document_text(
-            id,
-            raw_markdown=markdown,
-            cleaned_text=markdown,
+        # Dispatch async task for Firecrawl scraping
+        celery_client = get_celery_client()
+        async_result = celery_client.send_task(
+            "alfred.tasks.document_processing.fetch_organize",
+            kwargs={"doc_id": id, "source_url": source_url, "force": force},
         )
-
-        # Trigger enrichment
-        try:
-            celery_client = get_celery_client()
-            async_result = celery_client.send_task(
-                "alfred.tasks.document_enrichment.enrich",
-                kwargs={"doc_id": id, "force": True},
-            )
-            return FetchOrganizeResponse(
-                id=id,
-                status="fetched_and_enriching",
-                tokens=len(markdown.split()),
-                task_id=async_result.id,
-            )
-        except Exception:
-            return FetchOrganizeResponse(
-                id=id,
-                status="fetched",
-                tokens=len(markdown.split()),
-            )
+        return FetchOrganizeResponse(
+            id=id,
+            status="processing",
+            task_id=async_result.id,
+        )
 
     except HTTPException:
         raise
     except AlfredException:
         raise
     except Exception as exc:
-        logger.exception("Fetch and organize failed for %s: %s", id, exc)
-        raise HTTPException(status_code=500, detail="Failed to fetch and organize") from exc
+        logger.exception("Failed to enqueue fetch and organize for %s: %s", id, exc)
+        raise HTTPException(status_code=500, detail="Failed to enqueue fetch") from exc
 
 
 @router.get("/{id}/image")
@@ -296,30 +267,37 @@ def generate_document_image(
     payload: DocumentTitleImageRequest = Body(default_factory=DocumentTitleImageRequest),
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> DocumentTitleImageResponse:
-    """Generate and persist a cover image for a document synchronously."""
+    """Queue cover image generation as a background task."""
 
     try:
-        res = svc.generate_document_title_image(
-            id,
-            force=force,
-            model=payload.model,
-            size=payload.size,
-            quality=payload.quality,
+        doc = svc.get_document_details(id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        celery_client = get_celery_client()
+        async_result = celery_client.send_task(
+            "alfred.tasks.document_title_image.generate",
+            kwargs={
+                "doc_id": id,
+                "force": force,
+                "model": payload.model,
+                "size": payload.size,
+                "quality": payload.quality,
+            },
         )
+        return DocumentTitleImageResponse(
+            id=id,
+            status="processing",
+            cover_image_url=f"/api/documents/{id}/image",
+            task_id=async_result.id,
+        )
+    except HTTPException:
+        raise
     except AlfredException:
         raise
     except Exception as exc:  # pragma: no cover - external IO
-        logger.exception("Failed to generate document image: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to generate image") from exc
-
-    skipped = bool(res.get("skipped"))
-    return DocumentTitleImageResponse(
-        id=id,
-        status="skipped" if skipped else "generated",
-        cover_image_url=f"/api/documents/{id}/image",
-        skipped=skipped,
-        reason=res.get("reason"),
-    )
+        logger.exception("Failed to enqueue document image generation: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to enqueue image generation") from exc
 
 
 @router.post("/{id}/image/async", response_model=PageResponse)
@@ -437,7 +415,7 @@ def list_explorer_documents(
 
 @router.get("/semantic-map", response_model=SemanticMapResponse)
 def get_semantic_map(
-    limit: int = Query(5000, ge=1, le=20_000),
+    limit: int = Query(2000, ge=1, le=20_000),
     refresh: bool = Query(False, description="Force recompute (bypass cache)"),
     svc: DocStorageService = Depends(get_doc_storage_service),
 ) -> dict:

@@ -13,7 +13,9 @@ from alfred.prompts import load_prompt
 
 
 def make_llm(*, temperature: float = 0.2):
-    return get_chat_model(temperature=temperature)
+    # NOTE: temperature parameter is ignored; model always uses cfg.llm_temperature
+    # Kept for backward compatibility but no longer affects behavior
+    return get_chat_model()
 
 
 _CORE_SYSTEM_PROMPT = load_prompt("agentic_rag", "core.md")

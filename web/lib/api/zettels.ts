@@ -164,6 +164,16 @@ export async function suggestZettelLinks(
   return apiPostJson<LinkSuggestion[], Record<string, never>>(url, {});
 }
 
+// --------------- Bulk Create ---------------
+
+export async function bulkCreateZettelCards(
+  payload: ZettelCardCreatePayload[]
+): Promise<ApiZettelCard[]> {
+  return apiPostJson<ApiZettelCard[], ZettelCardCreatePayload[]>(
+    `${apiRoutes.zettels.cards}/bulk`, payload
+  );
+}
+
 // --------------- AI Generation ---------------
 
 export async function generateZettelCard(payload: AIGeneratePayload): Promise<ApiZettelCard> {

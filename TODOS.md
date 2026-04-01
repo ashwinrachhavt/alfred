@@ -84,3 +84,19 @@
 **How to start:** Re-run enrichment on this specific zettel, or manually edit the zettel content. Root cause: add error handling to the enrichment pipeline to detect and skip error responses.
 **Effort:** S (human) -> S (CC) | **Priority:** P3
 **Added:** 2026-03-29 via /qa
+
+## Chunked Decomposition for Long Articles
+**What:** The zettel decomposer truncates article text to 8000 chars (~2000 tokens). For articles over 8K chars, later sections are invisible to the LLM. The decomposer overfits to intros and misses substance in the body.
+**Why:** Long technical articles and papers commonly exceed 20K chars. The current truncation means 60%+ of content is never decomposed into zettels. Key insights in later sections are lost.
+**How to start:** Implement map-reduce decomposition: chunk the article into 8K segments, decompose each independently, then deduplicate/merge cards across chunks. Alternatively, increase the limit to 16-32K (GPT-5.4 supports 128K context) as a quick win.
+**Effort:** M (human) -> S (CC) | **Priority:** P2
+**Depends on:** Nothing
+**Added:** 2026-03-29 via /plan-eng-review (Codex outside voice)
+
+## Excalidraw AI: Switch to Mermaid→Excalidraw Pipeline
+**What:** The current canvas AI generates raw Excalidraw element JSON directly from the LLM. The repo already has a Mermaid → Excalidraw conversion path in `excalidraw-canvas.tsx`. LLM → Mermaid → Excalidraw would be more reliable.
+**Why:** Mermaid is a simpler, well-documented format that LLMs handle reliably. Raw Excalidraw JSON has many required fields (id, strokeColor, fillStyle, roughness, etc.) that LLMs often get wrong. Mermaid diagrams just need node/edge definitions.
+**How to start:** Change `build_diagram_prompt()` to request Mermaid output. Parse Mermaid text. Convert via existing `parseMermaidToExcalidraw` already in the codebase. Remove `auto_layout()` (Mermaid converter handles positioning).
+**Effort:** M (human) -> S (CC) | **Priority:** P2
+**Depends on:** Nothing
+**Added:** 2026-03-29 via /plan-eng-review (Codex outside voice)

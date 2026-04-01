@@ -10,7 +10,7 @@ export function useSystemDesignTemplates() {
   return useQuery({
     queryKey: systemDesignTemplatesQueryKey(),
     queryFn: () => getSystemDesignTemplates(),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 600_000,
   });
 }
 
@@ -18,6 +18,6 @@ export function useSystemDesignComponents() {
   return useQuery({
     queryKey: systemDesignComponentsQueryKey(),
     queryFn: () => getSystemDesignComponents(),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 600_000,
   });
 }

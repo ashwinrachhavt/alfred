@@ -43,11 +43,13 @@ class IngestionMixin:
     session: Any
     extraction_service: Any
     graph_service: Any
+    redis_client: Any
 
     # These are implemented on the host dataclass; declared here for type-checking.
     def _ensure_extraction_service(self) -> Any: ...
     def _ensure_graph_service(self) -> Any: ...
     def _ensure_llm_service(self) -> Any: ...
+    def _bump_semantic_map_version(self) -> None: ...
 
     def ingest_document(self, payload: DocumentIngest) -> dict[str, Any]:
         do_enrichment = bool(settings.enable_ingest_enrichment)
@@ -139,6 +141,8 @@ class IngestionMixin:
             s.commit()
             s.refresh(doc_record)
             doc_id = str(doc_record.id)
+
+        self._bump_semantic_map_version()
 
         # Fire document pipeline (non-blocking)
         try:
@@ -316,12 +320,14 @@ class IngestionMixin:
                 s.commit()
                 chunk_ids = [str(c.id) for c in chunk_rows]
 
-            return {
-                "id": str(doc_record.id),
-                "duplicate": False,
-                "chunk_count": len(chunk_ids),
-                "chunk_ids": chunk_ids,
-            }
+        self._bump_semantic_map_version()
+
+        return {
+            "id": str(doc_record.id),
+            "duplicate": False,
+            "chunk_count": len(chunk_ids),
+            "chunk_ids": chunk_ids,
+        }
 
     def process_document(self, doc_id: str, *, force: bool = False) -> dict[str, Any]:
         """Generate missing chunks and (optionally) enrich/classify an existing document."""
@@ -491,6 +497,8 @@ class IngestionMixin:
                     doc.enrichment = enrichment_block
                 s.add(doc)
                 s.commit()
+
+                self._bump_semantic_map_version()
 
             return {
                 "id": doc_id,

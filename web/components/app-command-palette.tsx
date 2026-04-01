@@ -3,11 +3,28 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { ListChecks, Moon, Network, NotebookPen, Search, Sparkles, Sun } from "lucide-react";
+import {
+  BookOpen,
+  ListChecks,
+  Moon,
+  Network,
+  NotebookPen,
+  Play,
+  Plus,
+  RefreshCw,
+  Search,
+  Sparkles,
+  Sun,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import { useQueryClient } from "@tanstack/react-query";
 
 import { pillars } from "@/lib/navigation";
 import { useShellStore } from "@/lib/stores/shell-store";
 import { cn } from "@/lib/utils";
+import { apiPostJson } from "@/lib/api/client";
+import { apiRoutes } from "@/lib/api/routes";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 
 import { Button } from "@/components/ui/button";
@@ -78,10 +95,22 @@ function AppCommandPaletteDialog({
 }) {
  const router = useRouter();
  const { resolvedTheme, setTheme } = useTheme();
- const { activeCount, setTaskCenterOpen } = useTaskTracker();
+ const { activeCount, setTaskCenterOpen, trackTask } = useTaskTracker();
+ const queryClient = useQueryClient();
  const platformShortcut = usePlatformShortcut();
  const themeShortcut = useThemeToggleShortcut();
  const [query, setQuery] = React.useState("");
+
+ // In-memory zettel search from React Query cache
+ const zettelMatches = React.useMemo(() => {
+ if (!query || query.length < 2) return [];
+ const cached = queryClient.getQueryData<Array<{ id: string | number; title?: string }>>(["zettels", "cards"]);
+ if (!Array.isArray(cached)) return [];
+ const q = query.toLowerCase();
+ return cached
+  .filter((z) => z.title?.toLowerCase().includes(q))
+  .slice(0, 8);
+ }, [query, queryClient]);
 
  React.useEffect(() => {
  if (!open) setQuery("");
@@ -99,6 +128,39 @@ function AppCommandPaletteDialog({
  },
  [onOpenChange, router],
  );
+
+ const triggerBulkEnrich = React.useCallback(async () => {
+ onOpenChange(false);
+ try {
+  const res = await apiPostJson<
+  { queued: number; tasks: { doc_id: string; task_id: string }[] },
+  Record<string, never>
+  >(apiRoutes.pipeline.replayBatch, {});
+  const firstTask = res.tasks?.[0];
+  if (firstTask?.task_id) {
+  trackTask({ id: firstTask.task_id, label: "Bulk Enrich", source: "generic" });
+  }
+  toast.success("Bulk enrich started");
+ } catch {
+  toast.error("Failed to start bulk enrich");
+ }
+ }, [onOpenChange, trackTask]);
+
+ const triggerReclassify = React.useCallback(async () => {
+ onOpenChange(false);
+ try {
+  const res = await apiPostJson<{ task_id: string }, Record<string, never>>(
+  apiRoutes.taxonomy.reclassifyAll,
+  {},
+  );
+  if (res.task_id) {
+  trackTask({ id: res.task_id, label: "Reclassify All Zettels", source: "generic" });
+  }
+  toast.success("Reclassify started");
+ } catch {
+  toast.error("Failed to start reclassify");
+ }
+ }, [onOpenChange, trackTask]);
 
  return (
  <CommandDialog open={open} onOpenChange={onOpenChange} contentClassName="max-w-xl">
@@ -140,18 +202,50 @@ function AppCommandPaletteDialog({
 
  <CommandSeparator />
 
- <CommandGroup heading="Tools">
+ <CommandGroup heading="Create">
  <CommandItem
- value="new note notes write"
+ value="create zettel knowledge card new"
+ onSelect={() => {
+ navigateTo("/knowledge?create=true");
+ }}
+ >
+ <Plus className="h-4 w-4" aria-hidden="true" />
+ <span>Create Zettel</span>
+ </CommandItem>
+ <CommandItem
+ value="create note new write"
  onSelect={() => {
  useShellStore.getState().openToolPanel("notes");
  onOpenChange(false);
  }}
  >
  <NotebookPen className="h-4 w-4" aria-hidden="true" />
- <span>New Note</span>
+ <span>Create Note</span>
  <CommandShortcut>⌘N</CommandShortcut>
  </CommandItem>
+ </CommandGroup>
+
+ <CommandSeparator />
+
+ {zettelMatches.length > 0 && (
+ <>
+ <CommandGroup heading="Zettels">
+ {zettelMatches.map((z) => (
+  <CommandItem
+  key={z.id}
+  value={`zettel ${z.title ?? z.id}`}
+  onSelect={() => navigateTo(`/knowledge?zettel=${z.id}`)}
+  >
+  <BookOpen className="h-4 w-4" aria-hidden="true" />
+  <span className="truncate">{z.title ?? `Zettel #${z.id}`}</span>
+  </CommandItem>
+ ))}
+ </CommandGroup>
+ <CommandSeparator />
+ </>
+ )}
+
+ <CommandGroup heading="Tools">
  <CommandItem
  value="connectors integrations sources"
  onSelect={() => {
@@ -161,6 +255,25 @@ function AppCommandPaletteDialog({
  >
  <Network className="h-4 w-4" aria-hidden="true" />
  <span>Connectors</span>
+ </CommandItem>
+ </CommandGroup>
+
+ <CommandSeparator />
+
+ <CommandGroup heading="Workflows">
+ <CommandItem
+ value="bulk enrich documents pipeline replay"
+ onSelect={triggerBulkEnrich}
+ >
+ <Play className="h-4 w-4" aria-hidden="true" />
+ <span>Bulk Enrich Documents</span>
+ </CommandItem>
+ <CommandItem
+ value="reclassify all zettels taxonomy"
+ onSelect={triggerReclassify}
+ >
+ <RefreshCw className="h-4 w-4" aria-hidden="true" />
+ <span>Reclassify All Zettels</span>
  </CommandItem>
  </CommandGroup>
 

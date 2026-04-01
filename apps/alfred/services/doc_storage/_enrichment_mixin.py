@@ -48,10 +48,12 @@ class EnrichmentMixin:
     session: Any
     extraction_service: Any
     graph_service: Any
+    redis_client: Any
 
     def _ensure_extraction_service(self) -> Any: ...
     def _ensure_graph_service(self) -> Any: ...
     def _ensure_llm_service(self) -> Any: ...
+    def _bump_semantic_map_version(self) -> None: ...
 
     def enrich_document(self, doc_id: str, *, force: bool = False) -> dict[str, Any]:
         uid = _parse_uuid(doc_id)
@@ -165,11 +167,14 @@ class EnrichmentMixin:
                 setattr(doc, key, val)
             s.add(doc)
             s.commit()
-            return {
-                "id": doc_id,
-                "skipped": False,
-                "has_graph": bool(self.graph_service),
-            }
+
+        self._bump_semantic_map_version()
+
+        return {
+            "id": doc_id,
+            "skipped": False,
+            "has_graph": bool(self.graph_service),
+        }
 
     def update_document_enrichment(self, doc_id: str, data: dict[str, Any]) -> None:
         """Bulk-update enrichment fields on a DocumentRow.
@@ -193,6 +198,8 @@ class EnrichmentMixin:
             doc.processed_at = datetime.now(UTC)
             s.add(doc)
             s.commit()
+
+        self._bump_semantic_map_version()
 
     def list_documents_needing_concepts_extraction(
         self,
@@ -278,11 +285,15 @@ class EnrichmentMixin:
                 doc.updated_at = now
                 s.add(doc)
                 s.commit()
+
+                self._bump_semantic_map_version()
             except Exception as exc:
                 doc.concepts_error = str(exc)[:8000]
                 doc.updated_at = now
                 s.add(doc)
                 s.commit()
+
+                self._bump_semantic_map_version()
                 raise
 
             gs = self.graph_service or self._ensure_graph_service()
@@ -506,8 +517,10 @@ class EnrichmentMixin:
             )
             s.commit()
 
-            return {
-                "id": doc_id,
+        self._bump_semantic_map_version()
+
+        return {
+            "id": doc_id,
                 "skipped": False,
                 "model": model_used,
                 "size": size,

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useShallow } from "zustand/react/shallow";
 
 import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
@@ -31,6 +32,7 @@ export type GapChip = {
 };
 
 export type ToolCall = {
+  call_id?: string;
   tool: string;
   args: Record<string, unknown>;
   result?: Record<string, unknown>;
@@ -41,6 +43,7 @@ export type AgentMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  reasoning?: string;
   artifacts: ArtifactCard[];
   relatedCards: RelatedCard[];
   gaps: GapChip[];
@@ -92,14 +95,7 @@ function _flushTokenBuffer(
   const buffered = _tokenBuffer;
   _tokenBuffer = "";
   _tokenFlushTimer = null;
-  set((s) => {
-    const msgs = s.messages.map((m, i) =>
-      i === s.messages.length - 1 && m.role === "assistant"
-        ? { ...m, content: m.content + buffered }
-        : m,
-    );
-    return { messages: msgs };
-  });
+  set((s) => _updateLastAssistant(s, (m) => ({ ...m, content: m.content + buffered })));
 }
 
 function _clearTokenBuffer() {
@@ -113,7 +109,8 @@ function _clearTokenBuffer() {
 // --- Store ---
 
 type AgentState = {
-  messages: AgentMessage[];
+  messagesById: Record<string, AgentMessage>;
+  messageOrder: string[];
   threads: AgentThread[];
   activeThreadId: number | null;
   isStreaming: boolean;
@@ -137,8 +134,38 @@ type AgentState = {
   loadThreadByNoteId: (noteId: string) => Promise<void>;
 };
 
+// --- Selector: ordered messages from normalized state ---
+
+export function selectOrderedMessages(state: Pick<AgentState, "messagesById" | "messageOrder">): AgentMessage[] {
+  return state.messageOrder.map((id) => state.messagesById[id]).filter(Boolean);
+}
+
+// --- Derived store: tool calls (separate to avoid re-renders) ---
+
+export function useToolCallStore<T>(selector: (s: { activeToolCalls: ToolCall[] }) => T): T {
+  return useAgentStore(useShallow((s) => selector({ activeToolCalls: s.activeToolCalls })));
+}
+
+// --- Helper: update last assistant message in normalized state ---
+
+function _updateLastAssistant(
+  state: Pick<AgentState, "messagesById" | "messageOrder">,
+  updater: (msg: AgentMessage) => AgentMessage,
+): Pick<AgentState, "messagesById"> {
+  const { messageOrder, messagesById } = state;
+  for (let i = messageOrder.length - 1; i >= 0; i--) {
+    const id = messageOrder[i];
+    const msg = messagesById[id];
+    if (msg?.role === "assistant") {
+      return { messagesById: { ...messagesById, [id]: updater(msg) } };
+    }
+  }
+  return { messagesById };
+}
+
 export const useAgentStore = create<AgentState>((set, get) => ({
-  messages: [],
+  messagesById: {},
+  messageOrder: [],
   threads: [],
   activeThreadId: null,
   isStreaming: false,
@@ -185,7 +212,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const abortController = new AbortController();
 
     set((s) => ({
-      messages: [...s.messages, userMsg, assistantMsg],
+      messagesById: {
+        ...s.messagesById,
+        [userMsg.id]: userMsg,
+        [assistantMsg.id]: assistantMsg,
+      },
+      messageOrder: [...s.messageOrder, userMsg.id, assistantMsg.id],
       isStreaming: true,
       activeToolCalls: [],
       abortController,
@@ -226,7 +258,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           // Only send history if no thread (backend loads from DB when thread exists)
           history: state.activeThreadId
             ? undefined
-            : state.messages.slice(-20).map((m) => ({
+            : selectOrderedMessages(state).slice(-20).map((m) => ({
                 role: m.role,
                 content: m.content,
               })),
@@ -244,14 +276,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       } else {
         // Flush any buffered tokens before setting error
         _flushTokenBuffer(set);
-        set((s) => {
-          const msgs = [...s.messages];
-          const last = msgs[msgs.length - 1];
-          if (last?.role === "assistant" && !last.content) {
-            msgs[msgs.length - 1] = { ...last, content: "Sorry, something went wrong. Please try again." };
-          }
-          return { messages: msgs };
-        });
+        set((s) => _updateLastAssistant(s, (m) =>
+          !m.content ? { ...m, content: "Sorry, something went wrong. Please try again." } : m,
+        ));
       }
     } finally {
       // Flush any remaining buffered tokens
@@ -294,7 +321,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set((s) => ({
       threads: [thread, ...s.threads],
       activeThreadId: thread.id,
-      messages: [],
+      messagesById: {},
+      messageOrder: [],
     }));
     return thread;
   },
@@ -303,17 +331,28 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const data = await apiFetch<{ thread: AgentThread; messages: AgentMessage[] }>(
       apiRoutes.agent.threadById(threadId)
     );
+    const normalized = data.messages.reduce(
+      (acc, m) => {
+        const id = `db-${m.id}`;
+        const msg: AgentMessage = {
+          ...m,
+          id,
+          artifacts: m.artifacts || [],
+          relatedCards: m.relatedCards || [],
+          gaps: m.gaps || [],
+          toolCalls: m.toolCalls || [],
+          timestamp: new Date((m as any).createdAt ?? Date.now()).getTime(),
+        };
+        acc.messagesById[id] = msg;
+        acc.messageOrder.push(id);
+        return acc;
+      },
+      { messagesById: {} as Record<string, AgentMessage>, messageOrder: [] as string[] },
+    );
     set({
       activeThreadId: threadId,
-      messages: data.messages.map((m) => ({
-        ...m,
-        id: `db-${m.id}`,
-        artifacts: m.artifacts || [],
-        relatedCards: m.relatedCards || [],
-        gaps: m.gaps || [],
-        toolCalls: m.toolCalls || [],
-        timestamp: new Date((m as any).createdAt ?? Date.now()).getTime(),
-      })),
+      messagesById: normalized.messagesById,
+      messageOrder: normalized.messageOrder,
     });
   },
 
@@ -322,11 +361,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set((s) => ({
       threads: s.threads.filter((t) => t.id !== threadId),
       activeThreadId: s.activeThreadId === threadId ? null : s.activeThreadId,
-      messages: s.activeThreadId === threadId ? [] : s.messages,
+      messagesById: s.activeThreadId === threadId ? {} : s.messagesById,
+      messageOrder: s.activeThreadId === threadId ? [] : s.messageOrder,
     }));
   },
 
-  clearMessages: () => set({ messages: [], activeThreadId: null, noteContext: null }),
+  clearMessages: () => set({ messagesById: {}, messageOrder: [], activeThreadId: null, noteContext: null }),
 
   setNoteContext: (ctx: NoteContext | null) => {
     const state = get();
@@ -338,7 +378,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     // Clear current state and set new note context
     set({
       noteContext: ctx,
-      messages: [],
+      messagesById: {},
+      messageOrder: [],
       activeThreadId: null,
       isStreaming: false,
       abortController: null,
@@ -371,17 +412,29 @@ function _handleSSEEvent(
   _get: () => AgentState,
 ) {
   switch (event) {
+    case "reasoning": {
+      // Collapsible reasoning trace for o3/o4 models
+      set((s) =>
+        _updateLastAssistant(s, (m) => ({
+          ...m,
+          reasoning: ((m as Record<string, unknown>).reasoning as string || "") + (data.content as string),
+        })),
+      );
+      break;
+    }
+
     case "token": {
       const content = data.content as string;
       _tokenBuffer += content;
       if (!_tokenFlushTimer) {
-        _tokenFlushTimer = setTimeout(() => _flushTokenBuffer(set), 50);
+        _tokenFlushTimer = setTimeout(() => _flushTokenBuffer(set), 100);
       }
       break;
     }
 
     case "tool_start": {
       const toolCall: ToolCall = {
+        call_id: data.call_id as string | undefined,
         tool: data.tool as string,
         args: data.args as Record<string, unknown>,
         status: "pending",
@@ -391,18 +444,17 @@ function _handleSSEEvent(
     }
 
     case "tool_result": {
+      const callId = data.call_id as string | undefined;
       set((s) => {
-        const tools = s.activeToolCalls.map((tc, i) =>
-          i === s.activeToolCalls.length - 1
+        const tools = s.activeToolCalls.map((tc) =>
+          (callId && tc.call_id === callId) || (!callId && tc.status === "pending")
             ? { ...tc, result: data.result as Record<string, unknown>, status: "done" as const }
             : tc,
         );
-        const msgs = s.messages.map((m, i) =>
-          i === s.messages.length - 1 && m.role === "assistant"
-            ? { ...m, toolCalls: [...tools] }
-            : m,
-        );
-        return { activeToolCalls: tools, messages: msgs };
+        return {
+          activeToolCalls: tools,
+          ..._updateLastAssistant(s, (m) => ({ ...m, toolCalls: [...tools] })),
+        };
       });
       break;
     }
@@ -431,52 +483,27 @@ function _handleSSEEvent(
         ...(data.zettel as Record<string, unknown>),
       } as ArtifactCard;
 
-      set((s) => {
-        const msgs = s.messages.map((m, i) =>
-          i === s.messages.length - 1 && m.role === "assistant"
-            ? { ...m, artifacts: [...m.artifacts, artifact] }
-            : m,
-        );
-        return { messages: msgs };
-      });
+      set((s) => _updateLastAssistant(s, (m) => ({ ...m, artifacts: [...m.artifacts, artifact] })));
       break;
     }
 
     case "related": {
       const cards = (data.cards as RelatedCard[]) || [];
-      set((s) => {
-        const msgs = s.messages.map((m, i) =>
-          i === s.messages.length - 1 && m.role === "assistant"
-            ? { ...m, relatedCards: cards }
-            : m,
-        );
-        return { messages: msgs };
-      });
+      set((s) => _updateLastAssistant(s, (m) => ({ ...m, relatedCards: cards })));
       break;
     }
 
     case "gaps": {
       const gaps = (data.gaps as GapChip[]) || [];
-      set((s) => {
-        const msgs = s.messages.map((m, i) =>
-          i === s.messages.length - 1 && m.role === "assistant"
-            ? { ...m, gaps }
-            : m,
-        );
-        return { messages: msgs };
-      });
+      set((s) => _updateLastAssistant(s, (m) => ({ ...m, gaps })));
       break;
     }
 
     case "error": {
-      set((s) => {
-        const msgs = s.messages.map((m, i) =>
-          i === s.messages.length - 1 && m.role === "assistant"
-            ? { ...m, content: (data.message as string) || "Something went wrong." }
-            : m,
-        );
-        return { messages: msgs, isStreaming: false };
-      });
+      set((s) => ({
+        ..._updateLastAssistant(s, (m) => ({ ...m, content: (data.message as string) || "Something went wrong." })),
+        isStreaming: false,
+      }));
       break;
     }
 

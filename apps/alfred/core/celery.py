@@ -26,6 +26,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             "alfred.tasks.notion_import",
             "alfred.tasks.document_pipeline",
             "alfred.tasks.taxonomy_reclassify",
+            "alfred.tasks.planning",
         ]
         if include_tasks
         else []
@@ -63,6 +64,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             "alfred.tasks.notion_import.*": {"queue": "default"},
             "alfred.tasks.document_pipeline.*": {"queue": "default"},
             "alfred.tasks.taxonomy_reclassify.*": {"queue": "default"},
+            "alfred.tasks.planning.*": {"queue": "default"},
         },
     )
 
@@ -119,7 +121,8 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
         import alfred.tasks.document_title_image
         import alfred.tasks.learning_concepts
         import alfred.tasks.mind_palace_agent
-        import alfred.tasks.notion_import
+        import alfred.tasks.notion_import  # noqa: F401
+        import alfred.tasks.planning  # noqa: F401
         import alfred.tasks.taxonomy_reclassify  # noqa: F401
 
     return celery_app
