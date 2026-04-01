@@ -241,7 +241,7 @@ export const MessageBubble = memo(function MessageBubble({
   );
 
   return (
-    <div className={cn("space-y-2", !isSidebar && "space-y-3")}>
+    <div className={cn("group space-y-2", !isSidebar && "space-y-3")}>
       {/* In expanded mode, wrap content with InsightToCard for text-selection save */}
       {!isSidebar ? (
         <InsightToCard

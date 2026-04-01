@@ -210,11 +210,12 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
               createThread();
             }}
             onCollapse={toggleChatExpanded}
+            onToggleThreads={() => setShowThreads((v) => !v)}
           />
         )}
 
-        {/* ---- Thread dropdown (sidebar only) ---- */}
-        {isSidebar && showThreads && (
+        {/* ---- Thread dropdown ---- */}
+        {showThreads && (
           <div className="border-b bg-card">
             <div className="max-h-48 overflow-y-auto py-1">
               {threads.slice(0, 5).map((thread) => (
@@ -446,25 +447,32 @@ function ExpandedHeader({
   activeThread,
   onNewConversation,
   onCollapse,
+  onToggleThreads,
 }: {
   activeThread: { id: number; title: string } | null;
   onNewConversation: () => void;
   onCollapse: () => void;
+  onToggleThreads: () => void;
 }) {
   return (
     <div className="flex items-center gap-2 px-6 py-2 border-b">
-      <span className="font-medium text-[10px] uppercase tracking-wider text-[var(--alfred-text-tertiary)]">
-        Alfred AI
-      </span>
-      {activeThread && (
-        <>
-          <span className="text-[var(--alfred-text-tertiary)]">/</span>
-          <span className="text-sm text-foreground truncate max-w-xs">
-            {activeThread.title}
-          </span>
-          <ChevronDown className="size-3 text-muted-foreground" />
-        </>
-      )}
+      <button
+        onClick={onToggleThreads}
+        className="flex items-center gap-2 hover:bg-secondary rounded-md px-2 py-1 transition-colors"
+      >
+        <span className="font-medium text-[10px] uppercase tracking-wider text-[var(--alfred-text-tertiary)]">
+          Alfred AI
+        </span>
+        {activeThread && (
+          <>
+            <span className="text-[var(--alfred-text-tertiary)]">/</span>
+            <span className="text-sm text-foreground truncate max-w-xs">
+              {activeThread.title}
+            </span>
+          </>
+        )}
+        <ChevronDown className="size-3 text-muted-foreground" />
+      </button>
       <div className="ml-auto flex items-center gap-1">
         <Button
           variant="ghost"
