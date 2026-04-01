@@ -32,6 +32,7 @@ export type GapChip = {
 };
 
 export type ToolCall = {
+  call_id?: string;
   tool: string;
   args: Record<string, unknown>;
   result?: Record<string, unknown>;
@@ -42,6 +43,7 @@ export type AgentMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  reasoning?: string;
   artifacts: ArtifactCard[];
   relatedCards: RelatedCard[];
   gaps: GapChip[];
@@ -410,17 +412,29 @@ function _handleSSEEvent(
   _get: () => AgentState,
 ) {
   switch (event) {
+    case "reasoning": {
+      // Collapsible reasoning trace for o3/o4 models
+      set((s) =>
+        _updateLastAssistant(s, (m) => ({
+          ...m,
+          reasoning: ((m as Record<string, unknown>).reasoning as string || "") + (data.content as string),
+        })),
+      );
+      break;
+    }
+
     case "token": {
       const content = data.content as string;
       _tokenBuffer += content;
       if (!_tokenFlushTimer) {
-        _tokenFlushTimer = setTimeout(() => _flushTokenBuffer(set), 50);
+        _tokenFlushTimer = setTimeout(() => _flushTokenBuffer(set), 100);
       }
       break;
     }
 
     case "tool_start": {
       const toolCall: ToolCall = {
+        call_id: data.call_id as string | undefined,
         tool: data.tool as string,
         args: data.args as Record<string, unknown>,
         status: "pending",
@@ -430,9 +444,10 @@ function _handleSSEEvent(
     }
 
     case "tool_result": {
+      const callId = data.call_id as string | undefined;
       set((s) => {
-        const tools = s.activeToolCalls.map((tc, i) =>
-          i === s.activeToolCalls.length - 1
+        const tools = s.activeToolCalls.map((tc) =>
+          (callId && tc.call_id === callId) || (!callId && tc.status === "pending")
             ? { ...tc, result: data.result as Record<string, unknown>, status: "done" as const }
             : tc,
         );

@@ -148,16 +148,13 @@ async def _search_kb(args: dict[str, Any], db: Session) -> dict[str, Any]:
 
 async def _create_zettel(args: dict[str, Any], db: Session) -> dict[str, Any]:
     """Create a new zettel card."""
-    from alfred.schemas.zettel import ZettelCardCreate
-
     svc = ZettelkastenService(db)
-    create_data = ZettelCardCreate(
+    card = svc.create_card(
         title=args["title"],
         content=args.get("content"),
         tags=args.get("tags"),
         topic=args.get("topic"),
     )
-    card = svc.create_card(create_data)
     db.commit()
     db.refresh(card)
 
@@ -191,20 +188,22 @@ async def _get_zettel(args: dict[str, Any], db: Session) -> dict[str, Any]:
 
 async def _update_zettel(args: dict[str, Any], db: Session) -> dict[str, Any]:
     """Update an existing zettel."""
-    from alfred.schemas.zettel import ZettelCardPatch
-
     svc = ZettelkastenService(db)
     card = svc.get_card(args["zettel_id"])
     if not card:
         return {"error": f"Zettel {args['zettel_id']} not found"}
 
-    patch_data = ZettelCardPatch(
-        title=args.get("title"),
-        content=args.get("content"),
-        tags=args.get("tags"),
-        topic=args.get("topic"),
-    )
-    updated = svc.update_card(card.id, patch_data)
+    fields: dict[str, Any] = {}
+    if "title" in args:
+        fields["title"] = args["title"]
+    if "content" in args:
+        fields["content"] = args["content"]
+    if "tags" in args:
+        fields["tags"] = args["tags"]
+    if "topic" in args:
+        fields["topic"] = args["topic"]
+
+    updated = svc.update_card(card, **fields)
     db.commit()
 
     return {
