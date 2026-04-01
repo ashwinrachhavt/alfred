@@ -175,6 +175,7 @@ export function ExcalidrawWhiteboard({
  }
  }
  onChange={handleChange as never}
+ aiEnabled
  UIOptions={{
  canvasActions: {
  loadScene: true,
