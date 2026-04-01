@@ -280,6 +280,10 @@ class ExplorerDocumentsResponse(BaseModel):
         default=None,
         description="Opaque cursor for the next page; omit/None when there is no next page.",
     )
+    total_count: int = Field(
+        default=0,
+        description="Total number of matching documents (ignoring cursor position).",
+    )
     limit: int
     filter_topic: str | None = None
     search: str | None = None
