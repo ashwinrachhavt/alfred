@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import {
+ Bell,
  BookOpen,
  Bot,
  Brain,
@@ -19,6 +20,7 @@ import type { LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useShellStore } from "@/lib/stores/shell-store";
+import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 
 type NavItem = {
  label: string;
@@ -105,6 +107,31 @@ function SidebarNavItem({ item, isActive }: { item: NavItem; isActive: boolean }
  );
 }
 
+function TaskCenterButton() {
+ const { activeCount, setTaskCenterOpen } = useTaskTracker();
+
+ return (
+ <button
+  type="button"
+  onClick={() => setTaskCenterOpen(true)}
+  className="group flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-xs tracking-wide transition-colors text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground"
+ >
+  <span className="relative">
+  <Bell className="size-4" />
+  {activeCount > 0 && (
+   <span className="absolute -top-1 -right-1 flex size-3.5 items-center justify-center rounded-full bg-primary text-[8px] font-bold text-primary-foreground">
+   {activeCount > 9 ? "9+" : activeCount}
+   </span>
+  )}
+  </span>
+  <span>Tasks</span>
+  {activeCount > 0 && (
+  <span className="ml-auto text-[10px] text-primary">{activeCount} active</span>
+  )}
+ </button>
+ );
+}
+
 export function AppSidebar() {
  const pathname = usePathname();
  const toggleAiPanel = useShellStore((s) => s.toggleAiPanel);
@@ -136,8 +163,9 @@ export function AppSidebar() {
  ))}
  </nav>
 
- {/* AI toggle at bottom */}
- <div className="border-t p-3">
+ {/* Task center + AI toggle at bottom */}
+ <div className="border-t p-3 space-y-1">
+ <TaskCenterButton />
  <button
  onClick={toggleAiPanel}
  className={cn(
