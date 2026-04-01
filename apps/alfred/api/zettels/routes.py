@@ -100,18 +100,20 @@ def get_tags(session: Session = Depends(get_db_session)) -> list[str]:
     return sorted(all_tags)
 
 
-@router.post("/cards/bulk", response_model=dict, status_code=status.HTTP_201_CREATED)
+@router.post("/cards/bulk", response_model=list[ZettelCardOut], status_code=status.HTTP_201_CREATED)
 def bulk_create_cards(
     payload: list[ZettelCardCreate],
     session: Session = Depends(get_db_session),
-) -> dict:
-    """Create multiple cards in one call (uses same validation as single create)."""
+) -> list[ZettelCardOut]:
+    """Create multiple cards in one call (batch insert, max 50)."""
+    if len(payload) > 50:
+        raise HTTPException(status_code=400, detail="Maximum 50 cards per batch")
+    if len(payload) == 0:
+        raise HTTPException(status_code=400, detail="At least one card required")
     svc = ZettelkastenService(session)
-    created = []
-    for item in payload:
-        card = svc.create_card(**item.model_dump())
-        created.append(card.id)
-    return {"inserted": len(created), "ids": created}
+    cards_data = [p.model_dump() for p in payload]
+    cards = svc.create_cards_batch(cards_data)
+    return [_card_out(c) for c in cards]
 
 
 @router.patch("/cards/bulk", response_model=BulkUpdateResult)

@@ -153,8 +153,8 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
         session.close()
 
 
-@shared_task(name="alfred.tasks.document_enrichment.enrich")
-def document_enrichment_task(*, doc_id: str, force: bool = False) -> dict:
+@shared_task(name="alfred.tasks.document_enrichment.enrich", bind=True)
+def document_enrichment_task(self, *, doc_id: str, force: bool = False) -> dict:
     """Enrich an existing stored document (LLM + optional graph).
 
     After enrichment, automatically creates a zettel card in the Knowledge Hub
@@ -164,15 +164,19 @@ def document_enrichment_task(*, doc_id: str, force: bool = False) -> dict:
     """
     svc = get_doc_storage_service()
     logger.info("Running document enrichment task (force=%s) for %s", force, doc_id)
+
+    self.update_state(state="PROGRESS", meta={"pipeline_step": "Enriching", "doc_id": doc_id})
     result = svc.enrich_document(doc_id, force=force)
 
     # Bridge: create zettel from enrichment
     if not result.get("skipped"):
+        self.update_state(state="PROGRESS", meta={"pipeline_step": "Creating zettels", "doc_id": doc_id})
         zettel_id = _create_zettel_from_enrichment(doc_id)
         if zettel_id:
             result["zettel_id"] = zettel_id
 
     # Mark document as fully processed
+    self.update_state(state="PROGRESS", meta={"pipeline_step": "Finalizing", "doc_id": doc_id})
     try:
         from alfred.tasks.document_pipeline import _set_pipeline_status
 

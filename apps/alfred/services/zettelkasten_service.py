@@ -96,6 +96,30 @@ class ZettelkastenService:
         self._ensure_open_review(card_id=card.id or 0)
         return card
 
+    def create_cards_batch(self, cards_data: list[dict]) -> list[ZettelCard]:
+        """Create multiple zettel cards in a single transaction."""
+        cards = []
+        for data in cards_data:
+            card = ZettelCard(
+                title=str(data["title"]).strip(),
+                content=data.get("content"),
+                summary=data.get("summary"),
+                tags=data.get("tags") or [],
+                topic=data.get("topic"),
+                source_url=data.get("source_url"),
+                document_id=data.get("document_id"),
+                importance=clamp_int(int(data.get("importance", 0)), lo=0, hi=10),
+                confidence=max(0.0, min(1.0, float(data.get("confidence", 0.0)))),
+                status=data.get("status", "active"),
+            )
+            cards.append(card)
+        self.session.add_all(cards)
+        self.session.commit()
+        for card in cards:
+            self.session.refresh(card)
+            self._ensure_open_review(card_id=card.id or 0)
+        return cards
+
     def list_cards(
         self,
         *,

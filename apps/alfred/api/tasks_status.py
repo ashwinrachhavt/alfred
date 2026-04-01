@@ -20,12 +20,14 @@ class TaskStatusResponse(BaseModel):
     status: str  # pending | running | completed | failed
     result: object | None = None
     error: str | None = None
+    pipeline_step: str | None = None
 
 
 _STATE_MAP = {
     "PENDING": "pending",
     "STARTED": "running",
     "RETRY": "running",
+    "PROGRESS": "running",
     "SUCCESS": "completed",
     "FAILURE": "failed",
     "REVOKED": "failed",
@@ -40,14 +42,23 @@ def get_task_status(task_id: str) -> TaskStatusResponse:
 
     result = None
     error = None
+    pipeline_step = None
+
     if mapped_status == "completed":
         result = res.result
     elif mapped_status == "failed":
         error = str(res.result) if res.result else "Task failed"
+
+    # Extract pipeline_step from PROGRESS state metadata
+    if res.state == "PROGRESS" and isinstance(res.info, dict):
+        pipeline_step = res.info.get("pipeline_step")
+    elif mapped_status == "running" and isinstance(res.info, dict):
+        pipeline_step = res.info.get("pipeline_step")
 
     return TaskStatusResponse(
         task_id=task_id,
         status=mapped_status,
         result=result,
         error=error,
+        pipeline_step=pipeline_step,
     )
