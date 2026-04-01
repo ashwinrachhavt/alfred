@@ -61,11 +61,14 @@ const navSections: NavSection[] = [
 ];
 
 function SidebarNavItem({ item, isActive }: { item: NavItem; isActive: boolean }) {
- const { toggleAiPanel, aiPanelOpen } = useShellStore();
+ const { toggleAiPanel, aiPanelOpen, chatMode } = useShellStore();
+
+ const aiActive = item.action === "toggle-ai-panel" && aiPanelOpen;
+ const aiExpanded = item.action === "toggle-ai-panel" && chatMode === "expanded";
 
  const classes = cn(
  "group flex items-center gap-2.5 border-l-2 px-5 py-1.5 text-xs tracking-wide transition-colors",
- item.action === "toggle-ai-panel" && aiPanelOpen
+ aiActive
  ? "border-primary bg-[var(--alfred-accent-subtle)] text-primary"
  : isActive
  ? "border-primary bg-[var(--alfred-accent-subtle)] text-primary"
@@ -76,6 +79,9 @@ function SidebarNavItem({ item, isActive }: { item: NavItem; isActive: boolean }
  <>
  <item.icon className="size-4 shrink-0 opacity-50 group-hover:opacity-100" />
  <span>{item.label}</span>
+ {aiExpanded && (
+ <span className="ml-1 text-[9px] uppercase tracking-wider text-primary opacity-70">expanded</span>
+ )}
  {item.shortcut && (
  <kbd className="ml-auto text-[10px] text-[var(--alfred-text-tertiary)] opacity-0 group-hover:opacity-100 transition-opacity">
  {item.shortcut}
@@ -103,6 +109,7 @@ export function AppSidebar() {
  const pathname = usePathname();
  const toggleAiPanel = useShellStore((s) => s.toggleAiPanel);
  const aiPanelOpen = useShellStore((s) => s.aiPanelOpen);
+ const chatMode = useShellStore((s) => s.chatMode);
 
  return (
  <aside className="hidden md:flex w-[220px] shrink-0 flex-col border-r bg-[var(--sidebar)] text-[var(--sidebar-foreground)]">
@@ -142,6 +149,9 @@ export function AppSidebar() {
  >
  <Brain className="size-4" />
  <span>AI Assistant</span>
+ {chatMode === "expanded" && (
+ <span className="text-[9px] uppercase tracking-wider opacity-70">expanded</span>
+ )}
  <kbd className="ml-auto text-[10px] opacity-60">J</kbd>
  </button>
  </div>
