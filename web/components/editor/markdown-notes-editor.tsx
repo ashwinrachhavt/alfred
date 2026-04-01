@@ -168,6 +168,48 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  });
  }, []);
 
+ const openAI = useCallback(
+ (ed: Editor, modeOverride?: AIPromptMode) => {
+ const { from, to } = ed.state.selection;
+ const hasSelection = !ed.state.selection.empty;
+ const { $from } = ed.state.selection;
+ const paragraphText = $from.parent.textContent;
+
+ let mode: AIPromptMode;
+ let targetText: string;
+ let targetRange: { from: number; to: number } | null;
+
+ if (modeOverride) {
+ mode = modeOverride;
+ } else if (hasSelection) {
+ mode = "transform";
+ } else if (!paragraphText.trim()) {
+ mode = "generate";
+ } else {
+ mode = "edit";
+ }
+
+ if (mode === "transform") {
+ targetText = ed.state.doc.textBetween(from, to, " ");
+ targetRange = { from, to };
+ } else if (mode === "edit") {
+ targetText = paragraphText;
+ targetRange = { from: $from.start(), to: $from.end() };
+ } else {
+ targetText = "";
+ targetRange = null;
+ }
+
+ const coords = ed.view.coordsAtPos(from);
+ setAiPromptMode(mode);
+ setAiTargetText(targetText);
+ setAiTargetRange(targetRange);
+ setAiPromptPosition({ top: coords.bottom + 8, left: coords.left });
+ setAiPromptOpen(true);
+ },
+ [],
+ );
+
  const slashCommands = useMemo<SlashCommand[]>(
  () => [
  {
@@ -420,48 +462,6 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  setSlashActiveIndex(0);
  }
  }, [editor, filteredSlashCommands.length, slashActiveIndex]);
-
- const openAI = useCallback(
- (ed: Editor, modeOverride?: AIPromptMode) => {
- const { from, to } = ed.state.selection;
- const hasSelection = !ed.state.selection.empty;
- const { $from } = ed.state.selection;
- const paragraphText = $from.parent.textContent;
-
- let mode: AIPromptMode;
- let targetText: string;
- let targetRange: { from: number; to: number } | null;
-
- if (modeOverride) {
- mode = modeOverride;
- } else if (hasSelection) {
- mode = "transform";
- } else if (!paragraphText.trim()) {
- mode = "generate";
- } else {
- mode = "edit";
- }
-
- if (mode === "transform") {
- targetText = ed.state.doc.textBetween(from, to, " ");
- targetRange = { from, to };
- } else if (mode === "edit") {
- targetText = paragraphText;
- targetRange = { from: $from.start(), to: $from.end() };
- } else {
- targetText = "";
- targetRange = null;
- }
-
- const coords = ed.view.coordsAtPos(from);
- setAiPromptMode(mode);
- setAiTargetText(targetText);
- setAiTargetRange(targetRange);
- setAiPromptPosition({ top: coords.bottom + 8, left: coords.left });
- setAiPromptOpen(true);
- },
- [],
- );
 
  const handleAISubmit = useCallback(
  (instruction: string) => {
