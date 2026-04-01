@@ -374,6 +374,15 @@ body::before {
   font-style: normal;
 }
 
+/* Ghost text for empty paragraphs — JetBrains Mono label aesthetic */
+.ProseMirror p.is-empty:not(.is-editor-empty):first-child::before,
+.ProseMirror p.is-empty:not(:first-child)::before {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 .tiptap:focus {
   outline: none;
 }

@@ -44,3 +44,16 @@ export async function summarizeText(text: string): Promise<string> {
     },
   });
 }
+
+export async function generateText(
+  instruction: string,
+  contextAbove = "",
+): Promise<string> {
+  return agentInvoke({
+    intent: "edit_text",
+    intentArgs: {
+      text: contextAbove.slice(-1000),
+      instruction: `Generate new content: ${instruction}`,
+    },
+  });
+}

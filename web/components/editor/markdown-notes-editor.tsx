@@ -19,13 +19,12 @@ import {
  useState,
 } from "react";
 import { toast } from "sonner";
-import { Bold, BookOpen, FileText, Italic, Loader2, MessageCircle, PenLine, Search, Wand2 } from "lucide-react";
+import { Bold, Italic, Sparkles } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { completeText, rewriteText, summarizeText } from "@/lib/api/ai-assist";
-import { useShellStore } from "@/lib/stores/shell-store";
-import { useAgentStore } from "@/lib/stores/agent-store";
+import { InlineAIPrompt, type AIPromptMode } from "@/components/editor/inline-ai-prompt";
+import { AiStreamingController, type StreamingState } from "@/components/editor/ai-streaming-controller";
 
 function readEditorMarkdown(editor: Editor): string {
  const maybeGetMarkdown = (editor as unknown as { getMarkdown?: () => string }).getMarkdown;
@@ -87,7 +86,16 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  ref,
  ) {
  const [isFocused, setIsFocused] = useState(false);
- const [aiLoading, setAiLoading] = useState<"rewrite" | "complete" | "summarize" | null>(null);
+
+ // Inline AI state
+ const [aiPromptOpen, setAiPromptOpen] = useState(false);
+ const [aiPromptMode, setAiPromptMode] = useState<AIPromptMode>("generate");
+ const [aiPromptPosition, setAiPromptPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+ const [aiTargetText, setAiTargetText] = useState("");
+ const [aiTargetRange, setAiTargetRange] = useState<{ from: number; to: number } | null>(null);
+ const [streamingState, setStreamingState] = useState<StreamingState>({ status: "idle" });
+ const [streamInsertAt, setStreamInsertAt] = useState(0);
+ const [streamOriginalRange, setStreamOriginalRange] = useState<{ from: number; to: number; text: string } | null>(null);
 
  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
  const [slashMenuPosition, setSlashMenuPosition] = useState<{ top: number; left: number } | null>(null);
@@ -127,7 +135,17 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  Markdown,
  Typography,
  Placeholder.configure({
- placeholder: placeholder ?? "Start writing...",
+ placeholder: ({ node, editor: ed }) => {
+ // First paragraph when editor is empty
+ if (ed.isEmpty && node.type.name === "paragraph") {
+ return placeholder ?? "Start writing, or press Space for AI...";
+ }
+ // Any other empty paragraph
+ if (node.type.name === "paragraph" && node.textContent === "") {
+ return "Space for AI  ·  / for commands";
+ }
+ return "";
+ },
  emptyEditorClass: "is-editor-empty",
  }),
  ],
@@ -149,6 +167,48 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  left: (start.left + end.left) / 2,
  });
  }, []);
+
+ const openAI = useCallback(
+ (ed: Editor, modeOverride?: AIPromptMode) => {
+ const { from, to } = ed.state.selection;
+ const hasSelection = !ed.state.selection.empty;
+ const { $from } = ed.state.selection;
+ const paragraphText = $from.parent.textContent;
+
+ let mode: AIPromptMode;
+ let targetText: string;
+ let targetRange: { from: number; to: number } | null;
+
+ if (modeOverride) {
+ mode = modeOverride;
+ } else if (hasSelection) {
+ mode = "transform";
+ } else if (!paragraphText.trim()) {
+ mode = "generate";
+ } else {
+ mode = "edit";
+ }
+
+ if (mode === "transform") {
+ targetText = ed.state.doc.textBetween(from, to, " ");
+ targetRange = { from, to };
+ } else if (mode === "edit") {
+ targetText = paragraphText;
+ targetRange = { from: $from.start(), to: $from.end() };
+ } else {
+ targetText = "";
+ targetRange = null;
+ }
+
+ const coords = ed.view.coordsAtPos(from);
+ setAiPromptMode(mode);
+ setAiTargetText(targetText);
+ setAiTargetRange(targetRange);
+ setAiPromptPosition({ top: coords.bottom + 8, left: coords.left });
+ setAiPromptOpen(true);
+ },
+ [],
+ );
 
  const slashCommands = useMemo<SlashCommand[]>(
  () => [
@@ -238,82 +298,15 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  },
  // --- AI Slash Commands ---
  {
- title: "Ask Alfred",
- description: "Ask AI a question about this note",
- keywords: ["ask", "ai", "question", "alfred"],
- run: () => {
- useShellStore.getState().setAiPanelOpen(true);
- setTimeout(() => {
- const input = document.querySelector<HTMLTextAreaElement>('[aria-label="AI Assistant"] textarea');
- input?.focus();
- }, 250);
- },
- },
- {
- title: "Generate",
- description: "Generate a section with AI",
- keywords: ["generate", "write", "create", "ai"],
- run: () => {
- useShellStore.getState().setAiPanelOpen(true);
- setTimeout(() => {
- const input = document.querySelector<HTMLTextAreaElement>('[aria-label="AI Assistant"] textarea');
- if (input) {
- input.focus();
- input.value = "Generate a section about: ";
- input.dispatchEvent(new Event("input", { bubbles: true }));
- }
- }, 250);
- },
- },
- {
- title: "Research",
- description: "Search knowledge base for related info",
- keywords: ["research", "search", "find", "kb"],
- run: () => {
- useShellStore.getState().setAiPanelOpen(true);
- setTimeout(() => {
- const input = document.querySelector<HTMLTextAreaElement>('[aria-label="AI Assistant"] textarea');
- if (input) {
- input.focus();
- input.value = "Research and find related knowledge about: ";
- input.dispatchEvent(new Event("input", { bubbles: true }));
- }
- }, 250);
- },
- },
- {
- title: "Summarize above",
- description: "Summarize everything above the cursor",
- keywords: ["summarize", "summary", "above"],
- run: (editor) => {
- const { from } = editor.state.selection;
- const textAbove = editor.state.doc.textBetween(0, from, "\n");
- if (!textAbove.trim()) {
- toast("Nothing above the cursor to summarize");
- return;
- }
- useShellStore.getState().setAiPanelOpen(true);
- void useAgentStore.getState().sendMessage(`Summarize the following text:\n\n${textAbove.slice(-3000)}`);
- },
- },
- {
- title: "Translate",
- description: "Translate selected text to another language",
- keywords: ["translate", "language"],
- run: () => {
- useShellStore.getState().setAiPanelOpen(true);
- setTimeout(() => {
- const input = document.querySelector<HTMLTextAreaElement>('[aria-label="AI Assistant"] textarea');
- if (input) {
- input.focus();
- input.value = "Translate the following to ";
- input.dispatchEvent(new Event("input", { bubbles: true }));
- }
- }, 250);
+ title: "AI Edit",
+ description: "Ask AI to write, edit, or transform text",
+ keywords: ["ai", "edit", "write", "generate", "ask", "alfred"],
+ run: (ed) => {
+ openAI(ed);
  },
  },
  ],
- [],
+ [openAI],
  );
 
  const filteredSlashCommands = useMemo(() => {
@@ -470,6 +463,57 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  }
  }, [editor, filteredSlashCommands.length, slashActiveIndex]);
 
+ const handleAISubmit = useCallback(
+ (instruction: string) => {
+ setAiPromptOpen(false);
+ const insertPos = aiTargetRange
+ ? aiTargetRange.to
+ : editor?.state.selection.from ?? 0;
+ setStreamInsertAt(insertPos);
+ setStreamOriginalRange(
+ aiTargetRange && aiTargetText
+ ? { from: aiTargetRange.from, to: aiTargetRange.to, text: aiTargetText }
+ : null,
+ );
+ setStreamingState({ status: "streaming", instruction });
+ },
+ [editor, aiTargetRange, aiTargetText],
+ );
+
+ const handleStreamComplete = useCallback(() => {
+ setStreamingState((prev) =>
+ prev.status === "streaming"
+ ? { status: "done", instruction: prev.instruction }
+ : prev,
+ );
+ }, []);
+
+ const handleStreamFinish = useCallback(
+ (_action: "accept" | "discard") => {
+ setStreamingState({ status: "idle" });
+ setStreamOriginalRange(null);
+ editor?.commands.focus();
+ },
+ [editor],
+ );
+
+ const handleStreamRetry = useCallback(() => {
+ setStreamingState((prev) =>
+ prev.status === "done"
+ ? { status: "streaming", instruction: prev.instruction }
+ : prev,
+ );
+ }, []);
+
+ const handleEditInstruction = useCallback(
+ (_prev: string) => {
+ // Discard current AI text, re-open prompt
+ if (!editor) return;
+ openAI(editor);
+ },
+ [editor, openAI],
+ );
+
  useEffect(() => {
  if (!editor) return;
 
@@ -484,6 +528,27 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  event.preventDefault();
  void Promise.resolve(onKeyboardCommandRef.current?.("save"));
  return;
+ }
+
+ if (isMod && key === "j") {
+ event.preventDefault();
+ openAI(editor);
+ return;
+ }
+
+ // Space on empty paragraph — open AI prompt in generate mode
+ if (event.key === " " && !isMod && !event.shiftKey) {
+ const { $from } = editor.state.selection;
+ const parent = $from.parent;
+ if (
+ parent.type.name === "paragraph" &&
+ parent.textContent === "" &&
+ editor.state.selection.empty
+ ) {
+ event.preventDefault();
+ openAI(editor, "generate");
+ return;
+ }
  }
 
  if (slashQueryRef.current === null) return;
@@ -585,50 +650,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  dom.removeEventListener("paste", onPaste, true);
  dom.removeEventListener("drop", onDrop, true);
  };
- }, [editor, readOnly]);
-
- const handleAiAction = async (action: "rewrite" | "complete" | "summarize") => {
- if (!editor) return;
-
- const { from, to } = editor.state.selection;
- const selectedText = editor.state.doc.textBetween(from, to, " ");
- if (!selectedText && (action === "rewrite" || action === "summarize")) return;
-
- setAiLoading(action);
- try {
- let result = "";
- if (action === "rewrite") {
- result = await rewriteText(selectedText);
- } else if (action === "summarize") {
- result = await summarizeText(selectedText);
- } else {
- const before = editor.state.doc.textBetween(Math.max(0, from - 500), from, " ");
- const after = editor.state.doc.textBetween(
- to,
- Math.min(editor.state.doc.content.size, to + 500),
- " ",
- );
- result = selectedText
- ? await completeText(selectedText, before, after)
- : await completeText(before, before, after);
- }
-
- if (editor.isDestroyed) return;
-
- if (action === "complete") {
- editor.view.dispatch(editor.state.tr.insertText(result, to));
- toast.success("Continued with AI");
- } else {
- editor.commands.insertContent(result);
- toast.success(action === "rewrite" ? "Rewritten with AI" : "Summarized with AI");
- }
- } catch (err) {
- toast.error(err instanceof Error ? err.message : "AI action failed");
- } finally {
- setAiLoading(null);
- setMenuPosition(null);
- }
- };
+ }, [editor, readOnly, openAI]);
 
  useEffect(() => {
  if (editor && editor.isEditable !== !readOnly) {
@@ -709,13 +731,13 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  </div>
  ) : null}
 
- {/* AI bubble menu — appears on text selection */}
+ {/* Slim bubble menu — B / I / AI */}
  {menuPosition && !editor.state.selection.empty && (
  <div
  className="fixed z-50 flex items-center gap-0.5 rounded-md border bg-card p-1 shadow-lg animate-in fade-in zoom-in-95 duration-100"
  style={{
- top:`${menuPosition.top}px`,
- left:`${menuPosition.left}px`,
+ top: `${menuPosition.top}px`,
+ left: `${menuPosition.left}px`,
  transform: "translateX(-50%)",
  }}
  >
@@ -748,107 +770,43 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  variant="ghost"
  size="sm"
  className="h-7 gap-1.5 px-2 font-medium text-[10px] uppercase tracking-wider text-primary hover:bg-[var(--alfred-accent-subtle)]"
- onClick={() => handleAiAction("rewrite")}
- disabled={!!aiLoading}
+ onClick={() => openAI(editor, "transform")}
  >
- {aiLoading === "rewrite" ? (
- <Loader2 className="h-3 w-3 animate-spin" />
- ) : (
- <Wand2 className="h-3 w-3" />
- )}
- Rewrite
- </Button>
- <Button
- variant="ghost"
- size="sm"
- className="h-7 gap-1.5 px-2 font-medium text-[10px] uppercase tracking-wider text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground"
- onClick={() => handleAiAction("summarize")}
- disabled={!!aiLoading}
- >
- {aiLoading === "summarize" ? (
- <Loader2 className="h-3 w-3 animate-spin" />
- ) : (
- <FileText className="h-3 w-3" />
- )}
- Summarize
- </Button>
- <Button
- variant="ghost"
- size="sm"
- className="h-7 gap-1.5 px-2 font-medium text-[10px] uppercase tracking-wider text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground"
- onClick={() => handleAiAction("complete")}
- disabled={!!aiLoading}
- >
- {aiLoading === "complete" ? (
- <Loader2 className="h-3 w-3 animate-spin" />
- ) : (
- <PenLine className="h-3 w-3" />
- )}
- Continue
- </Button>
-
- <div className="mx-1 h-4 w-px bg-border" />
-
- <Button
- variant="ghost"
- size="sm"
- className="h-7 gap-1.5 px-2 font-medium text-[10px] uppercase tracking-wider text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground"
- onClick={() => {
- const { from, to } = editor.state.selection;
- const selected = editor.state.doc.textBetween(from, to, " ");
- useShellStore.getState().setAiPanelOpen(true);
- if (selected) {
- void useAgentStore.getState().sendMessage(`Explain this in simpler terms:\n\n${selected}`);
- }
- setMenuPosition(null);
- }}
- disabled={!!aiLoading}
- >
- <BookOpen className="h-3 w-3" />
- Explain
- </Button>
- <Button
- variant="ghost"
- size="sm"
- className="h-7 gap-1.5 px-2 font-medium text-[10px] uppercase tracking-wider text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground"
- onClick={() => {
- const { from, to } = editor.state.selection;
- const selected = editor.state.doc.textBetween(from, to, " ");
- useShellStore.getState().setAiPanelOpen(true);
- if (selected) {
- void useAgentStore.getState().sendMessage(`Research this topic in my knowledge base:\n\n${selected}`);
- }
- setMenuPosition(null);
- }}
- disabled={!!aiLoading}
- >
- <Search className="h-3 w-3" />
- Research
- </Button>
- <Button
- variant="ghost"
- size="sm"
- className="h-7 gap-1.5 px-2 font-medium text-[10px] uppercase tracking-wider text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground"
- onClick={() => {
- const { from, to } = editor.state.selection;
- const selected = editor.state.doc.textBetween(from, to, " ");
- useShellStore.getState().setAiPanelOpen(true);
- setTimeout(() => {
- const input = document.querySelector<HTMLTextAreaElement>('[aria-label="AI Assistant"] textarea');
- if (input && selected) {
- input.focus();
- input.value = selected;
- input.dispatchEvent(new Event("input", { bubbles: true }));
- }
- }, 250);
- setMenuPosition(null);
- }}
- disabled={!!aiLoading}
- >
- <MessageCircle className="h-3 w-3" />
- Ask Alfred
+ <Sparkles className="h-3 w-3" />
+ Ask AI
  </Button>
  </div>
+ )}
+
+ {/* Inline AI Prompt */}
+ {aiPromptOpen && (
+ <InlineAIPrompt
+ editor={editor}
+ mode={aiPromptMode}
+ position={aiPromptPosition}
+ targetText={aiTargetText}
+ targetRange={aiTargetRange}
+ onSubmit={handleAISubmit}
+ onClose={() => {
+ setAiPromptOpen(false);
+ editor.commands.focus();
+ }}
+ isStreaming={streamingState.status === "streaming"}
+ />
+ )}
+
+ {/* AI Streaming Controller */}
+ {streamingState.status !== "idle" && (
+ <AiStreamingController
+ editor={editor}
+ state={streamingState}
+ insertAt={streamInsertAt}
+ originalRange={streamOriginalRange}
+ onStreamComplete={handleStreamComplete}
+ onFinish={handleStreamFinish}
+ onRetry={handleStreamRetry}
+ onEditInstruction={handleEditInstruction}
+ />
  )}
 
  <div className="flex-1 overflow-y-auto" onClick={() => editor.chain().focus().run()}>
