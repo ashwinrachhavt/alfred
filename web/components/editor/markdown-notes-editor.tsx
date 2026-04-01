@@ -135,7 +135,17 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  Markdown,
  Typography,
  Placeholder.configure({
- placeholder: placeholder ?? "Start writing...",
+ placeholder: ({ node, editor: ed }) => {
+ // First paragraph when editor is empty
+ if (ed.isEmpty && node.type.name === "paragraph") {
+ return placeholder ?? "Start writing, or press Space for AI...";
+ }
+ // Any other empty paragraph
+ if (node.type.name === "paragraph" && node.textContent === "") {
+ return "Space for AI  ·  / for commands";
+ }
+ return "";
+ },
  emptyEditorClass: "is-editor-empty",
  }),
  ],
