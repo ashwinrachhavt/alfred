@@ -31,8 +31,12 @@ def test_card_creation_and_listing() -> None:
     items = svc.list_cards(topic="ai")
     assert len(items) == 1
     assert items[0].title == "Z1"
-    tagged = svc.list_cards(tag="a")
-    assert tagged and tagged[0].id == card.id
+
+    # Tag filtering uses PostgreSQL jsonb @> operator, skip on SQLite
+    dialect = session.bind.dialect.name if session.bind else "unknown"
+    if dialect == "postgresql":
+        tagged = svc.list_cards(tags=["a"])
+        assert tagged and tagged[0].id == card.id
 
 
 def test_bidirectional_links() -> None:

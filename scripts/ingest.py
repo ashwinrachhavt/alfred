@@ -7,7 +7,6 @@ import os
 from hashlib import md5
 from pathlib import Path
 
-from alfred.core.settings import settings
 from langchain_community.document_loaders import PyPDFLoader, RecursiveUrlLoader
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
@@ -15,6 +14,8 @@ from langchain_qdrant import QdrantVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
+
+from alfred.core.settings import settings
 
 # Ensure a reasonable default User-Agent to avoid warnings and improve acceptance
 os.environ.setdefault(

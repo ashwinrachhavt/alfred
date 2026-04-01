@@ -14,14 +14,13 @@
 
 ## Typography
 
-Three typographic voices create hierarchy without relying on color:
+Clean, modern sans-serif throughout. Serif reserved for display titles only. Mono reserved strictly for code.
 
-- **Display/Hero:** Instrument Serif — literary character, no PKM tool uses serifs. Says "intellectual, authoritative" instead of "tech startup"
-- **Body:** Inter — clean, modern geometric sans. Excellent readability, what Notion and modern apps use
-- **UI/Labels/Nav/Metadata:** JetBrains Mono — creates a "system layer" that feels machine-like and precise. Used for navigation items, timestamps, counts, tags, section overlines, and all metadata
-- **Data/Tables:** Geist (tabular-nums) — already in the project, excellent for numeric data alignment
-- **Code:** JetBrains Mono
-- **Loading:** Google Fonts CDN — `Instrument+Serif:ital@0;1`, `DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000`, `JetBrains+Mono:ital,wght@0,100..800;1,100..800`, `Geist:wght@100..900`
+- **Display/Hero:** Instrument Serif — literary character for major headings only (H1 page titles, hero text)
+- **Body + UI + Labels + Nav + Metadata:** Inter — the single voice for all readable content, buttons, navigation, labels, badges, timestamps, and metadata. Use `font-medium` (500) for labels and overlines to create hierarchy through weight, not font family
+- **Data/Tables:** Geist (tabular-nums) — for numeric data alignment in dashboards and metrics
+- **Code only:** JetBrains Mono — strictly for code blocks and pre-formatted text. Never for UI elements
+- **Loading:** Google Fonts CDN — `Instrument+Serif:ital@0;1`, `Inter:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000`, `JetBrains+Mono:ital,wght@0,100..800;1,100..800`, `Geist:wght@100..900`
 
 ### Type Scale
 | Level | Font | Size | Line Height | Weight | Usage |
@@ -32,8 +31,8 @@ Three typographic voices create hierarchy without relying on color:
 | H3 | Inter | 20px / 1.25rem | 1.3 | 500 | Subsection headers |
 | Body | Inter | 16px / 1rem | 1.6 | 400 | Default reading text |
 | Body Small | Inter | 14px / 0.875rem | 1.5 | 400 | Secondary text, helpers |
-| Label | JetBrains Mono | 12px / 0.75rem | 1.5 | 400 | Nav items, metadata, timestamps |
-| Overline | JetBrains Mono | 10px / 0.625rem | 1.5 | 500 | Section labels, categories (uppercase, 0.1em tracking) |
+| Label | Inter | 12px / 0.75rem | 1.5 | 500 | Nav items, metadata, timestamps |
+| Overline | Inter | 10px / 0.625rem | 1.5 | 500 | Section labels, categories (uppercase, 0.1em tracking) |
 
 ## Color
 
@@ -132,12 +131,12 @@ Three typographic voices create hierarchy without relying on color:
 ## Component Conventions
 
 ### Navigation
-- Sidebar labels in JetBrains Mono, 12px, uppercase
+- Sidebar labels in Inter, 12px, font-medium, uppercase
 - Active state: orange text + orange left border + accent-subtle background
-- Section headers: JetBrains Mono, 9px, uppercase, 0.15em tracking
+- Section headers: Inter, 9px, font-medium, uppercase, 0.15em tracking
 
 ### Badges/Tags
-- JetBrains Mono, 10px, uppercase
+- Inter, 10px, font-medium, uppercase
 - Dot indicator before text
 - Semantic background tints (accent-muted, success/15%, warning/15%, error/15%)
 - Border-radius: 2px (sharp, not rounded)
@@ -150,14 +149,14 @@ Three typographic voices create hierarchy without relying on color:
 - Content: Serif title + Sans body + Mono metadata footer separated by ruled line
 
 ### Buttons
-- Font: JetBrains Mono, 13px, 0.03em tracking
+- Font: Inter, 13px, font-medium, 0.03em tracking
 - Primary: accent background, light text
 - Secondary: transparent, border, primary text
 - Ghost: transparent, no border, secondary text
 - Border-radius: `sm` (4px)
 
 ### Data Tables
-- Header: JetBrains Mono, 10px, uppercase, 0.1em tracking, tertiary color
+- Header: Inter, 10px, font-medium, uppercase, 0.1em tracking, tertiary color
 - Body: Inter, 14px
 - Numeric columns: Geist, tabular-nums, 500 weight
 - Row hover: accent-subtle background
@@ -165,7 +164,7 @@ Three typographic voices create hierarchy without relying on color:
 
 ### Inputs
 - Font: Inter, 14px
-- Label: JetBrains Mono, 11px, 0.05em tracking
+- Label: Inter, 11px, font-medium, 0.05em tracking
 - Border: 1px solid `--border-strong`
 - Focus: border-color transitions to accent
 - Border-radius: `sm` (4px)
@@ -186,3 +185,4 @@ Three typographic voices create hierarchy without relying on color:
 | 2026-03-21 | High-contrast duotone color approach | Monochrome + single accent means every orange element has maximum visual weight |
 | 2026-03-21 | Grain texture on surfaces | Prevents flat/sterile feel, adds physical quality without skeuomorphism |
 | 2026-03-21 | Warm grays (stone, not steel) | Reinforces intellectual warmth — cool grays would fight the serif + terracotta direction |
+| 2026-03-29 | Inter (sans) for all UI, mono only for code | JetBrains Mono on every button/label/badge was too heavy and "terminal-like". Inter throughout with font-medium for labels creates hierarchy through weight, not font family. Cleaner, more modern, Notion-like. |

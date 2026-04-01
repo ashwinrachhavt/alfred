@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
+from sqlalchemy import func
 from sqlmodel import select
 
 from alfred.core.database import SessionLocal
@@ -440,9 +441,9 @@ class TaxonomyService:
         }
 
         with SessionLocal() as session:
-            # Count total documents
-            total = session.exec(select(DocumentRow)).all()
-            stats["total"] = len(total)
+            stats["total"] = session.exec(
+                select(func.count()).select_from(DocumentRow)
+            ).one()
 
             # Process in batches
             offset = 0

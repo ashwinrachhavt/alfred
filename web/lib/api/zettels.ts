@@ -84,10 +84,37 @@ export type AIGeneratePayload = {
   tags?: string[];
 };
 
+// --------------- Filter Types ---------------
+
+export type ZettelFilterParams = {
+  q?: string;
+  topic?: string;
+  tags?: string[];
+  sort_by?: string;
+  sort_dir?: string;
+  importance_min?: number;
+  status?: string;
+};
+
 // --------------- Card CRUD ---------------
 
-export async function listZettelCards(): Promise<ApiZettelCard[]> {
-  return apiFetch<ApiZettelCard[]>(apiRoutes.zettels.cards, { cache: "no-store" });
+export async function listZettelCards(filters?: ZettelFilterParams): Promise<ApiZettelCard[]> {
+  const query = new URLSearchParams();
+  if (filters?.q) query.set("q", filters.q);
+  if (filters?.topic) query.set("topic", filters.topic);
+  if (filters?.tags && filters.tags.length > 0) {
+    for (const tag of filters.tags) {
+      query.append("tags", tag);
+    }
+  }
+  if (filters?.sort_by) query.set("sort_by", filters.sort_by);
+  if (filters?.sort_dir) query.set("sort_dir", filters.sort_dir);
+  if (filters?.importance_min !== undefined) query.set("importance_min", String(filters.importance_min));
+  if (filters?.status) query.set("status", filters.status);
+
+  const qs = query.toString();
+  const url = qs ? `${apiRoutes.zettels.cards}?${qs}` : apiRoutes.zettels.cards;
+  return apiFetch<ApiZettelCard[]>(url, { cache: "no-store" });
 }
 
 export async function listZettelsByDocument(documentId: string): Promise<ApiZettelCard[]> {
@@ -141,4 +168,14 @@ export async function suggestZettelLinks(
 
 export async function generateZettelCard(payload: AIGeneratePayload): Promise<ApiZettelCard> {
   return apiPostJson<ApiZettelCard, AIGeneratePayload>(apiRoutes.zettels.generate, payload);
+}
+
+// --------------- Facets (topics / tags) ---------------
+
+export async function listZettelTopics(): Promise<string[]> {
+  return apiFetch<string[]>(apiRoutes.zettels.topics, { cache: "no-store" });
+}
+
+export async function listZettelTags(): Promise<string[]> {
+  return apiFetch<string[]>(apiRoutes.zettels.tags, { cache: "no-store" });
 }

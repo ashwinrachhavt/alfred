@@ -38,6 +38,38 @@
 **Depends on:** Session 1 mock fallback removal.
 **Added:** 2026-03-29 via /plan-eng-review
 
+## Integration Tests for Enrichment → Zettel Pipeline
+**What:** Add integration tests for `_create_zettel_from_enrichment()` in `document_enrichment.py` with mocked LLM responses. Cover 4 paths: happy (LLM decomposes → multi-card), fallback (LLM fails → single card from summary), skip (zettels already exist), and no-content (no cleaned_text or summary).
+**Why:** This function is the critical Inbox → Knowledge Hub bridge. Currently 0% tested despite being the most important orchestration code in the sprint.
+**How to start:** Create `tests/alfred/tasks/test_document_enrichment.py`. Mock `get_chat_model()` to return canned JSON responses.
+**Effort:** S (human) -> S (CC) | **Priority:** P2
+**Depends on:** Nothing
+**Added:** 2026-03-29 via /plan-eng-review
+
+## Extract Celery-Safe Session Helper
+**What:** Create a reusable context manager for DB sessions in Celery tasks, replacing the bare `next(get_db_session())` + manual `session.close()` pattern.
+**Why:** The current pattern bypasses FastAPI's dependency injection cleanup logic.
+**How to start:** Create `apps/alfred/core/celery_db.py` with a `@contextmanager celery_session()`.
+**Effort:** S (human) -> S (CC) | **Priority:** P2
+**Depends on:** Nothing
+**Added:** 2026-03-29 via /plan-eng-review
+
+## Chunked Decomposition for Long Articles
+**What:** The zettel decomposer truncates to 8000 chars. For articles over 8K, later sections are invisible to the LLM.
+**Why:** Long articles lose 60%+ of content. Key insights in later sections are lost.
+**How to start:** Implement map-reduce decomposition or increase the limit to 16-32K (GPT-5.4 supports 128K context).
+**Effort:** M (human) -> S (CC) | **Priority:** P2
+**Depends on:** Nothing
+**Added:** 2026-03-29 via /plan-eng-review (Codex outside voice)
+
+## Excalidraw AI: Switch to Mermaid→Excalidraw Pipeline
+**What:** The canvas AI generates raw Excalidraw element JSON. The repo already has Mermaid → Excalidraw conversion.
+**Why:** Mermaid is simpler and LLMs handle it more reliably than raw Excalidraw JSON.
+**How to start:** Change `build_diagram_prompt()` to request Mermaid output. Convert via existing `parseMermaidToExcalidraw`.
+**Effort:** M (human) -> S (CC) | **Priority:** P2
+**Depends on:** Nothing
+**Added:** 2026-03-29 via /plan-eng-review (Codex outside voice)
+
 ## Landing Page CTAs Non-Functional (Clerk Auth Disabled)
 **What:** "Begin Thinking" and "Create account" buttons on the landing page do nothing because Clerk auth keys are expired.
 **Why:** The hero section renders Clerk `SignInButton`/`SignUpButton` wrappers (because `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is set), but the keys are invalid. The buttons render but the modal never opens. New users have no way to enter the app from the landing page.

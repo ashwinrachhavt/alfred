@@ -45,6 +45,11 @@ def resolve_next_stage(state: DocumentPipelineState) -> str:
     If replay_from is set and its prerequisites are met, jump there.
     Otherwise, fall back to the earliest incomplete stage.
     """
+    # If the load step flagged errors (e.g. content is a traceback), skip to persist.
+    if state.get("errors"):
+        logger.warning("Errors detected after load, skipping to persist: %s", state["errors"])
+        return "persist"
+
     target = state.get("replay_from")
 
     if target and target in _ROUTABLE_STAGES:

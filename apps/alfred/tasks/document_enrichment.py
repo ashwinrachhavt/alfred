@@ -10,15 +10,23 @@ logger = logging.getLogger(__name__)
 
 
 def _create_zettel_from_enrichment(doc_id: str) -> str | None:
-    """Create a zettel card from an enriched document's summary and topics.
+    """Create multiple atomic zettel cards from an enriched document using LLM decomposition.
 
     This is the bridge between the Inbox (documents) and the Knowledge Hub (zettels).
-    Each enriched document produces one atomic zettel with its short summary as content.
-    The zettel links back to the source document via document_id.
+    Each enriched document is decomposed into 2-10 atomic zettels (one per key concept).
+    Each zettel links back to the source document via document_id.
 
-    Returns the zettel card ID if created, None if skipped.
+    Auto-created cards get status='draft' so they don't enter the spaced repetition
+    queue until the user reviews and activates them.
+
+    Returns comma-separated zettel card IDs if created, None if skipped.
     """
     from alfred.api.dependencies import get_db_session
+    from alfred.core.llm_factory import get_chat_model
+    from alfred.services.zettel_decomposer import (
+        build_decomposition_prompt,
+        parse_decomposition_response,
+    )
     from alfred.services.zettelkasten_service import ZettelkastenService
 
     svc = get_doc_storage_service()
@@ -26,71 +34,120 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
     if not doc:
         return None
 
-    # Skip if no enrichment/summary — nothing to create a zettel from
-    summary = doc.get("summary") or {}
-    short_summary = summary.get("short", "").strip() if isinstance(summary, dict) else ""
-    if not short_summary:
-        logger.info("Skipping zettel creation for %s — no summary", doc_id)
-        return None
-
-    title = doc.get("title") or "Untitled"
-    source_url = doc.get("source_url")
-    topics = doc.get("topics") or {}
-    primary_topic = topics.get("primary") if isinstance(topics, dict) else None
-    tags = doc.get("tags") or []
-
-    # Prefer taxonomy classification over raw extraction topics
-    classification = doc.get("classification") or {}
-    domain = classification.get("domain", {})
-    subdomain = classification.get("subdomain", {})
-
-    if domain.get("slug"):
-        classified_topic = domain.get("slug")
-        classified_tags = [t for t in [
-            domain.get("slug"),
-            subdomain.get("slug"),
-            *[mt.get("slug", "") for mt in (classification.get("microtopics") or [])[:3]],
-        ] if t]
-    else:
-        classified_topic = None
-        classified_tags = []
-
-    final_topic = classified_topic or primary_topic
-    final_tags = list(set(
-        classified_tags
-        + ([primary_topic] if primary_topic else [])
-        + (tags[:2] if tags else [])
-    ))
-
-    # Check if a zettel already exists for this document
     session = next(get_db_session())
     try:
-        from sqlmodel import select
-        from alfred.models.zettel import ZettelCard
-
-        existing = session.exec(
-            select(ZettelCard).where(ZettelCard.document_id == doc_id).limit(1)
-        ).first()
-        if existing:
-            logger.info("Zettel already exists for document %s", doc_id)
-            return str(existing.id)
-
         zk = ZettelkastenService(session=session)
-        card = zk.create_card(
-            title=title,
-            content=short_summary,
-            tags=final_tags,
-            topic=final_topic,
-            source_url=source_url,
-            document_id=doc_id,
-            importance=5,
-            confidence=0.7,
-            status="active",
-        )
-        logger.info("Created zettel %s from document %s", card.id, doc_id)
-        return str(card.id)
+
+        # Only skip if auto-created (draft) cards already exist for this document.
+        # Manual cards (status='active') should NOT suppress auto-decomposition.
+        existing = zk.list_cards(document_id=doc_id, limit=100)
+        auto_created = [c for c in existing if c.status == "draft"]
+        if auto_created:
+            logger.info("Auto-created zettels already exist for document %s (count: %d)", doc_id, len(auto_created))
+            return ",".join(str(card.id) for card in auto_created)
+
+        # Gather document context
+        title = doc.get("title") or "Untitled"
+        source_url = doc.get("source_url")
+        cleaned_text = doc.get("cleaned_text", "")
+        summary = doc.get("summary") or {}
+        short_summary = summary.get("short", "").strip() if isinstance(summary, dict) else ""
+        topics = doc.get("topics") or {}
+        primary_topic = topics.get("primary") if isinstance(topics, dict) else None
+        tags = doc.get("tags") or []
+
+        # Prefer taxonomy classification over raw extraction topics
+        classification = doc.get("classification") or {}
+        domain = classification.get("domain", {})
+        subdomain = classification.get("subdomain", {})
+
+        if domain.get("slug"):
+            classified_topic = domain.get("slug")
+            classified_tags = [t for t in [
+                domain.get("slug"),
+                subdomain.get("slug"),
+                *[mt.get("slug", "") for mt in (classification.get("microtopics") or [])[:3]],
+            ] if t]
+        else:
+            classified_topic = None
+            classified_tags = []
+
+        final_topic = classified_topic or primary_topic
+        final_tags = list(set(
+            classified_tags
+            + ([primary_topic] if primary_topic else [])
+            + (tags[:2] if tags else [])
+        ))
+
+        created_ids: list[str] = []
+
+        # Check if we have enough content for LLM decomposition
+        can_decompose = bool(cleaned_text and short_summary)
+
+        if can_decompose:
+            try:
+                prompt = build_decomposition_prompt(
+                    title=title,
+                    summary=short_summary,
+                    cleaned_text=cleaned_text,
+                    topics=topics,
+                )
+
+                llm = get_chat_model()
+                response = llm.invoke([
+                    {"role": "system", "content": "You are a knowledge card generator. Return only valid JSON."},
+                    {"role": "user", "content": prompt},
+                ])
+
+                raw = response.content if hasattr(response, "content") else str(response)
+                card_dicts = parse_decomposition_response(raw)
+
+                if card_dicts:
+                    for card_dict in card_dicts:
+                        card_tags = list(set(final_tags + card_dict.get("tags", [])))
+                        card = zk.create_card(
+                            title=card_dict["title"],
+                            content=card_dict["content"],
+                            tags=card_tags,
+                            topic=final_topic,
+                            source_url=source_url,
+                            document_id=doc_id,
+                            importance=5,
+                            confidence=0.7,
+                            status="draft",
+                        )
+                        created_ids.append(str(card.id))
+                        logger.info("Created draft zettel %s from document %s", card.id, doc_id)
+                else:
+                    logger.warning("LLM decomposition returned no cards for document %s", doc_id)
+                    can_decompose = False  # fall through to fallback
+
+            except Exception as exc:
+                logger.warning("LLM decomposition failed for %s: %s", doc_id, exc)
+                can_decompose = False  # fall through to fallback
+
+        # Fallback: create single zettel from summary
+        if not created_ids and short_summary:
+            if not can_decompose:
+                logger.info("Falling back to single card for document %s", doc_id)
+            card = zk.create_card(
+                title=title,
+                content=short_summary,
+                tags=final_tags,
+                topic=final_topic,
+                source_url=source_url,
+                document_id=doc_id,
+                importance=5,
+                confidence=0.7,
+                status="draft",
+            )
+            created_ids.append(str(card.id))
+            logger.info("Created fallback draft zettel %s from document %s", card.id, doc_id)
+
+        return ",".join(created_ids) if created_ids else None
+
     except Exception:
-        logger.exception("Failed to create zettel from document %s", doc_id)
+        logger.exception("Failed to create zettels from document %s", doc_id)
         return None
     finally:
         session.close()

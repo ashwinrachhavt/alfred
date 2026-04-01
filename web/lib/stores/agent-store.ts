@@ -119,7 +119,7 @@ type AgentState = {
   noteContext: NoteContext | null;
 
   // Actions
-  sendMessage: (text: string) => Promise<void>;
+  sendMessage: (text: string, opts?: { intent?: string; intentArgs?: Record<string, unknown> }) => Promise<void>;
   cancelStream: () => void;
   setLens: (lens: string | null) => void;
   setModel: (model: string) => void;
@@ -173,7 +173,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   abortController: null,
   noteContext: null,
 
-  sendMessage: async (text: string) => {
+  sendMessage: async (text: string, opts?: { intent?: string; intentArgs?: Record<string, unknown> }) => {
     const state = get();
 
     // Cancel existing stream if active (cancel + send behavior)
@@ -243,7 +243,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         apiRoutes.agent.stream,
         {
           message: text,
-          thread_id: state.activeThreadId,
+          thread_id: state.activeThreadId,  // null is fine — backend auto-creates
           note_context: state.noteContext
             ? {
                 note_id: state.noteContext.noteId,
@@ -253,10 +253,15 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             : undefined,
           lens: state.activeLens,
           model: state.activeModel,
-          history: selectOrderedMessages(state).slice(-20).map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
+          // Only send history if no thread (backend loads from DB when thread exists)
+          history: state.activeThreadId
+            ? undefined
+            : selectOrderedMessages(state).slice(-20).map((m) => ({
+                role: m.role,
+                content: m.content,
+              })),
+          intent: opts?.intent,
+          intent_args: opts?.intentArgs,
         },
         (event, data) => _handleSSEEvent(event, data, set, get),
         composedSignal,
@@ -439,6 +444,23 @@ function _handleSSEEvent(
       break;
     }
 
+    case "tool_end": {
+      set((s) => {
+        const tools = s.activeToolCalls.map((tc, i) =>
+          i === s.activeToolCalls.length - 1
+            ? { ...tc, result: data as Record<string, unknown>, status: "done" as const }
+            : tc,
+        );
+        const msgs = s.messages.map((m, i) =>
+          i === s.messages.length - 1 && m.role === "assistant"
+            ? { ...m, toolCalls: [...tools] }
+            : m,
+        );
+        return { activeToolCalls: tools, messages: msgs };
+      });
+      break;
+    }
+
     case "artifact": {
       const artifact: ArtifactCard = {
         type: (data.type as string) as "zettel" | "document",
@@ -467,6 +489,14 @@ function _handleSSEEvent(
         ..._updateLastAssistant(s, (m) => ({ ...m, content: (data.message as string) || "Something went wrong." })),
         isStreaming: false,
       }));
+      break;
+    }
+
+    case "thread_created": {
+      const threadId = data.thread_id as number;
+      if (threadId) {
+        set({ activeThreadId: threadId });
+      }
       break;
     }
 
