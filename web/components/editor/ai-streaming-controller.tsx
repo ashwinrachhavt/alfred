@@ -24,6 +24,7 @@ export type AiStreamingControllerProps = {
   insertAt: number;
   originalRange: { from: number; to: number; text: string } | null;
   onFinish: (action: "accept" | "discard") => void;
+  onStreamComplete: () => void;
   onRetry: () => void;
   onEditInstruction: (previousInstruction: string) => void;
 };
@@ -38,6 +39,7 @@ export function AiStreamingController({
   insertAt,
   originalRange,
   onFinish,
+  onStreamComplete,
   onRetry,
   onEditInstruction,
 }: AiStreamingControllerProps) {
@@ -58,6 +60,7 @@ export function AiStreamingController({
   /* ---- helpers --------------------------------------------------- */
 
   const updateActionBarPosition = useCallback(() => {
+    if (!editor || editor.isDestroyed) return;
     try {
       const to = insertRangeRef.current.to;
       if (to > editor.state.doc.content.size) return;
@@ -69,6 +72,7 @@ export function AiStreamingController({
   }, [editor]);
 
   const updatePillPosition = useCallback(() => {
+    if (!editor || editor.isDestroyed) return;
     try {
       const to = insertRangeRef.current.to;
       if (to > editor.state.doc.content.size) return;
@@ -80,12 +84,45 @@ export function AiStreamingController({
   }, [editor]);
 
   const discardInserted = useCallback(() => {
+    if (!editor || editor.isDestroyed) return;
     const { from, to } = insertRangeRef.current;
     if (from < to) {
       const tr = editor.state.tr.delete(from, to);
       editor.view.dispatch(tr);
     }
   }, [editor]);
+
+  /* ---- action handlers ------------------------------------------ */
+
+  const handleAccept = useCallback(() => {
+    if (!editor || editor.isDestroyed) return;
+    if (originalRange) {
+      // Edit mode: delete the original text range. The AI text is already
+      // inserted AFTER the original, so deleting the original shifts
+      // the insert range backwards.
+      const deleteLen = originalRange.to - originalRange.from;
+      const tr = editor.state.tr.delete(originalRange.from, originalRange.to);
+      editor.view.dispatch(tr);
+
+      // Adjust insert range ref since deletion before shifts positions
+      insertRangeRef.current = {
+        from: insertRangeRef.current.from - deleteLen,
+        to: insertRangeRef.current.to - deleteLen,
+      };
+
+      toast.success("AI edit applied");
+    } else {
+      toast.success("AI text inserted");
+    }
+    onFinish("accept");
+  }, [editor, originalRange, onFinish]);
+
+  const handleDiscard = useCallback(() => {
+    if (!editor || editor.isDestroyed) return;
+    abortRef.current?.abort();
+    discardInserted();
+    onFinish("discard");
+  }, [editor, discardInserted, onFinish]);
 
   /* ---- streaming effect ----------------------------------------- */
 
@@ -120,6 +157,7 @@ export function AiStreamingController({
             to: currentPos,
           };
           updateActionBarPosition();
+          onStreamComplete();
         } else {
           // Normal streaming case
           const isEdit = originalRange !== null;
@@ -151,6 +189,7 @@ export function AiStreamingController({
             },
             onComplete: () => {
               updateActionBarPosition();
+              onStreamComplete();
             },
             onError: (error: Error) => {
               toast.error(error.message || "AI streaming failed");
@@ -171,8 +210,7 @@ export function AiStreamingController({
       ac.abort();
       abortRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.status]);
+  }, [state, insertAt, originalRange, editor, onFinish, onStreamComplete, updateActionBarPosition, updatePillPosition, discardInserted]);
 
   /* ---- keyboard shortcuts --------------------------------------- */
 
@@ -191,8 +229,7 @@ export function AiStreamingController({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.status]);
+  }, [state.status, handleAccept, handleDiscard]);
 
   /* ---- action bar position on done ------------------------------ */
 
@@ -201,44 +238,6 @@ export function AiStreamingController({
       updateActionBarPosition();
     }
   }, [state.status, updateActionBarPosition]);
-
-  /* ---- cleanup on unmount --------------------------------------- */
-
-  useEffect(() => {
-    return () => {
-      abortRef.current?.abort();
-    };
-  }, []);
-
-  /* ---- action handlers ------------------------------------------ */
-
-  const handleAccept = useCallback(() => {
-    if (originalRange) {
-      // Edit mode: delete the original text range. The AI text is already
-      // inserted AFTER the original, so deleting the original shifts
-      // the insert range backwards.
-      const deleteLen = originalRange.to - originalRange.from;
-      const tr = editor.state.tr.delete(originalRange.from, originalRange.to);
-      editor.view.dispatch(tr);
-
-      // Adjust insert range ref since deletion before shifts positions
-      insertRangeRef.current = {
-        from: insertRangeRef.current.from - deleteLen,
-        to: insertRangeRef.current.to - deleteLen,
-      };
-
-      toast.success("AI edit applied");
-    } else {
-      toast.success("AI text inserted");
-    }
-    onFinish("accept");
-  }, [editor, originalRange, onFinish]);
-
-  const handleDiscard = useCallback(() => {
-    abortRef.current?.abort();
-    discardInserted();
-    onFinish("discard");
-  }, [discardInserted, onFinish]);
 
   /* ---- render --------------------------------------------------- */
 
