@@ -5,11 +5,22 @@ collection or when importing submodules, routers are imported lazily inside
 `register_routes` rather than at module import time.
 """
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+
+from alfred.core.auth import get_current_user
 
 
 def register_routes(app: FastAPI) -> None:
-    """Attach all API routers (lazy imports)."""
+    """Attach all API routers (lazy imports).
+
+    Adds ``get_current_user`` as an app-level dependency so every route
+    requires a valid Clerk JWT (or falls back to a dev user when Clerk
+    env vars are absent).
+    """
+    # Global auth dependency — applies to ALL routes
+    app.dependency_overrides.setdefault(get_current_user, get_current_user)
+    if get_current_user not in [d.dependency for d in app.router.dependencies]:
+        app.router.dependencies.append(Depends(get_current_user))
 
     # Import routers only when registering to avoid heavy side effects during import.
     from alfred.api.admin import router as admin_router
