@@ -11,6 +11,7 @@ from alfred.schemas.zettel import (
     CompleteReviewRequest,
     GraphSummary,
     LinkSuggestion,
+    PaginatedZettelResponse,
     ZettelCardCreate,
     ZettelCardOut,
     ZettelCardPatch,
@@ -46,7 +47,7 @@ def create_card(
     return _card_out(card)
 
 
-@router.get("/cards", response_model=list[ZettelCardOut])
+@router.get("/cards", response_model=PaginatedZettelResponse)
 def list_cards(
     q: str | None = None,
     topic: str | None = None,
@@ -60,7 +61,7 @@ def list_cards(
     limit: int = 50,
     skip: int = 0,
     session: Session = Depends(get_db_session),
-) -> list[ZettelCardOut]:
+) -> PaginatedZettelResponse:
     all_tags = list(tags or [])
     if tag and tag not in all_tags:
         all_tags.append(tag)
@@ -71,7 +72,17 @@ def list_cards(
         importance_min=importance_min, status=card_status,
         limit=limit, skip=skip,
     )
-    return [_card_out(c) for c in cards]
+    total_count = svc.count_cards(
+        q=q, topic=topic, tags=all_tags or None,
+        document_id=document_id,
+        importance_min=importance_min, status=card_status,
+    )
+    return PaginatedZettelResponse(
+        items=[_card_out(c) for c in cards],
+        total_count=total_count,
+        limit=limit,
+        skip=skip,
+    )
 
 
 @router.get("/topics", response_model=list[str])

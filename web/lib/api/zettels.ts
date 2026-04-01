@@ -96,9 +96,24 @@ export type ZettelFilterParams = {
   status?: string;
 };
 
+export type PaginatedZettelResponse = {
+  items: ApiZettelCard[];
+  total_count: number;
+  limit: number;
+  skip: number;
+};
+
+export type ZettelPaginationParams = {
+  limit?: number;
+  skip?: number;
+};
+
 // --------------- Card CRUD ---------------
 
-export async function listZettelCards(filters?: ZettelFilterParams): Promise<ApiZettelCard[]> {
+export async function listZettelCards(
+  filters?: ZettelFilterParams,
+  pagination?: ZettelPaginationParams,
+): Promise<PaginatedZettelResponse> {
   const query = new URLSearchParams();
   if (filters?.q) query.set("q", filters.q);
   if (filters?.topic) query.set("topic", filters.topic);
@@ -111,10 +126,12 @@ export async function listZettelCards(filters?: ZettelFilterParams): Promise<Api
   if (filters?.sort_dir) query.set("sort_dir", filters.sort_dir);
   if (filters?.importance_min !== undefined) query.set("importance_min", String(filters.importance_min));
   if (filters?.status) query.set("status", filters.status);
+  if (pagination?.limit !== undefined) query.set("limit", String(pagination.limit));
+  if (pagination?.skip !== undefined) query.set("skip", String(pagination.skip));
 
   const qs = query.toString();
   const url = qs ? `${apiRoutes.zettels.cards}?${qs}` : apiRoutes.zettels.cards;
-  return apiFetch<ApiZettelCard[]>(url, { cache: "no-store" });
+  return apiFetch<PaginatedZettelResponse>(url, { cache: "no-store" });
 }
 
 export async function listZettelsByDocument(documentId: string): Promise<ApiZettelCard[]> {

@@ -112,6 +112,15 @@ class LinkSuggestion(BaseModel):
     scores: LinkQuality
 
 
+class PaginatedZettelResponse(BaseModel):
+    """Paginated list of zettel cards with total count."""
+
+    items: list[ZettelCardOut]
+    total_count: int
+    limit: int
+    skip: int
+
+
 class BulkUpdateResult(BaseModel):
     """Summary for bulk update operations."""
 
