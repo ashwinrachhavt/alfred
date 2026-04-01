@@ -99,7 +99,7 @@ function SidebarNavItem({ item, isActive }: { item: NavItem; isActive: boolean }
  }
 
  return (
- <Link href={item.href} className={classes}>
+ <Link href={item.href} prefetch className={classes}>
  {inner}
  </Link>
  );
