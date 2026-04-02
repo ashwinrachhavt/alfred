@@ -77,6 +77,30 @@ def _build_system_prompt(
         if preview:
             parts.append(f"Note preview: {preview[:500]}")
 
+    # Check for new knowledge notifications
+    try:
+        from alfred.services.knowledge_notifications import get_pending_notifications
+
+        notifications = get_pending_notifications(limit=3)
+        if notifications:
+            parts.append("")
+            parts.append("New knowledge arrived since your last conversation:")
+            for n in notifications:
+                linked_count = len(n.get("linked_to", [])) or n.get("linked_to_count", 0)
+                line = f"- '{n['zettel_title']}'"
+                if linked_count:
+                    line += f" (linked to {linked_count} existing cards)"
+                source = n.get("source_document")
+                if source:
+                    line += f" from '{source}'"
+                parts.append(line)
+            parts.append(
+                "Mention these if relevant to the user's question. "
+                "You can use search_kb to find more details."
+            )
+    except Exception:
+        pass  # Never block prompt building on notification failures
+
     return "\n".join(parts)
 
 

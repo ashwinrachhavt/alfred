@@ -15,6 +15,10 @@ from sqlmodel import Session, select
 from alfred.api.dependencies import get_db_session
 from alfred.models.thinking import AgentMessageRow, ThinkingSessionRow
 from alfred.services.agent.service import AgentService
+from alfred.services.knowledge_notifications import (
+    get_notification_count,
+    get_pending_notifications,
+)
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 logger = logging.getLogger(__name__)
@@ -333,6 +337,23 @@ def delete_thread(thread_id: int, db: Session = Depends(get_db_session)):
         raise HTTPException(status_code=404, detail="Thread not found")
     db.delete(session)
     db.commit()
+
+
+@router.get("/notifications")
+def get_notifications(limit: int = 10) -> dict[str, Any]:
+    """Return pending knowledge notifications from Redis."""
+    notifications = get_pending_notifications(limit=limit)
+    count = get_notification_count()
+    return {
+        "notifications": notifications,
+        "remaining": count,
+    }
+
+
+@router.get("/notifications/count")
+def get_notifications_count() -> dict[str, int]:
+    """Return the count of pending knowledge notifications."""
+    return {"count": get_notification_count()}
 
 
 def _to_summary(session: ThinkingSessionRow, message_count: int = 0) -> ThreadSummary:

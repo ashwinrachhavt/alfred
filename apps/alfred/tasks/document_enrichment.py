@@ -102,6 +102,134 @@ def _auto_link_zettels(card_ids: list[str], session) -> dict:
     return stats
 
 
+def _push_zettel_notifications(
+    card_ids: list[str],
+    link_stats: dict,
+    source_title: str,
+    tags: list[str],
+    topic: str | None,
+    session,
+) -> None:
+    """Check if newly created zettels match recent agent threads and push notifications.
+
+    Matching is lightweight (topic/tag overlap only, no semantic search).
+    Best-effort: failures are logged but never block the pipeline.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from sqlmodel import select
+
+    from alfred.models.thinking import AgentMessageRow, ThinkingSessionRow
+    from alfred.services.knowledge_notifications import push_knowledge_notification
+    from alfred.services.zettelkasten_service import ZettelkastenService
+
+    zk = ZettelkastenService(session=session)
+
+    # Find recent agent threads (last 7 days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    recent_threads = session.exec(
+        select(ThinkingSessionRow)
+        .where(ThinkingSessionRow.session_type == "agent")
+        .where(ThinkingSessionRow.updated_at >= cutoff)
+        .limit(50)
+    ).all()
+
+    if not recent_threads:
+        return
+
+    # Build a quick lookup of thread topics and tags
+    thread_infos: list[dict] = []
+    for thread in recent_threads:
+        thread_tags: set[str] = set()
+        thread_topic = (thread.topic or "").lower().strip()
+
+        # Collect tags from thread itself
+        if thread.tags:
+            thread_tags.update(t.lower() for t in thread.tags if isinstance(t, str))
+
+        # Collect tags from related_cards in recent messages
+        try:
+            recent_msgs = session.exec(
+                select(AgentMessageRow)
+                .where(AgentMessageRow.thread_id == thread.id)
+                .order_by(AgentMessageRow.created_at.desc())
+                .limit(10)
+            ).all()
+            for msg in recent_msgs:
+                if msg.related_cards:
+                    for rc in msg.related_cards:
+                        if isinstance(rc, dict) and rc.get("tags"):
+                            thread_tags.update(
+                                t.lower() for t in rc["tags"] if isinstance(t, str)
+                            )
+        except Exception:
+            pass  # Skip message scanning on error
+
+        thread_infos.append({
+            "id": thread.id,
+            "title": thread.title or "Untitled thread",
+            "topic": thread_topic,
+            "tags": thread_tags,
+        })
+
+    tag_set = {t.lower() for t in tags if isinstance(t, str)}
+    topic_lower = (topic or "").lower().strip()
+
+    for card_id_str in card_ids:
+        try:
+            card = zk.get_card(int(card_id_str))
+            if not card:
+                continue
+
+            # Find matching threads via topic or tag overlap
+            matches: list[dict] = []
+            for ti in thread_infos:
+                reason = None
+                if topic_lower and ti["topic"] and topic_lower in ti["topic"]:
+                    reason = "topic overlap"
+                elif ti["topic"] and topic_lower and ti["topic"] in topic_lower:
+                    reason = "topic overlap"
+                elif tag_set & ti["tags"]:
+                    overlapping = tag_set & ti["tags"]
+                    reason = f"shared tags: {', '.join(list(overlapping)[:3])}"
+
+                if reason:
+                    matches.append({
+                        "thread_id": ti["id"],
+                        "title": ti["title"],
+                        "reason": reason,
+                    })
+
+            if not matches:
+                continue
+
+            notification = {
+                "type": "new_knowledge",
+                "zettel_id": card.id,
+                "zettel_title": card.title or "Untitled",
+                "linked_to": [],
+                "source_document": source_title,
+                "thread_matches": matches[:5],
+            }
+
+            # Include link info from auto-linking stats if available
+            if link_stats.get("links_created", 0) > 0:
+                notification["linked_to_count"] = link_stats["links_created"]
+
+            push_knowledge_notification(notification)
+            logger.info(
+                "Pushed knowledge notification for zettel %s (matched %d threads)",
+                card_id_str,
+                len(matches),
+            )
+        except Exception:
+            logger.warning(
+                "Failed to push notification for card %s",
+                card_id_str,
+                exc_info=True,
+            )
+
+
 def _create_zettel_from_enrichment(doc_id: str) -> str | None:
     """Create multiple atomic zettel cards from an enriched document using LLM decomposition.
 
@@ -238,6 +366,7 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
             logger.info("Created fallback draft zettel %s from document %s", card.id, doc_id)
 
         # Auto-link newly created zettels to existing knowledge graph
+        link_stats: dict = {"links_created": 0}
         if created_ids:
             try:
                 link_stats = _auto_link_zettels(created_ids, session)
@@ -250,6 +379,16 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
             except Exception:
                 logger.warning(
                     "Auto-linking failed for document %s zettels, continuing",
+                    doc_id,
+                    exc_info=True,
+                )
+
+            # Push knowledge notifications for new zettels that match agent threads
+            try:
+                _push_zettel_notifications(created_ids, link_stats, title, final_tags, final_topic, session)
+            except Exception:
+                logger.warning(
+                    "Knowledge notification push failed for document %s, continuing",
                     doc_id,
                     exc_info=True,
                 )
