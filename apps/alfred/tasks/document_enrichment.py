@@ -9,6 +9,99 @@ from alfred.core.dependencies import get_doc_storage_service
 logger = logging.getLogger(__name__)
 
 
+def _auto_link_zettels(card_ids: list[str], session) -> dict:
+    """Run suggest_links on each card and auto-create links for high-confidence matches.
+
+    For each newly created zettel, generates an embedding (if missing), finds
+    similar cards via composite scoring, and creates bidirectional links:
+    - confidence >= 0.8: auto-linked as "auto_high" type
+    - confidence 0.6-0.8: auto-linked as "auto_suggested" type
+
+    This is best-effort: failures are logged but never block the pipeline.
+
+    Returns a summary dict with counts of links created and errors.
+    """
+    from alfred.services.zettelkasten_service import ZettelkastenService
+
+    zk = ZettelkastenService(session=session)
+    stats = {"links_created": 0, "cards_processed": 0, "errors": 0}
+
+    for card_id_str in card_ids:
+        try:
+            card_id = int(card_id_str)
+            card = zk.get_card(card_id)
+            if not card:
+                logger.warning("Auto-link: card %s not found, skipping", card_id_str)
+                continue
+
+            # Ensure the card has an embedding before suggesting links
+            try:
+                card = zk.ensure_embedding(card)
+            except Exception:
+                logger.warning(
+                    "Auto-link: failed to embed card %s, skipping link suggestions",
+                    card_id,
+                    exc_info=True,
+                )
+                stats["errors"] += 1
+                continue
+
+            suggestions = zk.suggest_links(card_id, min_confidence=0.6, limit=5)
+            stats["cards_processed"] += 1
+
+            for suggestion in suggestions:
+                score = suggestion.scores.composite_score
+                confidence_level = suggestion.scores.confidence
+
+                # Choose link type based on confidence
+                if confidence_level == "high":
+                    link_type = "auto_high"
+                else:
+                    link_type = "auto_suggested"
+
+                try:
+                    zk.create_link(
+                        from_card_id=card_id,
+                        to_card_id=suggestion.to_card_id,
+                        type=link_type,
+                        context=suggestion.reason,
+                        bidirectional=True,
+                    )
+                    stats["links_created"] += 1
+                    logger.info(
+                        "Auto-linked card %d -> %d (score=%.3f, confidence=%s, type=%s)",
+                        card_id,
+                        suggestion.to_card_id,
+                        score,
+                        confidence_level,
+                        link_type,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Auto-link: failed to create link %d -> %d",
+                        card_id,
+                        suggestion.to_card_id,
+                        exc_info=True,
+                    )
+                    stats["errors"] += 1
+
+        except Exception:
+            logger.warning(
+                "Auto-link: unexpected error processing card %s",
+                card_id_str,
+                exc_info=True,
+            )
+            stats["errors"] += 1
+
+    logger.info(
+        "Auto-link complete: %d cards processed, %d links created, %d errors",
+        stats["cards_processed"],
+        stats["links_created"],
+        stats["errors"],
+    )
+    return stats
+
+
 def _create_zettel_from_enrichment(doc_id: str) -> str | None:
     """Create multiple atomic zettel cards from an enriched document using LLM decomposition.
 
@@ -143,6 +236,23 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
             )
             created_ids.append(str(card.id))
             logger.info("Created fallback draft zettel %s from document %s", card.id, doc_id)
+
+        # Auto-link newly created zettels to existing knowledge graph
+        if created_ids:
+            try:
+                link_stats = _auto_link_zettels(created_ids, session)
+                if link_stats["links_created"] > 0:
+                    logger.info(
+                        "Auto-linked %d connections for document %s zettels",
+                        link_stats["links_created"],
+                        doc_id,
+                    )
+            except Exception:
+                logger.warning(
+                    "Auto-linking failed for document %s zettels, continuing",
+                    doc_id,
+                    exc_info=True,
+                )
 
         return ",".join(created_ids) if created_ids else None
 
