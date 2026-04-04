@@ -51,6 +51,7 @@ dependencies = [
     "sqlmodel>=0.0.21,<0.1",
     "langid>=1.1.6,<2",
     "pypdf>=4,<5",
+    "mcp>=1.12",
 ]
 
 [tool.uv]
