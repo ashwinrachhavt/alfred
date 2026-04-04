@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, type ReactNode } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { ChevronRight, RefreshCw, FolderTree, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
