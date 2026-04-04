@@ -52,6 +52,7 @@ function mapApiToZettel(card: ApiZettelCard, connections: string[]): Zettel {
     summary: card.content || card.summary || "",
     tags: card.tags || [],
     connections,
+    status: card.status,
     bloomLevel: Math.max(1, Math.min(6, Math.round(card.confidence * 6))) as BloomLevel,
     bloomHistory: [],
     source: {
@@ -73,8 +74,13 @@ export function useZettelCards(filters?: ZettelFilterParams) {
   return useQuery({
     queryKey: ["zettels", "cards", filters || null],
     queryFn: async () => {
+      // When no status filter is set, fetch all non-archived cards (active + draft)
+      const effectiveFilters = {
+        ...filters,
+        status: filters?.status || undefined, // undefined = no status filter sent to API
+      };
       const [cards, graph] = await Promise.all([
-        apiListZettelCards(filters),
+        apiListZettelCards(effectiveFilters),
         apiFetch<GraphSummary>(apiRoutes.zettels.graph, { cache: "no-store" }),
       ]);
 

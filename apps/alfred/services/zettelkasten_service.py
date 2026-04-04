@@ -155,6 +155,9 @@ class ZettelkastenService:
             stmt = stmt.where(ZettelCard.document_id == document_id.strip())
         if status:
             stmt = stmt.where(ZettelCard.status == status)
+        else:
+            # When no status filter, exclude archived cards
+            stmt = stmt.where(ZettelCard.status != "archived")
         if importance_min is not None:
             stmt = stmt.where(ZettelCard.importance >= importance_min)
 

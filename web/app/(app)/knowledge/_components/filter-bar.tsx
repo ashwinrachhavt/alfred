@@ -49,6 +49,12 @@ const IMPORTANCE_OPTIONS = [
   { value: "7", label: "7+" },
 ];
 
+const STATUS_OPTIONS = [
+  { value: "__all__", label: "All" },
+  { value: "active", label: "Active" },
+  { value: "draft", label: "Drafts" },
+];
+
 // --------------- Helpers ---------------
 
 function hasActiveFilters(filters: ZettelFilters): boolean {
@@ -57,7 +63,8 @@ function hasActiveFilters(filters: ZettelFilters): boolean {
     filters.topic ||
     (filters.tags && filters.tags.length > 0) ||
     filters.sort_by ||
-    (filters.importance_min && filters.importance_min > 0)
+    (filters.importance_min && filters.importance_min > 0) ||
+    filters.status
   );
 }
 
@@ -226,6 +233,33 @@ export function FilterBar({
                   <button
                     key={o.value}
                     onClick={() => handleImportanceChange(o.value)}
+                    className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                      isActive
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-[var(--alfred-accent-subtle)] text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Status */}
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-medium uppercase tracking-[0.1em] text-[var(--alfred-text-tertiary)]">
+              Status
+            </span>
+            <div className="flex gap-1">
+              {STATUS_OPTIONS.map((o) => {
+                const isActive =
+                  (o.value === "__all__" && !filters.status) ||
+                  filters.status === o.value;
+                return (
+                  <button
+                    key={o.value}
+                    onClick={() => update({ status: o.value === "__all__" ? undefined : o.value })}
                     className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
                       isActive
                         ? "bg-primary text-primary-foreground"

@@ -110,7 +110,13 @@ export async function listZettelCards(filters?: ZettelFilterParams): Promise<Api
   if (filters?.sort_by) query.set("sort_by", filters.sort_by);
   if (filters?.sort_dir) query.set("sort_dir", filters.sort_dir);
   if (filters?.importance_min !== undefined) query.set("importance_min", String(filters.importance_min));
-  if (filters?.status) query.set("status", filters.status);
+  // When status is set, filter by it; otherwise fetch all non-archived cards
+  if (filters?.status) {
+    query.set("status", filters.status);
+  } else {
+    query.set("status", ""); // empty = no status filter on backend
+  }
+  query.set("limit", "200"); // show all cards, not just 50
 
   const qs = query.toString();
   const url = qs ? `${apiRoutes.zettels.cards}?${qs}` : apiRoutes.zettels.cards;

@@ -7,6 +7,7 @@ export type Zettel = {
   summary: string;
   tags: string[];
   connections: string[];
+  status: string;
   bloomLevel: BloomLevel;
   bloomHistory: { date: string; level: BloomLevel; source: "flashcard" | "feynman" | "quiz" }[];
   source: {
@@ -48,6 +49,7 @@ export const MOCK_ZETTELS: Zettel[] = [
     content: "The behavior of a complex system is not derivable from the behavior of its components in isolation. Emergence arises from interactions, feedback loops, and nonlinear dynamics — not from the properties of individual parts.",
     summary: "Complex systems exhibit behaviors that cannot be predicted from individual components alone.",
     tags: ["complexity", "epistemology", "systems"],
+    status: "active",
     connections: ["z2", "z6", "z8", "z10"],
     bloomLevel: 5,
     bloomHistory: [
@@ -76,6 +78,7 @@ export const MOCK_ZETTELS: Zettel[] = [
     content: "Normal science operates within paradigms that define both the problems worth solving and the methods for solving them. Anomalies accumulate until a crisis triggers a revolution — a fundamentally new framework replaces the old.",
     summary: "Scientific progress isn't linear — it happens through revolutionary paradigm shifts when anomalies overwhelm the existing framework.",
     tags: ["philosophy", "epistemology"],
+    status: "active",
     connections: ["z1", "z5"],
     bloomLevel: 3,
     bloomHistory: [
@@ -101,6 +104,7 @@ export const MOCK_ZETTELS: Zettel[] = [
     content: "Ben Thompson argues that platform aggregators gain power by owning demand rather than supply. But aggregation has limits: when trust degrades, when regulation intervenes, or when the supply side finds alternative distribution.",
     summary: "Platform scale has diminishing returns when trust, regulation, or supply-side alternatives erode the aggregator's demand monopoly.",
     tags: ["strategy", "tech"],
+    status: "active",
     connections: ["z7"],
     bloomLevel: 4,
     bloomHistory: [
@@ -126,6 +130,7 @@ export const MOCK_ZETTELS: Zettel[] = [
     content: "SCRAM (Salted Challenge Response Authentication Mechanism) with channel binding ties the authentication to the TLS channel, preventing man-in-the-middle attacks on database credentials. PostgreSQL supports this via the channel_binding=require connection parameter.",
     summary: "PostgreSQL authentication mechanism that binds credentials to the TLS channel, preventing credential interception.",
     tags: ["backend", "security"],
+    status: "active",
     connections: [],
     bloomLevel: 1,
     bloomHistory: [],
@@ -148,6 +153,7 @@ export const MOCK_ZETTELS: Zettel[] = [
     content: "Joscha Bach frames consciousness as a 'self-model that models itself modeling.' The mind creates a compressed representation of itself and its relationship to the world, and consciousness is the experience of running that model.",
     summary: "Bach's theory: consciousness is a recursive self-model — the mind modeling its own modeling process.",
     tags: ["philosophy", "AI", "consciousness"],
+    status: "active",
     connections: ["z1", "z2"],
     bloomLevel: 2,
     bloomHistory: [
@@ -172,6 +178,7 @@ export const MOCK_ZETTELS: Zettel[] = [
     content: "A system is more than the sum of its parts. It exhibits adaptive, dynamic, goal-seeking behavior through feedback loops, delays, and leverage points. Understanding systems requires thinking about relationships and flows, not just components.",
     summary: "Meadows' framework: systems are defined by relationships, feedback loops, and leverage points — not by their parts.",
     tags: ["systems", "complexity"],
+    status: "active",
     connections: ["z1", "z8"],
     bloomLevel: 5,
     bloomHistory: [
@@ -196,6 +203,7 @@ export const MOCK_ZETTELS: Zettel[] = [
     content: "Niklas Luhmann's card-based note-taking system works because each note is atomic (one idea), addressed (unique ID), and connected (explicit links to other notes). The power isn't in storage — it's in the connections that emerge over time.",
     summary: "Luhmann's method: atomic notes with explicit connections create emergent knowledge structures over time.",
     tags: ["PKM", "methodology"],
+    status: "active",
     connections: ["z3", "z8"],
     bloomLevel: 6,
     bloomHistory: [
@@ -220,6 +228,7 @@ export const MOCK_ZETTELS: Zettel[] = [
     content: "Meadows identifies 12 places to intervene in a system, ranked by effectiveness. The most powerful leverage points are paradigms and goals — not parameters like tax rates or subsidies. Most people push on the least effective points.",
     summary: "The most powerful leverage points in systems are paradigms and goals, not parameters — but most interventions target the weakest points.",
     tags: ["systems", "strategy"],
+    status: "active",
     connections: ["z1", "z6"],
     bloomLevel: 4,
     bloomHistory: [
@@ -245,6 +254,7 @@ export const MOCK_ZETTELS: Zettel[] = [
     content: "Richard Feynman's learning method: (1) Choose a concept, (2) Teach it to a child, (3) Identify gaps where your explanation breaks down, (4) Simplify and fill gaps. The act of teaching forces you to confront what you don't actually understand.",
     summary: "Learn by teaching: explain a concept simply, find where your explanation breaks, fill the gaps.",
     tags: ["learning", "methodology"],
+    status: "active",
     connections: ["z10", "z7"],
     bloomLevel: 5,
     bloomHistory: [
@@ -268,6 +278,7 @@ export const MOCK_ZETTELS: Zettel[] = [
     content: "Benjamin Bloom's framework ranks cognitive skills: Remember → Understand → Apply → Analyze → Evaluate → Create. Each level requires mastery of the levels below it. Most education tests only Remember and Understand.",
     summary: "Bloom's 6-level hierarchy: knowing a fact (Remember) is fundamentally different from being able to create with it (Create).",
     tags: ["learning", "epistemology"],
+    status: "active",
     connections: ["z1", "z9"],
     bloomLevel: 4,
     bloomHistory: [
@@ -294,6 +305,7 @@ export const MOCK_ZETTELS: Zettel[] = [
     content: "Kleppmann outlines three replication approaches: single-leader (simple, consistent, bottleneck), multi-leader (better write availability, conflict resolution needed), and leaderless (Dynamo-style, quorum reads/writes, high availability).",
     summary: "Three replication models trade off consistency, availability, and complexity differently.",
     tags: ["system-design", "backend"],
+    status: "active",
     connections: ["z12"],
     bloomLevel: 3,
     bloomHistory: [
@@ -319,6 +331,7 @@ export const MOCK_ZETTELS: Zettel[] = [
     content: "The CAP theorem states that a distributed system can provide at most two of: Consistency, Availability, Partition tolerance. In practice, since network partitions are inevitable, the real choice is between CP (consistent but may be unavailable) and AP (available but may be inconsistent).",
     summary: "CAP theorem: since partitions are inevitable, you're really choosing between consistency and availability.",
     tags: ["system-design", "distributed-systems"],
+    status: "active",
     connections: ["z11"],
     bloomLevel: 3,
     bloomHistory: [

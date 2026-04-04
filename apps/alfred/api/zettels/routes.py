@@ -56,7 +56,7 @@ def list_cards(
     sort_by: str | None = None,
     sort_dir: str | None = None,
     importance_min: int | None = None,
-    card_status: str | None = Query("active", alias="status"),
+    card_status: str | None = Query(None, alias="status"),
     limit: int = 50,
     skip: int = 0,
     session: Session = Depends(get_db_session),
