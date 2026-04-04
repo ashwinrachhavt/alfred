@@ -154,8 +154,9 @@ export function ZettelDetailPanel({ zettel, allZettels, onClose, onSelectZettel 
  <div className="font-medium text-[9px] uppercase tracking-widest text-[var(--alfred-text-tertiary)] mb-2">
  Connections
  </div>
- <p className="text-[12px] text-[var(--alfred-text-tertiary)] italic">
- No connections yet
+ <p className="text-[12px] text-[var(--alfred-text-tertiary)]">
+ No connections yet — link to this card from a note using{" "}
+ <code className="rounded bg-muted px-1 py-0.5 text-[11px] font-mono">[[{zettel.title.slice(0, 20)}...</code>
  </p>
  </div>
  )}

@@ -33,13 +33,18 @@ type GraphSummary = { nodes: unknown[]; edges: GraphEdge[] };
 
 function buildConnectionMap(edges: GraphEdge[]): Map<string, string[]> {
   const map = new Map<string, string[]>();
+
+  function addEdge(a: string, b: string) {
+    if (!map.has(a)) map.set(a, []);
+    if (!map.get(a)!.includes(b)) map.get(a)!.push(b);
+  }
+
   for (const edge of edges) {
     const fromKey = String(edge.from);
     const toKey = String(edge.to);
-    if (!map.has(fromKey)) map.set(fromKey, []);
-    if (!map.get(fromKey)!.includes(toKey)) {
-      map.get(fromKey)!.push(toKey);
-    }
+    // Bidirectional: both ends see the connection
+    addEdge(fromKey, toKey);
+    addEdge(toKey, fromKey);
   }
   return map;
 }
