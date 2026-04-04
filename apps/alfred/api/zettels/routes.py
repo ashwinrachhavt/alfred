@@ -322,6 +322,32 @@ def suggest_links(
     return suggestions
 
 
+@router.post("/batch-link", status_code=status.HTTP_202_ACCEPTED)
+def batch_link(
+    limit: int = 50,
+    max_existing_links: int = 3,
+    auto_link: bool = True,
+) -> dict:
+    """Queue batch link generation for cards with few connections."""
+    from alfred.tasks.batch_linking import batch_link_task
+
+    result = batch_link_task.delay(
+        limit=limit,
+        max_existing_links=max_existing_links,
+        auto_link=auto_link,
+    )
+    return {"task_id": result.id}
+
+
+@router.post("/cards/{card_id}/generate-links", status_code=status.HTTP_202_ACCEPTED)
+def generate_links_for_card(card_id: int) -> dict:
+    """Queue link generation for a single card via Celery."""
+    from alfred.tasks.batch_linking import link_card_task
+
+    result = link_card_task.delay(card_id=card_id, auto_link=True)
+    return {"task_id": result.id, "card_id": card_id}
+
+
 @router.get("/graph", response_model=GraphSummary)
 def graph(session: Session = Depends(get_db_session)) -> GraphSummary:
     svc = ZettelkastenService(session)

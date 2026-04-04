@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { AlertCircle, BookOpen, ChevronLeft, ChevronRight, Layers, Loader2, Play, Plus, RefreshCw, Sparkles as SparklesIcon } from "lucide-react";
+import { AlertCircle, BookOpen, ChevronLeft, ChevronRight, Layers, Link2, Loader2, Play, Plus, RefreshCw, Sparkles as SparklesIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -182,6 +182,12 @@ export function KnowledgeHub() {
    );
  }, [triggerWorkflow]);
 
+ const handleBatchLink = useCallback(() => {
+   triggerWorkflow("batchLink", "Batch Link", () =>
+     apiPostJson<{ task_id: string }, Record<string, never>>(apiRoutes.zettels.batchLink, {})
+   );
+ }, [triggerWorkflow]);
+
  const handleReplayBatch = useCallback(() => {
    triggerWorkflow("enrich", "Bulk Enrich", async () => {
      const res = await apiPostJson<{ queued: number; tasks: { doc_id: string; task_id: string }[] }, Record<string, never>>(
@@ -211,6 +217,16 @@ export function KnowledgeHub() {
  </p>
  </div>
  <div className="flex items-center gap-2">
+ <Button
+ size="sm"
+ variant="ghost"
+ className="gap-1.5 text-xs text-muted-foreground"
+ onClick={handleBatchLink}
+ disabled={workflowLoading === "batchLink"}
+ >
+ {workflowLoading === "batchLink" ? <Loader2 className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}
+ Batch Link
+ </Button>
  <Button
  size="sm"
  variant="ghost"

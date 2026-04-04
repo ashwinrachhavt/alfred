@@ -56,6 +56,8 @@ export const apiRoutes = {
     generate: "/api/zettels/cards/generate",
     suggestTags: "/api/zettels/suggest-tags",
     graph: "/api/zettels/graph",
+    batchLink: "/api/zettels/batch-link",
+    generateLinks: (id: number) => `/api/zettels/cards/${id}/generate-links`,
     reviewsDue: "/api/zettels/reviews/due",
     topics: "/api/zettels/topics",
     tags: "/api/zettels/tags",
