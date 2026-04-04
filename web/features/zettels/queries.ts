@@ -8,7 +8,11 @@ import {
   listZettelsByDocument,
   listZettelTopics,
   listZettelTags,
+  searchCards as apiSearchCards,
+  listBacklinks as apiListBacklinks,
   type ZettelFilterParams,
+  type CardSearchResponse,
+  type BacklinkResponse,
 } from "@/lib/api/zettels";
 import type { Zettel, BloomLevel } from "@/app/(app)/knowledge/_components/mock-data";
 
@@ -139,6 +143,24 @@ export function useZettelsByDocument(documentId: string | null) {
     queryKey: ["zettels", "by-document", documentId],
     queryFn: () => listZettelsByDocument(documentId!),
     enabled: documentId !== null,
+    staleTime: 10_000,
+  });
+}
+
+export function useCardSearch(query: string | null, contextCardId?: number) {
+  return useQuery<CardSearchResponse>({
+    queryKey: ["zettels", "search", query, contextCardId],
+    queryFn: () => apiSearchCards(query ?? undefined, contextCardId),
+    enabled: query !== null,
+    staleTime: 5_000,
+  });
+}
+
+export function useBacklinks(cardId: number | null) {
+  return useQuery<BacklinkResponse>({
+    queryKey: ["zettels", "backlinks", cardId],
+    queryFn: () => apiListBacklinks(cardId!),
+    enabled: cardId !== null,
     staleTime: 10_000,
   });
 }

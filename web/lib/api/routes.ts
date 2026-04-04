@@ -59,6 +59,9 @@ export const apiRoutes = {
     reviewsDue: "/api/zettels/reviews/due",
     topics: "/api/zettels/topics",
     tags: "/api/zettels/tags",
+    search: "/api/zettels/cards/search",
+    backlinks: (id: number) => `/api/zettels/cards/${id}/backlinks`,
+    syncWikiLinks: "/api/zettels/wiki-links/sync",
   },
   pipeline: {
     replay: (docId: string) => `/api/pipeline/${docId}/replay`,
