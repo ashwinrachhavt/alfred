@@ -66,6 +66,11 @@ class Settings(BaseSettings):
 
     cors_allow_origins: list[str] = Field(default=["*"], alias="CORS_ALLOW_ORIGINS")
 
+    # Clerk authentication
+    clerk_secret_key: SecretStr | None = Field(default=None, alias="CLERK_SECRET_KEY")
+    clerk_publishable_key: str | None = Field(default=None, alias="CLERK_PUBLISHABLE_KEY")
+    clerk_jwks_url: str | None = Field(default=None, alias="CLERK_JWKS_URL")
+
     # --- Integrations ---
     airtable_api_key: str | None = Field(default=None, alias="AIRTABLE_API_KEY")
 

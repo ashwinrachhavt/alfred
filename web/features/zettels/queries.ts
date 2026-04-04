@@ -8,7 +8,11 @@ import {
   listZettelsByDocument,
   listZettelTopics,
   listZettelTags,
+  searchCards as apiSearchCards,
+  listBacklinks as apiListBacklinks,
   type ZettelFilterParams,
+  type CardSearchResponse,
+  type BacklinkResponse,
 } from "@/lib/api/zettels";
 import type { Zettel, BloomLevel } from "@/app/(app)/knowledge/_components/mock-data";
 
@@ -69,19 +73,41 @@ function mapApiToZettel(card: ApiZettelCard, connections: string[]): Zettel {
   };
 }
 
-export function useZettelCards(filters?: ZettelFilterParams) {
-  return useQuery({
-    queryKey: ["zettels", "cards", filters || null],
+export type ZettelPaginationOptions = {
+  page?: number;
+  pageSize?: number;
+};
+
+export type PaginatedZettels = {
+  items: Zettel[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
+export function useZettelCards(filters?: ZettelFilterParams, pagination?: ZettelPaginationOptions) {
+  const page = pagination?.page ?? 1;
+  const pageSize = pagination?.pageSize ?? 24;
+  const skip = (page - 1) * pageSize;
+
+  return useQuery<PaginatedZettels>({
+    queryKey: ["zettels", "cards", filters || null, page, pageSize],
     queryFn: async () => {
-      const [cards, graph] = await Promise.all([
-        apiListZettelCards(filters),
+      const [response, graph] = await Promise.all([
+        apiListZettelCards(filters, { limit: pageSize, skip }),
         apiFetch<GraphSummary>(apiRoutes.zettels.graph, { cache: "no-store" }),
       ]);
 
       const connectionMap = buildConnectionMap(graph.edges);
-      return cards
+      const items = response.items
         .filter((c) => c.status !== "archived")
         .map((c) => mapApiToZettel(c, connectionMap.get(String(c.id)) || []));
+
+      const totalCount = response.total_count;
+      const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+      return { items, totalCount, page, pageSize, totalPages };
     },
     staleTime: 10_000,
   });
@@ -117,6 +143,24 @@ export function useZettelsByDocument(documentId: string | null) {
     queryKey: ["zettels", "by-document", documentId],
     queryFn: () => listZettelsByDocument(documentId!),
     enabled: documentId !== null,
+    staleTime: 10_000,
+  });
+}
+
+export function useCardSearch(query: string | null, contextCardId?: number) {
+  return useQuery<CardSearchResponse>({
+    queryKey: ["zettels", "search", query, contextCardId],
+    queryFn: () => apiSearchCards(query ?? undefined, contextCardId),
+    enabled: query !== null,
+    staleTime: 5_000,
+  });
+}
+
+export function useBacklinks(cardId: number | null) {
+  return useQuery<BacklinkResponse>({
+    queryKey: ["zettels", "backlinks", cardId],
+    queryFn: () => apiListBacklinks(cardId!),
+    enabled: cardId !== null,
     staleTime: 10_000,
   });
 }

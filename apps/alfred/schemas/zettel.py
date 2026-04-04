@@ -112,6 +112,15 @@ class LinkSuggestion(BaseModel):
     scores: LinkQuality
 
 
+class PaginatedZettelResponse(BaseModel):
+    """Paginated list of zettel cards with total count."""
+
+    items: list[ZettelCardOut]
+    total_count: int
+    limit: int
+    skip: int
+
+
 class BulkUpdateResult(BaseModel):
     """Summary for bulk update operations."""
 
@@ -141,3 +150,58 @@ class AIZettelGenerateRequest(BaseModel):
     content: str | None = Field(default=None, max_length=20000)
     topic: str | None = Field(default=None, max_length=128)
     tags: list[str] | None = None
+
+
+# --- Wiki-link search & backlinks ---
+
+
+class CardSearchMatch(BaseModel):
+    """A card returned from text or AI search."""
+
+    id: int
+    title: str
+    topic: str | None = None
+    tags: list[str] | None = None
+    status: str
+
+
+class AISuggestionMatch(BaseModel):
+    """An AI-recommended card with score."""
+
+    id: int
+    title: str
+    topic: str | None = None
+    tags: list[str] | None = None
+    score: float
+    reason: str
+
+
+class CardSearchResponse(BaseModel):
+    """Combined text + AI search results for wiki-link autocomplete."""
+
+    text_matches: list[CardSearchMatch]
+    ai_suggestions: list[AISuggestionMatch]
+
+
+class BacklinkItem(BaseModel):
+    """A single backlink pointing to a card."""
+
+    source_type: str  # "note" | "zettel"
+    source_id: str
+    source_title: str
+    created_at: datetime | None = None
+
+
+class BacklinkResponse(BaseModel):
+    """Backlinks for a card, including AI-discovered connections."""
+
+    backlinks: list[BacklinkItem]
+    ai_connections: list[AISuggestionMatch]
+
+
+class SyncWikiLinksRequest(BaseModel):
+    """Request to sync wiki-links for a source document."""
+
+    source_type: str = Field(max_length=16)  # "note" | "zettel"
+    source_id: str = Field(max_length=64)
+    target_card_ids: list[int]

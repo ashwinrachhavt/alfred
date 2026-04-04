@@ -288,6 +288,9 @@ class RetrievalMixin:
                 raise BadRequestError("Invalid cursor", code="invalid_cursor")
 
         with _session_scope(self.session) as s:
+            # --- total count (applies search/topic filters, ignores cursor) ---
+            count_stmt = select(func.count()).select_from(DocumentRow)
+
             has_image = (DocumentRow.image.isnot(None)).label("has_image")
             stmt = select(
                 DocumentRow.id,
@@ -305,12 +308,16 @@ class RetrievalMixin:
             )
 
             if q:
-                stmt = stmt.where(
-                    DocumentRow.title.ilike(f"%{q}%") | DocumentRow.cleaned_text.ilike(f"%{q}%")
-                )
+                q_filter = DocumentRow.title.ilike(f"%{q}%") | DocumentRow.cleaned_text.ilike(f"%{q}%")
+                stmt = stmt.where(q_filter)
+                count_stmt = count_stmt.where(q_filter)
 
             if topic:
-                stmt = stmt.where(DocumentRow.topics["primary"].astext == topic)  # type: ignore[index]
+                topic_filter = DocumentRow.topics["primary"].astext == topic  # type: ignore[index]
+                stmt = stmt.where(topic_filter)
+                count_stmt = count_stmt.where(topic_filter)
+
+            total_count = int(s.scalar(count_stmt) or 0)
 
             if cursor_created_at is not None and cursor_uuid is not None:
                 stmt = stmt.where(
@@ -369,6 +376,7 @@ class RetrievalMixin:
         return {
             "items": items,
             "next_cursor": next_cursor,
+            "total_count": total_count,
             "limit": limit,
             "filter_topic": topic,
             "search": q,

@@ -7,10 +7,14 @@ from alfred.api.dependencies import get_db_session
 from alfred.models.zettel import ZettelCard, ZettelReview
 from alfred.schemas.zettel import (
     AIZettelGenerateRequest,
+    BacklinkResponse,
     BulkUpdateResult,
+    CardSearchResponse,
     CompleteReviewRequest,
     GraphSummary,
     LinkSuggestion,
+    PaginatedZettelResponse,
+    SyncWikiLinksRequest,
     ZettelCardCreate,
     ZettelCardOut,
     ZettelCardPatch,
@@ -46,7 +50,7 @@ def create_card(
     return _card_out(card)
 
 
-@router.get("/cards", response_model=list[ZettelCardOut])
+@router.get("/cards", response_model=PaginatedZettelResponse)
 def list_cards(
     q: str | None = None,
     topic: str | None = None,
@@ -60,7 +64,7 @@ def list_cards(
     limit: int = 50,
     skip: int = 0,
     session: Session = Depends(get_db_session),
-) -> list[ZettelCardOut]:
+) -> PaginatedZettelResponse:
     all_tags = list(tags or [])
     if tag and tag not in all_tags:
         all_tags.append(tag)
@@ -71,7 +75,17 @@ def list_cards(
         importance_min=importance_min, status=card_status,
         limit=limit, skip=skip,
     )
-    return [_card_out(c) for c in cards]
+    total_count = svc.count_cards(
+        q=q, topic=topic, tags=all_tags or None,
+        document_id=document_id,
+        importance_min=importance_min, status=card_status,
+    )
+    return PaginatedZettelResponse(
+        items=[_card_out(c) for c in cards],
+        total_count=total_count,
+        limit=limit,
+        skip=skip,
+    )
 
 
 @router.get("/topics", response_model=list[str])
@@ -143,6 +157,27 @@ def bulk_update_cards(
         updated.append(card.id)  # type: ignore[arg-type]
 
     return BulkUpdateResult(updated_ids=updated, missing_ids=missing)
+
+
+@router.get("/cards/search", response_model=CardSearchResponse)
+def search_cards(
+    q: str | None = None,
+    context_card_id: int | None = None,
+    text_limit: int = 10,
+    ai_limit: int = 5,
+    session: Session = Depends(get_db_session),
+) -> CardSearchResponse:
+    """Unified search for wiki-link autocomplete.
+
+    Returns text matches (instant ILIKE) and optional AI suggestions
+    (from suggest_links engine, requires context_card_id).
+    """
+    svc = ZettelkastenService(session)
+    result = svc.search_cards_unified(
+        q, context_card_id=context_card_id,
+        text_limit=min(text_limit, 20), ai_limit=min(ai_limit, 10),
+    )
+    return CardSearchResponse.model_validate(result)
 
 
 @router.get("/cards/{card_id}", response_model=ZettelCardOut)
@@ -276,6 +311,61 @@ def suggest_links(
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Failed to generate link suggestions") from exc
     return suggestions
+
+
+@router.get("/cards/{card_id}/backlinks", response_model=BacklinkResponse)
+def get_backlinks(
+    card_id: int,
+    session: Session = Depends(get_db_session),
+) -> BacklinkResponse:
+    """Get all wiki-links and graph links pointing to this card."""
+    svc = ZettelkastenService(session)
+    card = svc.get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    backlinks = svc.list_backlinks(card_id)
+
+    # AI connections: similar cards not yet linked
+    ai_connections: list[dict] = []
+    try:
+        suggestions = svc.suggest_links(card_id=card_id, min_confidence=0.6, limit=5)
+        for s in suggestions:
+            ai_connections.append(
+                {
+                    "id": s.to_card_id,
+                    "title": s.to_title,
+                    "topic": s.to_topic,
+                    "tags": s.to_tags or [],
+                    "score": round(s.scores.composite_score, 2),
+                    "reason": s.reason,
+                }
+            )
+    except Exception:
+        pass  # Degraded mode: AI connections unavailable
+
+    return BacklinkResponse.model_validate(
+        {"backlinks": backlinks, "ai_connections": ai_connections}
+    )
+
+
+@router.post("/wiki-links/sync", status_code=status.HTTP_200_OK)
+def sync_wiki_links(
+    payload: SyncWikiLinksRequest,
+    session: Session = Depends(get_db_session),
+) -> dict:
+    """Sync wiki-links for a source note or zettel.
+
+    Called on save to keep wiki_links table in sync with editor content.
+    """
+    if payload.source_type not in ("note", "zettel"):
+        raise HTTPException(status_code=400, detail="source_type must be 'note' or 'zettel'")
+    svc = ZettelkastenService(session)
+    svc.sync_wiki_links(
+        source_type=payload.source_type,
+        source_id=payload.source_id,
+        target_card_ids=payload.target_card_ids,
+    )
+    return {"status": "synced", "count": len(payload.target_card_ids)}
 
 
 @router.get("/graph", response_model=GraphSummary)

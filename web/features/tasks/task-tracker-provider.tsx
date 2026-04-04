@@ -173,8 +173,12 @@ export function TaskTrackerProvider({ children }: { children: React.ReactNode })
  queryKey: ["tasks", "status", task.id] as const,
  queryFn: () => getTaskStatus(task.id),
  enabled: isOnline,
- refetchInterval: (query: Query<TaskStatusResponse>) =>
- query.state.data?.ready ? false : 2000,
+ refetchInterval: (query: Query<TaskStatusResponse>) => {
+ if (query.state.data?.ready) return false;
+ // Exponential backoff: 2s → 4s → 8s → 16s → 30s cap
+ const fetchCount = query.state.dataUpdateCount;
+ return Math.min(2000 * Math.pow(2, Math.min(fetchCount, 4)), 30_000);
+ },
  retry: 1,
  staleTime: 0,
  })),
