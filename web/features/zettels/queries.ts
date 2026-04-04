@@ -4,6 +4,7 @@ import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
 import {
   listZettelCards as apiListZettelCards,
+  countZettelCards as apiCountZettelCards,
   listZettelLinks,
   listZettelsByDocument,
   listZettelTopics,
@@ -94,6 +95,14 @@ export function useZettelCards(filters?: ZettelFilterParams) {
         .filter((c) => c.status !== "archived")
         .map((c) => mapApiToZettel(c, connectionMap.get(String(c.id)) || []));
     },
+    staleTime: 10_000,
+  });
+}
+
+export function useZettelCount(filters?: ZettelFilterParams) {
+  return useQuery({
+    queryKey: ["zettels", "count", filters || null],
+    queryFn: () => apiCountZettelCards(filters),
     staleTime: 10_000,
   });
 }

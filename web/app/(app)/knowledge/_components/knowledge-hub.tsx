@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { AlertCircle, BookOpen, Layers, Loader2, Play, Plus, RefreshCw, Sparkles as SparklesIcon } from "lucide-react";
+import { AlertCircle, BookOpen, ChevronLeft, ChevronRight, Layers, Loader2, Play, Plus, RefreshCw, Sparkles as SparklesIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useZettelCards, useZettelTopics, useZettelTags } from "@/features/zettels/queries";
+import { useZettelCards, useZettelCount, useZettelTopics, useZettelTags } from "@/features/zettels/queries";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 import { apiPostJson } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
@@ -81,8 +81,10 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
 }
 
 export function KnowledgeHub() {
+ const PAGE_SIZE = 24;
  const [activeView, setActiveView] = useState<ViewMode>("cards");
  const [filters, setFilters] = useState<ZettelFilters>({});
+ const [page, setPage] = useState(0);
  const [selectedId, setSelectedId] = useState<string | null>(null);
  const [pulsingId, setPulsingId] = useState<string | null>(null);
  const [showCreate, setShowCreate] = useState(false);
@@ -93,10 +95,13 @@ export function KnowledgeHub() {
  const { trackTask } = useTaskTracker();
  const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
- // Server-side allZettels data
- const { data: allZettels = [], isLoading, isError, refetch } = useZettelCards(filters);
+ // Server-side allZettels data with pagination
+ const paginatedFilters = { ...filters, page, pageSize: PAGE_SIZE };
+ const { data: allZettels = [], isLoading, isError, refetch } = useZettelCards(paginatedFilters);
+ const { data: totalCount = 0 } = useZettelCount(filters);
  const { data: availableTopics = [] } = useZettelTopics();
  const { data: availableTags = [] } = useZettelTags();
+ const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
  const selectedZettel = selectedId ? allZettels.find((z) => z.id === selectedId) ?? null : null;
  const dueCount = getDueCount(allZettels);
@@ -200,7 +205,7 @@ export function KnowledgeHub() {
  {isLoading ? (
  <Loader2 className="inline size-3 animate-spin" />
  ) : (
- allZettels.length
+ totalCount
  )}{" "}
  zettels · {dueCount} due for review
  </p>
@@ -261,13 +266,13 @@ export function KnowledgeHub() {
  activeView={activeView}
  onViewChange={setActiveView}
  search={filters.q || ""}
- onSearchChange={(v) => setFilters((f) => ({ ...f, q: v || undefined }))}
+ onSearchChange={(v) => { setFilters((f) => ({ ...f, q: v || undefined })); setPage(0); }}
  />
 
  {/* Filter bar */}
  <FilterBar
  filters={filters}
- onFiltersChange={setFilters}
+ onFiltersChange={(f) => { setFilters(f); setPage(0); }}
  availableTopics={availableTopics}
  availableTags={availableTags}
  />
@@ -352,6 +357,35 @@ export function KnowledgeHub() {
  </>
  )}
  </div>
+
+ {/* Pagination */}
+ {totalPages > 1 && (
+ <div className="flex items-center justify-center gap-3 border-t py-4">
+ <Button
+ variant="outline"
+ size="sm"
+ className="gap-1 text-xs"
+ disabled={page === 0}
+ onClick={() => setPage((p) => Math.max(0, p - 1))}
+ >
+ <ChevronLeft className="size-3.5" />
+ Previous
+ </Button>
+ <span className="text-xs tabular-nums text-muted-foreground">
+ Page {page + 1} of {totalPages}
+ </span>
+ <Button
+ variant="outline"
+ size="sm"
+ className="gap-1 text-xs"
+ disabled={page >= totalPages - 1}
+ onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+ >
+ Next
+ <ChevronRight className="size-3.5" />
+ </Button>
+ </div>
+ )}
 
  {/* Review Station */}
  {allZettels.length > 0 && <ReviewStation zettels={allZettels} />}

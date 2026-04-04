@@ -94,6 +94,8 @@ export type ZettelFilterParams = {
   sort_dir?: string;
   importance_min?: number;
   status?: string;
+  page?: number;
+  pageSize?: number;
 };
 
 // --------------- Card Search (wiki-link autocomplete) ---------------
@@ -114,6 +116,8 @@ export async function searchZettelCards(q: string, limit = 10): Promise<ZettelSe
 
 // --------------- Card CRUD ---------------
 
+const DEFAULT_PAGE_SIZE = 24;
+
 export async function listZettelCards(filters?: ZettelFilterParams): Promise<ApiZettelCard[]> {
   const query = new URLSearchParams();
   if (filters?.q) query.set("q", filters.q);
@@ -126,17 +130,38 @@ export async function listZettelCards(filters?: ZettelFilterParams): Promise<Api
   if (filters?.sort_by) query.set("sort_by", filters.sort_by);
   if (filters?.sort_dir) query.set("sort_dir", filters.sort_dir);
   if (filters?.importance_min !== undefined) query.set("importance_min", String(filters.importance_min));
-  // When status is set, filter by it; otherwise fetch all non-archived cards
   if (filters?.status) {
     query.set("status", filters.status);
   } else {
-    query.set("status", ""); // empty = no status filter on backend
+    query.set("status", "");
   }
-  query.set("limit", "200"); // show all cards, not just 50
+  const pageSize = filters?.pageSize ?? DEFAULT_PAGE_SIZE;
+  const page = filters?.page ?? 0;
+  query.set("limit", String(pageSize));
+  query.set("skip", String(page * pageSize));
 
   const qs = query.toString();
   const url = qs ? `${apiRoutes.zettels.cards}?${qs}` : apiRoutes.zettels.cards;
   return apiFetch<ApiZettelCard[]>(url, { cache: "no-store" });
+}
+
+export async function countZettelCards(filters?: ZettelFilterParams): Promise<number> {
+  const query = new URLSearchParams();
+  if (filters?.q) query.set("q", filters.q);
+  if (filters?.topic) query.set("topic", filters.topic);
+  if (filters?.tags && filters.tags.length > 0) {
+    for (const tag of filters.tags) query.append("tags", tag);
+  }
+  if (filters?.importance_min !== undefined) query.set("importance_min", String(filters.importance_min));
+  if (filters?.status) {
+    query.set("status", filters.status);
+  } else {
+    query.set("status", "");
+  }
+  const qs = query.toString();
+  const url = qs ? `${apiRoutes.zettels.cards}/count?${qs}` : `${apiRoutes.zettels.cards}/count`;
+  const res = await apiFetch<{ total: number }>(url, { cache: "no-store" });
+  return res.total;
 }
 
 export async function listZettelsByDocument(documentId: string): Promise<ApiZettelCard[]> {

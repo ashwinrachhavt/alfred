@@ -95,6 +95,23 @@ def list_cards(
     return [_card_out(c) for c in cards]
 
 
+@router.get("/cards/count")
+def count_cards(
+    q: str | None = None,
+    topic: str | None = None,
+    tags: list[str] | None = Query(None),
+    importance_min: int | None = None,
+    card_status: str | None = Query(None, alias="status"),
+    session: Session = Depends(get_db_session),
+) -> dict:
+    svc = ZettelkastenService(session)
+    total = svc.count_cards(
+        q=q, topic=topic, tags=tags or None,
+        importance_min=importance_min, status=card_status,
+    )
+    return {"total": total}
+
+
 @router.get("/topics", response_model=list[str])
 def get_topics(session: Session = Depends(get_db_session)) -> list[str]:
     results = session.exec(
