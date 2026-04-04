@@ -1,5 +1,10 @@
 .PHONY: install test lint format run-api run-worker docker-up docker-down
 
+# Auto-load env vars from apps/alfred/.env into every recipe.
+# Filters out comments, blank lines, lines with <placeholders>, and inline comments.
+ENV_FILE := apps/alfred/.env
+LOAD_ENV = $(if $(wildcard $(ENV_FILE)),export $$(grep -v '^\s*\#' $(ENV_FILE) | grep -v '^\s*$$' | grep -v '<' | sed 's/\s*\#.*//') &&,)
+
 PYTHON ?= python3.11
 UV ?= 1
 RUN =
@@ -10,7 +15,7 @@ ifeq ($(UV),1)
 RUN = uv run
 INSTALL = uv sync --dev
 else
-RUN = 
+RUN =
 INSTALL = $(PYTHON) -m pip install -r requirements.txt -r requirements-dev.txt
 endif
 
@@ -38,13 +43,13 @@ cleanup-bytecode:
 	$(RUN) python scripts/cleanup_bytecode.py
 
 run-api:
-	$(if $(filter 1,$(DEBUG)),ALFRED_LOG_LEVEL=DEBUG,) $(RUN) uvicorn alfred.main:app --reload --port 8000 $(if $(filter 1,$(DEBUG)),--log-level debug,)
+	$(LOAD_ENV) $(if $(filter 1,$(DEBUG)),ALFRED_LOG_LEVEL=DEBUG,) $(RUN) uvicorn alfred.main:app --reload --port 8000 $(if $(filter 1,$(DEBUG)),--log-level debug,)
 
 .PHONY: runapi
 runapi: run-api
 
 run-worker:
-	$(RUN) celery -A alfred.celery_app.app worker -l INFO -Q default,llm,agent
+	$(LOAD_ENV) $(RUN) celery -A alfred.celery_app.app worker -l INFO -Q default,llm,agent
 
 docker-up:
 	docker compose -f infra/docker-compose.yml up --build
@@ -58,9 +63,9 @@ ingest-urls:
 	$(RUN) python scripts/ingest.py --urls-file $(FILE) --collection $${COLLECTION:-personal_kb}
 
 .PHONY: alembic-autogen alembic-upgrade
-# Generate a migration from current models (set msg="your message", DATABASE_URL, PYTHONPATH=apps).
+# Generate a migration from current models (msg="your message" optional).
 alembic-autogen:
-	@msg=$${msg:-auto}; PYTHONPATH=apps DATABASE_URL=$${DATABASE_URL:?set DATABASE_URL} $(RUN) alembic revision --autogenerate -m "$${msg}"
+	@msg=$${msg:-auto}; $(LOAD_ENV) PYTHONPATH=apps $(RUN) alembic revision --autogenerate -m "$${msg}"
 
 alembic-upgrade:
-	PYTHONPATH=apps DATABASE_URL=$${DATABASE_URL:?set DATABASE_URL} $(RUN) alembic upgrade head
+	$(LOAD_ENV) PYTHONPATH=apps $(RUN) alembic upgrade head
