@@ -96,6 +96,22 @@ export type ZettelFilterParams = {
   status?: string;
 };
 
+// --------------- Card Search (wiki-link autocomplete) ---------------
+
+export type ZettelSearchResult = {
+  id: number;
+  title: string;
+  topic: string | null;
+  tags: string[];
+  status: string;
+};
+
+export async function searchZettelCards(q: string, limit = 10): Promise<ZettelSearchResult[]> {
+  if (!q.trim()) return [];
+  const query = new URLSearchParams({ q: q.trim(), limit: String(limit) });
+  return apiFetch<ZettelSearchResult[]>(`${apiRoutes.zettels.cards}/search?${query}`, { cache: "no-store" });
+}
+
 // --------------- Card CRUD ---------------
 
 export async function listZettelCards(filters?: ZettelFilterParams): Promise<ApiZettelCard[]> {

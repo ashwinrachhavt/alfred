@@ -36,6 +36,27 @@ def _review_out(review) -> ZettelReviewOut:
     return ZettelReviewOut.model_validate(review)
 
 
+@router.get("/cards/search")
+def search_cards(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(10, ge=1, le=50),
+    session: Session = Depends(get_db_session),
+) -> list[dict]:
+    """Search cards by title for wiki-link autocomplete."""
+    svc = ZettelkastenService(session)
+    cards = svc.list_cards(q=q, status=None, limit=limit)
+    return [
+        {
+            "id": card.id,
+            "title": card.title,
+            "topic": card.topic,
+            "tags": card.tags or [],
+            "status": card.status,
+        }
+        for card in cards
+    ]
+
+
 @router.post("/cards", response_model=ZettelCardOut, status_code=status.HTTP_201_CREATED)
 def create_card(
     payload: ZettelCardCreate,

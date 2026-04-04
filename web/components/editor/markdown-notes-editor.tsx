@@ -25,6 +25,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { InlineAIPrompt, type AIPromptMode } from "@/components/editor/inline-ai-prompt";
 import { AiStreamingController, type StreamingState } from "@/components/editor/ai-streaming-controller";
+import { WikiLinkAutocomplete } from "@/components/editor/wiki-link-autocomplete";
+import type { ZettelSearchResult } from "@/lib/api/zettels";
 
 function readEditorMarkdown(editor: Editor): string {
  const maybeGetMarkdown = (editor as unknown as { getMarkdown?: () => string }).getMarkdown;
@@ -101,6 +103,12 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  const [slashMenuPosition, setSlashMenuPosition] = useState<{ top: number; left: number } | null>(null);
  const [slashQuery, setSlashQuery] = useState<string | null>(null);
  const [slashActiveIndex, setSlashActiveIndex] = useState(0);
+
+ // Wiki-link [[ autocomplete state
+ const [wikiLinkQuery, setWikiLinkQuery] = useState<string | null>(null);
+ const [wikiLinkPosition, setWikiLinkPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+ const [wikiLinkRange, setWikiLinkRange] = useState<{ from: number; to: number } | null>(null);
+
  const isFirstRender = useRef(true);
 
  const uploadImageRef = useRef(uploadImage);
@@ -319,6 +327,46 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  });
  }, [slashCommands, slashQuery]);
 
+ const updateWikiLinkState = useCallback((editor: Editor) => {
+ if (!editor.isEditable || !editor.isFocused || !editor.state.selection.empty) {
+ setWikiLinkQuery(null);
+ return;
+ }
+
+ const { $from } = editor.state.selection;
+ const textBefore = $from.parent.textBetween(0, $from.parentOffset, undefined, "\ufffc");
+
+ // Scan backwards for [[ that has no closing ]]
+ const lastDoubleBracket = textBefore.lastIndexOf("[[");
+ if (lastDoubleBracket === -1) {
+ setWikiLinkQuery(null);
+ return;
+ }
+
+ // Check there's no ]] after the [[
+ const afterBracket = textBefore.slice(lastDoubleBracket + 2);
+ if (afterBracket.includes("]]")) {
+ setWikiLinkQuery(null);
+ return;
+ }
+
+ // The query is everything after [[
+ const query = afterBracket;
+
+ // Don't show popup if query has newlines or is too long
+ if (query.length > 60 || query.includes("\n")) {
+ setWikiLinkQuery(null);
+ return;
+ }
+
+ const coords = editor.view.coordsAtPos($from.pos);
+ setWikiLinkQuery(query);
+ setWikiLinkPosition({ top: coords.bottom + 10, left: coords.left });
+ // Store the range from [[ to cursor so we can replace it
+ const absoluteStart = $from.pos - $from.parentOffset + lastDoubleBracket;
+ setWikiLinkRange({ from: absoluteStart, to: $from.pos });
+ }, []);
+
  const updateSlashState = useCallback((editor: Editor) => {
  const { state } = editor;
  if (!editor.isEditable || !editor.isFocused) {
@@ -409,16 +457,19 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  }
  updateMenuPosition(editor);
  updateSlashState(editor);
+ updateWikiLinkState(editor);
  },
  onSelectionUpdate: ({ editor }) => {
  updateMenuPosition(editor);
  updateSlashState(editor);
+ updateWikiLinkState(editor);
  },
  onFocus: () => setIsFocused(true),
  onBlur: () => {
  setIsFocused(false);
  setSlashQuery(null);
  setSlashMenuPosition(null);
+ setWikiLinkQuery(null);
  },
  });
 
@@ -437,6 +488,36 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  setSlashActiveIndex(0);
  },
  [editor],
+ );
+
+ const handleWikiLinkSelect = useCallback(
+ (card: ZettelSearchResult) => {
+ if (!editor || editor.isDestroyed || !wikiLinkRange) return;
+ // Replace [[query with a markdown link: [Title](/knowledge?card=ID)
+ editor
+ .chain()
+ .focus()
+ .deleteRange({ from: wikiLinkRange.from, to: wikiLinkRange.to })
+ .insertContent({
+ type: "text",
+ marks: [
+ {
+ type: "link",
+ attrs: {
+ href: `/knowledge?card=${card.id}`,
+ target: null,
+ class: "wiki-link",
+ },
+ },
+ ],
+ text: card.title,
+ })
+ .insertContent(" ")
+ .run();
+ setWikiLinkQuery(null);
+ setWikiLinkRange(null);
+ },
+ [editor, wikiLinkRange],
  );
 
  useEffect(() => { uploadImageRef.current = uploadImage; }, [uploadImage]);
@@ -730,6 +811,20 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  )}
  </div>
  ) : null}
+
+ {/* Wiki-link [[ autocomplete */}
+ {wikiLinkQuery !== null && !readOnly && (
+ <WikiLinkAutocomplete
+ query={wikiLinkQuery}
+ position={wikiLinkPosition}
+ onSelect={handleWikiLinkSelect}
+ onClose={() => {
+ setWikiLinkQuery(null);
+ setWikiLinkRange(null);
+ editor?.commands.focus();
+ }}
+ />
+ )}
 
  {/* Slim bubble menu — B / I / AI */}
  {menuPosition && !editor.state.selection.empty && (
