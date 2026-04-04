@@ -18,15 +18,14 @@ export function WikiLinkAutocomplete({ query, position, onSelect, onClose }: Pro
   const [activeIndex, setActiveIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const activeIndexRef = useRef(0);
+  const hasFetched = useRef(false);
 
-  // Search on query change
+  // Search on query change — including empty query (shows recent cards like Obsidian)
   useEffect(() => {
-    if (!query) {
-      setResults([]);
-      return;
-    }
-
     setIsLoading(true);
+    const delay = hasFetched.current ? 150 : 0; // no delay on first open
+    hasFetched.current = true;
+
     const timer = setTimeout(async () => {
       try {
         const cards = await searchZettelCards(query, 8);
@@ -38,7 +37,7 @@ export function WikiLinkAutocomplete({ query, position, onSelect, onClose }: Pro
       } finally {
         setIsLoading(false);
       }
-    }, 150); // debounce
+    }, delay);
 
     return () => clearTimeout(timer);
   }, [query]);
@@ -89,27 +88,28 @@ export function WikiLinkAutocomplete({ query, position, onSelect, onClose }: Pro
     return () => document.removeEventListener("keydown", handleKeyDown, true);
   }, [handleKeyDown]);
 
-  // Sync ref
   useEffect(() => {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
 
+  const isEmptyQuery = !query.trim();
+
   return (
     <div
       ref={containerRef}
-      className="fixed z-50 w-72 overflow-hidden rounded-md border bg-card shadow-lg animate-in fade-in zoom-in-95 duration-100"
+      className="fixed z-50 w-80 overflow-hidden rounded-md border bg-card shadow-lg animate-in fade-in zoom-in-95 duration-100"
       style={{ top: `${position.top}px`, left: `${position.left}px` }}
     >
       {/* Header */}
       <div className="flex items-center gap-2 border-b px-3 py-1.5">
         <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--alfred-text-tertiary)]">
-          Link to card
+          {isEmptyQuery ? "Recent cards" : "Link to card"}
         </span>
         {isLoading && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
       </div>
 
       {/* Results */}
-      <div className="max-h-56 overflow-y-auto p-1">
+      <div className="max-h-64 overflow-y-auto p-1">
         {results.length > 0 ? (
           results.map((card, idx) => (
             <button
@@ -139,9 +139,9 @@ export function WikiLinkAutocomplete({ query, position, onSelect, onClose }: Pro
               </div>
             </button>
           ))
-        ) : !isLoading && query.length > 0 ? (
+        ) : !isLoading ? (
           <div className="px-3 py-3 text-center text-[11px] text-[var(--alfred-text-tertiary)]">
-            No cards found for &ldquo;{query}&rdquo;
+            {query.trim() ? `No cards found for "${query}"` : "No cards yet"}
           </div>
         ) : null}
       </div>

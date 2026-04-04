@@ -496,17 +496,19 @@ body::before {
   animation: zettel-pulse 0.8s ease-out 2;
 }
 
-/* Wiki-link styling in TipTap editor */
+/* Wiki-link styling in TipTap editor — [[Title]] format */
 .ProseMirror a.wiki-link {
   color: var(--primary);
-  text-decoration-style: dotted;
-  text-decoration-line: underline;
-  text-underline-offset: 3px;
+  text-decoration: none;
   cursor: pointer;
   font-weight: 500;
+  border-bottom: 1.5px dotted var(--primary);
+  padding-bottom: 1px;
 }
 .ProseMirror a.wiki-link:hover {
-  text-decoration-style: solid;
+  border-bottom-style: solid;
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  border-radius: 2px;
 }
 
 /* Landing animations */

@@ -493,12 +493,14 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  const handleWikiLinkSelect = useCallback(
  (card: ZettelSearchResult) => {
  if (!editor || editor.isDestroyed || !wikiLinkRange) return;
- // Replace [[query with a markdown link: [Title](/knowledge?card=ID)
+ // Replace [[query with [[Title]] rendered as a styled link
  editor
  .chain()
  .focus()
  .deleteRange({ from: wikiLinkRange.from, to: wikiLinkRange.to })
- .insertContent({
+ .insertContent([
+ { type: "text", text: "[[" },
+ {
  type: "text",
  marks: [
  {
@@ -511,7 +513,9 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  },
  ],
  text: card.title,
- })
+ },
+ { type: "text", text: "]]" },
+ ])
  .insertContent(" ")
  .run();
  setWikiLinkQuery(null);

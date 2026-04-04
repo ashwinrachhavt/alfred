@@ -109,7 +109,6 @@ export type ZettelSearchResult = {
 };
 
 export async function searchZettelCards(q: string, limit = 10): Promise<ZettelSearchResult[]> {
-  if (!q.trim()) return [];
   const query = new URLSearchParams({ q: q.trim(), limit: String(limit) });
   return apiFetch<ZettelSearchResult[]>(`${apiRoutes.zettels.cards}/search?${query}`, { cache: "no-store" });
 }

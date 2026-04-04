@@ -38,13 +38,19 @@ def _review_out(review) -> ZettelReviewOut:
 
 @router.get("/cards/search")
 def search_cards(
-    q: str = Query(..., min_length=1),
+    q: str = Query(""),
     limit: int = Query(10, ge=1, le=50),
     session: Session = Depends(get_db_session),
 ) -> list[dict]:
-    """Search cards by title for wiki-link autocomplete."""
+    """Search cards by title for wiki-link autocomplete. Empty q returns recent cards."""
     svc = ZettelkastenService(session)
-    cards = svc.list_cards(q=q, status=None, limit=limit)
+    cards = svc.list_cards(
+        q=q.strip() or None,
+        status=None,
+        limit=limit,
+        sort_by="updated_at",
+        sort_dir="desc",
+    )
     return [
         {
             "id": card.id,
