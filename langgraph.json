@@ -1,6 +1,7 @@
 {
   "dependencies": ["./"],
   "graphs": {
+    "alfred_supervisor": "./apps/alfred/agents/graph.py:alfred_graph",
     "agentic_rag": "./apps/alfred/agents/agentic_rag/agent.py:agent",
     "company_outreach": "./apps/alfred/agents/company_outreach/agent.py:agent",
     "writer": "./apps/alfred/agents/writer/agent.py:agent",
