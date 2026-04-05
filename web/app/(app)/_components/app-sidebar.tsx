@@ -8,6 +8,7 @@ import {
  BookOpen,
  Bot,
  Brain,
+ Calendar,
  Inbox,
  LayoutDashboard,
  Network,
@@ -39,6 +40,7 @@ const navSections: NavSection[] = [
  {
  title: "Navigate",
  items: [
+ { label: "Today", href: "/today", icon: Calendar },
  { label: "Alfred AI", href: "#ai", icon: Bot, shortcut: "0", action: "toggle-ai-panel" },
  { label: "Inbox", href: "/inbox", icon: Inbox, shortcut: "1" },
  { label: "Canvas", href: "/canvas", icon: Network, shortcut: "2" },

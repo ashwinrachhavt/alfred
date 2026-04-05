@@ -117,4 +117,7 @@ export const apiRoutes = {
   capture: {
     ingest: "/api/capture",
   },
+  today: {
+    briefing: "/api/today/briefing",
+  },
 } as const;
