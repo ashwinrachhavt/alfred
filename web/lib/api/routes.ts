@@ -114,4 +114,7 @@ export const apiRoutes = {
     nodes: "/api/taxonomy/nodes",
     nodeBySlug: (slug: string) => `/api/taxonomy/nodes/${slug}`,
   },
+  capture: {
+    ingest: "/api/capture",
+  },
 } as const;

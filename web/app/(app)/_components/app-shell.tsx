@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { useShellStore } from "@/lib/stores/shell-store";
 import { UnifiedChat } from "@/components/chat/unified-chat";
 
+import { CaptureButton } from "@/components/capture/capture-button";
 import { AppSidebar } from "./app-sidebar";
 import { ToolPanel } from "./tool-panel";
 import { TopBar } from "./top-bar";
@@ -81,6 +82,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <ToolPanel />
+      <CaptureButton />
     </div>
   );
 }
