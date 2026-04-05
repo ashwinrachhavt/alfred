@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from alfred.core.dependencies import get_doc_storage_service
 from alfred.schemas.documents import DocumentIngest
-from alfred.services.doc_storage import DocStorageService
+from alfred.services.doc_storage_pg import DocStorageService
 
 router = APIRouter(prefix="/api/capture", tags=["capture"])
 logger = logging.getLogger(__name__)
