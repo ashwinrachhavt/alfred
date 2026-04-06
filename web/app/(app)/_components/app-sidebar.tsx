@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 
 import {
  Bell,
+ BookA,
  BookOpen,
  Bot,
  Brain,
@@ -54,6 +55,7 @@ const navSections: NavSection[] = [
  items: [
  { label: "Research", href: "/research", icon: Search },
  { label: "Knowledge", href: "/knowledge", icon: BookOpen },
+ { label: "Dictionary", href: "/dictionary", icon: BookA },
  ],
  },
  {
