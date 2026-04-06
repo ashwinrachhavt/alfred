@@ -62,7 +62,7 @@ def test_stream_request_accepts_note_context(app_and_client):
         yield "event: done\ndata: {}\n\n"
 
     with patch(
-        "alfred.api.agent.routes.AgentService",
+        "alfred.services.agent.service.AgentService",
         autospec=True,
     ) as MockService:
         MockService.return_value.stream_turn = _fake_stream

@@ -468,20 +468,26 @@ async def test_gpt4o_uses_max_tokens(service):
 # ---------------------------------------------------------------------------
 
 
-def test_build_system_prompt_basic():
-    """System prompt includes Alfred identity."""
+@patch("alfred.services.knowledge_notifications.get_pending_notifications", return_value=[])
+def test_build_system_prompt_basic(_mock_notif):
+    """System prompt includes Alfred identity and tool usage instructions."""
     prompt = _build_system_prompt()
     assert "Alfred" in prompt
     assert "knowledge" in prompt.lower()
+    assert "search_kb" in prompt  # Tool usage instructions present
+    assert "NEVER say" in prompt  # Critical rule present
 
 
-def test_build_system_prompt_with_lens():
+@patch("alfred.services.knowledge_notifications.get_pending_notifications", return_value=[])
+def test_build_system_prompt_with_lens(_mock_notif):
     """System prompt includes lens when provided."""
-    prompt = _build_system_prompt(lens="philosophical")
-    assert "philosophical" in prompt
+    prompt = _build_system_prompt(lens="socratic")
+    assert "Socratic" in prompt
+    assert "probing questions" in prompt.lower()
 
 
-def test_build_system_prompt_with_note_context():
+@patch("alfred.services.knowledge_notifications.get_pending_notifications", return_value=[])
+def test_build_system_prompt_with_note_context(_mock_notif):
     """System prompt includes note context when provided."""
     prompt = _build_system_prompt(note_context={"title": "My Note", "content_preview": "Some content"})
     assert "My Note" in prompt
