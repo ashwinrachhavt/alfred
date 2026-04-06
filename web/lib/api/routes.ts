@@ -107,6 +107,13 @@ export const apiRoutes = {
     fork: (id: number) => `/api/thinking/sessions/${id}/fork`,
     decompose: "/api/thinking/decompose",
   },
+  dictionary: {
+    lookup: "/api/dictionary/lookup",
+    entries: "/api/dictionary/entries",
+    entryById: (id: number) => `/api/dictionary/entries/${id}`,
+    search: "/api/dictionary/search",
+    regenerateAi: (id: number) => `/api/dictionary/entries/${id}/regenerate-ai`,
+  },
   taxonomy: {
     domains: "/api/taxonomy/domains",
     tree: "/api/taxonomy/tree",
