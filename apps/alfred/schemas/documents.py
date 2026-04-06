@@ -24,6 +24,7 @@ class NoteCreate(BaseModel):
             raise ValueError("text must not be empty")
         return trimmed
 
+
 NoteCreateRequest = NoteCreate
 
 
@@ -49,6 +50,7 @@ class NoteRecord(BaseModel):
     source_url: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+
 
 # -----------------
 # Documents
@@ -280,6 +282,10 @@ class ExplorerDocumentsResponse(BaseModel):
         default=None,
         description="Opaque cursor for the next page; omit/None when there is no next page.",
     )
+    total_count: int = Field(
+        default=0,
+        description="Total number of matching documents (ignoring cursor position).",
+    )
     limit: int
     filter_topic: str | None = None
     search: str | None = None
@@ -299,6 +305,7 @@ class SemanticMapResponse(BaseModel):
     """3D semantic map payload for the Galaxy view."""
 
     points: list[SemanticMapPoint]
+
 
 __all__ = [
     "DocChunkRecord",

@@ -25,8 +25,9 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { InlineAIPrompt, type AIPromptMode } from "@/components/editor/inline-ai-prompt";
 import { AiStreamingController, type StreamingState } from "@/components/editor/ai-streaming-controller";
-import { WikiLinkAutocomplete } from "@/components/editor/wiki-link-autocomplete";
-import type { ZettelSearchResult } from "@/lib/api/zettels";
+import { WikiLink, extractWikiLinkCardIds } from "@/components/editor/extensions/wiki-link";
+import { WikiLinkAutocomplete, type WikiLinkSelection } from "@/components/editor/wiki-link-autocomplete";
+import { createZettelCard } from "@/lib/api/zettels";
 
 function readEditorMarkdown(editor: Editor): string {
  const maybeGetMarkdown = (editor as unknown as { getMarkdown?: () => string }).getMarkdown;
@@ -54,6 +55,12 @@ export type MarkdownNotesEditorProps = {
  readOnly?: boolean;
  placeholder?: string;
  className?: string;
+ /** Card ID for AI suggestion context (first linked card). */
+ contextCardId?: number;
+ /** Called when wiki-links change so the parent can sync to backend. */
+ onWikiLinksChange?: (cardIds: number[]) => void;
+ /** Called when a wiki-link is clicked. */
+ onWikiLinkClick?: (cardId: string) => void;
 };
 
 type SlashCommand = {
@@ -84,7 +91,7 @@ async function fileToDataUrl(file: File): Promise<string> {
 
 export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, MarkdownNotesEditorProps>(
  function MarkdownNotesEditorImpl(
- { markdown, onMarkdownChange, onDraftChange, onKeyboardCommand, uploadImage, readOnly, placeholder, className },
+ { markdown, onMarkdownChange, onDraftChange, onKeyboardCommand, uploadImage, readOnly, placeholder, className, contextCardId, onWikiLinksChange, onWikiLinkClick },
  ref,
  ) {
  const [isFocused, setIsFocused] = useState(false);
@@ -99,15 +106,18 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  const [streamInsertAt, setStreamInsertAt] = useState(0);
  const [streamOriginalRange, setStreamOriginalRange] = useState<{ from: number; to: number; text: string } | null>(null);
 
+ // Wiki-link autocomplete state
+ const [wikiQuery, setWikiQuery] = useState<string | null>(null);
+ const [wikiPosition, setWikiPosition] = useState<{ top: number; left: number } | null>(null);
+ const [wikiActiveIndex, setWikiActiveIndex] = useState(0);
+ const [wikiTriggerPos, setWikiTriggerPos] = useState<number | null>(null);
+ const wikiQueryRef = useRef<string | null>(null);
+ const wikiActiveIndexRef = useRef(0);
+
  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
  const [slashMenuPosition, setSlashMenuPosition] = useState<{ top: number; left: number } | null>(null);
  const [slashQuery, setSlashQuery] = useState<string | null>(null);
  const [slashActiveIndex, setSlashActiveIndex] = useState(0);
-
- // Wiki-link [[ autocomplete state
- const [wikiLinkQuery, setWikiLinkQuery] = useState<string | null>(null);
- const [wikiLinkPosition, setWikiLinkPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
- const [wikiLinkRange, setWikiLinkRange] = useState<{ from: number; to: number } | null>(null);
 
  const isFirstRender = useRef(true);
 
@@ -119,6 +129,11 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
 
  const extensions = useMemo(
  () => [
+ WikiLink.configure({
+ onClickLink: (cardId: string) => {
+ onWikiLinkClick?.(cardId);
+ },
+ }),
  StarterKit.configure({
  heading: {
  levels: [1, 2, 3],
@@ -157,7 +172,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  emptyEditorClass: "is-editor-empty",
  }),
  ],
- [placeholder],
+ [placeholder, onWikiLinkClick],
  );
 
  const updateMenuPosition = useCallback((editor: Editor) => {
@@ -327,46 +342,6 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  });
  }, [slashCommands, slashQuery]);
 
- const updateWikiLinkState = useCallback((editor: Editor) => {
- if (!editor.isEditable || !editor.isFocused || !editor.state.selection.empty) {
- setWikiLinkQuery(null);
- return;
- }
-
- const { $from } = editor.state.selection;
- const textBefore = $from.parent.textBetween(0, $from.parentOffset, undefined, "\ufffc");
-
- // Scan backwards for [[ that has no closing ]]
- const lastDoubleBracket = textBefore.lastIndexOf("[[");
- if (lastDoubleBracket === -1) {
- setWikiLinkQuery(null);
- return;
- }
-
- // Check there's no ]] after the [[
- const afterBracket = textBefore.slice(lastDoubleBracket + 2);
- if (afterBracket.includes("]]")) {
- setWikiLinkQuery(null);
- return;
- }
-
- // The query is everything after [[
- const query = afterBracket;
-
- // Don't show popup if query has newlines or is too long
- if (query.length > 60 || query.includes("\n")) {
- setWikiLinkQuery(null);
- return;
- }
-
- const coords = editor.view.coordsAtPos($from.pos);
- setWikiLinkQuery(query);
- setWikiLinkPosition({ top: coords.bottom + 10, left: coords.left });
- // Store the range from [[ to cursor so we can replace it
- const absoluteStart = $from.pos - $from.parentOffset + lastDoubleBracket;
- setWikiLinkRange({ from: absoluteStart, to: $from.pos });
- }, []);
-
  const updateSlashState = useCallback((editor: Editor) => {
  const { state } = editor;
  if (!editor.isEditable || !editor.isFocused) {
@@ -409,6 +384,102 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  const coords = editor.view.coordsAtPos(state.selection.from);
  setSlashMenuPosition({ top: coords.bottom + 10, left: coords.left });
  }, []);
+
+ const updateWikiLinkState = useCallback((ed: Editor) => {
+ if (!ed.isEditable || !ed.isFocused || !ed.state.selection.empty) {
+ setWikiQuery(null);
+ setWikiPosition(null);
+ setWikiTriggerPos(null);
+ return;
+ }
+
+ const { $from } = ed.state.selection;
+ const textBefore = ed.state.doc.textBetween(
+ Math.max(0, $from.pos - 100),
+ $from.pos,
+ "",
+ );
+
+ // Find the last unclosed [[ (no ]] after it)
+ const lastOpen = textBefore.lastIndexOf("[[");
+ if (lastOpen === -1) {
+ setWikiQuery(null);
+ setWikiPosition(null);
+ setWikiTriggerPos(null);
+ return;
+ }
+
+ const afterOpen = textBefore.slice(lastOpen + 2);
+ // If there's a ]] after [[, the link is closed
+ if (afterOpen.includes("]]")) {
+ setWikiQuery(null);
+ setWikiPosition(null);
+ setWikiTriggerPos(null);
+ return;
+ }
+
+ // If there's a newline, don't span across paragraphs
+ if (afterOpen.includes("\n")) {
+ setWikiQuery(null);
+ setWikiPosition(null);
+ setWikiTriggerPos(null);
+ return;
+ }
+
+ const query = afterOpen;
+ const triggerAbsPos = $from.pos - afterOpen.length - 2;
+ const coords = ed.view.coordsAtPos(triggerAbsPos);
+
+ wikiQueryRef.current = query;
+ setWikiQuery(query);
+ setWikiPosition({ top: coords.bottom + 8, left: coords.left });
+ setWikiTriggerPos(triggerAbsPos);
+ wikiActiveIndexRef.current = 0;
+ setWikiActiveIndex(0);
+ }, []);
+
+ const editorRef = useRef<Editor | null>(null);
+
+ const handleWikiLinkSelect = useCallback(
+ (selection: WikiLinkSelection) => {
+ const ed = editorRef.current;
+ if (!ed || ed.isDestroyed || wikiTriggerPos === null) return;
+ const { from } = ed.state.selection;
+ ed
+ .chain()
+ .focus()
+ .deleteRange({ from: wikiTriggerPos, to: from })
+ .insertWikiLink({ cardId: String(selection.cardId), title: selection.title })
+ .run();
+ setWikiQuery(null);
+ setWikiPosition(null);
+ setWikiTriggerPos(null);
+ setWikiActiveIndex(0);
+
+ setTimeout(() => {
+ if (!ed.isDestroyed) {
+ const json = ed.getJSON() as Record<string, unknown>;
+ const cardIds = extractWikiLinkCardIds(json);
+ onWikiLinksChange?.(cardIds);
+ }
+ }, 0);
+ },
+ [wikiTriggerPos, onWikiLinksChange],
+ );
+
+ const handleWikiLinkCreateStub = useCallback(
+ async (title: string) => {
+ const ed = editorRef.current;
+ if (!ed || ed.isDestroyed || wikiTriggerPos === null) return;
+ try {
+ const card = await createZettelCard({ title, content: "" });
+ handleWikiLinkSelect({ cardId: card.id, title: card.title });
+ } catch {
+ toast.error("Failed to create card");
+ }
+ },
+ [wikiTriggerPos, handleWikiLinkSelect],
+ );
 
  const editor = useEditor({
  extensions,
@@ -469,9 +540,14 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  setIsFocused(false);
  setSlashQuery(null);
  setSlashMenuPosition(null);
- setWikiLinkQuery(null);
+ setWikiQuery(null);
+ setWikiPosition(null);
+ setWikiTriggerPos(null);
  },
  });
+
+ // Keep editorRef in sync for wiki-link callbacks
+ useEffect(() => { editorRef.current = editor ?? null; }, [editor]);
 
  const runSlashCommand = useCallback(
  (command: SlashCommand) => {
@@ -488,40 +564,6 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  setSlashActiveIndex(0);
  },
  [editor],
- );
-
- const handleWikiLinkSelect = useCallback(
- (card: ZettelSearchResult) => {
- if (!editor || editor.isDestroyed || !wikiLinkRange) return;
- // Replace [[query with [[Title]] rendered as a styled link
- editor
- .chain()
- .focus()
- .deleteRange({ from: wikiLinkRange.from, to: wikiLinkRange.to })
- .insertContent([
- { type: "text", text: "[[" },
- {
- type: "text",
- marks: [
- {
- type: "link",
- attrs: {
- href: `/knowledge?card=${card.id}`,
- target: null,
- class: "wiki-link",
- },
- },
- ],
- text: card.title,
- },
- { type: "text", text: "]]" },
- ])
- .insertContent(" ")
- .run();
- setWikiLinkQuery(null);
- setWikiLinkRange(null);
- },
- [editor, wikiLinkRange],
  );
 
  useEffect(() => { uploadImageRef.current = uploadImage; }, [uploadImage]);
@@ -634,6 +676,34 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  openAI(editor, "generate");
  return;
  }
+ }
+
+ // Wiki-link keyboard navigation
+ if (wikiQueryRef.current !== null) {
+ if (event.key === "Escape") {
+ event.preventDefault();
+ wikiQueryRef.current = null;
+ setWikiQuery(null);
+ setWikiPosition(null);
+ setWikiTriggerPos(null);
+ setWikiActiveIndex(0);
+ return;
+ }
+ if (event.key === "ArrowDown") {
+ event.preventDefault();
+ const next = wikiActiveIndexRef.current + 1;
+ wikiActiveIndexRef.current = next;
+ setWikiActiveIndex(next);
+ return;
+ }
+ if (event.key === "ArrowUp") {
+ event.preventDefault();
+ const next = Math.max(0, wikiActiveIndexRef.current - 1);
+ wikiActiveIndexRef.current = next;
+ setWikiActiveIndex(next);
+ return;
+ }
+ // Enter/Tab handled by the autocomplete component via onSelect/onCreateStub
  }
 
  if (slashQueryRef.current === null) return;
@@ -782,6 +852,24 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  className,
  )}
  >
+ {/* Wiki-link autocomplete */}
+ {wikiPosition && wikiQuery !== null && !readOnly && (
+ <WikiLinkAutocomplete
+ query={wikiQuery}
+ position={wikiPosition}
+ contextCardId={contextCardId}
+ activeIndex={wikiActiveIndex}
+ onSelect={handleWikiLinkSelect}
+ onCreateStub={handleWikiLinkCreateStub}
+ onClose={() => {
+ setWikiQuery(null);
+ setWikiPosition(null);
+ setWikiTriggerPos(null);
+ setWikiActiveIndex(0);
+ }}
+ />
+ )}
+
  {/* Slash command menu */}
  {slashMenuPosition && slashQuery !== null && !readOnly ? (
  <div
@@ -815,20 +903,6 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  )}
  </div>
  ) : null}
-
- {/* Wiki-link [[ autocomplete */}
- {wikiLinkQuery !== null && !readOnly && (
- <WikiLinkAutocomplete
- query={wikiLinkQuery}
- position={wikiLinkPosition}
- onSelect={handleWikiLinkSelect}
- onClose={() => {
- setWikiLinkQuery(null);
- setWikiLinkRange(null);
- editor?.commands.focus();
- }}
- />
- )}
 
  {/* Slim bubble menu — B / I / AI */}
  {menuPosition && !editor.state.selection.empty && (

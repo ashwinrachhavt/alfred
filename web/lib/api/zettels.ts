@@ -28,6 +28,7 @@ export type ZettelCardCreatePayload = {
   source_url?: string;
   importance?: number;
   confidence?: number;
+  status?: string;
 };
 
 export type ZettelCardUpdatePayload = {
@@ -113,11 +114,24 @@ export async function searchZettelCards(q: string, limit = 10): Promise<ZettelSe
   return apiFetch<ZettelSearchResult[]>(`${apiRoutes.zettels.cards}/search?${query}`, { cache: "no-store" });
 }
 
+export type PaginatedZettelResponse = {
+  items: ApiZettelCard[];
+  total_count: number;
+  limit: number;
+  skip: number;
+};
+
+export type ZettelPaginationParams = {
+  limit?: number;
+  skip?: number;
+};
+
 // --------------- Card CRUD ---------------
 
-const DEFAULT_PAGE_SIZE = 24;
-
-export async function listZettelCards(filters?: ZettelFilterParams): Promise<ApiZettelCard[]> {
+export async function listZettelCards(
+  filters?: ZettelFilterParams,
+  pagination?: ZettelPaginationParams,
+): Promise<PaginatedZettelResponse> {
   const query = new URLSearchParams();
   if (filters?.q) query.set("q", filters.q);
   if (filters?.topic) query.set("topic", filters.topic);
@@ -134,14 +148,12 @@ export async function listZettelCards(filters?: ZettelFilterParams): Promise<Api
   } else {
     query.set("status", "");
   }
-  const pageSize = filters?.pageSize ?? DEFAULT_PAGE_SIZE;
-  const page = filters?.page ?? 0;
-  query.set("limit", String(pageSize));
-  query.set("skip", String(page * pageSize));
+  if (pagination?.limit !== undefined) query.set("limit", String(pagination.limit));
+  if (pagination?.skip !== undefined) query.set("skip", String(pagination.skip));
 
   const qs = query.toString();
   const url = qs ? `${apiRoutes.zettels.cards}?${qs}` : apiRoutes.zettels.cards;
-  return apiFetch<ApiZettelCard[]>(url, { cache: "no-store" });
+  return apiFetch<PaginatedZettelResponse>(url, { cache: "no-store" });
 }
 
 export async function countZettelCards(filters?: ZettelFilterParams): Promise<number> {
@@ -224,6 +236,70 @@ export async function bulkCreateZettelCards(
 
 export async function generateZettelCard(payload: AIGeneratePayload): Promise<ApiZettelCard> {
   return apiPostJson<ApiZettelCard, AIGeneratePayload>(apiRoutes.zettels.generate, payload);
+}
+
+// --------------- Wiki-link search & backlinks ---------------
+
+export type CardSearchMatch = {
+  id: number;
+  title: string;
+  topic: string | null;
+  tags: string[] | null;
+  status: string;
+};
+
+export type AISuggestionMatch = {
+  id: number;
+  title: string;
+  topic: string | null;
+  tags: string[] | null;
+  score: number;
+  reason: string;
+};
+
+export type CardSearchResponse = {
+  text_matches: CardSearchMatch[];
+  ai_suggestions: AISuggestionMatch[];
+};
+
+export type BacklinkItem = {
+  source_type: string;
+  source_id: string;
+  source_title: string;
+  created_at: string | null;
+};
+
+export type BacklinkResponse = {
+  backlinks: BacklinkItem[];
+  ai_connections: AISuggestionMatch[];
+};
+
+export async function searchCards(
+  query?: string,
+  contextCardId?: number,
+): Promise<CardSearchResponse> {
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  if (contextCardId !== undefined) params.set("context_card_id", String(contextCardId));
+  const qs = params.toString();
+  const url = qs ? `${apiRoutes.zettels.search}?${qs}` : apiRoutes.zettels.search;
+  return apiFetch<CardSearchResponse>(url, { cache: "no-store" });
+}
+
+export async function listBacklinks(cardId: number): Promise<BacklinkResponse> {
+  return apiFetch<BacklinkResponse>(apiRoutes.zettels.backlinks(cardId), { cache: "no-store" });
+}
+
+export async function syncWikiLinks(
+  sourceType: string,
+  sourceId: string,
+  targetCardIds: number[],
+): Promise<{ status: string; count: number }> {
+  return apiPostJson(apiRoutes.zettels.syncWikiLinks, {
+    source_type: sourceType,
+    source_id: sourceId,
+    target_card_ids: targetCardIds,
+  });
 }
 
 // --------------- Facets (topics / tags) ---------------

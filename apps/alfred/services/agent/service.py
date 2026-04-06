@@ -77,6 +77,30 @@ def _build_system_prompt(
         if preview:
             parts.append(f"Note preview: {preview[:500]}")
 
+    # Check for new knowledge notifications
+    try:
+        from alfred.services.knowledge_notifications import get_pending_notifications
+
+        notifications = get_pending_notifications(limit=3)
+        if notifications:
+            parts.append("")
+            parts.append("New knowledge arrived since your last conversation:")
+            for n in notifications:
+                linked_count = len(n.get("linked_to", [])) or n.get("linked_to_count", 0)
+                line = f"- '{n['zettel_title']}'"
+                if linked_count:
+                    line += f" (linked to {linked_count} existing cards)"
+                source = n.get("source_document")
+                if source:
+                    line += f" from '{source}'"
+                parts.append(line)
+            parts.append(
+                "Mention these if relevant to the user's question. "
+                "You can use search_kb to find more details."
+            )
+    except Exception:
+        pass  # Never block prompt building on notification failures
+
     return "\n".join(parts)
 
 
@@ -87,7 +111,9 @@ def _is_reasoning_model(model: str) -> bool:
 
 def _uses_max_completion_tokens(model: str) -> bool:
     """Check if a model requires max_completion_tokens parameter."""
-    return any(model.startswith(p) for p in _MAX_COMPLETION_TOKEN_PREFIXES) or _is_reasoning_model(model)
+    return any(model.startswith(p) for p in _MAX_COMPLETION_TOKEN_PREFIXES) or _is_reasoning_model(
+        model
+    )
 
 
 def _make_client() -> AsyncOpenAI:
@@ -200,11 +226,14 @@ class AgentService:
                     tool_name = tc["name"]
                     tool_args = tc["args"]
 
-                    yield _sse_event("tool_start", {
-                        "call_id": call_id,
-                        "tool": tool_name,
-                        "args": tool_args,
-                    })
+                    yield _sse_event(
+                        "tool_start",
+                        {
+                            "call_id": call_id,
+                            "tool": tool_name,
+                            "args": tool_args,
+                        },
+                    )
 
                     # Execute tool with timeout
                     timeout = _TOOL_TIMEOUTS.get(tool_name, 30)
@@ -218,31 +247,43 @@ class AgentService:
                     except Exception as exc:
                         result = {"error": f"Tool {tool_name} failed: {exc!s}"}
 
-                    yield _sse_event("tool_result", {
-                        "call_id": call_id,
-                        "result": result,
-                    })
+                    yield _sse_event(
+                        "tool_result",
+                        {
+                            "call_id": call_id,
+                            "result": result,
+                        },
+                    )
 
                     # Emit artifact event for zettel CRUD results
-                    if isinstance(result, dict) and result.get("action") in ("created", "found", "updated"):
-                        yield _sse_event("artifact", {
-                            "type": "zettel",
-                            "action": result["action"],
-                            "zettel": {
-                                "id": result.get("zettel_id"),
-                                "title": result.get("title", ""),
-                                "summary": result.get("summary", ""),
-                                "topic": result.get("topic", ""),
-                                "tags": result.get("tags", []),
+                    if isinstance(result, dict) and result.get("action") in (
+                        "created",
+                        "found",
+                        "updated",
+                    ):
+                        yield _sse_event(
+                            "artifact",
+                            {
+                                "type": "zettel",
+                                "action": result["action"],
+                                "zettel": {
+                                    "id": result.get("zettel_id"),
+                                    "title": result.get("title", ""),
+                                    "summary": result.get("summary", ""),
+                                    "topic": result.get("topic", ""),
+                                    "tags": result.get("tags", []),
+                                },
                             },
-                        })
+                        )
 
                     # Inject tool result back into conversation for next round
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": call_id,
-                        "content": json.dumps(result),
-                    })
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "content": json.dumps(result),
+                        }
+                    )
 
         except Exception as exc:
             logger.exception("Agent stream_turn failed: %s", exc)
@@ -331,7 +372,9 @@ class AgentService:
 
             # Collect reasoning content (o3/o4 models)
             # OpenAI returns reasoning in a `reasoning` field on the delta
-            reasoning_content = getattr(delta, "reasoning", None) or getattr(delta, "reasoning_content", None)
+            reasoning_content = getattr(delta, "reasoning", None) or getattr(
+                delta, "reasoning_content", None
+            )
             if reasoning_content:
                 reasoning_parts.append(reasoning_content)
 
@@ -366,11 +409,13 @@ class AgentService:
                 args = json.loads(entry["args_json"]) if entry["args_json"] else {}
             except json.JSONDecodeError:
                 args = {}
-            tool_calls.append({
-                "call_id": entry["call_id"],
-                "name": entry["name"],
-                "args": args,
-            })
+            tool_calls.append(
+                {
+                    "call_id": entry["call_id"],
+                    "name": entry["name"],
+                    "args": args,
+                }
+            )
 
         content = "".join(content_parts)
         reasoning = "".join(reasoning_parts) or None

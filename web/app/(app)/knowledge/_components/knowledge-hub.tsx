@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { AlertCircle, BookOpen, ChevronLeft, ChevronRight, Layers, Link2, Loader2, Play, Plus, RefreshCw, Sparkles as SparklesIcon } from "lucide-react";
+import { AlertCircle, BookOpen, Layers, Link2, Loader2, Play, Plus, RefreshCw, Sparkles as SparklesIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useZettelCards, useZettelCount, useZettelTopics, useZettelTags } from "@/features/zettels/queries";
+import { useZettelCards, useZettelTopics, useZettelTags } from "@/features/zettels/queries";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 import { apiPostJson } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
@@ -84,7 +85,7 @@ export function KnowledgeHub() {
  const PAGE_SIZE = 24;
  const [activeView, setActiveView] = useState<ViewMode>("cards");
  const [filters, setFilters] = useState<ZettelFilters>({});
- const [page, setPage] = useState(0);
+ const [currentPage, setCurrentPage] = useState(1);
  const [selectedId, setSelectedId] = useState<string | null>(null);
  const [pulsingId, setPulsingId] = useState<string | null>(null);
  const [showCreate, setShowCreate] = useState(false);
@@ -96,15 +97,21 @@ export function KnowledgeHub() {
  const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
  // Server-side allZettels data with pagination
- const paginatedFilters = { ...filters, page, pageSize: PAGE_SIZE };
- const { data: allZettels = [], isLoading, isError, refetch } = useZettelCards(paginatedFilters);
- const { data: totalCount = 0 } = useZettelCount(filters);
+ const { data: paginatedData, isLoading, isError, refetch } = useZettelCards(filters, { page: currentPage, pageSize: PAGE_SIZE });
+ const allZettels = paginatedData?.items ?? [];
+ const totalCount = paginatedData?.totalCount ?? 0;
  const { data: availableTopics = [] } = useZettelTopics();
  const { data: availableTags = [] } = useZettelTags();
  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
  const selectedZettel = selectedId ? allZettels.find((z) => z.id === selectedId) ?? null : null;
  const dueCount = getDueCount(allZettels);
+
+ // Reset to page 1 when filters change
+ const handleFiltersChange = useCallback((newFilters: ZettelFilters | ((prev: ZettelFilters) => ZettelFilters)) => {
+   setFilters(newFilters);
+   setCurrentPage(1);
+ }, []);
 
  // Close detail panel if selected zettel gets allZettels out
  useEffect(() => {
@@ -282,13 +289,13 @@ export function KnowledgeHub() {
  activeView={activeView}
  onViewChange={setActiveView}
  search={filters.q || ""}
- onSearchChange={(v) => { setFilters((f) => ({ ...f, q: v || undefined })); setPage(0); }}
+ onSearchChange={(v) => handleFiltersChange((f) => ({ ...f, q: v || undefined }))}
  />
 
  {/* Filter bar */}
  <FilterBar
  filters={filters}
- onFiltersChange={(f) => { setFilters(f); setPage(0); }}
+ onFiltersChange={handleFiltersChange}
  availableTopics={availableTopics}
  availableTags={availableTags}
  />
@@ -372,36 +379,16 @@ export function KnowledgeHub() {
  )}
  </>
  )}
- </div>
 
- {/* Pagination */}
- {totalPages > 1 && (
- <div className="flex items-center justify-center gap-3 border-t py-4">
- <Button
- variant="outline"
- size="sm"
- className="gap-1 text-xs"
- disabled={page === 0}
- onClick={() => setPage((p) => Math.max(0, p - 1))}
- >
- <ChevronLeft className="size-3.5" />
- Previous
- </Button>
- <span className="text-xs tabular-nums text-muted-foreground">
- Page {page + 1} of {totalPages}
- </span>
- <Button
- variant="outline"
- size="sm"
- className="gap-1 text-xs"
- disabled={page >= totalPages - 1}
- onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
- >
- Next
- <ChevronRight className="size-3.5" />
- </Button>
- </div>
+ {/* Pagination controls */}
+ {!isLoading && !isError && totalPages > 1 && (
+ <PaginationControls
+ currentPage={currentPage}
+ totalPages={totalPages}
+ onPageChange={setCurrentPage}
+ />
  )}
+ </div>
 
  {/* Review Station */}
  {allZettels.length > 0 && <ReviewStation zettels={allZettels} />}

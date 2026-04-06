@@ -364,6 +364,20 @@ body::before {
   background-color: var(--alfred-accent-muted);
 }
 
+/* Wiki-link styling */
+.wiki-link {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.wiki-link:hover {
+  color: hsl(var(--primary));
+  text-decoration-style: solid;
+}
+
 /* TipTap editor styles */
 .tiptap .is-editor-empty:first-child::before {
   content: attr(data-placeholder);

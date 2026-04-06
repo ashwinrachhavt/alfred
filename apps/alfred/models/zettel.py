@@ -75,6 +75,34 @@ class ZettelLink(Model, table=True):
     bidirectional: bool = Field(default=True, sa_column=Column(Boolean, nullable=False))
 
 
+class WikiLink(Model, table=True):
+    """Wiki-link from a note or zettel card to a target zettel card.
+
+    Uses polymorphic source identification (source_type + source_id as text)
+    to avoid mixing int/UUID FK types in one table. The target is always a
+    ZettelCard (int FK).
+    """
+
+    __tablename__ = "wiki_links"
+    __table_args__ = (
+        Index("ix_wiki_links_source", "source_type", "source_id"),
+        Index("ix_wiki_links_target", "target_card_id"),
+        Index(
+            "ix_wiki_links_unique",
+            "source_type",
+            "source_id",
+            "target_card_id",
+            unique=True,
+        ),
+    )
+
+    source_type: str = Field(sa_column=Column(String(16), nullable=False))  # "note" | "zettel"
+    source_id: str = Field(sa_column=Column(String(64), nullable=False))  # UUID or int as string
+    target_card_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("zettel_cards.id"), nullable=False)
+    )
+
+
 class ZettelReview(Model, table=True):
     """Spaced repetition review scheduled for a card."""
 

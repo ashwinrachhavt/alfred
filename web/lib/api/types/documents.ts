@@ -20,6 +20,7 @@ export type ExplorerDocumentItem = {
 export type ExplorerDocumentsResponse = {
   items: ExplorerDocumentItem[];
   next_cursor?: string | null;
+  total_count?: number;
   limit: number;
   filter_topic?: string | null;
   search?: string | null;

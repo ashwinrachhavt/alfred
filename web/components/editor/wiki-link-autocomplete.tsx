@@ -1,156 +1,241 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { Loader2, Sparkles, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { searchZettelCards, type ZettelSearchResult } from "@/lib/api/zettels";
+import { useCardSearch } from "@/features/zettels/queries";
+
+export type WikiLinkSelection = {
+  cardId: number;
+  title: string;
+};
 
 type Props = {
   query: string;
   position: { top: number; left: number };
-  onSelect: (card: ZettelSearchResult) => void;
+  contextCardId?: number;
+  activeIndex: number;
+  onSelect: (selection: WikiLinkSelection) => void;
+  onCreateStub: (title: string) => void;
   onClose: () => void;
 };
 
-export function WikiLinkAutocomplete({ query, position, onSelect, onClose }: Props) {
-  const [results, setResults] = useState<ZettelSearchResult[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const activeIndexRef = useRef(0);
-  const hasFetched = useRef(false);
-
-  // Search on query change — including empty query (shows recent cards like Obsidian)
-  useEffect(() => {
-    setIsLoading(true);
-    const delay = hasFetched.current ? 150 : 0; // no delay on first open
-    hasFetched.current = true;
-
-    const timer = setTimeout(async () => {
-      try {
-        const cards = await searchZettelCards(query, 8);
-        setResults(cards);
-        setActiveIndex(0);
-        activeIndexRef.current = 0;
-      } catch {
-        setResults([]);
-      } finally {
-        setIsLoading(false);
-      }
-    }, delay);
-
-    return () => clearTimeout(timer);
-  }, [query]);
-
-  // Keyboard navigation
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-        return;
-      }
-
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        e.stopPropagation();
-        const next = (activeIndexRef.current + 1) % Math.max(1, results.length);
-        activeIndexRef.current = next;
-        setActiveIndex(next);
-        return;
-      }
-
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        e.stopPropagation();
-        const next = (activeIndexRef.current - 1 + results.length) % Math.max(1, results.length);
-        activeIndexRef.current = next;
-        setActiveIndex(next);
-        return;
-      }
-
-      if (e.key === "Enter" || e.key === "Tab") {
-        e.preventDefault();
-        e.stopPropagation();
-        if (results.length > 0) {
-          const idx = Math.min(activeIndexRef.current, results.length - 1);
-          onSelect(results[idx]);
-        }
-        return;
-      }
-    },
-    [results, onSelect, onClose],
+export function WikiLinkAutocomplete({
+  query,
+  position,
+  contextCardId,
+  activeIndex,
+  onSelect,
+  onCreateStub,
+}: Props) {
+  const { data, isLoading, isError } = useCardSearch(
+    query.length > 0 ? query : null,
+    contextCardId,
   );
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    document.addEventListener("keydown", handleKeyDown, true);
-    return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [handleKeyDown]);
+  // Build combined items list for keyboard navigation
+  const textMatches = data?.text_matches ?? [];
+  const aiSuggestions = data?.ai_suggestions ?? [];
+  const hasResults = textMatches.length > 0 || aiSuggestions.length > 0;
 
+  // Combined list: AI suggestions first, then text matches
+  const allItems = [
+    ...aiSuggestions.map((s) => ({
+      id: s.id,
+      title: s.title,
+      type: "ai" as const,
+      score: s.score,
+      topic: s.topic,
+    })),
+    ...textMatches.map((m) => ({
+      id: m.id,
+      title: m.title,
+      type: "text" as const,
+      score: undefined as number | undefined,
+      topic: m.topic,
+    })),
+  ];
+
+  // Deduplicate by id (AI version takes priority)
+  const seenIds = new Set<number>();
+  const dedupedItems = allItems.filter((item) => {
+    if (seenIds.has(item.id)) return false;
+    seenIds.add(item.id);
+    return true;
+  });
+
+  // Scroll active item into view
   useEffect(() => {
-    activeIndexRef.current = activeIndex;
+    if (!containerRef.current) return;
+    const active = containerRef.current.querySelector("[data-active=true]");
+    active?.scrollIntoView({ block: "nearest" });
   }, [activeIndex]);
-
-  const isEmptyQuery = !query.trim();
 
   return (
     <div
       ref={containerRef}
-      className="fixed z-50 w-80 overflow-hidden rounded-md border bg-card shadow-lg animate-in fade-in zoom-in-95 duration-100"
+      className="fixed z-50 w-80 overflow-hidden rounded-lg border bg-card shadow-xl animate-in fade-in zoom-in-95 duration-100"
       style={{ top: `${position.top}px`, left: `${position.left}px` }}
+      onMouseDown={(e) => e.preventDefault()}
     >
-      {/* Header */}
-      <div className="flex items-center gap-2 border-b px-3 py-1.5">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--alfred-text-tertiary)]">
-          {isEmptyQuery ? "Recent cards" : "Link to card"}
-        </span>
-        {isLoading && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
-      </div>
+      {/* Loading state */}
+      {isLoading && !data && (
+        <div className="flex items-center gap-2 px-3 py-3">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">Searching cards...</span>
+        </div>
+      )}
+
+      {/* Error state */}
+      {isError && (
+        <div className="px-3 py-3 text-xs text-destructive">
+          Search unavailable. Try again.
+        </div>
+      )}
 
       {/* Results */}
-      <div className="max-h-64 overflow-y-auto p-1">
-        {results.length > 0 ? (
-          results.map((card, idx) => (
+      {data && (
+        <div className="max-h-72 overflow-y-auto p-1">
+          {/* AI suggestions section */}
+          {aiSuggestions.length > 0 && (
+            <>
+              <div className="flex items-center gap-1.5 px-2 py-1">
+                <Sparkles className="h-3 w-3 text-primary" />
+                <span className="text-[10px] font-medium uppercase tracking-wider text-primary">
+                  AI Recommended
+                </span>
+              </div>
+              {aiSuggestions.map((s) => {
+                const globalIdx = dedupedItems.findIndex((d) => d.id === s.id);
+                return (
+                  <button
+                    key={`ai-${s.id}`}
+                    type="button"
+                    data-active={globalIdx === activeIndex}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      onSelect({ cardId: s.id, title: s.title });
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-between rounded-md px-3 py-1.5 text-left transition-colors",
+                      globalIdx === activeIndex
+                        ? "bg-[var(--alfred-accent-subtle)] text-foreground"
+                        : "text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground",
+                    )}
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm">{s.title}</div>
+                      {s.topic && (
+                        <div className="text-[9px] uppercase tracking-wide text-[var(--alfred-text-tertiary)]">
+                          {s.topic}
+                        </div>
+                      )}
+                    </div>
+                    <span className="ml-2 shrink-0 rounded bg-[var(--alfred-accent-subtle)] px-1.5 py-0.5 text-[9px] font-medium text-primary">
+                      {Math.round(s.score * 100)}%
+                    </span>
+                  </button>
+                );
+              })}
+            </>
+          )}
+
+          {/* Loading shimmer for AI when text results exist but AI is still loading */}
+          {isLoading && textMatches.length > 0 && aiSuggestions.length === 0 && (
+            <div className="space-y-1 px-2 py-1">
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="h-3 w-3 text-primary animate-pulse" />
+                <span className="text-[10px] font-medium uppercase tracking-wider text-primary opacity-60">
+                  Finding AI suggestions...
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Text matches section */}
+          {textMatches.length > 0 && (
+            <>
+              <div className="px-2 py-1">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Cards
+                </span>
+              </div>
+              {textMatches.map((m) => {
+                const globalIdx = dedupedItems.findIndex((d) => d.id === m.id);
+                if (globalIdx === -1) return null; // deduped out
+                return (
+                  <button
+                    key={`text-${m.id}`}
+                    type="button"
+                    data-active={globalIdx === activeIndex}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      onSelect({ cardId: m.id, title: m.title });
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-between rounded-md px-3 py-1.5 text-left transition-colors",
+                      globalIdx === activeIndex
+                        ? "bg-[var(--alfred-accent-subtle)] text-foreground"
+                        : "text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground",
+                    )}
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm">{m.title}</div>
+                      {m.topic && (
+                        <div className="text-[9px] uppercase tracking-wide text-[var(--alfred-text-tertiary)]">
+                          {m.topic}
+                        </div>
+                      )}
+                    </div>
+                    <span className="ml-2 text-[9px] uppercase text-[var(--alfred-text-tertiary)]">
+                      {m.status === "stub" ? "stub" : ""}
+                    </span>
+                  </button>
+                );
+              })}
+            </>
+          )}
+
+          {/* No results + create stub option */}
+          {!hasResults && !isLoading && query.length > 0 && (
             <button
-              key={card.id}
               type="button"
+              data-active={activeIndex === 0}
               onMouseDown={(e) => {
                 e.preventDefault();
-                onSelect(card);
+                onCreateStub(query);
               }}
               className={cn(
-                "flex w-full flex-col gap-0.5 rounded-md px-3 py-2 text-left transition-colors",
-                idx === activeIndex
+                "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left transition-colors",
+                activeIndex === 0
                   ? "bg-[var(--alfred-accent-subtle)] text-foreground"
                   : "text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground",
               )}
             >
-              <span className="text-sm font-medium truncate">{card.title}</span>
-              <div className="flex items-center gap-1.5">
-                {card.topic && (
-                  <span className="text-[9px] text-[var(--alfred-text-tertiary)]">{card.topic}</span>
-                )}
-                {card.status === "draft" && (
-                  <span className="rounded border border-dashed border-[var(--alfred-text-tertiary)] px-1 py-px text-[8px] uppercase text-[var(--alfred-text-tertiary)]">
-                    draft
-                  </span>
-                )}
-              </div>
+              <Plus className="h-3.5 w-3.5 text-primary" />
+              <span className="text-sm">
+                Create &ldquo;<span className="font-medium text-foreground">{query}</span>&rdquo;
+              </span>
             </button>
-          ))
-        ) : !isLoading ? (
-          <div className="px-3 py-3 text-center text-[11px] text-[var(--alfred-text-tertiary)]">
-            {query.trim() ? `No cards found for "${query}"` : "No cards yet"}
-          </div>
-        ) : null}
-      </div>
+          )}
 
-      {/* Footer hint */}
-      <div className="border-t px-3 py-1.5">
-        <span className="text-[9px] text-[var(--alfred-text-tertiary)]">
-          ↑↓ navigate · Enter select · Esc close
-        </span>
+          {/* Empty query — show recent cards */}
+          {!hasResults && !isLoading && query.length === 0 && (
+            <div className="px-3 py-2 text-[11px] text-[var(--alfred-text-tertiary)]">
+              Type to search cards...
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Keyboard hint */}
+      <div className="border-t px-3 py-1.5 text-[9px] text-[var(--alfred-text-tertiary)]">
+        <kbd className="rounded border px-1">↑↓</kbd> navigate
+        {" "}
+        <kbd className="rounded border px-1">↵</kbd> select
+        {" "}
+        <kbd className="rounded border px-1">esc</kbd> close
       </div>
     </div>
   );

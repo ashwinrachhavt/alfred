@@ -117,6 +117,9 @@ function TaskCenterButton() {
  const [mounted, setMounted] = useState(false);
  useEffect(() => setMounted(true), []);
 
+ // Only show badge after hydration to avoid server/client mismatch
+ const showBadge = mounted && activeCount > 0;
+
  return (
  <button
   type="button"
@@ -125,14 +128,14 @@ function TaskCenterButton() {
  >
   <span className="relative">
   <Bell className="size-4" />
-  {mounted && activeCount > 0 && (
+  {showBadge && (
    <span className="absolute -top-1 -right-1 flex size-3.5 items-center justify-center rounded-full bg-primary text-[8px] font-bold text-primary-foreground">
    {activeCount > 9 ? "9+" : activeCount}
    </span>
   )}
   </span>
   <span>Tasks</span>
-  {mounted && activeCount > 0 && (
+  {showBadge && (
   <span className="ml-auto text-[10px] text-primary">{activeCount} active</span>
   )}
  </button>

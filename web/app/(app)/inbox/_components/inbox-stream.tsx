@@ -78,6 +78,7 @@ export function InboxStream() {
  };
  }, [hasProcessing, refetch]);
 
+ const totalCount = data?.pages[0]?.total_count;
  const dateGroups = useMemo(() => groupByDate(items as InboxDoc[]), [items]);
 
  return (
@@ -159,10 +160,12 @@ export function InboxStream() {
  )}
 
  {hasNextPage && (
- <div className="flex justify-center py-4">
+ <div className="flex flex-col items-center gap-1 py-4">
  <Button variant="outline" onClick={() => fetchNextPage()} disabled={isFetchingNextPage} className="text-xs">
  {isFetchingNextPage ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
- Load more
+ {totalCount != null && totalCount > items.length
+  ? `Load more (${totalCount - items.length} remaining)`
+  : "Load more"}
  </Button>
  </div>
  )}

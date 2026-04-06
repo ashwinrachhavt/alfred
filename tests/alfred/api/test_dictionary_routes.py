@@ -5,11 +5,10 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 from alfred.services.dictionary_service import (
-    DictionaryResult,
     DefinitionGroup,
     DefinitionSense,
+    DictionaryResult,
 )
-
 
 MOCK_RESULT = DictionaryResult(
     word="ephemeral",
