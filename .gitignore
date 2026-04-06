@@ -91,7 +91,6 @@ next-env.d.ts
 
 .claude*
 .gstack/
-docs/
 
 # Tool configs
 .serena/
