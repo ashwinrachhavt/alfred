@@ -1,4 +1,8 @@
-"""MCP tool implementations wrapping existing Alfred services."""
+"""MCP tool implementations wrapping existing Alfred services.
+
+Includes hand-crafted tools for common operations (fast, direct DB)
+and a generic HTTP proxy for the full Alfred API surface.
+"""
 
 import asyncio
 import json
@@ -8,9 +12,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 from mcp.server.fastmcp import Context
 
 from alfred.mcp.server import AlfredContext, mcp
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+ALFRED_API_BASE = "http://localhost:8000"
 
 logger = logging.getLogger(__name__)
 
@@ -275,3 +286,83 @@ async def save_insight(
     except Exception as e:
         logger.exception("save_insight failed")
         return {"error": f"Failed to save insight: {e}"}
+
+
+# ---------------------------------------------------------------------------
+# Generic API proxy — exposes the FULL Alfred API surface
+# ---------------------------------------------------------------------------
+
+
+@mcp.resource("alfred://openapi-spec")
+async def openapi_spec() -> str:
+    """Alfred's full OpenAPI specification. Read this to discover all available
+    API endpoints, their parameters, request bodies, and response schemas.
+
+    Use with the alfred_api tool to call any endpoint."""
+    async with httpx.AsyncClient(base_url=ALFRED_API_BASE, timeout=10) as client:
+        resp = await client.get("/openapi.json")
+        resp.raise_for_status()
+        return json.dumps(resp.json(), indent=2)
+
+
+@mcp.tool()
+async def alfred_api(
+    method: str,
+    path: str,
+    body: dict[str, Any] | None = None,
+    query_params: dict[str, str] | None = None,
+    ctx: Context = None,
+) -> dict[str, Any]:
+    """Call any Alfred API endpoint. Use the alfred://openapi-spec resource
+    to discover available endpoints.
+
+    Args:
+        method: HTTP method (GET, POST, PATCH, DELETE)
+        path: API path (e.g. "/api/zettels/cards", "/api/documents/explorer")
+        body: JSON request body for POST/PATCH/PUT requests
+        query_params: URL query parameters (e.g. {"q": "planning", "limit": "10"})
+
+    Examples:
+        - List zettels: method="GET", path="/api/zettels/cards", query_params={"limit": "5"}
+        - Create zettel: method="POST", path="/api/zettels/cards", body={"title": "...", "content": "..."}
+        - Search docs: method="GET", path="/api/documents/search", query_params={"q": "kubernetes"}
+        - Get health: method="GET", path="/healthz"
+    """
+    app = _get_app(ctx)
+    method = method.upper()
+
+    if method not in {"GET", "POST", "PATCH", "PUT", "DELETE"}:
+        return {"error": f"Unsupported HTTP method: {method}"}
+
+    try:
+        async with httpx.AsyncClient(base_url=ALFRED_API_BASE, timeout=30) as client:
+            resp = await client.request(
+                method=method,
+                url=path,
+                json=body if body and method in {"POST", "PATCH", "PUT"} else None,
+                params=query_params,
+            )
+
+        _log_call(app.session_id, "alfred_api", method=method, path=path, status=resp.status_code)
+
+        # Try to parse JSON, fall back to text
+        try:
+            result = resp.json()
+        except (json.JSONDecodeError, ValueError):
+            result = {"text": resp.text[:5000]}
+
+        if resp.status_code >= 400:
+            return {
+                "error": f"HTTP {resp.status_code}",
+                "detail": result,
+            }
+
+        return result if isinstance(result, dict) else {"data": result}
+
+    except httpx.ConnectError:
+        return {"error": "Cannot connect to Alfred API at " + ALFRED_API_BASE + ". Is the backend running?"}
+    except httpx.TimeoutException:
+        return {"error": f"Request timed out: {method} {path}"}
+    except Exception as e:
+        logger.exception("alfred_api failed")
+        return {"error": f"Request failed: {e}"}
