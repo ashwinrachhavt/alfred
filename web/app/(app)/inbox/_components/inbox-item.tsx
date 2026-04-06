@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { Loader2 } from "lucide-react";
 
@@ -53,7 +54,7 @@ function getStatus(pipelineStatus: string, primaryTopic: string | null): StatusI
  };
 }
 
-export function InboxItem({ id: _id, title, summary, sourceUrl: _sourceUrl, primaryTopic, pipelineStatus, createdAt, onClick }: Props) {
+export const InboxItem = memo(function InboxItem({ id: _id, title, summary, sourceUrl: _sourceUrl, primaryTopic, pipelineStatus, createdAt, onClick }: Props) {
  const timeAgo = formatDistanceToNow(new Date(createdAt), { addSuffix: false });
  const status = getStatus(pipelineStatus, primaryTopic);
  const isRecent = pipelineStatus === "pending" || pipelineStatus === "processing";
@@ -96,4 +97,4 @@ export function InboxItem({ id: _id, title, summary, sourceUrl: _sourceUrl, prim
  </div>
  </button>
  );
-}
+});

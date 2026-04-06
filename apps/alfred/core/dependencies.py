@@ -118,9 +118,6 @@ def get_research_service() -> ResearchService:
     )
 
 
-# Deprecated alias
-get_deep_research_service = get_research_service
-
 
 @lru_cache(maxsize=1)
 def get_system_design_service() -> SystemDesignService:

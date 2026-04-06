@@ -2,6 +2,28 @@
 
 All notable changes will be documented in this file. Follow Keep a Changelog style; versions are date-stamped until releases are tagged.
 
+## [0.0.2.0] - 2026-04-05 — Tech Debt Cleanup + Performance
+
+### Removed
+- Dead code from job-search pivot: question extraction utils, taxonomy canonicalizer, deep_research shims, 9 unused interview/company settings, deprecated aliases (CompanyResearchReportRow, DeepResearch*)
+- 5 unused Python deps: lancedb, tinydb, duckduckgo-search, chromadb, langchain-chroma
+- Unused frontend hooks (useNowMs, useTaskPolling), dead snooze/due-date utils
+- Stale test files for removed code
+
+### Performance
+- React.memo on ZettelCard and InboxItem list components
+- DRY query filter extraction in zettelkasten_service (`_apply_card_filters`)
+- Single JSON containment check for tag filtering (was per-tag loop)
+- Redis caching (5min TTL) on /topics and /tags endpoints with invalidation on mutations
+- 3 new DB indexes on zettel_cards: status, document_id, updated_at
+- next.config: optimizePackageImports for lucide-react/radix-ui/date-fns, removeConsole in prod
+
+### Changed
+- Rewrote all project documentation (CLAUDE.md, README.md, AGENTS.md, TODOS.md) for accurate AI-assisted coding
+- Removed `docs/` from .gitignore so documentation can be version-controlled
+- Fixed .gitignore typo (stray 's' line)
+- Deduplicated TODOS.md (Chunked Decomposition and Excalidraw AI were each listed twice)
+
 ## [0.0.1.0] - 2026-04-04 — MCP Server + Design Overhaul
 
 ### Added

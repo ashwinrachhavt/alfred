@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef } from "react";
+import { forwardRef, memo } from "react";
 
 import { cn } from "@/lib/utils";
 import { BloomBadge } from "./bloom-badge";
@@ -13,7 +13,7 @@ type Props = {
  onClick: () => void;
 };
 
-export const ZettelCard = forwardRef<HTMLButtonElement, Props>(
+export const ZettelCard = memo(forwardRef<HTMLButtonElement, Props>(
  function ZettelCard({ zettel, isSelected, isPulsing, onClick }, ref) {
  return (
  <button
@@ -58,4 +58,4 @@ export const ZettelCard = forwardRef<HTMLButtonElement, Props>(
  </button>
  );
  },
-);
+));

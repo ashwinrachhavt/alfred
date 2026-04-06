@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import json as _json
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 
 from alfred.api.dependencies import get_db_session
+from alfred.core.redis_client import get_redis_client
 from alfred.models.zettel import ZettelCard, ZettelReview
+
+_log = logging.getLogger(__name__)
+_TOPICS_CACHE_KEY = "zettel:topics"
+_TAGS_CACHE_KEY = "zettel:tags"
+_CACHE_TTL_SECONDS = 300  # 5 minutes
 from alfred.schemas.zettel import (
     AIZettelGenerateRequest,
     BacklinkResponse,
@@ -47,6 +56,7 @@ def create_card(
 ) -> ZettelCardOut:
     svc = ZettelkastenService(session)
     card = svc.create_card(**payload.model_dump())
+    _invalidate_topic_tag_cache()
     return _card_out(card)
 
 
@@ -114,8 +124,45 @@ def count_cards(
     return {"total": total}
 
 
+def _cache_get(key: str) -> list[str] | None:
+    """Try to read a cached JSON list from Redis; return None on miss."""
+    redis = get_redis_client()
+    if not redis:
+        return None
+    try:
+        raw = redis.get(key)
+        return _json.loads(raw) if raw else None
+    except Exception:
+        return None
+
+
+def _cache_set(key: str, value: list[str]) -> None:
+    """Best-effort write to Redis cache."""
+    redis = get_redis_client()
+    if not redis:
+        return
+    try:
+        redis.set(key, _json.dumps(value), ex=_CACHE_TTL_SECONDS)
+    except Exception:
+        pass
+
+
+def _invalidate_topic_tag_cache() -> None:
+    """Bust topics/tags cache on card mutations."""
+    redis = get_redis_client()
+    if not redis:
+        return
+    try:
+        redis.delete(_TOPICS_CACHE_KEY, _TAGS_CACHE_KEY)
+    except Exception:
+        pass
+
+
 @router.get("/topics", response_model=list[str])
 def get_topics(session: Session = Depends(get_db_session)) -> list[str]:
+    cached = _cache_get(_TOPICS_CACHE_KEY)
+    if cached is not None:
+        return cached
     results = session.exec(
         select(ZettelCard.topic)
         .where(ZettelCard.topic.isnot(None))  # type: ignore[union-attr]
@@ -123,11 +170,16 @@ def get_topics(session: Session = Depends(get_db_session)) -> list[str]:
         .distinct()
         .order_by(ZettelCard.topic)
     ).all()
-    return [t for t in results if t]
+    topics = [t for t in results if t]
+    _cache_set(_TOPICS_CACHE_KEY, topics)
+    return topics
 
 
 @router.get("/tags", response_model=list[str])
 def get_tags(session: Session = Depends(get_db_session)) -> list[str]:
+    cached = _cache_get(_TAGS_CACHE_KEY)
+    if cached is not None:
+        return cached
     cards = session.exec(
         select(ZettelCard.tags)
         .where(ZettelCard.tags.isnot(None))  # type: ignore[union-attr]
@@ -137,7 +189,9 @@ def get_tags(session: Session = Depends(get_db_session)) -> list[str]:
     for tags_list in cards:
         if isinstance(tags_list, list):
             all_tags.update(t for t in tags_list if t)
-    return sorted(all_tags)
+    result = sorted(all_tags)
+    _cache_set(_TAGS_CACHE_KEY, result)
+    return result
 
 
 @router.post("/cards/bulk", response_model=list[ZettelCardOut], status_code=status.HTTP_201_CREATED)
@@ -154,6 +208,7 @@ def bulk_create_cards(
     svc = ZettelkastenService(session)
     cards_data = [p.model_dump() for p in payload]
     cards = svc.create_cards_batch(cards_data)
+    _invalidate_topic_tag_cache()
     return [_card_out(c) for c in cards]
 
 
@@ -228,6 +283,7 @@ def update_card(
         raise HTTPException(status_code=404, detail="Card not found")
     data = payload.model_dump(exclude_unset=True)
     updated = svc.update_card(card, **data)
+    _invalidate_topic_tag_cache()
     return _card_out(updated)
 
 
@@ -241,6 +297,7 @@ def delete_card(
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
     svc.archive_card(card, remove_links=True)
+    _invalidate_topic_tag_cache()
     return {"status": "archived", "id": card_id}
 
 

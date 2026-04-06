@@ -7,7 +7,6 @@
 .alfred_data/**/*.json
 
 *.pyc
-s
 qdrant_store
 
 /chroma_store
@@ -92,7 +91,6 @@ next-env.d.ts
 
 .claude*
 .gstack/
-docs/
 
 # Tool configs
 .serena/
