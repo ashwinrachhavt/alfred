@@ -119,6 +119,16 @@ def _parse_events(raw_events: list[str]) -> list[tuple[str, dict]]:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _mock_notifications():
+    """Prevent Redis calls from _build_system_prompt notifications check."""
+    with patch(
+        "alfred.services.knowledge_notifications.get_pending_notifications",
+        return_value=[],
+    ):
+        yield
+
+
 @pytest.fixture()
 def db_session():
     """Minimal mock DB session."""
@@ -157,10 +167,11 @@ async def test_happy_path_text_response(service):
     assert "token" in event_types
     assert event_types[-1] == "done"
 
-    # Verify the content was streamed
+    # Verify the content was streamed token-by-token (real streaming)
     token_events = [e for e in parsed if e[0] == "token"]
-    assert len(token_events) == 1
-    assert token_events[0][1]["content"] == "Hello!"
+    assert len(token_events) >= 1
+    full_content = "".join(e[1]["content"] for e in token_events)
+    assert full_content == "Hello!"
 
 
 @pytest.mark.asyncio
@@ -393,7 +404,8 @@ async def test_reasoning_extraction(service):
     assert "token" in event_types
 
     reasoning_events = [e for e in parsed if e[0] == "reasoning"]
-    assert reasoning_events[0][1]["content"] == "Let me think... Step 1: analyze."
+    full_reasoning = "".join(e[1]["content"] for e in reasoning_events)
+    assert full_reasoning == "Let me think... Step 1: analyze."
 
 
 @pytest.mark.asyncio

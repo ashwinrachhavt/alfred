@@ -280,13 +280,27 @@ class AgentService:
     ) -> AsyncIterator[str]:
         """Stream SSE events for one agent turn.
 
-        Calls OpenAI with function calling, dispatches tool calls,
-        re-injects results, and streams tokens back as SSE events.
+        Token-by-token streaming like Claude Code. The user sees each token
+        as it arrives, not after the full response is collected.
+
+        ┌─────────────────────────────────────────────────────────┐
+        │  AGENT LOOP (flat, Claude Code-style)                   │
+        │                                                          │
+        │  1. Build messages (system + history + user)             │
+        │  2. Stream tokens from model → yield each to client     │
+        │  3. If model requests tool calls:                        │
+        │     a. Yield tool_start events                           │
+        │     b. Execute tools (with timeout)                      │
+        │     c. Yield tool_result events                          │
+        │     d. Inject results back into messages                 │
+        │     e. LOOP to step 2                                    │
+        │  4. If no tool calls → DONE                              │
+        │  5. Max iterations guard (default 10)                    │
+        └─────────────────────────────────────────────────────────┘
         """
         model_name = model or settings.llm_model or "gpt-4.1-mini"
 
         try:
-            # Build conversation messages
             messages: list[dict[str, Any]] = [
                 {"role": "system", "content": _build_system_prompt(lens, note_context)},
             ]
@@ -300,30 +314,49 @@ class AgentService:
 
             messages.append({"role": "user", "content": message})
 
-            # Tool loop: call OpenAI, dispatch tools, re-inject, repeat
+            # Flat agent loop: stream → tools → re-stream → done
             for _round in range(MAX_TOOL_ROUNDS):
                 if is_disconnected and await is_disconnected():
                     return
 
-                response_content, tool_calls, reasoning = await self._call_openai_streaming(
-                    messages=messages,
-                    model=model_name,
-                    is_disconnected=is_disconnected,
-                )
+                # Stream tokens in real-time, collect tool calls
+                content_parts: list[str] = []
+                reasoning_parts: list[str] = []
+                tool_calls: list[dict[str, Any]] = []
 
-                # Yield reasoning if present (o3/o4 models)
-                if reasoning:
-                    yield _sse_event("reasoning", {"content": reasoning})
+                kwargs = self._build_api_kwargs(model_name, messages)
 
-                # Yield accumulated content as a single token event
-                if response_content:
-                    yield _sse_event("token", {"content": response_content})
+                for attempt in range(3):  # 2 retries with backoff
+                    try:
+                        async for event in self._stream_tokens(kwargs, is_disconnected):
+                            if event["type"] == "token":
+                                content_parts.append(event["content"])
+                                yield _sse_event("token", {"content": event["content"]})
+                            elif event["type"] == "reasoning":
+                                reasoning_parts.append(event["content"])
+                                yield _sse_event("reasoning", {"content": event["content"]})
+                            elif event["type"] == "tool_calls":
+                                tool_calls = event["tool_calls"]
+                        break  # Success, exit retry loop
+                    except APITimeoutError:
+                        if attempt < 2:
+                            logger.warning("OpenAI timeout (attempt %d), retrying...", attempt + 1)
+                            await asyncio.sleep(1 * (attempt + 1))
+                            continue
+                        raise
+                    except RateLimitError:
+                        if attempt < 2:
+                            logger.warning("Rate limit (attempt %d), backing off...", attempt + 1)
+                            await asyncio.sleep(2 * (attempt + 1))
+                            continue
+                        raise
 
-                # No tool calls means we're done
+                response_content = "".join(content_parts)
+
+                # No tool calls → done
                 if not tool_calls:
                     break
 
-                # Process tool calls
                 # Add assistant message with tool_calls to conversation
                 assistant_msg: dict[str, Any] = {
                     "role": "assistant",
@@ -342,21 +375,18 @@ class AgentService:
                 }
                 messages.append(assistant_msg)
 
+                # Execute tool calls and inject results
                 for tc in tool_calls:
                     call_id = tc["call_id"]
                     tool_name = tc["name"]
                     tool_args = tc["args"]
 
-                    yield _sse_event(
-                        "tool_start",
-                        {
-                            "call_id": call_id,
-                            "tool": tool_name,
-                            "args": tool_args,
-                        },
-                    )
+                    yield _sse_event("tool_start", {
+                        "call_id": call_id,
+                        "tool": tool_name,
+                        "args": tool_args,
+                    })
 
-                    # Execute tool with timeout
                     timeout = _TOOL_TIMEOUTS.get(tool_name, 30)
                     try:
                         result = await asyncio.wait_for(
@@ -368,43 +398,32 @@ class AgentService:
                     except Exception as exc:
                         result = {"error": f"Tool {tool_name} failed: {exc!s}"}
 
-                    yield _sse_event(
-                        "tool_result",
-                        {
-                            "call_id": call_id,
-                            "result": result,
-                        },
-                    )
+                    yield _sse_event("tool_result", {
+                        "call_id": call_id,
+                        "result": result,
+                    })
 
-                    # Emit artifact event for zettel CRUD results
+                    # Emit artifact for zettel CRUD results
                     if isinstance(result, dict) and result.get("action") in (
-                        "created",
-                        "found",
-                        "updated",
+                        "created", "found", "updated",
                     ):
-                        yield _sse_event(
-                            "artifact",
-                            {
-                                "type": "zettel",
-                                "action": result["action"],
-                                "zettel": {
-                                    "id": result.get("zettel_id"),
-                                    "title": result.get("title", ""),
-                                    "summary": result.get("summary", ""),
-                                    "topic": result.get("topic", ""),
-                                    "tags": result.get("tags", []),
-                                },
+                        yield _sse_event("artifact", {
+                            "type": "zettel",
+                            "action": result["action"],
+                            "zettel": {
+                                "id": result.get("zettel_id"),
+                                "title": result.get("title", ""),
+                                "summary": result.get("summary", ""),
+                                "topic": result.get("topic", ""),
+                                "tags": result.get("tags", []),
                             },
-                        )
+                        })
 
-                    # Inject tool result back into conversation for next round
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": call_id,
-                            "content": json.dumps(result),
-                        }
-                    )
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": json.dumps(result),
+                    })
 
         except Exception as exc:
             logger.exception("Agent stream_turn failed: %s", exc)
@@ -412,37 +431,76 @@ class AgentService:
 
         yield _sse_event("done", {"thread_id": str(thread_id or "")})
 
-    async def _call_openai_streaming(
+    async def _stream_tokens(
         self,
-        *,
-        messages: list[dict[str, Any]],
-        model: str,
+        kwargs: dict[str, Any],
         is_disconnected: Callable[[], Any] | None = None,
-    ) -> tuple[str, list[dict[str, Any]], str | None]:
-        """Call OpenAI with streaming and return (content, tool_calls, reasoning).
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Stream individual tokens and tool calls from OpenAI.
 
-        Handles retry on timeout and rate limit. Collects streamed deltas
-        into complete content and tool_call objects.
+        Yields events as they arrive:
+        - {"type": "token", "content": "..."} for each text chunk
+        - {"type": "reasoning", "content": "..."} for reasoning traces
+        - {"type": "tool_calls", "tool_calls": [...]} at the end if tools were requested
         """
-        kwargs = self._build_api_kwargs(model, messages)
+        tool_calls_by_index: dict[int, dict[str, Any]] = {}
 
-        for attempt in range(2):  # 1 retry
-            try:
-                return await self._stream_response(kwargs, model, is_disconnected)
-            except APITimeoutError:
-                if attempt == 0:
-                    logger.warning("OpenAI timeout on attempt 1, retrying...")
-                    continue
-                raise
-            except RateLimitError:
-                if attempt == 0:
-                    logger.warning("OpenAI rate limit hit, waiting 2s and retrying...")
-                    await asyncio.sleep(2)
-                    continue
-                raise
+        stream = await self.client.chat.completions.create(**kwargs)
 
-        # Should not reach here, but satisfy type checker
-        return "", [], None  # pragma: no cover
+        async for chunk in stream:
+            if is_disconnected and await is_disconnected():
+                break
+
+            if not chunk.choices:
+                continue
+
+            delta = chunk.choices[0].delta
+
+            # Stream reasoning tokens (o3/o4 models)
+            reasoning_content = getattr(delta, "reasoning", None) or getattr(
+                delta, "reasoning_content", None
+            )
+            if reasoning_content:
+                yield {"type": "reasoning", "content": reasoning_content}
+
+            # Stream content tokens in real-time
+            if delta.content:
+                yield {"type": "token", "content": delta.content}
+
+            # Collect tool calls (streamed incrementally)
+            if delta.tool_calls:
+                for tc_delta in delta.tool_calls:
+                    idx = tc_delta.index
+                    if idx not in tool_calls_by_index:
+                        tool_calls_by_index[idx] = {
+                            "call_id": tc_delta.id or f"call_{uuid.uuid4().hex[:8]}",
+                            "name": "",
+                            "args_json": "",
+                        }
+                    entry = tool_calls_by_index[idx]
+                    if tc_delta.id:
+                        entry["call_id"] = tc_delta.id
+                    if tc_delta.function:
+                        if tc_delta.function.name:
+                            entry["name"] = tc_delta.function.name
+                        if tc_delta.function.arguments:
+                            entry["args_json"] += tc_delta.function.arguments
+
+        # Parse and yield collected tool calls at the end
+        if tool_calls_by_index:
+            tool_calls: list[dict[str, Any]] = []
+            for idx in sorted(tool_calls_by_index.keys()):
+                entry = tool_calls_by_index[idx]
+                try:
+                    args = json.loads(entry["args_json"]) if entry["args_json"] else {}
+                except json.JSONDecodeError:
+                    args = {}
+                tool_calls.append({
+                    "call_id": entry["call_id"],
+                    "name": entry["name"],
+                    "args": args,
+                })
+            yield {"type": "tool_calls", "tool_calls": tool_calls}
 
     def _build_api_kwargs(self, model: str, messages: list[dict[str, Any]]) -> dict[str, Any]:
         """Build the kwargs dict for the OpenAI chat completion call."""
@@ -466,79 +524,5 @@ class AgentService:
 
         return kwargs
 
-    async def _stream_response(
-        self,
-        kwargs: dict[str, Any],
-        model: str,
-        is_disconnected: Callable[[], Any] | None = None,
-    ) -> tuple[str, list[dict[str, Any]], str | None]:
-        """Stream a single OpenAI response and collect results.
-
-        Returns (content, tool_calls, reasoning).
-        """
-        content_parts: list[str] = []
-        reasoning_parts: list[str] = []
-        tool_calls_by_index: dict[int, dict[str, Any]] = {}
-
-        stream = await self.client.chat.completions.create(**kwargs)
-
-        async for chunk in stream:
-            if is_disconnected and await is_disconnected():
-                break
-
-            if not chunk.choices:
-                continue
-
-            delta = chunk.choices[0].delta
-
-            # Collect reasoning content (o3/o4 models)
-            # OpenAI returns reasoning in a `reasoning` field on the delta
-            reasoning_content = getattr(delta, "reasoning", None) or getattr(
-                delta, "reasoning_content", None
-            )
-            if reasoning_content:
-                reasoning_parts.append(reasoning_content)
-
-            # Collect regular content
-            if delta.content:
-                content_parts.append(delta.content)
-
-            # Collect tool calls (streamed incrementally)
-            if delta.tool_calls:
-                for tc_delta in delta.tool_calls:
-                    idx = tc_delta.index
-                    if idx not in tool_calls_by_index:
-                        tool_calls_by_index[idx] = {
-                            "call_id": tc_delta.id or f"call_{uuid.uuid4().hex[:8]}",
-                            "name": "",
-                            "args_json": "",
-                        }
-                    entry = tool_calls_by_index[idx]
-                    if tc_delta.id:
-                        entry["call_id"] = tc_delta.id
-                    if tc_delta.function:
-                        if tc_delta.function.name:
-                            entry["name"] = tc_delta.function.name
-                        if tc_delta.function.arguments:
-                            entry["args_json"] += tc_delta.function.arguments
-
-        # Parse collected tool calls
-        tool_calls: list[dict[str, Any]] = []
-        for idx in sorted(tool_calls_by_index.keys()):
-            entry = tool_calls_by_index[idx]
-            try:
-                args = json.loads(entry["args_json"]) if entry["args_json"] else {}
-            except json.JSONDecodeError:
-                args = {}
-            tool_calls.append(
-                {
-                    "call_id": entry["call_id"],
-                    "name": entry["name"],
-                    "args": args,
-                }
-            )
-
-        content = "".join(content_parts)
-        reasoning = "".join(reasoning_parts) or None
-
-        return content, tool_calls, reasoning
+    # _stream_tokens replaces the old _stream_response — tokens yield in real-time
+    # instead of being collected then returned as a batch.
