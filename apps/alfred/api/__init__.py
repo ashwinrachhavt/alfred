@@ -55,6 +55,7 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.web import router as web_router
     from alfred.api.whiteboards import router as whiteboards_router
     from alfred.api.wikipedia import router as wikipedia_router
+    from alfred.api.dictionary import router as dictionary_router
     from alfred.api.writing import router as writing_router
     from alfred.api.zettels import router as zettels_router
 
@@ -80,6 +81,7 @@ def register_routes(app: FastAPI) -> None:
         documents_router,
         mind_palace_agent_router,
         wikipedia_router,
+        dictionary_router,
         tools_router,
         learning_router,
         zettels_router,
