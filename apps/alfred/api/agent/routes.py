@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -147,9 +147,38 @@ def _persist_message(
     return msg
 
 
+def _sanitize_for_json(obj: Any) -> Any:
+    """Recursively convert LangChain message objects and other non-serializable types to plain dicts/strings."""
+    if isinstance(obj, BaseMessage):
+        return {"type": obj.type, "content": obj.content}
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list | tuple):
+        return [_sanitize_for_json(item) for item in obj]
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    if hasattr(obj, "dict"):
+        return obj.dict()
+    return obj
+
+
+class _LangChainEncoder(json.JSONEncoder):
+    """JSON encoder that handles LangChain message objects and other non-serializable types."""
+
+    def default(self, obj: Any) -> Any:
+        if isinstance(obj, BaseMessage):
+            return {"type": obj.type, "content": obj.content}
+        # Handle pydantic models (v1 and v2)
+        if hasattr(obj, "model_dump"):
+            return obj.model_dump()
+        if hasattr(obj, "dict"):
+            return obj.dict()
+        return super().default(obj)
+
+
 def _sse_event(event: str, data: dict) -> str:
     """Format a single SSE event."""
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+    return f"event: {event}\ndata: {json.dumps(data, cls=_LangChainEncoder, default=str)}\n\n"
 
 
 @router.post("/stream")
@@ -230,13 +259,18 @@ async def agent_stream(
 
                 elif kind == "on_tool_start":
                     tool_name = event.get("name", "")
-                    tool_input = event.get("data", {}).get("input", {})
+                    tool_input = _sanitize_for_json(event.get("data", {}).get("input", {}))
                     tool_calls_log.append({"tool": tool_name, "args": tool_input})
                     yield _sse_event("tool_start", {"tool": tool_name, "args": tool_input})
 
                 elif kind == "on_tool_end":
                     tool_name = event.get("name", "")
-                    tool_output = str(event.get("data", {}).get("output", ""))[:500]
+                    raw_output = event.get("data", {}).get("output", "")
+                    # Extract content string from LangChain ToolMessage/BaseMessage objects
+                    if isinstance(raw_output, BaseMessage):
+                        tool_output = raw_output.content[:500]
+                    else:
+                        tool_output = str(raw_output)[:500]
                     yield _sse_event("tool_result", {"tool": tool_name, "result": tool_output})
 
         except Exception as e:
