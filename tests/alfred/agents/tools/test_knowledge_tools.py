@@ -2,13 +2,9 @@
 from unittest.mock import MagicMock, patch
 
 from alfred.agents.tools.knowledge_tools import (
-    search_kb,
-    get_zettel,
-    create_zettel,
-    update_zettel,
-    get_document,
-    search_documents,
     KNOWLEDGE_TOOLS,
+    create_zettel,
+    search_kb,
 )
 
 

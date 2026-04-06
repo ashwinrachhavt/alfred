@@ -489,15 +489,16 @@ def get_document_asset(doc_id: str, asset_id: str) -> Response:
     """Serve a downloaded image asset for a document."""
     import uuid as _uuid
 
+    from sqlmodel import select
+
     from alfred.core.database import get_db_session
     from alfred.models.document_assets import DocumentAssetRow
-    from sqlmodel import select
 
     try:
         doc_uuid = _uuid.UUID(doc_id)
         asset_uuid = _uuid.UUID(asset_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid ID format")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid ID format") from exc
 
     session = get_db_session()
     try:

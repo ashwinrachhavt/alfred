@@ -1,5 +1,5 @@
 """Tests for the hybrid intent router."""
-from alfred.agents.router import heuristic_classify, IntentMatch
+from alfred.agents.router import heuristic_classify
 
 
 def test_import_intent():

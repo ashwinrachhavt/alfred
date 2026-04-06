@@ -89,9 +89,10 @@ def _handle_special_content(doc_id: str, source_url: str, content_type: str) -> 
 def _enrich_github(doc_id: str, source_url: str) -> None:
     """Fetch raw markdown from GitHub."""
     import httpx
+    from sqlmodel import select
+
     from alfred.core.database import get_db_session
     from alfred.models.doc_storage import DocumentRow
-    from sqlmodel import select
 
     raw_url = None
     blob_match = re.match(r"https?://github\.com/([^/]+)/([^/]+)/blob/([^/]+)/(.*)", source_url)
@@ -128,9 +129,10 @@ def _enrich_github(doc_id: str, source_url: str) -> None:
 def _enrich_arxiv(doc_id: str, source_url: str) -> None:
     """Extract arXiv abstract and metadata."""
     import httpx
+    from sqlmodel import select
+
     from alfred.core.database import get_db_session
     from alfred.models.doc_storage import DocumentRow
-    from sqlmodel import select
 
     arxiv_match = re.search(r"arxiv\.org/(?:abs|pdf)/(\d+\.\d+)", source_url)
     if not arxiv_match:
@@ -171,10 +173,11 @@ def _enrich_arxiv(doc_id: str, source_url: str) -> None:
 
 def _firecrawl_enrich(doc_id: str, source_url: str) -> bool:
     """Re-scrape URL via Firecrawl. Returns True if document was upgraded."""
+    from sqlmodel import select
+
     from alfred.connectors.firecrawl_connector import FirecrawlClient
     from alfred.core.database import get_db_session
     from alfred.models.doc_storage import DocumentRow
-    from sqlmodel import select
 
     fc = FirecrawlClient()
     resp = fc.scrape(source_url)

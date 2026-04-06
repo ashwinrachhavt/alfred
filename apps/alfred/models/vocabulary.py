@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import enum
 
-from sqlalchemy import Column, ForeignKey, Index, Integer, JSON, SmallInteger, String, Text
+from sqlalchemy import JSON, Column, ForeignKey, Index, Integer, SmallInteger, String, Text
 from sqlmodel import Field
 
 from alfred.models.base import Model

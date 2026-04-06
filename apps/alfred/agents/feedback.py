@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from alfred.agents.state import AlfredState
 from alfred.core.database import SessionLocal
@@ -60,7 +60,7 @@ def feedback_node(state: AlfredState) -> dict:
                 "source": "alfred_ai_panel",
                 "intent": state.get("intent"),
                 "phase": state.get("phase"),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
         )
         doc_store.ingest_document_store_only(ingest)

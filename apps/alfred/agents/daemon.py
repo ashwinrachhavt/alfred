@@ -18,7 +18,7 @@ def ingest_watch():
     """Check all connected sources for new content since last sync."""
     from alfred.agents.graph import build_alfred_graph
     graph = build_alfred_graph()
-    result = graph.invoke({
+    state = graph.invoke({
         "messages": [HumanMessage(content="Check all connected sources for new content since last sync and import anything new.")],
         "user_id": "daemon",
         "intent": "import",
@@ -31,7 +31,7 @@ def ingest_watch():
         "final_response": None,
         "artifacts": [],
     })
-    logger.info("Daemon ingest_watch completed: %s", result.get("final_response", "")[:200])
+    logger.info("Daemon ingest_watch completed: %s", state.get("final_response", "")[:200])
     return {"status": "completed"}
 
 
@@ -40,7 +40,7 @@ def link_discovery(limit: int = 50):
     """Find cards with few links and generate suggestions."""
     from alfred.agents.graph import build_alfred_graph
     graph = build_alfred_graph()
-    result = graph.invoke({
+    graph.invoke({
         "messages": [HumanMessage(content=f"Find the top {limit} zettel cards with the fewest links and suggest new connections for them.")],
         "user_id": "daemon",
         "intent": "connect",

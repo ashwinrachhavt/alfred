@@ -14,8 +14,8 @@ from typing import Any
 from langchain_core.tools import tool
 
 from alfred.core.database import SessionLocal
-from alfred.services.zettelkasten_service import ZettelkastenService
 from alfred.services.doc_storage_pg import DocStorageService
+from alfred.services.zettelkasten_service import ZettelkastenService
 
 logger = logging.getLogger(__name__)
 

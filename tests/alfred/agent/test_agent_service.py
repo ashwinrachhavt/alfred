@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from alfred.services.agent.service import AgentService, _build_system_prompt, _sse_event
-
 
 # ---------------------------------------------------------------------------
 # Helpers: mock OpenAI streaming responses
@@ -357,7 +354,7 @@ async def test_tool_timeout_yields_error_result(service):
 
     events = []
     with patch("alfred.services.agent.service.execute_tool", new_callable=AsyncMock) as mock_exec:
-        mock_exec.side_effect = asyncio.TimeoutError()
+        mock_exec.side_effect = TimeoutError()
         async for event in service.stream_turn(message="Search"):
             events.append(event)
 

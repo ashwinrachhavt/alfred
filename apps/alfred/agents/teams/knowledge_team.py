@@ -9,8 +9,8 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from langgraph_supervisor import create_supervisor
 
-from alfred.agents.tools.knowledge_tools import KNOWLEDGE_TOOLS
 from alfred.agents.tools.connection_tools import CONNECTION_TOOLS
+from alfred.agents.tools.knowledge_tools import KNOWLEDGE_TOOLS
 from alfred.agents.tools.learning_tools import LEARNING_TOOLS
 from alfred.core.settings import settings
 

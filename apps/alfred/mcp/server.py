@@ -141,7 +141,7 @@ async def alfred_lifespan(server: FastMCP) -> AsyncIterator[AlfredContext]:
 mcp = FastMCP("alfred", lifespan=alfred_lifespan)
 
 # Import tools so they register with the mcp instance via @mcp.tool()
-import alfred.mcp.tools  # noqa: F401, E402
+import alfred.mcp.tools  # noqa: F401
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")

@@ -13,7 +13,7 @@ import uuid
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
-from openai import AsyncOpenAI, APITimeoutError, RateLimitError
+from openai import APITimeoutError, AsyncOpenAI, RateLimitError
 from sqlmodel import Session
 
 from alfred.core.settings import settings
@@ -213,7 +213,7 @@ class AgentService:
                             execute_tool(tool_name, tool_args, self.db),
                             timeout=timeout,
                         )
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         result = {"error": f"Tool {tool_name} timed out after {timeout}s"}
                     except Exception as exc:
                         result = {"error": f"Tool {tool_name} failed: {exc!s}"}

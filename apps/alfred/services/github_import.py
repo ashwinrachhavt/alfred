@@ -31,7 +31,7 @@ def _resolve_repos(client: GitHubClient, repos: list[str] | None = None) -> list
         pairs: list[tuple[str, str]] = []
         for slug in repos:
             parts = slug.strip().split("/")
-            if len(parts) != 2:  # noqa: PLR2004
+            if len(parts) != 2:
                 logger.warning("Skipping invalid repo slug: %s", slug)
                 continue
             pairs.append((parts[0], parts[1]))

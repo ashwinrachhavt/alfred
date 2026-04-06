@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import logging
 
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import END, START, StateGraph
 
-from alfred.agents.state import AlfredState
 from alfred.agents.router import router
+from alfred.agents.state import AlfredState
 from alfred.agents.synthesizer import synthesizer
 from alfred.agents.teams.ingest_team import build_ingest_team
 from alfred.agents.teams.knowledge_team import build_knowledge_team

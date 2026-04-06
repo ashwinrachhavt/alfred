@@ -14,13 +14,12 @@ def register_routes(app: FastAPI) -> None:
     # Import routers only when registering to avoid heavy side effects during import.
     from alfred.api.admin import router as admin_router
     from alfred.api.agent import router as agent_router
-    from alfred.api.capture import router as capture_router
-    from alfred.api.today import router as today_router
 
     # Knowledge import routers
     from alfred.api.arxiv_import import router as arxiv_import_router
     from alfred.api.calendar import router as calendar_router
     from alfred.api.canvas import router as canvas_router
+    from alfred.api.capture import router as capture_router
     from alfred.api.connectors.routes import router as connectors_router
     from alfred.api.documents import router as documents_router
     from alfred.api.gdrive import router as gdrive_router
@@ -50,6 +49,7 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.tasks_status import router as tasks_status_router
     from alfred.api.taxonomy import router as taxonomy_router
     from alfred.api.thinking import router as thinking_router
+    from alfred.api.today import router as today_router
     from alfred.api.todoist import router as todoist_router
     from alfred.api.tools import router as tools_router
     from alfred.api.web import router as web_router

@@ -17,7 +17,6 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-
 from celery import shared_task
 
 logger = logging.getLogger(__name__)
@@ -174,10 +173,11 @@ def download_document_images(self, doc_id: str) -> dict[str, Any]:
     5. Rewrite markdown URLs to local endpoints
     6. Update document's raw_markdown
     """
+    from sqlmodel import select
+
     from alfred.core.database import get_db_session
     from alfred.models.doc_storage import DocumentRow
     from alfred.models.document_assets import DocumentAssetRow
-    from sqlmodel import select
 
     session = get_db_session()
 

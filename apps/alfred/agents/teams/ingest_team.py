@@ -10,8 +10,8 @@ from langgraph.prebuilt import create_react_agent
 from langgraph_supervisor import create_supervisor
 
 from alfred.agents.tools.connector_tools import CONNECTOR_TOOLS
-from alfred.agents.tools.import_tools import IMPORT_TOOLS
 from alfred.agents.tools.enrichment_tools import ENRICHMENT_TOOLS
+from alfred.agents.tools.import_tools import IMPORT_TOOLS
 from alfred.core.settings import settings
 
 

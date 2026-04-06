@@ -10,20 +10,19 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel
 
+import alfred.models.doc_storage
+
 # Import models to register them in SQLModel.metadata before create_all
 import alfred.models.zettel  # noqa: F401
-import alfred.models.doc_storage  # noqa: F401
-
 from alfred.services.zettelkasten_service import ZettelkastenService
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

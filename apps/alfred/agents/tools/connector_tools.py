@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 
 from langchain_core.tools import tool
 
@@ -20,8 +19,9 @@ logger = logging.getLogger(__name__)
 def query_notion(query: str | None = None, page_size: int = 10) -> str:
     """Fetch pages from Notion workspace. Returns page titles, content previews, and URLs."""
     try:
-        from alfred.connectors.notion_history import NotionHistoryConnector
         import asyncio
+
+        from alfred.connectors.notion_history import NotionHistoryConnector
 
         async def _fetch():
             async with NotionHistoryConnector(page_size=page_size) as conn:

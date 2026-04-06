@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 
 from langchain_core.tools import tool
 
@@ -119,8 +118,9 @@ def run_import(connector_name: str, incremental: bool = True, limit: int | None 
 def import_status(task_id: str) -> str:
     """Check the status of an import task by task ID. Returns state, progress, and result if complete."""
     try:
-        from alfred.core.celery import celery_app
         from celery.result import AsyncResult
+
+        from alfred.core.celery import celery_app
 
         result = AsyncResult(task_id, app=celery_app)
 

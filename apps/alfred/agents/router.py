@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-from langgraph.types import Command, Send
+from langgraph.types import Command
 
 from alfred.agents.state import AlfredState
 
