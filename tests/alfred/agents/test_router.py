@@ -1,5 +1,5 @@
 """Tests for the hybrid intent router."""
-from alfred.agents.router import IntentMatch, _classify_action, _is_conversational
+from alfred.agents.router import _classify_action, _is_conversational
 
 
 def test_import_intent():
