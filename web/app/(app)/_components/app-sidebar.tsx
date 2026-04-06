@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -111,6 +112,8 @@ function SidebarNavItem({ item, isActive }: { item: NavItem; isActive: boolean }
 
 function TaskCenterButton() {
  const { activeCount, setTaskCenterOpen } = useTaskTracker();
+ const [mounted, setMounted] = useState(false);
+ useEffect(() => setMounted(true), []);
 
  return (
  <button
@@ -120,14 +123,14 @@ function TaskCenterButton() {
  >
   <span className="relative">
   <Bell className="size-4" />
-  {activeCount > 0 && (
+  {mounted && activeCount > 0 && (
    <span className="absolute -top-1 -right-1 flex size-3.5 items-center justify-center rounded-full bg-primary text-[8px] font-bold text-primary-foreground">
    {activeCount > 9 ? "9+" : activeCount}
    </span>
   )}
   </span>
   <span>Tasks</span>
-  {activeCount > 0 && (
+  {mounted && activeCount > 0 && (
   <span className="ml-auto text-[10px] text-primary">{activeCount} active</span>
   )}
  </button>

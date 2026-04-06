@@ -78,9 +78,14 @@ def list_notes(
 
 
 # Back-compat: page, doc, search (aliased under documents)
+_MAX_MARKDOWN_BYTES = 200 * 1024  # 200KB cap for raw_markdown
+
+
 class PageRequest(BaseModel):
     raw_text: str = Field(..., min_length=50)
     html: str | None = None
+    raw_markdown: str | None = None
+    content_type_hint: str | None = None
     page_url: str | None = None
     page_title: str | None = None
     selection_type: Literal["full_page", "selection", "article_only"] = "full_page"
@@ -137,18 +142,49 @@ def create_page(
             from alfred.services.doc_storage._content_cleaner import clean_web_content
             cleaned_text = clean_web_content(cleaned_text)
 
+        # Cap raw_markdown at 200KB
+        raw_markdown = payload.raw_markdown
+        if raw_markdown and len(raw_markdown.encode("utf-8", errors="replace")) > _MAX_MARKDOWN_BYTES:
+            truncated = raw_markdown[:_MAX_MARKDOWN_BYTES]
+            last_para = truncated.rfind("\n\n")
+            if last_para > _MAX_MARKDOWN_BYTES * 0.8:
+                raw_markdown = truncated[:last_para]
+            else:
+                raw_markdown = truncated
+            raw_markdown += "\n\n[Content truncated at 200KB]"
+
         ingest = DocumentIngest(
             source_url=(payload.page_url or "about:blank"),
             title=payload.page_title,
             cleaned_text=cleaned_text,
+            raw_markdown=raw_markdown,
             content_type="web",
+            metadata={"content_type_hint": payload.content_type_hint} if payload.content_type_hint else {},
         )
-        res = svc.ingest_document_store_only(ingest)
+        # If raw_markdown is present, use the coordinator for proper sequencing
+        # (image download, Firecrawl enrichment, THEN pipeline)
+        use_coordinator = bool(raw_markdown)
+        res = svc.ingest_document_store_only(ingest, skip_pipeline=use_coordinator)
         if res.get("duplicate"):
             return PageResponse(id=res["id"], status="duplicate")
 
-        # The pipeline task is already dispatched by ingest_document_store_only.
-        # No need to dispatch another task here.
+        if use_coordinator:
+            try:
+                from alfred.tasks.capture_coordinator import coordinate_capture
+
+                has_images = bool(raw_markdown and "![" in raw_markdown)
+                coordinate_capture.delay(
+                    doc_id=res["id"],
+                    source_url=payload.page_url or "",
+                    has_images=has_images,
+                    content_type_hint=payload.content_type_hint or "generic",
+                )
+            except Exception:
+                # Coordinator failed — fall back to direct pipeline dispatch
+                logger.warning("Coordinator dispatch failed for %s, falling back to pipeline", res["id"])
+                from alfred.tasks.document_pipeline import run_document_pipeline
+                run_document_pipeline.delay(doc_id=res["id"])
+
         return PageResponse(id=res["id"], status="accepted")
     except AlfredException:
         raise
@@ -443,3 +479,45 @@ def search_documents(
         raise
     except Exception as exc:  # pragma: no cover - external IO
         raise HTTPException(status_code=500, detail="Failed to search documents") from exc
+
+
+# ── Document assets (downloaded images) ──────────────────────────────
+
+
+@router.get("/{doc_id}/assets/{asset_id}")
+def get_document_asset(doc_id: str, asset_id: str) -> Response:
+    """Serve a downloaded image asset for a document."""
+    import uuid as _uuid
+
+    from alfred.core.database import get_db_session
+    from alfred.models.document_assets import DocumentAssetRow
+    from sqlmodel import select
+
+    try:
+        doc_uuid = _uuid.UUID(doc_id)
+        asset_uuid = _uuid.UUID(asset_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid ID format")
+
+    session = get_db_session()
+    try:
+        asset = session.exec(
+            select(DocumentAssetRow).where(
+                DocumentAssetRow.id == asset_uuid,
+                DocumentAssetRow.doc_id == doc_uuid,
+            )
+        ).first()
+
+        if not asset:
+            raise HTTPException(status_code=404, detail="Asset not found")
+
+        return Response(
+            content=asset.data,
+            media_type=asset.mime_type,
+            headers={
+                "Cache-Control": "public, max-age=86400",
+                "Content-Disposition": f'inline; filename="{asset.file_name}"',
+            },
+        )
+    finally:
+        session.close()

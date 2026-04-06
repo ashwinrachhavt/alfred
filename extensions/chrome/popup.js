@@ -57,27 +57,23 @@
     btn.textContent = "Capturing...";
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      // Execute script in the active tab to get page content
-      const results = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => ({
-          text: document.body.innerText.slice(0, 50000),
-          title: document.title,
-          url: location.href,
-        }),
-      });
-      const page = results[0].result;
+      // Use the content script's shared extractor via messaging
+      const page = await chrome.tabs.sendMessage(tab.id, { type: "GET_ARTICLE_TEXT" });
       await AlfredAPI.capturePage({
         url: page.url,
         title: page.title,
         content: page.text,
+        raw_markdown: page.raw_markdown,
+        content_type_hint: page.content_type_hint,
       });
       await AlfredAPI.addCaptureHistory({
         title: `[Page] ${page.title}`,
         url: page.url,
         type: "page-capture",
+        quality: page.quality,
       });
-      flashStatus($("#quick-actions"), "Page captured!", "success");
+      const qualityLabel = page.quality === "rich" ? "Rich capture \u2713" : "Basic capture";
+      flashStatus($("#quick-actions"), `Page captured! (${qualityLabel})`, "success");
     } catch (err) {
       flashStatus($("#quick-actions"), `Error: ${err.message}`, "error");
     } finally {
@@ -114,29 +110,24 @@
       } catch {}
     }
 
-    // Still empty? Capture the full page
+    // Still empty? Capture the full page via content script extractor
     if (!text) {
       btn.disabled = true;
       btn.textContent = "Capturing page...";
       try {
-        const results = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: () => ({
-            text: document.body.innerText.slice(0, 50000),
-            title: document.title,
-            url: location.href,
-          }),
-        });
-        const page = results[0].result;
+        const page = await chrome.tabs.sendMessage(tab.id, { type: "GET_ARTICLE_TEXT" });
         await AlfredAPI.capturePage({
           url: page.url,
           title: page.title,
           content: page.text,
+          raw_markdown: page.raw_markdown,
+          content_type_hint: page.content_type_hint,
         });
         AlfredAPI.addCaptureHistory({
           title: `[Page] ${page.title}`,
           url: page.url,
           type: "page-capture",
+          quality: page.quality,
         }).catch(() => {});
         flashStatus($("#quick-note"), "Page captured!", "success");
       } catch (err) {

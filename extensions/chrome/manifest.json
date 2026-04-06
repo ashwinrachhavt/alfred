@@ -39,7 +39,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["api.js", "tracker.js", "content.js"],
+      "js": ["libs/readability.js", "libs/turndown.js", "extract.js", "api.js", "tracker.js", "content.js"],
       "css": ["widget.css"],
       "run_at": "document_idle"
     }
