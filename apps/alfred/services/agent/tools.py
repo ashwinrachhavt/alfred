@@ -29,30 +29,62 @@ logger = logging.getLogger(__name__)
 # LangChain → OpenAI schema adapter
 # ---------------------------------------------------------------------------
 
+def _clean_property(prop: dict[str, Any]) -> dict[str, Any]:
+    """Clean a single JSON schema property for OpenAI compatibility.
+
+    Handles: Optional types (anyOf with null), arrays without items,
+    nested objects, and Pydantic-specific fields.
+    """
+    clean: dict[str, Any] = {}
+
+    # Handle Optional types: anyOf with null variant
+    if "anyOf" in prop:
+        for variant in prop["anyOf"]:
+            if variant.get("type") == "null":
+                continue
+            # Found the non-null type — use it as the base
+            clean["type"] = variant.get("type", "string")
+            if "description" in variant:
+                clean["description"] = variant["description"]
+            if "items" in variant:
+                clean["items"] = _clean_property(variant["items"])
+            if "enum" in variant:
+                clean["enum"] = variant["enum"]
+            break
+    else:
+        if "type" in prop:
+            clean["type"] = prop["type"]
+
+    # Carry over standard fields
+    for field in ("description", "default", "enum"):
+        if field in prop and field not in clean:
+            clean[field] = prop[field]
+
+    # Handle arrays: MUST have items or OpenAI rejects the schema
+    if clean.get("type") == "array":
+        if "items" in prop:
+            clean["items"] = _clean_property(prop["items"])
+        elif "items" not in clean:
+            # Fallback: untyped array → array of strings
+            clean["items"] = {"type": "string"}
+
+    # Default to string if no type resolved
+    if "type" not in clean:
+        clean["type"] = "string"
+
+    return clean
+
+
 def _langchain_tool_to_openai_schema(tool: BaseTool) -> dict[str, Any]:
     """Convert a LangChain BaseTool to an OpenAI function calling schema."""
-    # LangChain tools expose args_schema as a Pydantic model
     schema = tool.get_input_schema().model_json_schema()
 
-    # Clean up the schema for OpenAI compatibility
     properties = schema.get("properties", {})
     required = schema.get("required", [])
 
-    # Remove Pydantic internal fields
     clean_props = {}
     for name, prop in properties.items():
-        clean_prop = {k: v for k, v in prop.items() if k in ("type", "description", "default", "items", "enum")}
-        if "anyOf" in prop:
-            # Handle Optional types: pick the non-null type
-            for variant in prop["anyOf"]:
-                if variant.get("type") != "null":
-                    clean_prop["type"] = variant.get("type", "string")
-                    if "description" not in clean_prop and "description" in variant:
-                        clean_prop["description"] = variant["description"]
-                    break
-        if "type" not in clean_prop:
-            clean_prop["type"] = "string"
-        clean_props[name] = clean_prop
+        clean_props[name] = _clean_property(prop)
 
     return {
         "type": "function",
@@ -213,6 +245,76 @@ CORE_TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search_searxng",
+            "description": (
+                "Search the web using SearXNG metasearch engine (local infrastructure). "
+                "Returns results from multiple search engines. Use for current events, "
+                "facts, definitions, or any question that benefits from web data."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query.",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum results to return (default 5).",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "firecrawl_search",
+            "description": (
+                "Search the web using Firecrawl (local infrastructure). Returns content-rich "
+                "results with full page text. Best for finding detailed articles and content. "
+                "Use when you need more than snippets."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum results (default 3).",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "firecrawl_scrape",
+            "description": (
+                "Scrape a specific URL using Firecrawl (local infrastructure). Returns the "
+                "full page content as markdown. Use when you have a URL and need its content."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL to scrape.",
+                    },
+                },
+                "required": ["url"],
+            },
+        },
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -330,12 +432,98 @@ async def _list_recent_cards(args: dict[str, Any], db: Session) -> dict[str, Any
     return {"results": results, "count": len(results)}
 
 
+async def _web_search_searxng(args: dict[str, Any], db: Session) -> dict[str, Any]:
+    """Search the web using local SearXNG metasearch."""
+    import httpx
+
+    query = args.get("query", "")
+    max_results = args.get("max_results", 5)
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                "http://localhost:8080/search",
+                params={"q": query, "format": "json"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        results = []
+        for r in data.get("results", [])[:max_results]:
+            results.append({
+                "title": r.get("title", ""),
+                "url": r.get("url", ""),
+                "content": r.get("content", "")[:300],
+            })
+        return {"results": results, "count": len(results), "source": "searxng"}
+    except Exception as exc:
+        return {"error": f"SearXNG search failed: {exc!s}"}
+
+
+async def _firecrawl_search(args: dict[str, Any], db: Session) -> dict[str, Any]:
+    """Search the web using local Firecrawl."""
+    import httpx
+
+    query = args.get("query", "")
+    limit = args.get("limit", 3)
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                "http://localhost:3002/v1/search",
+                json={"query": query, "limit": limit},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        results = []
+        for r in data.get("data", []):
+            results.append({
+                "title": r.get("title", "") or r.get("metadata", {}).get("title", ""),
+                "url": r.get("url", ""),
+                "content": (r.get("markdown", "") or r.get("content", ""))[:500],
+            })
+        return {"results": results, "count": len(results), "source": "firecrawl"}
+    except Exception as exc:
+        return {"error": f"Firecrawl search failed: {exc!s}"}
+
+
+async def _firecrawl_scrape(args: dict[str, Any], db: Session) -> dict[str, Any]:
+    """Scrape a URL using local Firecrawl."""
+    import httpx
+
+    url = args.get("url", "")
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                "http://localhost:3002/v1/scrape",
+                json={"url": url, "formats": ["markdown"]},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        content = data.get("data", {}).get("markdown", "")
+        metadata = data.get("data", {}).get("metadata", {})
+        return {
+            "title": metadata.get("title", ""),
+            "url": url,
+            "content": content[:3000],  # Cap to avoid token overflow
+            "source": "firecrawl",
+        }
+    except Exception as exc:
+        return {"error": f"Firecrawl scrape failed: {exc!s}"}
+
+
 _CORE_EXECUTORS: dict[str, Any] = {
     "search_kb": _search_kb,
     "create_zettel": _create_zettel,
     "get_zettel": _get_zettel,
     "update_zettel": _update_zettel,
     "list_recent_cards": _list_recent_cards,
+    "web_search_searxng": _web_search_searxng,
+    "firecrawl_search": _firecrawl_search,
+    "firecrawl_scrape": _firecrawl_scrape,
 }
 
 
