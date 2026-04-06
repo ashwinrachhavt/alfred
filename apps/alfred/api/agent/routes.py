@@ -9,7 +9,6 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -151,38 +150,9 @@ def _persist_message(
     return msg
 
 
-def _sanitize_for_json(obj: Any) -> Any:
-    """Recursively convert LangChain message objects and other non-serializable types to plain dicts/strings."""
-    if isinstance(obj, BaseMessage):
-        return {"type": obj.type, "content": obj.content}
-    if isinstance(obj, dict):
-        return {k: _sanitize_for_json(v) for k, v in obj.items()}
-    if isinstance(obj, list | tuple):
-        return [_sanitize_for_json(item) for item in obj]
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump()
-    if hasattr(obj, "dict"):
-        return obj.dict()
-    return obj
-
-
-class _LangChainEncoder(json.JSONEncoder):
-    """JSON encoder that handles LangChain message objects and other non-serializable types."""
-
-    def default(self, obj: Any) -> Any:
-        if isinstance(obj, BaseMessage):
-            return {"type": obj.type, "content": obj.content}
-        # Handle pydantic models (v1 and v2)
-        if hasattr(obj, "model_dump"):
-            return obj.model_dump()
-        if hasattr(obj, "dict"):
-            return obj.dict()
-        return super().default(obj)
-
-
 def _sse_event(event: str, data: dict) -> str:
     """Format a single SSE event."""
-    return f"event: {event}\ndata: {json.dumps(data, cls=_LangChainEncoder, default=str)}\n\n"
+    return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
 @router.post("/stream")
@@ -218,74 +188,60 @@ async def agent_stream(
     _persist_message(db, thread_id, "user", body.message, lens=body.lens, model=body.model)
 
     async def event_stream():
-        from alfred.agents.graph import build_alfred_graph
+        from alfred.services.agent.service import AgentService
 
         yield _sse_event("thread_created", {"thread_id": thread_id})
-        yield _sse_event("phase", {"phase": "routing", "message": "Understanding your request..."})
 
-        graph = build_alfred_graph()
-
-        # Build initial state from history
-        initial_messages = []
-        for m in (history or []):
-            if m["role"] == "user":
-                initial_messages.append(HumanMessage(content=m["content"]))
-            else:
-                initial_messages.append(AIMessage(content=m["content"]))
-        initial_messages.append(HumanMessage(content=body.message))
-
-        input_state = {
-            "messages": initial_messages,
-            "user_id": "",
-            "intent": body.intent,
-            "phase": "routing",
-            "active_agents": [],
-            "knowledge_results": [],
-            "research_results": [],
-            "connector_results": [],
-            "enrichment_results": [],
-            "final_response": None,
-            "artifacts": [],
-        }
+        agent = AgentService(db)
 
         assistant_content = ""
         tool_calls_log: list[dict] = []
         artifacts_log: list[dict] = []
 
+        async def is_disconnected():
+            return await request.is_disconnected()
+
         try:
-            async for event in graph.astream_events(input_state, version="v2"):
-                if await request.is_disconnected():
-                    break
+            async for sse_chunk in agent.stream_turn(
+                message=body.message,
+                thread_id=thread_id,
+                history=history,
+                lens=body.lens,
+                model=body.model,
+                note_context=body.note_context,
+                is_disconnected=is_disconnected,
+                intent=body.intent,
+                intent_args=body.intent_args,
+                max_iterations=body.max_iterations,
+            ):
+                yield sse_chunk
 
-                kind = event.get("event", "")
-
-                if kind == "on_chat_model_stream":
-                    chunk = event.get("data", {}).get("chunk")
-                    if chunk and hasattr(chunk, "content") and chunk.content:
-                        assistant_content += chunk.content
-                        yield _sse_event("token", {"content": chunk.content})
-
-                elif kind == "on_tool_start":
-                    tool_name = event.get("name", "")
-                    tool_input = _sanitize_for_json(event.get("data", {}).get("input", {}))
-                    tool_calls_log.append({"tool": tool_name, "args": tool_input})
-                    yield _sse_event("tool_start", {"tool": tool_name, "args": tool_input})
-
-                elif kind == "on_tool_end":
-                    tool_name = event.get("name", "")
-                    raw_output = event.get("data", {}).get("output", "")
-                    # Extract content string from LangChain ToolMessage/BaseMessage objects
-                    if isinstance(raw_output, BaseMessage):
-                        tool_output = raw_output.content[:500]
-                    else:
-                        tool_output = str(raw_output)[:500]
-                    yield _sse_event("tool_result", {"tool": tool_name, "result": tool_output})
+                # Track content for persistence
+                try:
+                    # Parse SSE to extract content for DB persistence
+                    if "event: token" in sse_chunk:
+                        data_line = sse_chunk.split("data: ", 1)[-1].split("\n")[0]
+                        data = json.loads(data_line)
+                        assistant_content += data.get("content", "")
+                    elif "event: tool_start" in sse_chunk:
+                        data_line = sse_chunk.split("data: ", 1)[-1].split("\n")[0]
+                        data = json.loads(data_line)
+                        tool_calls_log.append(
+                            {
+                                "tool": data.get("tool", ""),
+                                "args": data.get("args", {}),
+                            }
+                        )
+                    elif "event: artifact" in sse_chunk:
+                        data_line = sse_chunk.split("data: ", 1)[-1].split("\n")[0]
+                        data = json.loads(data_line)
+                        artifacts_log.append(data)
+                except (json.JSONDecodeError, IndexError):
+                    pass  # SSE parsing for persistence is best-effort
 
         except Exception as e:
-            logger.exception("Graph streaming error")
+            logger.exception("Agent streaming error")
             yield _sse_event("error", {"message": str(e)})
-
-        yield _sse_event("done", {})
 
         # Persist assistant message
         if assistant_content or tool_calls_log or artifacts_log:
