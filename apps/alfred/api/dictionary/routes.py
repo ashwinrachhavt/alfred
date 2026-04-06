@@ -9,7 +9,6 @@ from sqlmodel import Session
 from alfred.core.database import engine
 from alfred.models.vocabulary import SaveIntent, VocabularyEntry
 from alfred.services.dictionary_service import (
-    DictionaryResult,
     _generate_ai_explanation,
     lookup,
 )
