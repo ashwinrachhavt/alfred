@@ -3,6 +3,19 @@ const nextConfig = {
   turbopack: {
     root: __dirname,
   },
+  compiler: {
+    removeConsole: process.env.NODE_ENV === "production" ? { exclude: ["error", "warn"] } : false,
+  },
+  experimental: {
+    optimizePackageImports: [
+      "lucide-react",
+      "@radix-ui/react-dialog",
+      "@radix-ui/react-dropdown-menu",
+      "@radix-ui/react-popover",
+      "@radix-ui/react-tooltip",
+      "date-fns",
+    ],
+  },
   async rewrites() {
     const normalizeApiBaseUrl = (raw) => raw.trim().replace(/\/+$/, "");
 

@@ -39,6 +39,9 @@ class ZettelCard(Model, table=True):
     __table_args__ = (
         Index("ix_zettel_cards_topic", "topic"),
         Index("ix_zettel_cards_title", "title"),
+        Index("ix_zettel_cards_status", "status"),
+        Index("ix_zettel_cards_document_id", "document_id"),
+        Index("ix_zettel_cards_updated_at", "updated_at"),
     )
 
     title: str = Field(sa_column=Column(String(255), nullable=False))

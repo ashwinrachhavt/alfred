@@ -418,13 +418,3 @@ class ResearchService:
         if record_id is not None:
             payload["id"] = str(record_id)
         return payload
-
-
-# ── Deprecated aliases ──────────────────────────────────────────────
-DeepResearchReport = ResearchReport
-DeepResearchService = ResearchService
-
-
-def generate_deep_research(topic: str, *, refresh: bool = False) -> dict[str, Any]:
-    service = ResearchService()
-    return service.generate_report(topic, refresh=refresh)

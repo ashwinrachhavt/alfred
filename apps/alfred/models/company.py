@@ -60,8 +60,4 @@ class ResearchReportRow(SQLModel, table=True):
     )
 
 
-# ── Deprecated re-exports for migration / back-compat ──────────────
-CompanyResearchReportRow = ResearchReportRow
-DeepResearchReportRow = ResearchReportRow
-
-__all__ = ["ResearchReportRow", "CompanyResearchReportRow", "DeepResearchReportRow"]
+__all__ = ["ResearchReportRow"]
