@@ -308,7 +308,9 @@ class RetrievalMixin:
             )
 
             if q:
-                q_filter = DocumentRow.title.ilike(f"%{q}%") | DocumentRow.cleaned_text.ilike(f"%{q}%")
+                q_filter = DocumentRow.title.ilike(f"%{q}%") | DocumentRow.cleaned_text.ilike(
+                    f"%{q}%"
+                )
                 stmt = stmt.where(q_filter)
                 count_stmt = count_stmt.where(q_filter)
 

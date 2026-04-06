@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -10,16 +10,15 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from alfred.api.zettels.routes import router as zettels_router
 from alfred.api.dependencies import get_db_session
-
+from alfred.api.zettels.routes import router as zettels_router
 
 # --------------- Helpers ---------------
 
 
 def _make_card(card_id: int, **overrides: Any) -> MagicMock:
     """Create a mock ZettelCard with sensible defaults."""
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     card = MagicMock()
     card.id = card_id
     card.title = overrides.get("title", f"Card {card_id}")

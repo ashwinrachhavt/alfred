@@ -24,6 +24,7 @@ class NoteCreate(BaseModel):
             raise ValueError("text must not be empty")
         return trimmed
 
+
 NoteCreateRequest = NoteCreate
 
 
@@ -49,6 +50,7 @@ class NoteRecord(BaseModel):
     source_url: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+
 
 # -----------------
 # Documents
@@ -303,6 +305,7 @@ class SemanticMapResponse(BaseModel):
     """3D semantic map payload for the Galaxy view."""
 
     points: list[SemanticMapPoint]
+
 
 __all__ = [
     "DocChunkRecord",

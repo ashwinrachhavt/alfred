@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC
 
 from celery import shared_task
 
@@ -115,7 +116,7 @@ def _push_zettel_notifications(
     Matching is lightweight (topic/tag overlap only, no semantic search).
     Best-effort: failures are logged but never block the pipeline.
     """
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from sqlmodel import select
 
@@ -126,7 +127,7 @@ def _push_zettel_notifications(
     zk = ZettelkastenService(session=session)
 
     # Find recent agent threads (last 7 days)
-    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    cutoff = datetime.now(UTC) - timedelta(days=7)
     recent_threads = session.exec(
         select(ThinkingSessionRow)
         .where(ThinkingSessionRow.session_type == "agent")
@@ -159,18 +160,18 @@ def _push_zettel_notifications(
                 if msg.related_cards:
                     for rc in msg.related_cards:
                         if isinstance(rc, dict) and rc.get("tags"):
-                            thread_tags.update(
-                                t.lower() for t in rc["tags"] if isinstance(t, str)
-                            )
+                            thread_tags.update(t.lower() for t in rc["tags"] if isinstance(t, str))
         except Exception:
             pass  # Skip message scanning on error
 
-        thread_infos.append({
-            "id": thread.id,
-            "title": thread.title or "Untitled thread",
-            "topic": thread_topic,
-            "tags": thread_tags,
-        })
+        thread_infos.append(
+            {
+                "id": thread.id,
+                "title": thread.title or "Untitled thread",
+                "topic": thread_topic,
+                "tags": thread_tags,
+            }
+        )
 
     tag_set = {t.lower() for t in tags if isinstance(t, str)}
     topic_lower = (topic or "").lower().strip()
@@ -194,11 +195,13 @@ def _push_zettel_notifications(
                     reason = f"shared tags: {', '.join(list(overlapping)[:3])}"
 
                 if reason:
-                    matches.append({
-                        "thread_id": ti["id"],
-                        "title": ti["title"],
-                        "reason": reason,
-                    })
+                    matches.append(
+                        {
+                            "thread_id": ti["id"],
+                            "title": ti["title"],
+                            "reason": reason,
+                        }
+                    )
 
             if not matches:
                 continue
@@ -264,7 +267,11 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
         existing = zk.list_cards(document_id=doc_id, limit=100)
         auto_created = [c for c in existing if c.status == "draft"]
         if auto_created:
-            logger.info("Auto-created zettels already exist for document %s (count: %d)", doc_id, len(auto_created))
+            logger.info(
+                "Auto-created zettels already exist for document %s (count: %d)",
+                doc_id,
+                len(auto_created),
+            )
             return ",".join(str(card.id) for card in auto_created)
 
         # Gather document context
@@ -284,21 +291,27 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
 
         if domain.get("slug"):
             classified_topic = domain.get("slug")
-            classified_tags = [t for t in [
-                domain.get("slug"),
-                subdomain.get("slug"),
-                *[mt.get("slug", "") for mt in (classification.get("microtopics") or [])[:3]],
-            ] if t]
+            classified_tags = [
+                t
+                for t in [
+                    domain.get("slug"),
+                    subdomain.get("slug"),
+                    *[mt.get("slug", "") for mt in (classification.get("microtopics") or [])[:3]],
+                ]
+                if t
+            ]
         else:
             classified_topic = None
             classified_tags = []
 
         final_topic = classified_topic or primary_topic
-        final_tags = list(set(
-            classified_tags
-            + ([primary_topic] if primary_topic else [])
-            + (tags[:2] if tags else [])
-        ))
+        final_tags = list(
+            set(
+                classified_tags
+                + ([primary_topic] if primary_topic else [])
+                + (tags[:2] if tags else [])
+            )
+        )
 
         created_ids: list[str] = []
 
@@ -315,10 +328,15 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
                 )
 
                 llm = get_chat_model()
-                response = llm.invoke([
-                    {"role": "system", "content": "You are a knowledge card generator. Return only valid JSON."},
-                    {"role": "user", "content": prompt},
-                ])
+                response = llm.invoke(
+                    [
+                        {
+                            "role": "system",
+                            "content": "You are a knowledge card generator. Return only valid JSON.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ]
+                )
 
                 raw = response.content if hasattr(response, "content") else str(response)
                 card_dicts = parse_decomposition_response(raw)
@@ -385,7 +403,9 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
 
             # Push knowledge notifications for new zettels that match agent threads
             try:
-                _push_zettel_notifications(created_ids, link_stats, title, final_tags, final_topic, session)
+                _push_zettel_notifications(
+                    created_ids, link_stats, title, final_tags, final_topic, session
+                )
             except Exception:
                 logger.warning(
                     "Knowledge notification push failed for document %s, continuing",
@@ -419,7 +439,9 @@ def document_enrichment_task(self, *, doc_id: str, force: bool = False) -> dict:
 
     # Bridge: create zettel from enrichment
     if not result.get("skipped"):
-        self.update_state(state="PROGRESS", meta={"pipeline_step": "Creating zettels", "doc_id": doc_id})
+        self.update_state(
+            state="PROGRESS", meta={"pipeline_step": "Creating zettels", "doc_id": doc_id}
+        )
         zettel_id = _create_zettel_from_enrichment(doc_id)
         if zettel_id:
             result["zettel_id"] = zettel_id

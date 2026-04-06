@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from math import sqrt
 
-from sqlalchemy import func, text as sa_text
+from sqlalchemy import func
+from sqlalchemy import text as sa_text
 from sqlmodel import Session, select
 
 from alfred.core.utils import STAGE_TO_DELTA, clamp_int
@@ -449,6 +450,196 @@ class ZettelkastenService:
         return {"nodes": nodes, "edges": edges}
 
     # ---------------
+    # Wiki-link search & backlinks
+    # ---------------
+    def search_cards_unified(
+        self,
+        query: str | None = None,
+        *,
+        context_card_id: int | None = None,
+        text_limit: int = 10,
+        ai_limit: int = 5,
+    ) -> dict:
+        """Combined text + AI search for wiki-link autocomplete.
+
+        Text matches (ILIKE) return instantly. AI suggestions are optional
+        and only computed when context_card_id is provided.
+        """
+        # Text search — fast, SQL-only
+        text_matches: list[dict] = []
+        stmt = select(ZettelCard).where(ZettelCard.status != "archived")
+        if query and query.strip():
+            stmt = stmt.where(ZettelCard.title.ilike(f"%{query.strip()}%"))  # type: ignore[union-attr]
+        stmt = stmt.order_by(ZettelCard.updated_at.desc()).limit(text_limit)
+        for card in self.session.exec(stmt):
+            text_matches.append(
+                {
+                    "id": card.id,
+                    "title": card.title,
+                    "topic": card.topic,
+                    "tags": card.tags or [],
+                    "status": card.status,
+                }
+            )
+
+        # AI suggestions — optional, uses suggest_links engine
+        ai_suggestions: list[dict] = []
+        if context_card_id is not None:
+            try:
+                suggestions = self.suggest_links(
+                    card_id=context_card_id,
+                    min_confidence=0.5,
+                    limit=ai_limit,
+                )
+                for s in suggestions:
+                    ai_suggestions.append(
+                        {
+                            "id": s.to_card_id,
+                            "title": s.to_title,
+                            "topic": s.to_topic,
+                            "tags": s.to_tags or [],
+                            "score": round(s.scores.composite_score, 2),
+                            "reason": s.reason,
+                        }
+                    )
+            except Exception:
+                # Degraded mode: AI suggestions unavailable
+                pass
+
+        return {"text_matches": text_matches, "ai_suggestions": ai_suggestions}
+
+    def list_backlinks(self, card_id: int) -> list[dict]:
+        """Return all wiki-links pointing TO the given card.
+
+        Queries the wiki_links table and joins to source titles.
+        Also includes incoming ZettelLinks (from the graph link system).
+        """
+        import uuid as _uuid
+
+        from alfred.models.notes import NoteRow
+        from alfred.models.zettel import WikiLink
+
+        backlinks: list[dict] = []
+
+        # Wiki-links (from notes/zettels)
+        wiki_rows = list(
+            self.session.exec(select(WikiLink).where(WikiLink.target_card_id == card_id))
+        )
+
+        # Batch-fetch source titles to avoid N+1
+        zettel_source_ids = [int(wl.source_id) for wl in wiki_rows if wl.source_type == "zettel"]
+        note_source_ids = [wl.source_id for wl in wiki_rows if wl.source_type == "note"]
+
+        zettel_titles: dict[int, str] = {}
+        if zettel_source_ids:
+            cards = self.session.exec(
+                select(ZettelCard).where(ZettelCard.id.in_(zettel_source_ids))
+            )
+            zettel_titles = {c.id: c.title for c in cards if c.id is not None}
+
+        note_titles: dict[str, str] = {}
+        if note_source_ids:
+            note_uuids = []
+            for sid in note_source_ids:
+                try:
+                    note_uuids.append(_uuid.UUID(sid))
+                except (ValueError, TypeError):
+                    pass
+            if note_uuids:
+                notes = self.session.exec(select(NoteRow).where(NoteRow.id.in_(note_uuids)))
+                note_titles = {str(n.id): n.title for n in notes}
+
+        for wl in wiki_rows:
+            if wl.source_type == "zettel":
+                source_title = zettel_titles.get(int(wl.source_id), "Unknown")
+            elif wl.source_type == "note":
+                source_title = note_titles.get(wl.source_id, "Unknown")
+            else:
+                source_title = "Unknown"
+            backlinks.append(
+                {
+                    "source_type": wl.source_type,
+                    "source_id": wl.source_id,
+                    "source_title": source_title,
+                    "created_at": wl.created_at,
+                }
+            )
+
+        # Also include incoming ZettelLinks (graph-created links)
+        incoming = list(
+            self.session.exec(select(ZettelLink).where(ZettelLink.to_card_id == card_id))
+        )
+        seen_card_ids = {int(bl["source_id"]) for bl in backlinks if bl["source_type"] == "zettel"}
+        # Batch-fetch source cards for incoming ZettelLinks
+        incoming_card_ids = [
+            link.from_card_id for link in incoming if link.from_card_id not in seen_card_ids
+        ]
+        incoming_titles: dict[int, str] = {}
+        if incoming_card_ids:
+            cards = self.session.exec(
+                select(ZettelCard).where(ZettelCard.id.in_(incoming_card_ids))
+            )
+            incoming_titles = {c.id: c.title for c in cards if c.id is not None}
+
+        for link in incoming:
+            if link.from_card_id in seen_card_ids:
+                continue
+            title = incoming_titles.get(link.from_card_id)
+            if title:
+                backlinks.append(
+                    {
+                        "source_type": "zettel",
+                        "source_id": str(link.from_card_id),
+                        "source_title": title,
+                        "created_at": link.created_at,
+                    }
+                )
+
+        return backlinks
+
+    def sync_wiki_links(
+        self,
+        *,
+        source_type: str,
+        source_id: str,
+        target_card_ids: list[int],
+    ) -> None:
+        """Sync wiki-links for a source document.
+
+        Diffs the provided card IDs against existing wiki_links rows.
+        Creates missing links, deletes removed links.
+        """
+        from alfred.models.zettel import WikiLink
+
+        existing = list(
+            self.session.exec(
+                select(WikiLink).where(
+                    (WikiLink.source_type == source_type) & (WikiLink.source_id == source_id)
+                )
+            )
+        )
+        existing_targets = {wl.target_card_id: wl for wl in existing}
+        desired_targets = set(target_card_ids)
+
+        # Delete removed
+        for target_id, wl in existing_targets.items():
+            if target_id not in desired_targets:
+                self.session.delete(wl)
+
+        # Create new
+        for target_id in desired_targets:
+            if target_id not in existing_targets:
+                self.session.add(
+                    WikiLink(
+                        source_type=source_type,
+                        source_id=source_id,
+                        target_card_id=target_id,
+                    )
+                )
+
+        self.session.commit()
+
+    # ---------------
     # Embeddings / link suggestions
     # ---------------
     def embed_card(self, card: ZettelCard) -> list[float]:
@@ -640,10 +831,12 @@ class ZettelkastenService:
             user_msg += f"Suggested tags: {', '.join(tags)}\n"
 
         llm = get_chat_model()
-        response = llm.invoke([
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": user_msg},
-        ])
+        response = llm.invoke(
+            [
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ]
+        )
 
         raw = response.content if hasattr(response, "content") else str(response)
         raw = raw.strip()

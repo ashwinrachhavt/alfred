@@ -167,8 +167,12 @@ async def agent_stream(
 
     # Auto-create thread if needed — no more manual thread management required
     thread_id = _get_or_create_thread(
-        db, body.thread_id, body.note_context, body.message,
-        lens=body.lens, model=body.model,
+        db,
+        body.thread_id,
+        body.note_context,
+        body.message,
+        lens=body.lens,
+        model=body.model,
     )
 
     # Load history from DB (last 20 messages)
@@ -218,10 +222,12 @@ async def agent_stream(
                         if evt_type == "token":
                             assistant_content += evt_data.get("content", "")
                         elif evt_type == "tool_start":
-                            tool_calls_log.append({
-                                "tool": evt_data.get("tool"),
-                                "args": evt_data.get("args", {}),
-                            })
+                            tool_calls_log.append(
+                                {
+                                    "tool": evt_data.get("tool"),
+                                    "args": evt_data.get("args", {}),
+                                }
+                            )
                         elif evt_type == "artifact":
                             artifacts_log.append(evt_data)
             except Exception:
@@ -230,10 +236,14 @@ async def agent_stream(
         # Persist assistant message after streaming completes
         if assistant_content or tool_calls_log or artifacts_log:
             _persist_message(
-                db, thread_id, "assistant", assistant_content,
+                db,
+                thread_id,
+                "assistant",
+                assistant_content,
                 tool_calls=tool_calls_log or None,
                 artifacts=artifacts_log or None,
-                lens=body.lens, model=body.model,
+                lens=body.lens,
+                model=body.model,
             )
 
         # Update thread timestamp
@@ -246,12 +256,18 @@ async def agent_stream(
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
 @router.post("/threads", status_code=status.HTTP_201_CREATED)
-def create_thread(body: ThreadCreateRequest, db: Session = Depends(get_db_session)) -> ThreadSummary:
+def create_thread(
+    body: ThreadCreateRequest, db: Session = Depends(get_db_session)
+) -> ThreadSummary:
     session = ThinkingSessionRow(
         title=body.title or "New conversation",
         session_type="agent",
@@ -276,7 +292,8 @@ def list_threads(
         .where(ThinkingSessionRow.session_type == "agent")
         .where(ThinkingSessionRow.status == status_filter)
         .order_by(ThinkingSessionRow.updated_at.desc())
-        .offset(skip).limit(limit)
+        .offset(skip)
+        .limit(limit)
     )
     if note_id is not None:
         stmt = stmt.where(ThinkingSessionRow.note_id == note_id)
@@ -297,16 +314,25 @@ def get_thread(thread_id: int, db: Session = Depends(get_db_session)) -> dict[st
         raise HTTPException(status_code=404, detail="Thread not found")
 
     messages = db.exec(
-        select(AgentMessageRow).where(AgentMessageRow.thread_id == thread_id).order_by(AgentMessageRow.created_at)
+        select(AgentMessageRow)
+        .where(AgentMessageRow.thread_id == thread_id)
+        .order_by(AgentMessageRow.created_at)
     ).all()
 
     return {
         "thread": _to_summary(session, message_count=len(messages)),
         "messages": [
             MessageOut(
-                id=m.id, role=m.role, content=m.content, tool_calls=m.tool_calls,
-                artifacts=m.artifacts, related_cards=m.related_cards, gaps=m.gaps,
-                active_lens=m.active_lens, model_used=m.model_used, created_at=m.created_at,
+                id=m.id,
+                role=m.role,
+                content=m.content,
+                tool_calls=m.tool_calls,
+                artifacts=m.artifacts,
+                related_cards=m.related_cards,
+                gaps=m.gaps,
+                active_lens=m.active_lens,
+                model_used=m.model_used,
+                created_at=m.created_at,
             )
             for m in messages
         ],
@@ -314,7 +340,9 @@ def get_thread(thread_id: int, db: Session = Depends(get_db_session)) -> dict[st
 
 
 @router.patch("/threads/{thread_id}")
-def update_thread(thread_id: int, body: ThreadUpdateRequest, db: Session = Depends(get_db_session)) -> ThreadSummary:
+def update_thread(
+    thread_id: int, body: ThreadUpdateRequest, db: Session = Depends(get_db_session)
+) -> ThreadSummary:
     session = db.get(ThinkingSessionRow, thread_id)
     if not session or session.session_type != "agent":
         raise HTTPException(status_code=404, detail="Thread not found")
@@ -358,9 +386,14 @@ def get_notifications_count() -> dict[str, int]:
 
 def _to_summary(session: ThinkingSessionRow, message_count: int = 0) -> ThreadSummary:
     return ThreadSummary(
-        id=session.id, title=session.title, status=session.status,
-        pinned=session.pinned, active_lens=session.active_lens,
-        model_id=session.model_id, note_id=session.note_id,
-        created_at=session.created_at, updated_at=session.updated_at,
+        id=session.id,
+        title=session.title,
+        status=session.status,
+        pinned=session.pinned,
+        active_lens=session.active_lens,
+        model_id=session.model_id,
+        note_id=session.note_id,
+        created_at=session.created_at,
+        updated_at=session.updated_at,
         message_count=message_count,
     )
