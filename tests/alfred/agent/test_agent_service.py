@@ -81,17 +81,23 @@ def _simple_text_stream(text: str) -> MockAsyncStream:
 
 
 def _tool_call_stream(
-    call_id: str, tool_name: str, args: dict,
+    call_id: str,
+    tool_name: str,
+    args: dict,
 ) -> MockAsyncStream:
     """Create a stream that yields a tool call."""
     args_json = json.dumps(args)
     chunks = [
-        _make_chunk(_make_delta(
-            tool_calls=[_make_tool_call_delta(0, call_id, tool_name, None)],
-        )),
-        _make_chunk(_make_delta(
-            tool_calls=[_make_tool_call_delta(0, None, None, args_json)],
-        )),
+        _make_chunk(
+            _make_delta(
+                tool_calls=[_make_tool_call_delta(0, call_id, tool_name, None)],
+            )
+        ),
+        _make_chunk(
+            _make_delta(
+                tool_calls=[_make_tool_call_delta(0, None, None, args_json)],
+            )
+        ),
         _make_chunk(_make_delta()),
     ]
     return MockAsyncStream(chunks)
@@ -501,7 +507,9 @@ def test_build_system_prompt_with_lens(_mock_notif):
 @patch("alfred.services.knowledge_notifications.get_pending_notifications", return_value=[])
 def test_build_system_prompt_with_note_context(_mock_notif):
     """System prompt includes note context when provided."""
-    prompt = _build_system_prompt(note_context={"title": "My Note", "content_preview": "Some content"})
+    prompt = _build_system_prompt(
+        note_context={"title": "My Note", "content_preview": "Some content"}
+    )
     assert "My Note" in prompt
     assert "Some content" in prompt
 

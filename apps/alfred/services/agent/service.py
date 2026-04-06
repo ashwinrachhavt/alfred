@@ -198,7 +198,7 @@ def _build_system_prompt(
         if title or preview:
             parts.append(
                 f"\n## Current Note Context\n"
-                f"The user is currently viewing a note titled \"{title}\".\n"
+                f'The user is currently viewing a note titled "{title}".\n'
             )
             if preview:
                 parts.append(f"Preview: {preview[:500]}\n")
@@ -388,11 +388,14 @@ class AgentService:
                     tool_name = tc["name"]
                     tool_args = tc["args"]
 
-                    yield _sse_event("tool_start", {
-                        "call_id": call_id,
-                        "tool": tool_name,
-                        "args": tool_args,
-                    })
+                    yield _sse_event(
+                        "tool_start",
+                        {
+                            "call_id": call_id,
+                            "tool": tool_name,
+                            "args": tool_args,
+                        },
+                    )
 
                     timeout = _TOOL_TIMEOUTS.get(tool_name, 30)
                     try:
@@ -405,32 +408,42 @@ class AgentService:
                     except Exception as exc:
                         result = {"error": f"Tool {tool_name} failed: {exc!s}"}
 
-                    yield _sse_event("tool_result", {
-                        "call_id": call_id,
-                        "result": result,
-                    })
+                    yield _sse_event(
+                        "tool_result",
+                        {
+                            "call_id": call_id,
+                            "result": result,
+                        },
+                    )
 
                     # Emit artifact for zettel CRUD results
                     if isinstance(result, dict) and result.get("action") in (
-                        "created", "found", "updated",
+                        "created",
+                        "found",
+                        "updated",
                     ):
-                        yield _sse_event("artifact", {
-                            "type": "zettel",
-                            "action": result["action"],
-                            "zettel": {
-                                "id": result.get("zettel_id"),
-                                "title": result.get("title", ""),
-                                "summary": result.get("summary", ""),
-                                "topic": result.get("topic", ""),
-                                "tags": result.get("tags", []),
+                        yield _sse_event(
+                            "artifact",
+                            {
+                                "type": "zettel",
+                                "action": result["action"],
+                                "zettel": {
+                                    "id": result.get("zettel_id"),
+                                    "title": result.get("title", ""),
+                                    "summary": result.get("summary", ""),
+                                    "topic": result.get("topic", ""),
+                                    "tags": result.get("tags", []),
+                                },
                             },
-                        })
+                        )
 
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": call_id,
-                        "content": json.dumps(result),
-                    })
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "content": json.dumps(result),
+                        }
+                    )
 
         except Exception as exc:
             logger.exception("Agent stream_turn failed: %s", exc)
@@ -502,11 +515,13 @@ class AgentService:
                     args = json.loads(entry["args_json"]) if entry["args_json"] else {}
                 except json.JSONDecodeError:
                     args = {}
-                tool_calls.append({
-                    "call_id": entry["call_id"],
-                    "name": entry["name"],
-                    "args": args,
-                })
+                tool_calls.append(
+                    {
+                        "call_id": entry["call_id"],
+                        "name": entry["name"],
+                        "args": args,
+                    }
+                )
             yield {"type": "tool_calls", "tool_calls": tool_calls}
 
     def _build_api_kwargs(self, model: str, messages: list[dict[str, Any]]) -> dict[str, Any]:

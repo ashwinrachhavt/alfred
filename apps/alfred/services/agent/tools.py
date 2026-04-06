@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 # LangChain → OpenAI schema adapter
 # ---------------------------------------------------------------------------
 
+
 def _clean_property(prop: dict[str, Any]) -> dict[str, Any]:
     """Clean a single JSON schema property for OpenAI compatibility.
 
@@ -164,7 +165,10 @@ CORE_TOOL_SCHEMAS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "title": {"type": "string", "description": "Zettel title (concise, descriptive)."},
+                    "title": {
+                        "type": "string",
+                        "description": "Zettel title (concise, descriptive).",
+                    },
                     "content": {"type": "string", "description": "Zettel content in markdown."},
                     "tags": {
                         "type": "array",
@@ -206,9 +210,15 @@ CORE_TOOL_SCHEMAS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "zettel_id": {"type": "integer", "description": "The zettel card ID to update."},
+                    "zettel_id": {
+                        "type": "integer",
+                        "description": "The zettel card ID to update.",
+                    },
                     "title": {"type": "string", "description": "New title (optional)."},
-                    "content": {"type": "string", "description": "New content in markdown (optional)."},
+                    "content": {
+                        "type": "string",
+                        "description": "New content in markdown (optional).",
+                    },
                     "tags": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -332,13 +342,15 @@ async def _search_kb(args: dict[str, Any], db: Session) -> dict[str, Any]:
 
     results = []
     for card in cards:
-        results.append({
-            "zettel_id": card.id,
-            "title": card.title,
-            "summary": (card.summary or card.content or "")[:200],
-            "topic": card.topic,
-            "tags": card.tags or [],
-        })
+        results.append(
+            {
+                "zettel_id": card.id,
+                "title": card.title,
+                "summary": (card.summary or card.content or "")[:200],
+                "topic": card.topic,
+                "tags": card.tags or [],
+            }
+        )
 
     return {"results": results, "count": len(results)}
 
@@ -422,13 +434,15 @@ async def _list_recent_cards(args: dict[str, Any], db: Session) -> dict[str, Any
 
     results = []
     for card in cards:
-        results.append({
-            "zettel_id": card.id,
-            "title": card.title,
-            "summary": (card.summary or card.content or "")[:150],
-            "topic": card.topic,
-            "tags": card.tags or [],
-        })
+        results.append(
+            {
+                "zettel_id": card.id,
+                "title": card.title,
+                "summary": (card.summary or card.content or "")[:150],
+                "topic": card.topic,
+                "tags": card.tags or [],
+            }
+        )
     return {"results": results, "count": len(results)}
 
 
@@ -450,11 +464,13 @@ async def _web_search_searxng(args: dict[str, Any], db: Session) -> dict[str, An
 
         results = []
         for r in data.get("results", [])[:max_results]:
-            results.append({
-                "title": r.get("title", ""),
-                "url": r.get("url", ""),
-                "content": r.get("content", "")[:300],
-            })
+            results.append(
+                {
+                    "title": r.get("title", ""),
+                    "url": r.get("url", ""),
+                    "content": r.get("content", "")[:300],
+                }
+            )
         return {"results": results, "count": len(results), "source": "searxng"}
     except Exception as exc:
         return {"error": f"SearXNG search failed: {exc!s}"}
@@ -478,11 +494,13 @@ async def _firecrawl_search(args: dict[str, Any], db: Session) -> dict[str, Any]
 
         results = []
         for r in data.get("data", []):
-            results.append({
-                "title": r.get("title", "") or r.get("metadata", {}).get("title", ""),
-                "url": r.get("url", ""),
-                "content": (r.get("markdown", "") or r.get("content", ""))[:500],
-            })
+            results.append(
+                {
+                    "title": r.get("title", "") or r.get("metadata", {}).get("title", ""),
+                    "url": r.get("url", ""),
+                    "content": (r.get("markdown", "") or r.get("content", ""))[:500],
+                }
+            )
         return {"results": results, "count": len(results), "source": "firecrawl"}
     except Exception as exc:
         return {"error": f"Firecrawl search failed: {exc!s}"}

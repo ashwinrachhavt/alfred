@@ -18,6 +18,7 @@ from alfred.models.thinking import AgentMessageRow, ThinkingSessionRow
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def db_session():
     """In-memory SQLite session with only the tables we need."""
@@ -27,10 +28,13 @@ def db_session():
         poolclass=StaticPool,
     )
     # Create only the tables for models we use
-    ThinkingSessionRow.metadata.create_all(engine, tables=[
-        ThinkingSessionRow.__table__,
-        AgentMessageRow.__table__,
-    ])
+    ThinkingSessionRow.metadata.create_all(
+        engine,
+        tables=[
+            ThinkingSessionRow.__table__,
+            AgentMessageRow.__table__,
+        ],
+    )
     with Session(engine) as session:
         yield session
 
@@ -164,13 +168,19 @@ def test_list_threads_default_filter(app_and_client):
     _, client, session = app_and_client
 
     active = ThinkingSessionRow(
-        title="Active", session_type="agent", status="active",
+        title="Active",
+        session_type="agent",
+        status="active",
     )
     archived = ThinkingSessionRow(
-        title="Archived", session_type="agent", status="archived",
+        title="Archived",
+        session_type="agent",
+        status="archived",
     )
     canvas = ThinkingSessionRow(
-        title="Canvas", session_type="canvas", status="active",
+        title="Canvas",
+        session_type="canvas",
+        status="active",
     )
     session.add_all([active, archived, canvas])
     session.commit()

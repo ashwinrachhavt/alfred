@@ -226,10 +226,12 @@ async def agent_stream(
                     elif "event: tool_start" in sse_chunk:
                         data_line = sse_chunk.split("data: ", 1)[-1].split("\n")[0]
                         data = json.loads(data_line)
-                        tool_calls_log.append({
-                            "tool": data.get("tool", ""),
-                            "args": data.get("args", {}),
-                        })
+                        tool_calls_log.append(
+                            {
+                                "tool": data.get("tool", ""),
+                                "args": data.get("args", {}),
+                            }
+                        )
                     elif "event: artifact" in sse_chunk:
                         data_line = sse_chunk.split("data: ", 1)[-1].split("\n")[0]
                         data = json.loads(data_line)
