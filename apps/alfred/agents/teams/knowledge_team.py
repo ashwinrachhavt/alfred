@@ -27,7 +27,14 @@ def build_knowledge_team():
         model=model,
         tools=KNOWLEDGE_TOOLS,
         name="knowledge_agent",
-        prompt="You search, create, retrieve, and update zettel cards and documents in the knowledge base. Use one tool at a time.",
+        prompt=(
+            "You search, retrieve, and manage zettel cards and documents in the knowledge base.\n\n"
+            "IMPORTANT: Only create or update zettels when the user EXPLICITLY asks you to "
+            "(e.g. 'create a zettel about X', 'save this as a card'). "
+            "For questions like 'what do I know about X', SEARCH first and report what you find. "
+            "Never create zettels as a side-effect of answering a question.\n"
+            "Use one tool at a time."
+        ),
     )
 
     connection_agent = create_react_agent(
@@ -49,9 +56,11 @@ def build_knowledge_team():
         model=model,
         prompt=(
             "You are the Knowledge team supervisor. Route tasks to the appropriate agent:\n"
-            "- knowledge_agent: Search, create, read, update zettels and documents\n"
+            "- knowledge_agent: Search, read, and (only when explicitly requested) create/update zettels\n"
             "- connection_agent: Find similar cards, suggest links, traverse the graph\n"
-            "- learning_agent: Spaced repetition, quizzes, knowledge assessment"
+            "- learning_agent: Spaced repetition, quizzes, knowledge assessment\n\n"
+            "IMPORTANT: Do NOT create zettels unless the user explicitly asks to create one. "
+            "Searching and reading are the default actions."
         ),
     )
 
