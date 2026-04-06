@@ -121,6 +121,34 @@ class ZettelkastenService:
             self._ensure_open_review(card_id=card.id or 0)
         return cards
 
+    def _apply_card_filters(self, stmt, *, q=None, topic=None, tags=None, document_id=None, status="active", importance_min=None):
+        """Apply common card filters to a SELECT statement."""
+        if q:
+            like = f"%{q.strip()}%"
+            stmt = stmt.where(
+                ZettelCard.title.ilike(like)
+                | ZettelCard.content.ilike(like)
+                | ZettelCard.summary.ilike(like)
+            )
+        if topic:
+            stmt = stmt.where(ZettelCard.topic == topic.strip())
+        if document_id:
+            stmt = stmt.where(ZettelCard.document_id == document_id.strip())
+        if status:
+            stmt = stmt.where(ZettelCard.status == status)
+        else:
+            stmt = stmt.where(ZettelCard.status != "archived")
+        if importance_min is not None:
+            stmt = stmt.where(ZettelCard.importance >= importance_min)
+        if tags:
+            # Single containment check instead of per-tag loop
+            stmt = stmt.where(
+                sa_text("tags::jsonb @> :all_tags::jsonb").bindparams(
+                    all_tags=json.dumps(tags)
+                )
+            )
+        return stmt
+
     def list_cards(
         self,
         *,
@@ -136,40 +164,16 @@ class ZettelkastenService:
         skip: int = 0,
     ) -> list[ZettelCard]:
         stmt = select(ZettelCard)
+        stmt = self._apply_card_filters(
+            stmt, q=q, topic=topic, tags=tags, document_id=document_id,
+            status=status, importance_min=importance_min,
+        )
 
         sort_col = _ALLOWED_SORT_COLUMNS.get(sort_by or "", ZettelCard.updated_at)
         if sort_dir == "asc":
             stmt = stmt.order_by(sort_col.asc())  # type: ignore[union-attr]
         else:
             stmt = stmt.order_by(sort_col.desc())  # type: ignore[union-attr]
-
-        if q:
-            like = f"%{q.strip()}%"
-            stmt = stmt.where(
-                ZettelCard.title.ilike(like)
-                | ZettelCard.content.ilike(like)
-                | ZettelCard.summary.ilike(like)
-            )
-        if topic:
-            stmt = stmt.where(ZettelCard.topic == topic.strip())
-        if document_id:
-            stmt = stmt.where(ZettelCard.document_id == document_id.strip())
-        if status:
-            stmt = stmt.where(ZettelCard.status == status)
-        else:
-            # When no status filter, exclude archived cards
-            stmt = stmt.where(ZettelCard.status != "archived")
-        if importance_min is not None:
-            stmt = stmt.where(ZettelCard.importance >= importance_min)
-
-        if tags:
-            for i, t in enumerate(tags):
-                param = f"tag_val_{i}"
-                stmt = stmt.where(
-                    sa_text(f"tags::jsonb @> :{param}::jsonb").bindparams(
-                        **{param: json.dumps([t])}
-                    )
-                )
 
         stmt = stmt.offset(clamp_int(skip, lo=0, hi=10_000)).limit(clamp_int(limit, lo=1, hi=200))
         return list(self.session.exec(stmt))
@@ -186,33 +190,10 @@ class ZettelkastenService:
     ) -> int:
         """Count cards matching filters (for pagination)."""
         stmt = select(func.count()).select_from(ZettelCard)
-
-        if q:
-            like = f"%{q.strip()}%"
-            stmt = stmt.where(
-                ZettelCard.title.ilike(like)
-                | ZettelCard.content.ilike(like)
-                | ZettelCard.summary.ilike(like)
-            )
-        if topic:
-            stmt = stmt.where(ZettelCard.topic == topic.strip())
-        if document_id:
-            stmt = stmt.where(ZettelCard.document_id == document_id.strip())
-        if status:
-            stmt = stmt.where(ZettelCard.status == status)
-        else:
-            stmt = stmt.where(ZettelCard.status != "archived")
-        if importance_min is not None:
-            stmt = stmt.where(ZettelCard.importance >= importance_min)
-
-        if tags:
-            for i, t in enumerate(tags):
-                param = f"tag_val_{i}"
-                stmt = stmt.where(
-                    sa_text(f"tags::jsonb @> :{param}::jsonb").bindparams(
-                        **{param: json.dumps([t])}
-                    )
-                )
+        stmt = self._apply_card_filters(
+            stmt, q=q, topic=topic, tags=tags, document_id=document_id,
+            status=status, importance_min=importance_min,
+        )
         result = self.session.exec(stmt).one()
         return int(result)
 

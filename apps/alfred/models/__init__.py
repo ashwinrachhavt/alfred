@@ -4,7 +4,6 @@ from sqlmodel import Field, SQLModel
 
 from alfred.models.base import Model, TimestampMixin
 from alfred.models.company import (
-    CompanyResearchReportRow,  # deprecated alias
     ResearchReportRow,  # DB table: research_reports
 )
 from alfred.models.datastore import DataStoreRow
@@ -59,7 +58,6 @@ __all__ = [
     "NoteAssetRow",
     "DataStoreRow",
     "ResearchReportRow",
-    "CompanyResearchReportRow",
     "TaxonomyNodeRow",
     "ThinkingSessionRow",
     "AgentMessageRow",

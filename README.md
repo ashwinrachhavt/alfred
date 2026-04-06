@@ -1,397 +1,160 @@
 <div align="center">
 
-# Alfred — Agentic RAG API
+# Alfred — Knowledge Factory
 
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-109989?style=for-the-badge&logo=fastapi&logoColor=white)
-![LangChain](https://img.shields.io/badge/LangChain-0F0F0F?style=for-the-badge&logo=chainlink&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=next.js&logoColor=white)
+![React](https://img.shields.io/badge/React_19-61DAFB?style=for-the-badge&logo=react&logoColor=black)
 ![LangGraph](https://img.shields.io/badge/LangGraph-0e7490?style=for-the-badge)
 ![Qdrant](https://img.shields.io/badge/Qdrant-FF4B4B?style=for-the-badge&logo=qdrant&logoColor=white)
-![Chroma](https://img.shields.io/badge/Chroma-222?style=for-the-badge)
-![DuckDuckGo](https://img.shields.io/badge/DuckDuckGo-FF6600?style=for-the-badge&logo=duckduckgo&logoColor=white)
 ![Celery](https://img.shields.io/badge/Celery-37814A?style=for-the-badge&logo=celery&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
 
-An elegant FastAPI service that answers questions using Agentic RAG. It chooses between your personal notes (Qdrant/Chroma) and live web research (DuckDuckGo), then writes in your voice with minimal, professional style.
+A knowledge factory for ambitious generalists. Ingest, decompose, connect, and capitalize on what you know.
 
 </div>
 
-## System Design
+## What Is Alfred?
 
-```mermaid
-flowchart TB
-    subgraph Client
-        UI[Swagger / CLI / cURL]
-    end
+Alfred is a personal knowledge management system that goes beyond bookmarking. It:
 
-    UI -->|HTTP| API[FastAPI /rag/answer]
+- **Ingests** content from 20+ sources (web, Notion, RSS, arXiv, GitHub, Pocket, Readwise, Hypothesis, and more)
+- **Decomposes** articles into atomic knowledge cards (zettels) using AI
+- **Connects** ideas across domains via semantic similarity and wiki-links
+- **Helps you think** with spaced repetition, a dictionary, an AI chat agent, and a canvas whiteboard
 
-    subgraph App[Agentic RAG Service]
-        GEN[Generate Query or Respond]
-        TOOLS[ToolNode]
-        GRADE[Grade Documents]
-        REWRITE[Rewrite Question]
-        ANSWER[Generate Answer]
-    end
+## Architecture
 
-    API --> GEN --> TOOLS
-    TOOLS -->|retrieve_notes| RETRIEVE[Qdrant/Chroma Retriever]
-    TOOLS -->|web_search| DDG[DuckDuckGo]
-    RETRIEVE --> GRADE
-    DDG --> GRADE
-    GRADE -->|relevant| ANSWER
-    GRADE -->|not relevant| REWRITE --> GEN
-    ANSWER --> API
-
-    subgraph Data
-        VS[(Qdrant / Chroma)]
-        EMB[OpenAI Embeddings]
-    end
-
-    RETRIEVE <---> VS
-    VS -.uses .-> EMB
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Next.js 16 Frontend                       │
+│  Dashboard · Inbox · Knowledge · Notes · Dictionary · Canvas │
+├─────────────────────────────────────────────────────────────┤
+│                    FastAPI Backend                            │
+│  44 API modules · 60+ services · LangGraph agents            │
+├──────────┬──────────┬──────────┬────────────────────────────┤
+│ PostgreSQL│  Qdrant  │  Redis   │  Celery (15 async tasks)   │
+│  (SQLModel)│ (vectors)│ (cache)  │  (enrichment pipeline)     │
+└──────────┴──────────┴──────────┴────────────────────────────┘
 ```
 
-Highlights
-- Agentic retrieval with LangGraph: decide to retrieve, search, or answer directly.
-- Qdrant (cloud) preferred; Chroma fallback for local dev.
-- Flexible answer styles via `mode`: minimal, concise, formal, deep.
-- Clean, grounded voice; inline attributions and tiny Sources section.
+### Tech Stack
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS 4, shadcn/ui |
+| Backend | FastAPI, SQLModel, Alembic, Pydantic |
+| AI/LLM | OpenAI (primary), Ollama, LangGraph multi-agent |
+| Vector DB | Qdrant Cloud |
+| Database | PostgreSQL |
+| Task Queue | Celery + Redis |
+| Auth | Clerk (Google + Notion OAuth) |
+| Extension | Chrome browser extension (Smart Reader) |
 
 ## Quick Start
 
-Prereqs
-- Docker + Docker Compose
-- Python 3.11+
-- uv (https://github.com/astral-sh/uv) — optional but recommended
-- API keys: OpenAI (for embeddings/LLM); optional Qdrant Cloud
+### Prerequisites
+- Python 3.11+, Node.js 20+, [uv](https://github.com/astral-sh/uv), pnpm
+- PostgreSQL, Redis (or use Docker)
+- API keys: OpenAI (required), Qdrant Cloud (optional)
 
-Configure
+### Setup
 ```bash
+# 1. Clone and configure
 cp apps/alfred/.env.example apps/alfred/.env
-# Fill in: OPENAI_API_KEY, (optional) QDRANT_URL/QDRANT_API_KEY, NOTION_TOKEN, etc.
+# Fill in: OPENAI_API_KEY, DATABASE_URL, (optional) QDRANT_URL/QDRANT_API_KEY
+
+# 2. Backend
+make install                    # Install Python deps
+make alembic-upgrade            # Run database migrations
+make run-api                    # Start FastAPI on :8000
+
+# 3. Frontend (separate terminal)
+cd web && pnpm install && pnpm dev   # Start Next.js on :3000
+
+# 4. Worker (separate terminal)
+make run-worker                 # Start Celery for async tasks
 ```
 
-Install & Run API
-```bash
-uv python install 3.11          # optional: ensure matching runtime
-uv sync --dev                    # install app + tooling into .venv
-uv pip install -e .              # install project in editable mode
-uv run playwright install chromium  # optional: enable dynamic crawling
-make run-api        # alias: make runapi
-```
-
-Legacy virtualenv (pip)
-```bash
-python3.11 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
-python -m playwright install chromium  # optional: enable dynamic crawling
-pip install -e .                 # install project in editable mode
-make run-api UV=0
-```
-
-Docker (full stack)
+### Docker (full stack)
 ```bash
 docker compose -f infra/docker-compose.yml up -d --build
-
-# Optional: load secrets/config from an env file (Compose does not modify it).
-docker compose --env-file apps/alfred/.env -f infra/docker-compose.yml up -d --build
-
-# Optional: expose Postgres/Redis/Neo4j ports to your host (off by default).
-docker compose -f infra/docker-compose.yml -f infra/docker-compose.expose.yml up -d
 ```
 
-## Personal Brand Builder
+## Key Features
 
-Endpoints
-- `GET /ai` — auto-generated portfolio page (HTML)
-- `POST /api/brand/inventory` — build an experience inventory from resume/LinkedIn/GitHub text (JSON)
-- `POST /api/brand/stories` — generate 3 best-fit STAR stories from a job description (JSON)
-- `POST /api/brand/outreach` — draft LinkedIn + cold email outreach personalized to a company (JSON)
+### Knowledge Hub
+Browse, search, and filter your zettel cards by topic, tags, or full-text search. Grid, table, timeline, and graph views. Spaced repetition reviews built in.
 
-Examples
-```bash
-curl -sS http://localhost:8000/ai
+### Inbox
+Ingest documents from web URLs, file uploads, or the Chrome extension. The enrichment pipeline automatically extracts, cleans, summarizes, and decomposes content into atomic zettels.
 
-curl -sS -X POST http://localhost:8000/api/brand/inventory \
-  -H 'content-type: application/json' \
-  -d '{"resume_text":"...","linkedin_text":"...","github_text":"...","projects_text":"..."}'
+### AI Agent
+Chat with your knowledge base. The LangGraph-powered agent can search your KB, create/update zettels, and surface connections. Streaming SSE responses with tool-calling.
 
-curl -sS -X POST http://localhost:8000/api/brand/stories \
-  -H 'content-type: application/json' \
-  -d '{"job_description":"...","resume_text":"..."}'
+### Notes
+Notion-style note editor with TipTap, wiki-links (`[[zettel title]]`), backlinks panel, and autosave.
 
-curl -sS -X POST http://localhost:8000/api/brand/outreach \
-  -H 'content-type: application/json' \
-  -d '{"company":"Acme","role":"AI Engineer","job_description":"...","resume_text":"...","recipient_name":"...","recipient_title":"..."}'
+### Dictionary
+Look up words with AI-powered explanations, etymology, usage notes, and personal annotations.
+
+### Canvas
+Excalidraw whiteboard for visual thinking and system design.
+
+### Connectors
+Import from: Notion, Google Drive, Gmail, RSS, arXiv, Pocket, Readwise, Hypothesis, Semantic Scholar, GitHub, Todoist, Linear, Slack, Wikipedia.
+
+## Project Structure
+
+```
+alfred/
+├── apps/alfred/        # FastAPI backend
+│   ├── api/            # 44 route modules
+│   ├── agents/         # LangGraph multi-agent system
+│   ├── core/           # Settings, DB, Redis, LLM factory
+│   ├── models/         # 16 SQLModel ORM definitions
+│   ├── services/       # 60+ business logic services
+│   ├── tasks/          # 15 Celery async tasks
+│   └── migrations/     # Alembic migrations
+├── web/                # Next.js 16 frontend
+│   ├── app/(app)/      # 15 app pages
+│   ├── components/     # Shared + shadcn/ui components
+│   ├── features/       # Data layer (queries, mutations)
+│   └── lib/            # API client, stores, utilities
+├── extensions/chrome/  # Browser extension
+├── infra/              # Docker, GCP configs
+└── tests/              # pytest test suite
 ```
 
-## Celery (Background Tasks)
-
-Run a local worker (Redis required):
-```bash
-make run-worker
-```
-
-Enqueue a Mind Palace agent query:
-```bash
-curl -sS -X POST 'http://localhost:8000/api/mind-palace/agent/query?background=true' \
-  -H 'content-type: application/json' \
-  -d '{"question":"system design","history":[],"context":{}}'
-
-# response: {"task_id": "...", "status_url": "/tasks/..."}
-# then poll:
-# curl -sS http://localhost:8000/tasks/<task_id>
-```
-
-Enqueue document cover image generation:
-```bash
-# Enqueue one task per doc (recent docs missing images)
-python scripts/generate_document_images.py --enqueue --limit 25
-
-# Or enqueue a single batch task (which then enqueues per-doc tasks)
-python scripts/generate_document_images.py --batch --limit 100
-```
-
-## Environment & Imports
-
-- The project is an installable package (editable mode). Run `make install` and then use `uv run …` targets.
-- `.env` is loaded by Pydantic Settings from `apps/alfred/.env` with fallback to repo root `.env`.
-- Avoid try/except around imports. For optional dependencies (e.g., providers), either:
-  - Check availability with `importlib.util.find_spec('pkg')` and fall back, or
-  - Catch `ImportError` only at instantiation time and log a clear message.
-
-## Global LLM Service
-
-Provider-agnostic LLM spine:
-
-- Factory (LangChain/LangGraph): `alfred/core/llm_factory.py`
-  - `get_chat_model(...)`, `get_embedding_model(...)`
-- Service: `alfred/services/llm_service.py`
-  - `chat`, `chat_stream`, `structured` (OpenAI JSON -> Pydantic)
-
-Usage
-```python
-from alfred.core.llm_factory import get_chat_model
-from alfred.services.llm_service import LLMService
-
-llm = get_chat_model()  # uses ALFRED_* defaults
-
-from pydantic import BaseModel
-class Quiz(BaseModel):
-    topic: str
-    questions: list[str]
-
-quiz = LLMService().structured(
-    [
-        {"role": "system", "content": "Return valid JSON only."},
-        {"role": "user", "content": "Generate a short quiz about LangGraph."},
-    ],
-    schema=Quiz,
-)
-```
-
-Tip
-- Override provider/model via `ALFRED_*` env vars (see `alfred/core/settings.py`).
-
-## Database & Migrations
-
-- Configure `DATABASE_URL` (defaults to local SQLite). For Postgres: `postgresql+psycopg://postgres:<pwd>@127.0.0.1:5432/alfred`.
-- Run migrations: `PYTHONPATH=apps DATABASE_URL=... uv run alembic -c alembic.ini upgrade head` (or `make alembic-upgrade`).
-- Auto-generate migrations from model changes: `DATABASE_URL=... ./scripts/alembic_autogen.sh "describe change"` (or `make alembic-autogen msg="describe change"`).
-- Dependencies: `psycopg[binary]` (Postgres driver) + `sqlmodel` already in the env; install if missing.
-- Base models live in `alfred/models/`; extend `Model` (SQLModel) for timestamped tables with auto PKs. Use `sqlmodel.Field(...)` for columns, `sa_column=...` for DB-specific defaults.
-- Document store lives in `alfred/services/datastore.py` (Postgres JSON); no Mongo configuration required.
-- Company research reports are cached in Postgres (`COMPANY_RESEARCH_COLLECTION`). Use `/company/research?refresh=true` to bypass cache.
-
-## Mind Palace: Document Storage
-
-Document storage is Postgres-backed (`alfred/services/doc_storage_pg.py` and `alfred/services/datastore.py`).
-
-## Ingest Knowledge
-
-Use built-in web and PDF ingestion to populate your vector store.
+## Development
 
 ```bash
-# Optionally set recursion depth for link-following (0 = off)
-export RECURSIVE_DEPTH=1
-
-# Qdrant Cloud
-export QDRANT_URL=...; export QDRANT_API_KEY=...; export QDRANT_COLLECTION=personal_kb
-
-# Run ingest
-uv run python scripts/ingest.py --urls-file urls.txt --collection personal_kb
-# Or direct URLs
-uv run python scripts/ingest.py --url https://example.com --url https://arxiv.org/abs/2012.07587
-```
-If you're working from an existing virtualenv, swap `uv run python` for `python` and append `UV=0` to Make targets (e.g. `make ingest-urls UV=0`).
-
-
-Notes
-- WebBaseLoader + optional RecursiveUrlLoader gather pages; PDFs from `data/` via PyPDFLoader.
-- Chunking defaults: size 12000, overlap 200; deterministic IDs avoid duplicates.
-- Embeddings: `EMBED_MODEL` (default `text-embedding-3-small`).
-
-## RAG API
-
-Endpoint
-- `GET /rag/answer`
-
-Query params
-- `q` string: question
-- `k` int: top-k retrieval (default 4)
-- `include_context` bool: include retrieved chunks metadata
-- `mode` string: `minimal` | `concise` | `formal` | `deep`
-
-Example
-```bash
-curl "http://localhost:8000/rag/answer?q=Research%20Harmonic%20and%20write%20a%20cover%20letter&k=8&mode=deep&include_context=true"
+make install          # Install all deps
+make run-api          # FastAPI on :8000
+make run-worker       # Celery worker
+make lint             # Ruff check
+make format           # Ruff format
+make test             # Run tests
+make alembic-upgrade  # Apply migrations
+make alembic-autogen msg="description"  # Generate migration
 ```
 
-Behavior
-- Agent decides to use `retrieve_notes` (Qdrant/Chroma) and/or `web_search` (DuckDuckGo).
-- Answers in your voice, grounded strictly in context; admits when unknown.
+## Design System
 
-### `GET /company/research`
+"Midnight Editorial" — editorial warmth meets structured intelligence. Source Serif 4 for display, DM Sans for UI, Berkeley Mono for system data. Deep orange (#E8590C) accent on warm charcoal (#0F0E0D). See [DESIGN.md](DESIGN.md) for the full specification.
 
-Query params
-- `name` string: company to investigate.
-- `refresh` bool (optional, default `false`): force a new SearxNG search + Firecrawl crawl instead of returning the cached Mongo record.
+## Documentation
 
-Response shape
-- `company`, `model`, `generated_at`
-- `report`: structured object with `executive_summary`, dynamic `sections[]`, `risks`, `opportunities`, `recommended_actions`, `references`
-- `sources`: enriched search hits with snippets + scraped markdown
-- `search`: metadata describing the provider + hit count
-
-The service crawls top SearxNG results with Firecrawl, feeds the markdown to GPT-5.1, then persists the structured JSON to Mongo (`COMPANY_RESEARCH_COLLECTION`).
-
-### `GET /company/outreach`
-
-Query params
-- `name` string: target company name.
-- `role` string (optional, default `AI Engineer`): angle to tailor the outreach.
-
-Response
-- Structured JSON including `summary`, `positioning`, `suggested_topics`, `outreach_email`, `follow_up`, and `sources` combining resume/profile knowledge with live company research.
-
-> Dev note: when `APP_ENV=test|ci`, or `ALFRED_OUTREACH_STUB=1`, or no LLM keys are configured, this endpoint returns a deterministic offline stub payload so tests stay hermetic and do not call external models.
-
-> Contacts: if `APOLLO_API_KEY`, `HUNTER_API_KEY`, and/or `SNOV_CLIENT_ID`+`SNOV_CLIENT_SECRET` are set, the endpoint will include a `contacts[]` list (name, title, email, confidence, source) aggregated and cached at `OUTREACH_CACHE_PATH` (default `.alfred_data/outreach_cache.json`, TTL `OUTREACH_CACHE_TTL_HOURS`, default 24h).
-
-> Logging: each outreach call logs rows to `OUTREACH_RUNS_CSV` and `OUTREACH_CONTACTS_CSV` (defaults `.alfred_data/outreach_runs.csv` and `.alfred_data/outreach_contacts.csv`) to avoid repeat API calls and keep a lightweight offline ledger of discovered emails.
-
-### `GET /company/contacts`
-
-Query params
-- `name` (required): company name
-- `role` (optional): filter returned contacts by title substring
-- `limit` (optional, default 20, max 50)
-- `refresh` (optional, default false): bypass cache and hit providers
-- `providers` (optional): repeatable; restrict discovery to a subset of `hunter`, `apollo`, `snov`
-
-Response
-- `items`: list of contacts with `name`, `title`, `email`, `confidence`, `source`
-
-Behavior
-- Uses cached + provider-backed discovery (Apollo/Hunter/Snov). When `providers` is provided, cached rows are filtered by `source` and missing data falls back to a provider fetch.
-
-### `POST /company/outreach`
-
-Body
-```json
-{
-  "name": "Anthropic",
-  "role": "Senior AI Engineer",
-  "context": "Focus on my applied research background and experience building RAG pipelines.",
-  "k": 8
-}
-```
-
-Behavior
-- Same personalized outreach agent with optional extra instructions (`context`) and retrieval depth override `k`.
-- Outputs JSON identical to the GET variant.
-
-> Tip: run `uv run python scripts/ingest.py` (or `python scripts/ingest.py` with `UV=0`) so your resume and personal URLs are embedded before calling the outreach endpoints.
-
-### `POST /research/deep`
-
-Body
-```json
-{
-  "query": "How are frontier model labs addressing alignment?",
-  "target_length_words": 1000,
-  "tone": "technical"
-}
-```
-
-Returns
-- `article`: polished ~1k-word markdown article synthesized from multi-provider web search and internal notes.
-- `state`: LangGraph state snapshot (expanded queries, evidence notes, outline, draft, etc.) for debugging or audits.
-- Successful runs are archived in Postgres (`research_runs`) so you can review historical articles or build dashboards.
-
-## Makefile
-
-Useful targets
-- `make install` — app + dev deps
-- `make run-api` — run FastAPI locally
-- `make run-worker` — Celery worker (if used)
-- `make docker-up` / `make docker-down`
-- `make lint` / `make format`
-- `make ingest-urls FILE=urls.txt [COLLECTION=personal_kb]`
-
-## Configuration
-
-Core env vars
-- `OPENAI_API_KEY` — required
-- `QDRANT_URL`, `QDRANT_API_KEY`, `QDRANT_COLLECTION` — for Qdrant backend
-- `CHROMA_PATH` — local fallback store (default `./chroma_store`)
-- `EMBED_MODEL`, `CHAT_MODEL`, `FALLBACK_MODEL`
-- `RECURSIVE_DEPTH` — optional crawl depth for ingest (default 0)
-
-Web search providers (optional)
-- `SEARXNG_HOST` (or `SEARX_HOST`) — SearxNG base URL (e.g. `http://127.0.0.1:8080`). When set, provider `searx` is available in `/api/web/search`.
-- `LANGSEARCH_API_KEY` — enables the `langsearch` provider in `/api/web/search`. Optionally override endpoint via `LANGSEARCH_API_URL` (defaults to `https://api.langsearch.com/v1`).
-
-Optional provider packages (install as needed)
-- DuckDuckGo: `pip install duckduckgo-search`
-- Searx: `pip install langchain-community`
-- You.com: `pip install langchain-community`
-- Tavily: `pip install langchain-tavily`
-- Exa: `pip install langchain-exa`
-- TinyDB (LangSearch caching): `pip install tinydb`
-- OpenAI (enrichment): `pip install openai`
-
-Company research pipeline
-- `FIRECRAWL_BASE_URL` / `FIRECRAWL_TIMEOUT` — Firecrawl instance used to pull markdown from each URL.
-- `COMPANY_RESEARCH_MODEL` — OpenAI chat model for synthesis (default `gpt-5.1`).
-- `COMPANY_RESEARCH_COLLECTION` — Mongo collection for persisted reports (default `company_research_reports`).
-
-Observability (Langfuse)
-- `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` — project keys from your Langfuse instance.
-- `LANGFUSE_HOST` — base URL for your self-hosted Langfuse (e.g. `http://localhost:3030`).
-- `LANGFUSE_DEBUG` — `true/false` to enable SDK debug logs (default `false`).
-- `LANGFUSE_TRACING_ENABLED` — `true/false` master switch (default `true`).
-
-Notes
-- Tracing is optional. If keys are not set or the SDK is not installed, the decorators become no-ops and the app runs normally.
-- To install SDK: `pip install langfuse` (or add to your environment).
-- Example traced endpoints/functions: `/api/web/search` route and the `alfred.services.web_search.search_web` tool.
-
-## Tech Stack Badges
-
-![OpenAI](https://img.shields.io/badge/OpenAI-412991?style=for-the-badge&logo=openai&logoColor=white)
-![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
-![GitHub%20Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)
-
-## Notes & Tips
-- Robots-aware crawling; polite rate limiting. LinkedIn and auth-gated sites are skipped.
-- `PYTHONDONTWRITEBYTECODE=1` is set in Makefile and Docker to avoid `__pycache__` noise.
-- Keep secrets out of Git; use `alfred/.env`.
-- Use the `logging` module in scripts; avoid print.
+| File | Purpose |
+|------|---------|
+| [CLAUDE.md](CLAUDE.md) | AI assistant instructions, coding conventions, project structure |
+| [DESIGN.md](DESIGN.md) | Design system specification (fonts, colors, spacing, components) |
+| [AGENTS.md](AGENTS.md) | Coding guidelines and AI agent tool usage |
+| [PLANS.md](PLANS.md) | Planning framework for multi-step tasks |
+| [TODOS.md](TODOS.md) | Tracked tech debt and feature backlog |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
 ---
 
-Made with FastAPI + LangChain + LangGraph. PRs welcome.
+Made with FastAPI + Next.js + LangGraph + Qdrant.

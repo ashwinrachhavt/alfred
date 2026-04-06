@@ -1,102 +1,78 @@
 # TODOS
 
-## Daily Collision: Cross-Domain Semantic Surfacing
-**What:** Scheduled Celery job that takes two zettels from different domains with high embedding similarity and presents them side-by-side.
-**Why:** Forces cross-domain thinking. The resonance between "LangGraph fan-out" and "ant colony foraging" is where real insight lives. Unique feature no competitor has.
-**How to start:** After Agent Home ships and KB has 50+ zettels across 3+ domains, create a Celery beat task that runs daily. Query Qdrant for high cross-domain similarity pairs. Present in the agent chat as a "Daily Collision" card.
-**Effort:** M (human) -> S (CC) | **Priority:** P2
-**Depends on:** Agent Home v1 + KB depth (50+ zettels, 3+ domains)
-**Added:** 2026-03-28 via /plan-ceo-review
+## P1 — Blocking
 
-## Add Anthropic Provider to llm_factory.py
-**What:** Implement the `anthropic` case in `get_chat_model()` using `langchain-anthropic` (ChatAnthropic). Currently only openai and ollama work.
-**Why:** Model selector UI only supports OpenAI + Ollama. Anthropic support enables Claude models for the agent, which are strong at philosophical/analytical tasks.
-**How to start:** Add `anthropic` to `LLMProvider` enum in settings.py. Implement the case in `llm_factory.py:get_chat_model()`. Add `ANTHROPIC_API_KEY` to settings.
-**Effort:** S (human) -> S (CC) | **Priority:** P3
-**Depends on:** Model selector UI shipping
-**Added:** 2026-03-28 via /plan-ceo-review
-
-## Unify Retrieval: Qdrant for Both Documents and Zettels
+### Unify Retrieval: Qdrant for Both Documents and Zettels
 **What:** Index zettel embeddings in Qdrant instead of Postgres JSON + in-process cosine scoring. Give `search_kb` one unified vector search path.
 **Why:** Document chunks are in Qdrant but zettel embeddings are in Postgres JSON with in-process scoring. Two retrieval systems means no unified ranking for push retrieval and related cards.
 **How to start:** Create a `zettels` collection in Qdrant. Write a migration script to embed and index all existing zettels. Update `search_kb` tool to query both collections with unified scoring. Remove in-process cosine from zettelkasten_service.py.
-**Effort:** M (human) -> S (CC) | **Priority:** P1 (blocks push retrieval quality)
 **Depends on:** Qdrant Cloud access
-**Added:** 2026-03-28 via /plan-ceo-review
+**Added:** 2026-03-28
 
-## Adaptive Engagement Threshold
-**What:** Replace the fixed score-40 auto-capture threshold with one that learns from user behavior (saves-to-zettel rate, manual captures, reading patterns).
-**Why:** The fixed threshold of 40 is calibrated by intuition. Fast skimmers may never hit 40; deep readers always exceed it. An adaptive threshold would reduce false positives (noisy captures of content the user didn't care about) and false negatives (missed articles the user engaged with but didn't trigger the threshold).
-**How to start:** After v1 ships, collect 2 weeks of engagement score data. Analyze the distribution of scores for pages the user manually saved vs. pages that were auto-captured but never revisited. Use the crossover point as the new threshold.
-**Depends on:** Smart Reader v1 being live and generating engagement data in `reading_sessions` table.
-**Added:** 2026-03-27 via /plan-eng-review
+---
 
-## ReviewStation Mock Data Dependency
-**What:** Fix ReviewStation component to use real zettel data from `useZettelCards()` instead of `MOCK_ZETTELS` import.
-**Why:** After removing the mock fallback from KnowledgeHub (Session 1 production polish), the review section will still show 12 fake philosophy zettels while the cards/table/graph show real data. This inconsistency breaks the "production-grade" feel.
-**How to start:** In `knowledge-hub.tsx` line 169, change `<ReviewStation zettels={MOCK_ZETTELS} />` to `<ReviewStation zettels={allZettels} />`. Then update ReviewStation's review components (flashcard, feynman, quiz) to handle empty arrays gracefully.
-**Depends on:** Session 1 mock fallback removal.
-**Added:** 2026-03-29 via /plan-eng-review
+## P2 — Important
 
-## Integration Tests for Enrichment → Zettel Pipeline
-**What:** Add integration tests for `_create_zettel_from_enrichment()` in `document_enrichment.py` with mocked LLM responses. Cover 4 paths: happy (LLM decomposes → multi-card), fallback (LLM fails → single card from summary), skip (zettels already exist), and no-content (no cleaned_text or summary).
-**Why:** This function is the critical Inbox → Knowledge Hub bridge. Currently 0% tested despite being the most important orchestration code in the sprint.
-**How to start:** Create `tests/alfred/tasks/test_document_enrichment.py`. Mock `get_chat_model()` to return canned JSON responses.
-**Effort:** S (human) -> S (CC) | **Priority:** P2
-**Depends on:** Nothing
-**Added:** 2026-03-29 via /plan-eng-review
+### Daily Collision: Cross-Domain Semantic Surfacing
+**What:** Scheduled Celery job that takes two zettels from different domains with high embedding similarity and presents them side-by-side.
+**Why:** Forces cross-domain thinking — the resonance between seemingly unrelated topics is where real insight lives.
+**How to start:** After KB has 50+ zettels across 3+ domains, create a Celery beat task that runs daily. Query Qdrant for high cross-domain similarity pairs. Present in the agent chat as a "Daily Collision" card.
+**Depends on:** Unified Qdrant retrieval + KB depth (50+ zettels, 3+ domains)
+**Added:** 2026-03-28
 
-## Extract Celery-Safe Session Helper
-**What:** Create a reusable context manager for DB sessions in Celery tasks, replacing the bare `next(get_db_session())` + manual `session.close()` pattern.
-**Why:** The current pattern bypasses FastAPI's dependency injection cleanup logic.
-**How to start:** Create `apps/alfred/core/celery_db.py` with a `@contextmanager celery_session()`.
-**Effort:** S (human) -> S (CC) | **Priority:** P2
-**Depends on:** Nothing
-**Added:** 2026-03-29 via /plan-eng-review
+### ReviewStation: Use Real Data
+**What:** Fix ReviewStation component to use real zettel data from `useZettelCards()` instead of `MOCK_ZETTELS`.
+**Why:** Review section shows 12 fake philosophy zettels while cards/table/graph show real data.
+**How to start:** In `knowledge-hub.tsx`, change `<ReviewStation zettels={MOCK_ZETTELS} />` to `<ReviewStation zettels={allZettels} />`. Update review components to handle empty arrays.
+**Added:** 2026-03-29
 
-## Chunked Decomposition for Long Articles
-**What:** The zettel decomposer truncates to 8000 chars. For articles over 8K, later sections are invisible to the LLM.
+### Integration Tests for Enrichment Pipeline
+**What:** Add integration tests for `_create_zettel_from_enrichment()` in `document_enrichment.py` with mocked LLM responses. Cover: happy path (multi-card), fallback (single card), skip (already exists), no-content.
+**Why:** This function is the critical Inbox → Knowledge Hub bridge. Currently 0% tested.
+**How to start:** Create `tests/alfred/tasks/test_document_enrichment.py`. Mock `get_chat_model()`.
+**Added:** 2026-03-29
+
+### Extract Celery-Safe Session Helper
+**What:** Create `apps/alfred/core/celery_db.py` with a `@contextmanager celery_session()` replacing bare `next(get_db_session())` + manual close.
+**Why:** Current pattern bypasses FastAPI's dependency injection cleanup logic.
+**Added:** 2026-03-29
+
+### Chunked Decomposition for Long Articles
+**What:** The zettel decomposer truncates article text to 8000 chars. For articles over 8K, later sections are invisible to the LLM.
 **Why:** Long articles lose 60%+ of content. Key insights in later sections are lost.
-**How to start:** Implement map-reduce decomposition or increase the limit to 16-32K (GPT-5.4 supports 128K context).
-**Effort:** M (human) -> S (CC) | **Priority:** P2
-**Depends on:** Nothing
-**Added:** 2026-03-29 via /plan-eng-review (Codex outside voice)
+**How to start:** Implement map-reduce decomposition: chunk into 8K segments, decompose each, deduplicate. Or increase limit to 16-32K (GPT-5.4 supports 128K context).
+**Added:** 2026-03-29
 
-## Excalidraw AI: Switch to Mermaid→Excalidraw Pipeline
-**What:** The canvas AI generates raw Excalidraw element JSON. The repo already has Mermaid → Excalidraw conversion.
-**Why:** Mermaid is simpler and LLMs handle it more reliably than raw Excalidraw JSON.
-**How to start:** Change `build_diagram_prompt()` to request Mermaid output. Convert via existing `parseMermaidToExcalidraw`.
-**Effort:** M (human) -> S (CC) | **Priority:** P2
-**Depends on:** Nothing
-**Added:** 2026-03-29 via /plan-eng-review (Codex outside voice)
+### Excalidraw AI: Switch to Mermaid Pipeline
+**What:** Change canvas AI from raw Excalidraw JSON generation to LLM → Mermaid → Excalidraw conversion.
+**Why:** Mermaid is simpler and LLMs handle it more reliably. The repo already has `parseMermaidToExcalidraw`.
+**How to start:** Change `build_diagram_prompt()` to request Mermaid output. Convert via existing parser. Remove `auto_layout()`.
+**Added:** 2026-03-29
 
-## Landing Page CTAs Non-Functional (Clerk Auth Disabled)
-**What:** "Begin Thinking" and "Create account" buttons on the landing page do nothing because Clerk auth keys are expired.
-**Why:** The hero section renders Clerk `SignInButton`/`SignUpButton` wrappers (because `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is set), but the keys are invalid. The buttons render but the modal never opens. New users have no way to enter the app from the landing page.
-**How to start:** Either refresh the Clerk keys, or remove the env var to fall back to the non-Clerk path (which shows a simple "Begin Thinking" link to /inbox).
-**Effort:** S (human) -> S (CC) | **Priority:** P2
-**Depends on:** Decision on whether to keep Clerk or remove it.
-**Added:** 2026-03-29 via /qa
+### Landing Page CTAs (Clerk Auth Disabled)
+**What:** "Begin Thinking" and "Create account" buttons don't work because Clerk keys are expired.
+**How to start:** Either refresh Clerk keys, or remove the env var to fall back to non-Clerk path.
+**Added:** 2026-03-29
 
-## "Ozempicization" Zettel Has Wrong Summary (Pipeline Bug)
-**What:** The zettel titled "The Ozempicization of Everything - by kyla scanlon" displays a SQLAlchemy error log as its summary instead of actual article content. Tags are also wrong (`postgresql`, `database_errors`).
-**Why:** The enrichment pipeline captured an API error response instead of article content during ingestion. The AI summarizer processed the error text, producing a summary about database errors.
-**How to start:** Re-run enrichment on this specific zettel, or manually edit the zettel content. Root cause: add error handling to the enrichment pipeline to detect and skip error responses.
-**Effort:** S (human) -> S (CC) | **Priority:** P3
-**Added:** 2026-03-29 via /qa
+---
 
-## Chunked Decomposition for Long Articles
-**What:** The zettel decomposer truncates article text to 8000 chars (~2000 tokens). For articles over 8K chars, later sections are invisible to the LLM. The decomposer overfits to intros and misses substance in the body.
-**Why:** Long technical articles and papers commonly exceed 20K chars. The current truncation means 60%+ of content is never decomposed into zettels. Key insights in later sections are lost.
-**How to start:** Implement map-reduce decomposition: chunk the article into 8K segments, decompose each independently, then deduplicate/merge cards across chunks. Alternatively, increase the limit to 16-32K (GPT-5.4 supports 128K context) as a quick win.
-**Effort:** M (human) -> S (CC) | **Priority:** P2
-**Depends on:** Nothing
-**Added:** 2026-03-29 via /plan-eng-review (Codex outside voice)
+## P3 — Nice to Have
 
-## Excalidraw AI: Switch to Mermaid→Excalidraw Pipeline
-**What:** The current canvas AI generates raw Excalidraw element JSON directly from the LLM. The repo already has a Mermaid → Excalidraw conversion path in `excalidraw-canvas.tsx`. LLM → Mermaid → Excalidraw would be more reliable.
-**Why:** Mermaid is a simpler, well-documented format that LLMs handle reliably. Raw Excalidraw JSON has many required fields (id, strokeColor, fillStyle, roughness, etc.) that LLMs often get wrong. Mermaid diagrams just need node/edge definitions.
-**How to start:** Change `build_diagram_prompt()` to request Mermaid output. Parse Mermaid text. Convert via existing `parseMermaidToExcalidraw` already in the codebase. Remove `auto_layout()` (Mermaid converter handles positioning).
-**Effort:** M (human) -> S (CC) | **Priority:** P2
-**Depends on:** Nothing
-**Added:** 2026-03-29 via /plan-eng-review (Codex outside voice)
+### Add Anthropic Provider to llm_factory.py
+**What:** Implement the `anthropic` case in `get_chat_model()` using `langchain-anthropic`.
+**Why:** Enables Claude models for the agent.
+**How to start:** Add `anthropic` to `LLMProvider` enum, implement in `llm_factory.py`.
+**Added:** 2026-03-28
+
+### Adaptive Engagement Threshold
+**What:** Replace the fixed score-40 auto-capture threshold with one that learns from user behavior.
+**Why:** Fixed threshold doesn't account for different reading styles.
+**How to start:** After 2 weeks of engagement data, analyze score distributions.
+**Depends on:** Smart Reader v1 live
+**Added:** 2026-03-27
+
+### Fix "Ozempicization" Zettel
+**What:** This zettel has a SQLAlchemy error log as its summary instead of article content.
+**Why:** Enrichment pipeline captured an API error response.
+**How to start:** Re-run enrichment or manually edit. Root cause: add error detection in enrichment pipeline.
+**Added:** 2026-03-29

@@ -232,43 +232,11 @@ class Settings(BaseSettings):
     firecrawl_base_url: str = Field(default="http://localhost:8010", alias="FIRECRAWL_BASE_URL")
     firecrawl_timeout: int = Field(default=30, alias="FIRECRAWL_TIMEOUT")
 
-    # Interview performance guards (scraping can dominate latency)
-    interview_scrape_budget_max: int = Field(
-        default=16, alias="INTERVIEW_SCRAPE_BUDGET_MAX", ge=0, le=200
-    )
-    interview_scrape_time_budget_s: float = Field(
-        default=15.0, alias="INTERVIEW_SCRAPE_TIME_BUDGET_S", ge=1.0, le=120.0
-    )
+    # Research
     company_research_model: str = Field(default="gpt-5.1", alias="COMPANY_RESEARCH_MODEL")
     company_research_collection: str = Field(
         default="company_research_reports",
         alias="COMPANY_RESEARCH_COLLECTION",
-    )
-    company_insights_collection: str = Field(
-        default="company_culture_insights",
-        alias="COMPANY_INSIGHTS_COLLECTION",
-    )
-    company_insights_cache_ttl_hours: int = Field(
-        default=24 * 14,
-        alias="COMPANY_INSIGHTS_CACHE_TTL_HOURS",
-        ge=0,
-        le=24 * 365,
-        description="0 disables freshness checks (always return cached unless refresh=true).",
-    )
-    company_interviews_collection: str = Field(
-        default="company_interview_experiences",
-        alias="COMPANY_INTERVIEWS_COLLECTION",
-    )
-    company_interviews_cache_ttl_hours: int = Field(
-        default=24 * 3,
-        alias="COMPANY_INTERVIEWS_CACHE_TTL_HOURS",
-        ge=0,
-        le=24 * 365,
-        description="0 disables freshness checks (always sync unless refresh=false short-circuit is disabled).",
-    )
-    panel_interview_sessions_collection: str = Field(
-        default="panel_interview_sessions",
-        alias="PANEL_INTERVIEW_SESSIONS_COLLECTION",
     )
     system_design_sessions_collection: str = Field(
         default="system_design_sessions",
@@ -289,15 +257,6 @@ class Settings(BaseSettings):
         ge=0.0,
         le=1.0,
         description="Cosine similarity threshold for semantic cache hits.",
-    )
-
-    enable_interview_calendar_events: bool = Field(
-        default=False,
-        alias="ENABLE_INTERVIEW_CALENDAR_EVENTS",
-    )
-    interview_notifications_slack_channel: str | None = Field(
-        default=None,
-        alias="INTERVIEW_NOTIFICATIONS_SLACK_CHANNEL",
     )
 
     # Text cleaning
