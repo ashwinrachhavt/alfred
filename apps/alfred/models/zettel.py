@@ -96,12 +96,8 @@ class WikiLink(Model, table=True):
         ),
     )
 
-    source_type: str = Field(
-        sa_column=Column(String(16), nullable=False)
-    )  # "note" | "zettel"
-    source_id: str = Field(
-        sa_column=Column(String(64), nullable=False)
-    )  # UUID or int as string
+    source_type: str = Field(sa_column=Column(String(16), nullable=False))  # "note" | "zettel"
+    source_id: str = Field(sa_column=Column(String(64), nullable=False))  # UUID or int as string
     target_card_id: int = Field(
         sa_column=Column(Integer, ForeignKey("zettel_cards.id"), nullable=False)
     )

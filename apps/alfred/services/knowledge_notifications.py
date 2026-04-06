@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from alfred.core.redis_client import get_redis_client
 
@@ -33,7 +33,7 @@ def push_knowledge_notification(notification: dict) -> bool:
 
         # Ensure created_at is set
         if "created_at" not in notification:
-            notification["created_at"] = datetime.now(timezone.utc).isoformat()
+            notification["created_at"] = datetime.now(UTC).isoformat()
 
         r.lpush(NOTIFICATIONS_KEY, json.dumps(notification))
         # Refresh TTL on each push so the list stays alive while active

@@ -5,14 +5,12 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from alfred.core.dependencies import (
     get_language_service,
     get_memory_service,
-    get_planning_service,
     get_summarization_service,
     get_text_assist_service,
 )
 from alfred.schemas.intelligence import (
     AutocompleteRequest,
     AutocompleteResponse,
-    ExecutionPlan,
     LanguageDetectRequest,
     LanguageDetectResponse,
     MemoryCreateRequest,
@@ -29,7 +27,6 @@ from alfred.schemas.intelligence import (
 )
 from alfred.services.language_service import LanguageService
 from alfred.services.memory_service import MemoryService
-from alfred.services.planning_service import PlanningService
 from alfred.services.summarization_service import SummarizationService
 from alfred.services.text_assist_service import TextAssistService
 

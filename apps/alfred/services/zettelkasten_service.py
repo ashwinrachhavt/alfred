@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from math import sqrt
 
-from sqlalchemy import func, text as sa_text
+from sqlalchemy import func
+from sqlalchemy import text as sa_text
 from sqlmodel import Session, select
 
 from alfred.core.utils import STAGE_TO_DELTA, clamp_int
@@ -522,18 +523,12 @@ class ZettelkastenService:
 
         # Wiki-links (from notes/zettels)
         wiki_rows = list(
-            self.session.exec(
-                select(WikiLink).where(WikiLink.target_card_id == card_id)
-            )
+            self.session.exec(select(WikiLink).where(WikiLink.target_card_id == card_id))
         )
 
         # Batch-fetch source titles to avoid N+1
-        zettel_source_ids = [
-            int(wl.source_id) for wl in wiki_rows if wl.source_type == "zettel"
-        ]
-        note_source_ids = [
-            wl.source_id for wl in wiki_rows if wl.source_type == "note"
-        ]
+        zettel_source_ids = [int(wl.source_id) for wl in wiki_rows if wl.source_type == "zettel"]
+        note_source_ids = [wl.source_id for wl in wiki_rows if wl.source_type == "note"]
 
         zettel_titles: dict[int, str] = {}
         if zettel_source_ids:
@@ -551,9 +546,7 @@ class ZettelkastenService:
                 except (ValueError, TypeError):
                     pass
             if note_uuids:
-                notes = self.session.exec(
-                    select(NoteRow).where(NoteRow.id.in_(note_uuids))
-                )
+                notes = self.session.exec(select(NoteRow).where(NoteRow.id.in_(note_uuids)))
                 note_titles = {str(n.id): n.title for n in notes}
 
         for wl in wiki_rows:
@@ -574,20 +567,12 @@ class ZettelkastenService:
 
         # Also include incoming ZettelLinks (graph-created links)
         incoming = list(
-            self.session.exec(
-                select(ZettelLink).where(ZettelLink.to_card_id == card_id)
-            )
+            self.session.exec(select(ZettelLink).where(ZettelLink.to_card_id == card_id))
         )
-        seen_card_ids = {
-            int(bl["source_id"])
-            for bl in backlinks
-            if bl["source_type"] == "zettel"
-        }
+        seen_card_ids = {int(bl["source_id"]) for bl in backlinks if bl["source_type"] == "zettel"}
         # Batch-fetch source cards for incoming ZettelLinks
         incoming_card_ids = [
-            link.from_card_id
-            for link in incoming
-            if link.from_card_id not in seen_card_ids
+            link.from_card_id for link in incoming if link.from_card_id not in seen_card_ids
         ]
         incoming_titles: dict[int, str] = {}
         if incoming_card_ids:
@@ -629,8 +614,7 @@ class ZettelkastenService:
         existing = list(
             self.session.exec(
                 select(WikiLink).where(
-                    (WikiLink.source_type == source_type)
-                    & (WikiLink.source_id == source_id)
+                    (WikiLink.source_type == source_type) & (WikiLink.source_id == source_id)
                 )
             )
         )
@@ -847,10 +831,12 @@ class ZettelkastenService:
             user_msg += f"Suggested tags: {', '.join(tags)}\n"
 
         llm = get_chat_model()
-        response = llm.invoke([
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": user_msg},
-        ])
+        response = llm.invoke(
+            [
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ]
+        )
 
         raw = response.content if hasattr(response, "content") else str(response)
         raw = raw.strip()

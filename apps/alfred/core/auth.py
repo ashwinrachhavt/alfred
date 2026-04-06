@@ -12,7 +12,7 @@ import logging
 from dataclasses import dataclass
 
 import jwt
-from fastapi import Cookie, Depends, HTTPException, Request
+from fastapi import HTTPException, Request
 from jwt import PyJWKClient
 
 from alfred.core.settings import get_settings
@@ -51,8 +51,9 @@ def _derive_jwks_url(publishable_key: str) -> tuple[str, str]:
         (jwks_url, issuer) tuple
     """
     # Strip the pk_test_ / pk_live_ prefix
+    _EXPECTED_PARTS = 3
     parts = publishable_key.split("_", 2)
-    if len(parts) < 3:
+    if len(parts) < _EXPECTED_PARTS:
         raise ValueError(f"Invalid Clerk publishable key format: {publishable_key!r}")
     encoded = parts[2]
 
@@ -66,7 +67,7 @@ def _derive_jwks_url(publishable_key: str) -> tuple[str, str]:
 
 def _init_auth() -> tuple[bool, PyJWKClient | None, str | None]:
     """Initialise auth state from settings (called once, lazily)."""
-    global _jwk_client, _clerk_issuer, _auth_disabled  # noqa: PLW0603
+    global _jwk_client, _clerk_issuer, _auth_disabled
 
     if _auth_disabled is not None:
         return _auth_disabled, _jwk_client, _clerk_issuer
@@ -175,11 +176,11 @@ async def get_current_user(request: Request) -> AuthUser:
 
     try:
         payload = verify_clerk_jwt(token)
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.ExpiredSignatureError as err:
+        raise HTTPException(status_code=401, detail="Token has expired") from err
     except jwt.PyJWTError as exc:
         logger.debug("JWT verification failed: %s", exc)
-        raise HTTPException(status_code=401, detail="Invalid authentication token")
+        raise HTTPException(status_code=401, detail="Invalid authentication token") from exc
 
     user_id = payload.get("sub")
     if not user_id:

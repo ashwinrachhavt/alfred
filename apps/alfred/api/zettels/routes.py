@@ -70,15 +70,24 @@ def list_cards(
         all_tags.append(tag)
     svc = ZettelkastenService(session)
     cards = svc.list_cards(
-        q=q, topic=topic, tags=all_tags or None,
-        document_id=document_id, sort_by=sort_by, sort_dir=sort_dir,
-        importance_min=importance_min, status=card_status,
-        limit=limit, skip=skip,
+        q=q,
+        topic=topic,
+        tags=all_tags or None,
+        document_id=document_id,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        importance_min=importance_min,
+        status=card_status,
+        limit=limit,
+        skip=skip,
     )
     total_count = svc.count_cards(
-        q=q, topic=topic, tags=all_tags or None,
+        q=q,
+        topic=topic,
+        tags=all_tags or None,
         document_id=document_id,
-        importance_min=importance_min, status=card_status,
+        importance_min=importance_min,
+        status=card_status,
     )
     return PaginatedZettelResponse(
         items=[_card_out(c) for c in cards],
@@ -120,7 +129,8 @@ def bulk_create_cards(
     session: Session = Depends(get_db_session),
 ) -> list[ZettelCardOut]:
     """Create multiple cards in one call (batch insert, max 50)."""
-    if len(payload) > 50:
+    _MAX_BATCH = 50
+    if len(payload) > _MAX_BATCH:
         raise HTTPException(status_code=400, detail="Maximum 50 cards per batch")
     if len(payload) == 0:
         raise HTTPException(status_code=400, detail="At least one card required")
@@ -141,9 +151,7 @@ def bulk_update_cards(
 
     # Batch-fetch all cards in one query
     requested_ids = [patch.id for patch in payload]
-    rows = session.exec(
-        select(ZettelCard).where(ZettelCard.id.in_(requested_ids))
-    ).all()
+    rows = session.exec(select(ZettelCard).where(ZettelCard.id.in_(requested_ids))).all()
     cards_by_id = {card.id: card for card in rows}
 
     for patch in payload:
@@ -174,8 +182,10 @@ def search_cards(
     """
     svc = ZettelkastenService(session)
     result = svc.search_cards_unified(
-        q, context_card_id=context_card_id,
-        text_limit=min(text_limit, 20), ai_limit=min(ai_limit, 10),
+        q,
+        context_card_id=context_card_id,
+        text_limit=min(text_limit, 20),
+        ai_limit=min(ai_limit, 10),
     )
     return CardSearchResponse.model_validate(result)
 
