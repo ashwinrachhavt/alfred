@@ -3,12 +3,13 @@
 import { useCallback, useState } from "react";
 
 import { formatDistanceToNow } from "date-fns";
-import { Check, Pencil, Trash2, X } from "lucide-react";
+import { Check, Link2, Loader2, Pencil, Sparkles, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useUpdateZettel, useDeleteZettel } from "@/features/zettels/mutations";
+import { useUpdateZettel, useDeleteZettel, useCreateZettelLink } from "@/features/zettels/mutations";
+import { suggestZettelLinks, type LinkSuggestion } from "@/lib/api/zettels";
 import { BloomProgressBar } from "./bloom-badge";
 import type { Zettel } from "./mock-data";
 
@@ -26,16 +27,44 @@ export function ZettelDetailPanel({ zettel, allZettels, onClose, onSelectZettel 
  const [editSummary, setEditSummary] = useState(zettel.summary);
  const [editTags, setEditTags] = useState(zettel.tags.join(", "));
  const [confirmDelete, setConfirmDelete] = useState(false);
+ const [suggestions, setSuggestions] = useState<LinkSuggestion[]>([]);
+ const [suggestLoading, setSuggestLoading] = useState(false);
+ const [acceptedLinks, setAcceptedLinks] = useState<Set<number>>(new Set());
 
  const cardId = parseInt(zettel.id, 10);
  const updateMutation = useUpdateZettel(cardId);
  const deleteMutation = useDeleteZettel();
+ const linkMutation = useCreateZettelLink(cardId);
 
  const connectedZettels = allZettels.filter((z) => zettel.connections.includes(z.id));
  const capturedAgo = formatDistanceToNow(new Date(zettel.source.capturedAt), { addSuffix: true });
  const reviewedAgo = zettel.lastReviewedAt
  ? formatDistanceToNow(new Date(zettel.lastReviewedAt), { addSuffix: true })
  : "never";
+
+ const handleSuggestLinks = useCallback(async () => {
+ setSuggestLoading(true);
+ try {
+ const results = await suggestZettelLinks(cardId, { min_confidence: 0.4, limit: 8 });
+ setSuggestions(results);
+ setAcceptedLinks(new Set());
+ } catch {
+ setSuggestions([]);
+ } finally {
+ setSuggestLoading(false);
+ }
+ }, [cardId]);
+
+ const handleAcceptLink = useCallback((toCardId: number) => {
+ linkMutation.mutate(
+ { to_card_id: toCardId, type: "ai-suggested", bidirectional: true },
+ {
+ onSuccess: () => {
+ setAcceptedLinks((prev) => new Set([...prev, toCardId]));
+ },
+ },
+ );
+ }, [linkMutation]);
 
  const startEdit = useCallback(() => {
  setEditTitle(zettel.title);
@@ -154,11 +183,69 @@ export function ZettelDetailPanel({ zettel, allZettels, onClose, onSelectZettel 
  <div className="font-medium text-[9px] uppercase tracking-widest text-[var(--alfred-text-tertiary)] mb-2">
  Connections
  </div>
- <p className="text-[12px] text-[var(--alfred-text-tertiary)] italic">
- No connections yet
+ <p className="text-[12px] text-[var(--alfred-text-tertiary)]">
+ No connections yet — link to this card from a note using{" "}
+ <code className="rounded bg-muted px-1 py-0.5 text-[11px] font-mono">[[{zettel.title.slice(0, 20)}...</code>
  </p>
  </div>
  )}
+
+ {/* AI Link Suggestions */}
+ <div>
+ <div className="flex items-center justify-between mb-2">
+ <div className="font-medium text-[9px] uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
+ AI Suggestions
+ </div>
+ <Button
+ variant="ghost"
+ size="sm"
+ className="h-6 gap-1 text-[10px] text-primary"
+ onClick={handleSuggestLinks}
+ disabled={suggestLoading}
+ >
+ {suggestLoading ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
+ {suggestions.length > 0 ? "Refresh" : "Find Links"}
+ </Button>
+ </div>
+ {suggestions.length > 0 && (
+ <div className="space-y-1.5">
+ {suggestions.map((s) => (
+ <div
+ key={s.to_card_id}
+ className="flex items-center gap-2 rounded-md border px-2.5 py-1.5"
+ >
+ <div className="flex-1 min-w-0">
+ <p className="text-[12px] font-medium truncate">{s.to_title}</p>
+ <p className="text-[9px] text-[var(--alfred-text-tertiary)]">
+ {s.reason} · {Math.round(s.scores.composite_score * 100)}%
+ </p>
+ </div>
+ {acceptedLinks.has(s.to_card_id) ? (
+ <span className="shrink-0 text-[10px] text-green-500 flex items-center gap-0.5">
+ <Check className="size-3" /> Linked
+ </span>
+ ) : (
+ <Button
+ variant="ghost"
+ size="sm"
+ className="h-6 shrink-0 gap-1 text-[10px] text-primary"
+ onClick={() => handleAcceptLink(s.to_card_id)}
+ disabled={linkMutation.isPending}
+ >
+ <Link2 className="size-3" />
+ Link
+ </Button>
+ )}
+ </div>
+ ))}
+ </div>
+ )}
+ {suggestions.length === 0 && !suggestLoading && (
+ <p className="text-[11px] text-[var(--alfred-text-tertiary)]">
+ Click &ldquo;Find Links&rdquo; to discover related cards
+ </p>
+ )}
+ </div>
 
  {/* Tags */}
  <div>

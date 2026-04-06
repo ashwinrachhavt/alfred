@@ -30,7 +30,9 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.arxiv_import import router as arxiv_import_router
     from alfred.api.calendar import router as calendar_router
     from alfred.api.canvas import router as canvas_router
+    from alfred.api.capture import router as capture_router
     from alfred.api.connectors.routes import router as connectors_router
+    from alfred.api.dictionary import router as dictionary_router
     from alfred.api.documents import router as documents_router
     from alfred.api.gdrive import router as gdrive_router
     from alfred.api.github_import import router as github_import_router
@@ -59,6 +61,7 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.tasks_status import router as tasks_status_router
     from alfred.api.taxonomy import router as taxonomy_router
     from alfred.api.thinking import router as thinking_router
+    from alfred.api.today import router as today_router
     from alfred.api.todoist import router as todoist_router
     from alfred.api.tools import router as tools_router
     from alfred.api.web import router as web_router
@@ -70,6 +73,8 @@ def register_routes(app: FastAPI) -> None:
     routers = [
         system_router,
         admin_router,
+        capture_router,
+        today_router,
         canvas_router,
         connectors_router,
         tasks_router,
@@ -87,6 +92,7 @@ def register_routes(app: FastAPI) -> None:
         documents_router,
         mind_palace_agent_router,
         wikipedia_router,
+        dictionary_router,
         tools_router,
         learning_router,
         zettels_router,

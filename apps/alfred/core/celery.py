@@ -27,6 +27,8 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             "alfred.tasks.document_pipeline",
             "alfred.tasks.taxonomy_reclassify",
             "alfred.tasks.planning",
+            "alfred.tasks.batch_linking",
+            "alfred.tasks.daily_briefing",
         ]
         if include_tasks
         else []

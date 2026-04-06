@@ -56,6 +56,8 @@ export const apiRoutes = {
     generate: "/api/zettels/cards/generate",
     suggestTags: "/api/zettels/suggest-tags",
     graph: "/api/zettels/graph",
+    batchLink: "/api/zettels/batch-link",
+    generateLinks: (id: number) => `/api/zettels/cards/${id}/generate-links`,
     reviewsDue: "/api/zettels/reviews/due",
     topics: "/api/zettels/topics",
     tags: "/api/zettels/tags",
@@ -108,11 +110,24 @@ export const apiRoutes = {
     fork: (id: number) => `/api/thinking/sessions/${id}/fork`,
     decompose: "/api/thinking/decompose",
   },
+  dictionary: {
+    lookup: "/api/dictionary/lookup",
+    entries: "/api/dictionary/entries",
+    entryById: (id: number) => `/api/dictionary/entries/${id}`,
+    search: "/api/dictionary/search",
+    regenerateAi: (id: number) => `/api/dictionary/entries/${id}/regenerate-ai`,
+  },
   taxonomy: {
     domains: "/api/taxonomy/domains",
     tree: "/api/taxonomy/tree",
     reclassifyAll: "/api/taxonomy/reclassify-all",
     nodes: "/api/taxonomy/nodes",
     nodeBySlug: (slug: string) => `/api/taxonomy/nodes/${slug}`,
+  },
+  capture: {
+    ingest: "/api/capture",
+  },
+  today: {
+    briefing: "/api/today/briefing",
   },
 } as const;

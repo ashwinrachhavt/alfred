@@ -200,17 +200,20 @@ const AlfredAPI = {
    * Uses /api/documents/page/extract which requires raw_text (min 50 chars).
    * Falls back to creating a note if the text is too short.
    */
-  async capturePage({ url, title, content }) {
+  async capturePage({ url, title, content, raw_markdown, content_type_hint }) {
     const text = (content || "").trim();
     if (text.length >= 50) {
+      const body = {
+        raw_text: text,
+        page_url: url,
+        page_title: title,
+        selection_type: "full_page",
+      };
+      if (raw_markdown) body.raw_markdown = raw_markdown;
+      if (content_type_hint && content_type_hint !== "generic") body.content_type_hint = content_type_hint;
       return this._fetch("/api/documents/page/extract", {
         method: "POST",
-        body: JSON.stringify({
-          raw_text: text,
-          page_url: url,
-          page_title: title,
-          selection_type: "full_page",
-        }),
+        body: JSON.stringify(body),
       });
     }
     // Fallback for very short content — save as a note
@@ -218,17 +221,19 @@ const AlfredAPI = {
   },
 
   /** Capture a text selection into the document store. */
-  async captureSelection({ url, title, selectedText }) {
+  async captureSelection({ url, title, selectedText, raw_markdown }) {
     const text = (selectedText || "").trim();
     if (text.length >= 50) {
+      const body = {
+        raw_text: text,
+        page_url: url,
+        page_title: `[Selection] ${title || url}`,
+        selection_type: "selection",
+      };
+      if (raw_markdown) body.raw_markdown = raw_markdown;
       return this._fetch("/api/documents/page/extract", {
         method: "POST",
-        body: JSON.stringify({
-          raw_text: text,
-          page_url: url,
-          page_title: `[Selection] ${title || url}`,
-          selection_type: "selection",
-        }),
+        body: JSON.stringify(body),
       });
     }
     // Fallback for very short selections — save as a note

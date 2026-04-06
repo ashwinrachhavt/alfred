@@ -251,9 +251,14 @@
       }
     }
 
-    // Last resort: capture full page text
+    // Last resort: capture full page using extractor
     if (!text) {
-      text = document.body.innerText.slice(0, 50000).trim();
+      const extracted = window.AlfredExtract
+        ? AlfredExtract.extractPage()
+        : { raw_text: document.body.innerText.slice(0, 50000), raw_markdown: null, quality: "basic", content_type_hint: "generic" };
+      text = extracted.raw_text.trim();
+      var _fallbackMarkdown = extracted.raw_markdown;
+      var _fallbackHint = extracted.content_type_hint;
     }
 
     if (!text) {
@@ -270,6 +275,8 @@
           url: location.href,
           title: document.title,
           content: text,
+          raw_markdown: typeof _fallbackMarkdown !== "undefined" ? _fallbackMarkdown : null,
+          content_type_hint: typeof _fallbackHint !== "undefined" ? _fallbackHint : null,
         });
       } else {
         await AlfredAPI.captureSelection({
@@ -295,17 +302,24 @@
 
   async function captureFullPage() {
     try {
-      const content = document.body.innerText.slice(0, 50000);
+      const extracted = window.AlfredExtract
+        ? AlfredExtract.extractPage()
+        : { raw_text: document.body.innerText.slice(0, 50000), raw_markdown: null, quality: "basic", content_type_hint: "generic" };
+
       await AlfredAPI.capturePage({
         url: location.href,
         title: document.title,
-        content,
+        content: extracted.raw_text,
+        raw_markdown: extracted.raw_markdown,
+        content_type_hint: extracted.content_type_hint,
       });
-      showToast("Page captured to Alfred!", "success");
+      const qualityLabel = extracted.quality === "rich" ? "Rich capture \u2713" : "Basic capture";
+      showToast(`Page captured to Alfred! (${qualityLabel})`, "success");
       AlfredAPI.addCaptureHistory({
         title: `[Page] ${document.title}`,
         url: location.href,
         type: "page-capture",
+        quality: extracted.quality,
       }).then(() => refreshRecentCaptures()).catch(() => {});
     } catch (err) {
       showToast(`Capture failed: ${err.message}`, "error");
@@ -314,14 +328,22 @@
 
   async function saveSelectionToNotes(text) {
     try {
+      // Extract structured selection with formatting preserved
+      var extracted = window.AlfredExtract
+        ? AlfredExtract.extractSelection()
+        : { raw_text: text, raw_markdown: null };
+
+      var selText = extracted.raw_text || text;
+
       await AlfredAPI.captureSelection({
         url: location.href,
         title: document.title,
-        selectedText: text,
+        selectedText: selText,
+        raw_markdown: extracted.raw_markdown,
       });
       showToast("Selection saved to Alfred!", "success");
       AlfredAPI.addCaptureHistory({
-        title: text.slice(0, 80),
+        title: selText.slice(0, 80),
         url: location.href,
         type: "selection",
       }).then(() => refreshRecentCaptures()).catch(() => {});
@@ -456,26 +478,18 @@
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg && msg.type === "GET_ARTICLE_TEXT") {
-      // Extract the main article text, falling back to body text
-      let text = "";
-      const article = document.querySelector("article");
-      if (article) {
-        text = article.innerText;
-      } else {
-        // Try common content selectors
-        const main =
-          document.querySelector("[role='main']") ||
-          document.querySelector("main") ||
-          document.querySelector(".post-content") ||
-          document.querySelector(".entry-content") ||
-          document.querySelector(".article-body");
-        text = main ? main.innerText : document.body.innerText;
-      }
+      // Use shared extractor for consistent extraction
+      const extracted = window.AlfredExtract
+        ? AlfredExtract.extractPage()
+        : { raw_text: (document.body.innerText || "").slice(0, 50000), raw_markdown: null, quality: "basic", content_type_hint: "generic" };
 
       sendResponse({
         url: location.href,
         title: document.title,
-        text: (text || "").slice(0, 50000),
+        text: extracted.raw_text,
+        raw_markdown: extracted.raw_markdown,
+        quality: extracted.quality,
+        content_type_hint: extracted.content_type_hint,
       });
       return true; // async response
     }

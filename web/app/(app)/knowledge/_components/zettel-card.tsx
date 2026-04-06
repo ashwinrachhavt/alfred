@@ -28,7 +28,14 @@ export const ZettelCard = forwardRef<HTMLButtonElement, Props>(
  isPulsing && "zettel-pulse",
  )}
  >
- <h3 className="text-[15px] leading-snug">{zettel.title}</h3>
+ <div className="flex items-start gap-2">
+ <h3 className="flex-1 text-[15px] leading-snug">{zettel.title}</h3>
+ {zettel.status === "draft" && (
+ <span className="shrink-0 rounded border border-dashed border-[var(--alfred-text-tertiary)] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-[var(--alfred-text-tertiary)]">
+ Draft
+ </span>
+ )}
+ </div>
  <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-muted-foreground">
  {zettel.summary}
  </p>

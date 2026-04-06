@@ -4,6 +4,7 @@ import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
 import {
   listZettelCards as apiListZettelCards,
+  countZettelCards as apiCountZettelCards,
   listZettelLinks,
   listZettelsByDocument,
   listZettelTopics,
@@ -37,13 +38,18 @@ type GraphSummary = { nodes: unknown[]; edges: GraphEdge[] };
 
 function buildConnectionMap(edges: GraphEdge[]): Map<string, string[]> {
   const map = new Map<string, string[]>();
+
+  function addEdge(a: string, b: string) {
+    if (!map.has(a)) map.set(a, []);
+    if (!map.get(a)!.includes(b)) map.get(a)!.push(b);
+  }
+
   for (const edge of edges) {
     const fromKey = String(edge.from);
     const toKey = String(edge.to);
-    if (!map.has(fromKey)) map.set(fromKey, []);
-    if (!map.get(fromKey)!.includes(toKey)) {
-      map.get(fromKey)!.push(toKey);
-    }
+    // Bidirectional: both ends see the connection
+    addEdge(fromKey, toKey);
+    addEdge(toKey, fromKey);
   }
   return map;
 }
@@ -56,6 +62,7 @@ function mapApiToZettel(card: ApiZettelCard, connections: string[]): Zettel {
     summary: card.content || card.summary || "",
     tags: card.tags || [],
     connections,
+    status: card.status,
     bloomLevel: Math.max(1, Math.min(6, Math.round(card.confidence * 6))) as BloomLevel,
     bloomHistory: [],
     source: {
@@ -94,8 +101,13 @@ export function useZettelCards(filters?: ZettelFilterParams, pagination?: Zettel
   return useQuery<PaginatedZettels>({
     queryKey: ["zettels", "cards", filters || null, page, pageSize],
     queryFn: async () => {
+      // When no status filter is set, fetch all non-archived cards (active + draft)
+      const effectiveFilters = {
+        ...filters,
+        status: filters?.status || undefined, // undefined = no status filter sent to API
+      };
       const [response, graph] = await Promise.all([
-        apiListZettelCards(filters, { limit: pageSize, skip }),
+        apiListZettelCards(effectiveFilters, { limit: pageSize, skip }),
         apiFetch<GraphSummary>(apiRoutes.zettels.graph, { cache: "no-store" }),
       ]);
 
@@ -109,6 +121,14 @@ export function useZettelCards(filters?: ZettelFilterParams, pagination?: Zettel
 
       return { items, totalCount, page, pageSize, totalPages };
     },
+    staleTime: 10_000,
+  });
+}
+
+export function useZettelCount(filters?: ZettelFilterParams) {
+  return useQuery({
+    queryKey: ["zettels", "count", filters || null],
+    queryFn: () => apiCountZettelCards(filters),
     staleTime: 10_000,
   });
 }

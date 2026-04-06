@@ -5,6 +5,8 @@ Tasks are imported explicitly here so Celery's autodiscovery can find them via
 task modules.
 """
 
+from . import batch_linking as batch_linking
+from . import daily_briefing as daily_briefing
 from . import deep_research as deep_research
 from . import document_concepts as document_concepts
 from . import document_enrichment as document_enrichment

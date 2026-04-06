@@ -1,0 +1,1 @@
+"""Tests for Alfred agents."""

@@ -14,7 +14,6 @@ select = [
   "UP",      # pyupgrade (modernize syntax)
   "T20",     # flake8-print (flag print statements)
   "RUF",     # Ruff-specific rules
-  "PLR2004", # pylint: magic-value-comparison
 ]
 # E501 (line length) is treated as a soft limit in this repo; ignore to reduce noise.
 # B008: FastAPI uses function calls in defaults (Depends, Query, Header, etc.) by design.
@@ -29,7 +28,7 @@ ignore = [
 ]
 
 [lint.per-file-ignores]
-"tests/**" = ["PLR2004"]
+"tests/**" = []
 "scripts/**" = ["T20"]  # allow print() in CLI scripts
 
 [lint.isort]

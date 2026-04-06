@@ -156,6 +156,9 @@ class ZettelkastenService:
             stmt = stmt.where(ZettelCard.document_id == document_id.strip())
         if status:
             stmt = stmt.where(ZettelCard.status == status)
+        else:
+            # When no status filter, exclude archived cards
+            stmt = stmt.where(ZettelCard.status != "archived")
         if importance_min is not None:
             stmt = stmt.where(ZettelCard.importance >= importance_min)
 
@@ -178,10 +181,10 @@ class ZettelkastenService:
         topic: str | None = None,
         tags: list[str] | None = None,
         document_id: str | None = None,
+        status: str | None = None,
         importance_min: int | None = None,
-        status: str | None = "active",
     ) -> int:
-        """Return total count of cards matching the given filters (no pagination)."""
+        """Count cards matching filters (for pagination)."""
         stmt = select(func.count()).select_from(ZettelCard)
 
         if q:
@@ -197,6 +200,8 @@ class ZettelkastenService:
             stmt = stmt.where(ZettelCard.document_id == document_id.strip())
         if status:
             stmt = stmt.where(ZettelCard.status == status)
+        else:
+            stmt = stmt.where(ZettelCard.status != "archived")
         if importance_min is not None:
             stmt = stmt.where(ZettelCard.importance >= importance_min)
 
@@ -208,7 +213,6 @@ class ZettelkastenService:
                         **{param: json.dumps([t])}
                     )
                 )
-
         result = self.session.exec(stmt).one()
         return int(result)
 

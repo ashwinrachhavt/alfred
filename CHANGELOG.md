@@ -2,6 +2,19 @@
 
 All notable changes will be documented in this file. Follow Keep a Changelog style; versions are date-stamped until releases are tagged.
 
+## [0.0.1.0] - 2026-04-04 — MCP Server + Design Overhaul
+
+### Added
+- **Alfred MCP Server**: Claude Code can now access Alfred's knowledge base via MCP. 5 tools: search_knowledge (keyword), get_zettel, get_document, get_related, save_insight. Stdio transport, auto-logging to ~/.alfred/mcp-sessions.jsonl
+- **12 unit tests** for MCP tools (SQLite in-memory with StaticPool)
+
+### Changed
+- **Design system overhaul**: Midnight Editorial direction. Source Serif 4 (display), DM Sans (body), Berkeley Mono (system). Deep orange accent (#E8590C) on warm charcoal (#0F0E0D). Sharp corners, editorial density
+- Updated CLAUDE.md with skill routing rules and design system quick reference
+
+### Removed
+- Stale plan files from docs/superpowers/ and .claude/docs/
+
 ## 2026-03-31 — Product Quality Pass
 
 ### Added

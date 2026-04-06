@@ -1,14 +1,16 @@
 "use client";
 
-import * as React from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import {
  Bell,
+ BookA,
  BookOpen,
  Bot,
  Brain,
+ Calendar,
  Inbox,
  LayoutDashboard,
  Network,
@@ -40,6 +42,7 @@ const navSections: NavSection[] = [
  {
  title: "Navigate",
  items: [
+ { label: "Today", href: "/today", icon: Calendar },
  { label: "Alfred AI", href: "#ai", icon: Bot, shortcut: "0", action: "toggle-ai-panel" },
  { label: "Inbox", href: "/inbox", icon: Inbox, shortcut: "1" },
  { label: "Canvas", href: "/canvas", icon: Network, shortcut: "2" },
@@ -52,6 +55,7 @@ const navSections: NavSection[] = [
  items: [
  { label: "Research", href: "/research", icon: Search },
  { label: "Knowledge", href: "/knowledge", icon: BookOpen },
+ { label: "Dictionary", href: "/dictionary", icon: BookA },
  ],
  },
  {
@@ -110,8 +114,8 @@ function SidebarNavItem({ item, isActive }: { item: NavItem; isActive: boolean }
 
 function TaskCenterButton() {
  const { activeCount, setTaskCenterOpen } = useTaskTracker();
- const [mounted, setMounted] = React.useState(false);
- React.useEffect(() => setMounted(true), []);
+ const [mounted, setMounted] = useState(false);
+ useEffect(() => setMounted(true), []);
 
  // Only show badge after hydration to avoid server/client mismatch
  const showBadge = mounted && activeCount > 0;

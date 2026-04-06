@@ -60,7 +60,7 @@ def list_cards(
     sort_by: str | None = None,
     sort_dir: str | None = None,
     importance_min: int | None = None,
-    card_status: str | None = Query("active", alias="status"),
+    card_status: str | None = Query(None, alias="status"),
     limit: int = 50,
     skip: int = 0,
     session: Session = Depends(get_db_session),
@@ -95,6 +95,23 @@ def list_cards(
         limit=limit,
         skip=skip,
     )
+
+
+@router.get("/cards/count")
+def count_cards(
+    q: str | None = None,
+    topic: str | None = None,
+    tags: list[str] | None = Query(None),
+    importance_min: int | None = None,
+    card_status: str | None = Query(None, alias="status"),
+    session: Session = Depends(get_db_session),
+) -> dict:
+    svc = ZettelkastenService(session)
+    total = svc.count_cards(
+        q=q, topic=topic, tags=tags or None,
+        importance_min=importance_min, status=card_status,
+    )
+    return {"total": total}
 
 
 @router.get("/topics", response_model=list[str])
@@ -321,6 +338,32 @@ def suggest_links(
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Failed to generate link suggestions") from exc
     return suggestions
+
+
+@router.post("/batch-link", status_code=status.HTTP_202_ACCEPTED)
+def batch_link(
+    limit: int = 50,
+    max_existing_links: int = 3,
+    auto_link: bool = True,
+) -> dict:
+    """Queue batch link generation for cards with few connections."""
+    from alfred.tasks.batch_linking import batch_link_task
+
+    result = batch_link_task.delay(
+        limit=limit,
+        max_existing_links=max_existing_links,
+        auto_link=auto_link,
+    )
+    return {"task_id": result.id}
+
+
+@router.post("/cards/{card_id}/generate-links", status_code=status.HTTP_202_ACCEPTED)
+def generate_links_for_card(card_id: int) -> dict:
+    """Queue link generation for a single card via Celery."""
+    from alfred.tasks.batch_linking import link_card_task
+
+    result = link_card_task.delay(card_id=card_id, auto_link=True)
+    return {"task_id": result.id, "card_id": card_id}
 
 
 @router.get("/cards/{card_id}/backlinks", response_model=BacklinkResponse)

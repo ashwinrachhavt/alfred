@@ -69,11 +69,18 @@ class IngestionMixin:
             payload, do_enrichment=False, do_classification=False, do_graph=False
         )
 
-    def ingest_document_store_only(self, payload: DocumentIngest) -> dict[str, Any]:
+    def ingest_document_store_only(
+        self, payload: DocumentIngest, *, skip_pipeline: bool = False,
+    ) -> dict[str, Any]:
         """Persist a document quickly without chunking or enrichment.
 
         This is intended for latency-sensitive ingestion paths (e.g., browser extension
         page saves) where chunking/enrichment can be performed asynchronously.
+
+        Args:
+            skip_pipeline: If True, do not auto-dispatch the enrichment pipeline.
+                Useful when a coordinator task will handle sequencing (e.g., image
+                download before pipeline).
         """
         now = datetime.utcnow().replace(tzinfo=UTC)
         captured_at = payload.captured_at or now
@@ -144,21 +151,22 @@ class IngestionMixin:
 
         self._bump_semantic_map_version()
 
-        # Fire document pipeline (non-blocking)
-        try:
-            from alfred.tasks.document_pipeline import run_document_pipeline
+        # Fire document pipeline (non-blocking) unless caller will handle it
+        if not skip_pipeline:
+            try:
+                from alfred.tasks.document_pipeline import run_document_pipeline
 
-            run_document_pipeline.delay(
-                doc_id=doc_id,
-                user_id=(payload.metadata or {}).get("user_id", ""),
-            )
-        except Exception:
-            import logging
-            logging.getLogger(__name__).warning(
-                "Failed to enqueue pipeline task for %s",
-                doc_id,
-                exc_info=True,
-            )
+                run_document_pipeline.delay(
+                    doc_id=doc_id,
+                    user_id=(payload.metadata or {}).get("user_id", ""),
+                )
+            except Exception:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Failed to enqueue pipeline task for %s",
+                    doc_id,
+                    exc_info=True,
+                )
 
         return {
             "id": doc_id,

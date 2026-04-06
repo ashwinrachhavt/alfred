@@ -9,6 +9,7 @@ from alfred.models.company import (
 )
 from alfred.models.datastore import DataStoreRow
 from alfred.models.doc_storage import DocChunkRow, DocumentRow, QuickNoteRow
+from alfred.models.document_assets import DocumentAssetRow
 from alfred.models.learning import (
     LearningEntity,
     LearningEntityRelation,
@@ -62,4 +63,5 @@ __all__ = [
     "TaxonomyNodeRow",
     "ThinkingSessionRow",
     "AgentMessageRow",
+    "DocumentAssetRow",
 ]

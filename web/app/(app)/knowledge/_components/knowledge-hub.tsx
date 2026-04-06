@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { AlertCircle, BookOpen, Layers, Loader2, Play, Plus, RefreshCw, Sparkles as SparklesIcon } from "lucide-react";
+import { AlertCircle, BookOpen, Layers, Link2, Loader2, Play, Plus, RefreshCw, Sparkles as SparklesIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { PaginationControls } from "@/components/ui/pagination-controls";
@@ -82,10 +82,10 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
 }
 
 export function KnowledgeHub() {
+ const PAGE_SIZE = 24;
  const [activeView, setActiveView] = useState<ViewMode>("cards");
  const [filters, setFilters] = useState<ZettelFilters>({});
  const [currentPage, setCurrentPage] = useState(1);
- const pageSize = 24;
  const [selectedId, setSelectedId] = useState<string | null>(null);
  const [pulsingId, setPulsingId] = useState<string | null>(null);
  const [showCreate, setShowCreate] = useState(false);
@@ -96,13 +96,13 @@ export function KnowledgeHub() {
  const { trackTask } = useTaskTracker();
  const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
- // Server-side allZettels data
- const { data: paginatedData, isLoading, isError, refetch } = useZettelCards(filters, { page: currentPage, pageSize });
+ // Server-side allZettels data with pagination
+ const { data: paginatedData, isLoading, isError, refetch } = useZettelCards(filters, { page: currentPage, pageSize: PAGE_SIZE });
  const allZettels = paginatedData?.items ?? [];
  const totalCount = paginatedData?.totalCount ?? 0;
- const totalPages = paginatedData?.totalPages ?? 1;
  const { data: availableTopics = [] } = useZettelTopics();
  const { data: availableTags = [] } = useZettelTags();
+ const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
  const selectedZettel = selectedId ? allZettels.find((z) => z.id === selectedId) ?? null : null;
  const dueCount = getDueCount(allZettels);
@@ -189,6 +189,12 @@ export function KnowledgeHub() {
    );
  }, [triggerWorkflow]);
 
+ const handleBatchLink = useCallback(() => {
+   triggerWorkflow("batchLink", "Batch Link", () =>
+     apiPostJson<{ task_id: string }, Record<string, never>>(apiRoutes.zettels.batchLink, {})
+   );
+ }, [triggerWorkflow]);
+
  const handleReplayBatch = useCallback(() => {
    triggerWorkflow("enrich", "Bulk Enrich", async () => {
      const res = await apiPostJson<{ queued: number; tasks: { doc_id: string; task_id: string }[] }, Record<string, never>>(
@@ -212,12 +218,22 @@ export function KnowledgeHub() {
  {isLoading ? (
  <Loader2 className="inline size-3 animate-spin" />
  ) : (
- <>{allZettels.length} of {totalCount}</>
+ totalCount
  )}{" "}
  zettels · {dueCount} due for review
  </p>
  </div>
  <div className="flex items-center gap-2">
+ <Button
+ size="sm"
+ variant="ghost"
+ className="gap-1.5 text-xs text-muted-foreground"
+ onClick={handleBatchLink}
+ disabled={workflowLoading === "batchLink"}
+ >
+ {workflowLoading === "batchLink" ? <Loader2 className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}
+ Batch Link
+ </Button>
  <Button
  size="sm"
  variant="ghost"

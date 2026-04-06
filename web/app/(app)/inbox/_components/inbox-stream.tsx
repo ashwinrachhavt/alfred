@@ -1,23 +1,56 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 
-import { Loader2 } from "lucide-react";
+import { Loader2, Plus } from "lucide-react";
+import { isToday, isYesterday, isThisWeek } from "date-fns";
 
 import { Button } from "@/components/ui/button";
 import { useExplorerDocuments } from "@/features/documents/queries";
-import { useShellStore } from "@/lib/stores/shell-store";
+import { CaptureModal } from "@/components/capture/capture-modal";
 
 import { InboxDetail } from "./inbox-detail";
 import { InboxFilters } from "./inbox-filters";
 import { InboxItem } from "./inbox-item";
 
+type InboxDoc = {
+ id: string;
+ title: string | null;
+ summary: string | null;
+ source_url: string | null;
+ primary_topic: string | null;
+ pipeline_status: string | null;
+ created_at: string;
+ zettel_count?: number;
+};
+
+function groupByDate(items: InboxDoc[]): { label: string; items: InboxDoc[] }[] {
+ const groups: { label: string; items: InboxDoc[] }[] = [];
+ const buckets = { today: [] as InboxDoc[], yesterday: [] as InboxDoc[], thisWeek: [] as InboxDoc[], older: [] as InboxDoc[] };
+
+ for (const item of items) {
+ const d = new Date(item.created_at);
+ if (isToday(d)) buckets.today.push(item);
+ else if (isYesterday(d)) buckets.yesterday.push(item);
+ else if (isThisWeek(d)) buckets.thisWeek.push(item);
+ else buckets.older.push(item);
+ }
+
+ if (buckets.today.length) groups.push({ label: "Today", items: buckets.today });
+ if (buckets.yesterday.length) groups.push({ label: "Yesterday", items: buckets.yesterday });
+ if (buckets.thisWeek.length) groups.push({ label: "This Week", items: buckets.thisWeek });
+ if (buckets.older.length) groups.push({ label: "Older", items: buckets.older });
+
+ return groups;
+}
+
 export function InboxStream() {
  const [activeTab, setActiveTab] = useState("all");
  const [search, setSearch] = useState("");
  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+ const [captureOpen, setCaptureOpen] = useState(false);
 
- const { data, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage } = useExplorerDocuments({
+ const { data, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage, refetch } = useExplorerDocuments({
  limit: 24,
  search: search || undefined,
  });
@@ -27,26 +60,48 @@ export function InboxStream() {
  [data],
  );
 
+ // Auto-refetch when any item is still processing
+ const hasProcessing = items.some((i) => i.pipeline_status === "pending" || i.pipeline_status === "processing");
+ const refetchRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+ useEffect(() => {
+ if (hasProcessing && !refetchRef.current) {
+ refetchRef.current = setInterval(() => {
+ refetch();
+ }, 3000);
+ } else if (!hasProcessing && refetchRef.current) {
+ clearInterval(refetchRef.current);
+ refetchRef.current = null;
+ }
+ return () => {
+ if (refetchRef.current) clearInterval(refetchRef.current);
+ };
+ }, [hasProcessing, refetch]);
+
  const totalCount = data?.pages[0]?.total_count;
+ const dateGroups = useMemo(() => groupByDate(items as InboxDoc[]), [items]);
 
  return (
  <div className="space-y-6">
- {/* Header — matches preview mockup */}
+ {/* Header */}
  <div className="flex items-start justify-between">
  <div>
  <h1 className="text-[28px] tracking-tight">Inbox</h1>
  <p className="mt-1 text-xs text-[var(--alfred-text-tertiary)]">
- {totalCount != null ? `${items.length} of ${totalCount} items` : `${items.length} items`}
+ {items.length} items{hasProcessing ? " · processing..." : ""}
  </p>
  </div>
  <Button
  size="sm"
- className="text-xs"
- onClick={() => useShellStore.getState().openToolPanel("connectors")}
+ className="gap-1.5 text-xs"
+ onClick={() => setCaptureOpen(true)}
  >
- + Capture
+ <Plus className="size-3.5" />
+ Capture
  </Button>
  </div>
+
+ <CaptureModal open={captureOpen} onOpenChange={setCaptureOpen} />
 
  <InboxFilters
  activeTab={activeTab}
@@ -70,15 +125,23 @@ export function InboxStream() {
  </div>
  <h3 className="text-xl">Your knowledge inbox is empty</h3>
  <p className="mt-2 max-w-sm text-sm text-muted-foreground">
- Connect a source like Readwise, Notion, or RSS — or paste a URL to start building your knowledge base.
+ Paste a URL or text with the capture button, or connect a source like Readwise or Notion.
  </p>
- <Button className="mt-6 text-xs" onClick={() => useShellStore.getState().openToolPanel("connectors")}>
- Connect Sources
+ <Button className="mt-6 gap-1.5 text-xs" onClick={() => setCaptureOpen(true)}>
+ <Plus className="size-3.5" />
+ Capture Something
  </Button>
  </div>
  ) : (
  <div>
- {items.map((item) => (
+ {dateGroups.map((group) => (
+ <div key={group.label}>
+ <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm px-2 py-2">
+ <span className="text-[10px] font-medium uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
+ {group.label}
+ </span>
+ </div>
+ {group.items.map((item) => (
  <InboxItem
  key={item.id}
  id={item.id}
@@ -90,6 +153,8 @@ export function InboxStream() {
  createdAt={item.created_at}
  onClick={() => setSelectedDocId(item.id)}
  />
+ ))}
+ </div>
  ))}
  </div>
  )}

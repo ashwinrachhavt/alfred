@@ -287,26 +287,10 @@
   function triggerCapture() {
     // Use requestIdleCallback to avoid blocking the page
     var extractAndSend = function () {
-      var text = null;
-      var html = null;
-
-      // Try Readability if available
-      if (typeof Readability !== "undefined") {
-        try {
-          var clone = document.cloneNode(true);
-          var parsed = new Readability(clone).parse();
-          if (parsed) {
-            text = parsed.textContent;
-            html = parsed.content;
-          }
-        } catch (e) {
-          // Readability failed — fall through
-        }
-      }
-
-      if (!text) {
-        text = document.body.innerText.slice(0, 50000);
-      }
+      // Use shared extractor for consistent extraction
+      var extracted = window.AlfredExtract
+        ? window.AlfredExtract.extractPage()
+        : { raw_text: document.body.innerText.slice(0, 50000), raw_markdown: null, quality: "basic", content_type_hint: "generic" };
 
       try {
         chrome.runtime.sendMessage({
@@ -315,8 +299,10 @@
             url: location.href,
             title: document.title,
             domain: location.hostname,
-            text: text,
-            html: html,
+            text: extracted.raw_text,
+            raw_markdown: extracted.raw_markdown,
+            quality: extracted.quality,
+            content_type_hint: extracted.content_type_hint,
             score: score,
             activeTime: activeTime,
             scrollDepth: maxScrollDepth,
@@ -337,34 +323,22 @@
   }
 
   // ── Listen for side panel requesting article text ─────────────────
+  // NOTE: content.js also handles GET_ARTICLE_TEXT with the shared extractor.
+  // tracker.js handler is kept as fallback for when content.js hasn't loaded yet.
   try {
     chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
       if (msg.type === "GET_ARTICLE_TEXT") {
-        var text = null;
-        var html = null;
-
-        if (typeof Readability !== "undefined") {
-          try {
-            var clone = document.cloneNode(true);
-            var parsed = new Readability(clone).parse();
-            if (parsed) {
-              text = parsed.textContent;
-              html = parsed.content;
-            }
-          } catch (e) {
-            // Readability failed
-          }
-        }
-
-        if (!text) {
-          text = document.body.innerText.slice(0, 50000);
-        }
+        var extracted = window.AlfredExtract
+          ? window.AlfredExtract.extractPage()
+          : { raw_text: document.body.innerText.slice(0, 50000), raw_markdown: null, quality: "basic", content_type_hint: "generic" };
 
         sendResponse({
           url: location.href,
           title: document.title,
-          text: text,
-          html: html,
+          text: extracted.raw_text,
+          raw_markdown: extracted.raw_markdown,
+          quality: extracted.quality,
+          content_type_hint: extracted.content_type_hint,
         });
         return true; // async response
       }

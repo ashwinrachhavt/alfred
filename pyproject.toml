@@ -13,9 +13,10 @@ dependencies = [
     "email-validator>=2,<3",
     "langchain>=0.3.0,<0.4",
     "langchain-community>=0.3.0,<0.4",
-    "langgraph>=0.3.18,<0.5",
+    "langgraph>=1.0.0",
+    "langgraph-supervisor>=0.0.1",
     "dspy-ai>=2,<3",
-    "langchain-openai>=0.2.0,<0.3",
+    "langchain-openai>=0.3.0,<0.4",
     "langchain-ollama>=0.2,<0.3",
     "langchain-qdrant>=0.1.4,<0.2",
     "langchain-chroma>=0.1.4,<0.2",
@@ -51,6 +52,7 @@ dependencies = [
     "sqlmodel>=0.0.21,<0.1",
     "langid>=1.1.6,<2",
     "pypdf>=4,<5",
+    "mcp>=1.12",
 ]
 
 [tool.uv]

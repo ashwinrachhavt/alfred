@@ -24,12 +24,13 @@ Do not deviate without explicit user approval.
 In QA mode, flag any code that doesn't match DESIGN.md.
 
 ### Quick Reference
-- **Fonts:** Instrument Serif (display), DM Sans (body), JetBrains Mono (labels/nav/meta), Geist (data)
+- **Fonts:** Source Serif 4 (display), DM Sans (body/UI), Berkeley Mono / JetBrains Mono (data/meta/system)
 - **Accent:** #E8590C (deep orange) — the ONLY color used for emphasis
 - **Dark base:** #0F0E0D — warm charcoal, NOT cool blue-black
 - **Light base:** #FAF8F5 — warm off-white, NOT pure white
 - **Neutrals:** Warm grays (stone, not steel)
-- **Labels/nav:** JetBrains Mono, uppercase, small size, tracked
+- **Labels/nav:** DM Sans 500 weight, uppercase, small size, tracked
+- **System layer:** Berkeley Mono for timestamps, metadata, shortcuts, section headers
 - **Border radius:** sm(4px) md(8px) lg(12px) — sharp, not bubbly
 
 ## Skill routing

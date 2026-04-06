@@ -118,6 +118,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
  const [slashMenuPosition, setSlashMenuPosition] = useState<{ top: number; left: number } | null>(null);
  const [slashQuery, setSlashQuery] = useState<string | null>(null);
  const [slashActiveIndex, setSlashActiveIndex] = useState(0);
+
  const isFirstRender = useRef(true);
 
  const uploadImageRef = useRef(uploadImage);

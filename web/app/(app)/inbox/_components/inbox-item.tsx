@@ -1,6 +1,7 @@
 "use client";
 
 import { formatDistanceToNow } from "date-fns";
+import { Loader2 } from "lucide-react";
 
 type Props = {
  id: string;
@@ -16,13 +17,22 @@ type Props = {
 type StatusInfo = {
  label: string;
  className: string;
+ spinning?: boolean;
 };
 
 function getStatus(pipelineStatus: string, primaryTopic: string | null): StatusInfo {
- if (pipelineStatus === "pending" || pipelineStatus === "processing") {
+ if (pipelineStatus === "pending") {
+ return {
+ label: "Queued",
+ className: "text-primary bg-[var(--alfred-accent-muted)]",
+ spinning: true,
+ };
+ }
+ if (pipelineStatus === "processing") {
  return {
  label: "Processing",
  className: "text-primary bg-[var(--alfred-accent-muted)]",
+ spinning: true,
  };
  }
  if (pipelineStatus === "error") {
@@ -38,8 +48,8 @@ function getStatus(pipelineStatus: string, primaryTopic: string | null): StatusI
  };
  }
  return {
- label: "Review",
- className: "text-[var(--warning)] bg-[rgba(180,83,9,0.15)]",
+ label: "Complete",
+ className: "text-muted-foreground bg-muted/50",
  };
 }
 
@@ -76,7 +86,11 @@ export function InboxItem({ id: _id, title, summary, sourceUrl: _sourceUrl, prim
  <span
  className={`inline-flex items-center gap-1.5 rounded-sm px-2.5 py-0.5 font-medium text-[10px] uppercase tracking-wider ${status.className}`}
  >
+ {status.spinning ? (
+ <Loader2 className="size-3 animate-spin" />
+ ) : (
  <span className="size-[5px] rounded-full bg-current" />
+ )}
  {status.label}
  </span>
  </div>

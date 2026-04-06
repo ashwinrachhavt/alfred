@@ -466,12 +466,12 @@ function _handleSSEEvent(
             ? { ...tc, result: data as Record<string, unknown>, status: "done" as const }
             : tc,
         );
-        const msgs = s.messages.map((m, i) =>
-          i === s.messages.length - 1 && m.role === "assistant"
-            ? { ...m, toolCalls: [...tools] }
-            : m,
-        );
-        return { activeToolCalls: tools, messages: msgs };
+        const lastMsgId = s.messageOrder[s.messageOrder.length - 1];
+        const lastMsg = lastMsgId ? s.messagesById[lastMsgId] : undefined;
+        const updatedById = lastMsg && lastMsg.role === "assistant"
+          ? { ...s.messagesById, [lastMsgId]: { ...lastMsg, toolCalls: [...tools] } }
+          : s.messagesById;
+        return { activeToolCalls: tools, messagesById: updatedById };
       });
       break;
     }
@@ -510,7 +510,7 @@ function _handleSSEEvent(
     case "thread_created": {
       const threadId = data.thread_id as number;
       if (threadId) {
-        set({ activeThreadId: threadId });
+        set(() => ({ activeThreadId: threadId }));
       }
       break;
     }
