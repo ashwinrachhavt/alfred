@@ -15,7 +15,7 @@ class _FakeDocStorage:
         self.last_ingest: dict[str, Any] | None = None
         self.duplicate_next = False
 
-    def ingest_document_store_only(self, ingest) -> dict[str, Any]:
+    def ingest_document_store_only(self, ingest, **kwargs: Any) -> dict[str, Any]:
         self.last_ingest = {
             "source_url": ingest.source_url,
             "title": ingest.title,
