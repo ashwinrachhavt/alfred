@@ -97,6 +97,14 @@ class ZettelkastenService:
         self._ensure_open_review(card_id=card.id or 0)
         return card
 
+    def create_stub_card(self, title: str) -> ZettelCard:
+        """Create a stub card for an unresolved wiki-link target."""
+        card = ZettelCard(title=title, content="", status="stub", tags=[], importance=0)
+        self.session.add(card)
+        self.session.commit()
+        self.session.refresh(card)
+        return card
+
     def create_cards_batch(self, cards_data: list[dict]) -> list[ZettelCard]:
         """Create multiple zettel cards in a single transaction."""
         cards = []
