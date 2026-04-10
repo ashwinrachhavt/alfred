@@ -20,7 +20,6 @@ from alfred.schemas.zettel import (
     BulkUpdateResult,
     CardSearchResponse,
     CompleteReviewRequest,
-    GraphSummary,
     LinkSuggestion,
     PaginatedZettelResponse,
     SyncWikiLinksRequest,
@@ -478,10 +477,19 @@ def sync_wiki_links(
     return {"status": "synced", "count": len(payload.target_card_ids)}
 
 
-@router.get("/graph", response_model=GraphSummary)
-def graph(session: Session = Depends(get_db_session)) -> GraphSummary:
+@router.get("/graph")
+def graph(
+    include: str | None = None,
+    session: Session = Depends(get_db_session),
+):
     svc = ZettelkastenService(session)
-    return GraphSummary.model_validate(svc.graph_summary())
+    if include:
+        includes = set(include.split(","))
+        return svc.extended_graph_summary(
+            include_clusters="clusters" in includes,
+            include_gaps="gaps" in includes,
+        )
+    return svc.graph_summary()
 
 
 @router.get("/reviews/due", response_model=list[ZettelReviewOut])

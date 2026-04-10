@@ -81,3 +81,88 @@ def test_review_progression() -> None:
     ).first()
     assert next_review is not None
     assert next_review.stage == 2
+
+
+def test_extended_graph_summary_basic() -> None:
+    """extended_graph_summary returns nodes, edges, clusters, gaps, meta."""
+    session = _session()
+    svc = ZettelkastenService(session)
+    a = svc.create_card(title="Alpha", topic="ai", tags=["ml"], importance=3)
+    b = svc.create_card(title="Beta", topic="ai", tags=["nlp"], importance=5)
+    svc.create_link(from_card_id=a.id or 0, to_card_id=b.id or 0, bidirectional=False)
+
+    result = svc.extended_graph_summary(include_clusters=False, include_gaps=False)
+
+    # Structure assertions
+    assert "nodes" in result
+    assert "edges" in result
+    assert "clusters" in result
+    assert "gaps" in result
+    assert "meta" in result
+
+    # Nodes carry all expected fields
+    assert len(result["nodes"]) == 2
+    node_a = next(n for n in result["nodes"] if n["id"] == a.id)
+    assert node_a["title"] == "Alpha"
+    assert node_a["topic"] == "ai"
+    assert node_a["tags"] == ["ml"]
+    assert node_a["importance"] == 3
+    assert node_a["status"] == "active"
+    assert node_a["degree"] == 1
+    assert node_a["created_at"] is not None
+
+    # Edges use source/target keys (react-force-graph compatible)
+    assert len(result["edges"]) == 1
+    edge = result["edges"][0]
+    assert edge["source"] == a.id
+    assert edge["target"] == b.id
+    assert edge["type"] == "reference"
+
+    # Meta is populated
+    meta = result["meta"]
+    assert meta["total_cards"] == 2
+    assert meta["total_edges"] == 1
+    assert meta["cluster_count"] == 0
+    assert isinstance(meta["embedding_coverage_pct"], float)
+
+
+def test_extended_graph_summary_due_at() -> None:
+    """Open reviews populate due_at on nodes."""
+    session = _session()
+    svc = ZettelkastenService(session)
+    card = svc.create_card(title="Review me")
+
+    # create_card automatically creates a stage-1 review -- find it
+    open_review = session.exec(
+        select(ZettelReview)
+        .where(ZettelReview.card_id == card.id)
+        .where(ZettelReview.completed_at.is_(None))
+    ).first()
+    assert open_review is not None
+
+    result = svc.extended_graph_summary()
+    node = next(n for n in result["nodes"] if n["id"] == card.id)
+    assert node["due_at"] is not None
+
+
+def test_extended_graph_summary_gaps() -> None:
+    """Stub cards with inbound links appear in gaps when include_gaps=True."""
+    session = _session()
+    svc = ZettelkastenService(session)
+    active = svc.create_card(title="Active card")
+    stub = svc.create_card(title="Stub card")
+
+    # Manually set status to 'stub'
+    stub.status = "stub"
+    session.add(stub)
+    session.commit()
+    session.refresh(stub)
+
+    svc.create_link(from_card_id=active.id or 0, to_card_id=stub.id or 0, bidirectional=False)
+
+    result = svc.extended_graph_summary(include_gaps=True)
+    assert len(result["gaps"]) == 1
+    gap = result["gaps"][0]
+    assert gap["id"] == stub.id
+    assert gap["title"] == "Stub card"
+    assert gap["inbound_link_count"] == 1

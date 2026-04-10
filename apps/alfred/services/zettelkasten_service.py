@@ -434,6 +434,102 @@ class ZettelkastenService:
             )
         return {"nodes": nodes, "edges": edges}
 
+    def extended_graph_summary(
+        self,
+        include_clusters: bool = False,
+        include_gaps: bool = False,
+    ) -> dict:
+        """Extended graph summary with clusters, gaps, review due dates, and metadata."""
+        from alfred.services.clustering_service import ClusteringService
+
+        cards: list[ZettelCard] = list(self.session.exec(select(ZettelCard)))
+        links: list[ZettelLink] = list(self.session.exec(select(ZettelLink)))
+
+        # Degree computation
+        degree: dict[int, int] = {}
+        for link in links:
+            degree[link.from_card_id] = degree.get(link.from_card_id, 0) + 1
+            degree[link.to_card_id] = degree.get(link.to_card_id, 0) + 1
+
+        # LEFT JOIN ZettelReview for due_at (open reviews only)
+        open_reviews = self.session.exec(
+            select(ZettelReview).where(ZettelReview.completed_at.is_(None))  # type: ignore[union-attr]
+        )
+        due_by_card: dict[int, str] = {}
+        for review in open_reviews:
+            # Keep the earliest due_at per card
+            iso = review.due_at.isoformat() if review.due_at else None
+            if iso and (review.card_id not in due_by_card or iso < due_by_card[review.card_id]):
+                due_by_card[review.card_id] = iso
+
+        # Clustering (optional)
+        cluster_id_by_card: dict[int, int] = {}
+        clusters_out: list[dict] = []
+        if include_clusters:
+            clustering_svc = ClusteringService()
+            raw_clusters = clustering_svc.detect_clusters(cards)
+            if raw_clusters:
+                cards_by_id = {c.id: c for c in cards}
+                raw_clusters = clustering_svc.generate_cluster_names(raw_clusters, cards_by_id)
+                for cluster in raw_clusters:
+                    for cid in cluster["card_ids"]:
+                        cluster_id_by_card[cid] = cluster["id"]
+                clusters_out = raw_clusters
+
+        # Build nodes
+        nodes = []
+        for card in cards:
+            nodes.append(
+                {
+                    "id": card.id,
+                    "title": card.title,
+                    "topic": card.topic,
+                    "tags": card.tags or [],
+                    "degree": degree.get(card.id or 0, 0),
+                    "status": card.status,
+                    "cluster_id": cluster_id_by_card.get(card.id),  # type: ignore[arg-type]
+                    "created_at": card.created_at.isoformat() if card.created_at else None,
+                    "updated_at": card.updated_at.isoformat() if card.updated_at else None,
+                    "due_at": due_by_card.get(card.id),  # type: ignore[arg-type]
+                    "importance": card.importance,
+                }
+            )
+
+        # Build edges (source/target for react-force-graph)
+        edges = []
+        for link in links:
+            edges.append(
+                {
+                    "source": link.from_card_id,
+                    "target": link.to_card_id,
+                    "type": link.type,
+                }
+            )
+
+        # Knowledge gaps (optional)
+        gaps_out: list[dict] = []
+        if include_gaps:
+            clustering_svc = ClusteringService()
+            gaps_out = clustering_svc.detect_knowledge_gaps(cards, links)
+
+        # Embedding coverage
+        embedded_count = sum(1 for c in cards if getattr(c, "embedding", None))
+        total_cards = len(cards)
+        coverage_pct = round((embedded_count / total_cards * 100) if total_cards else 0.0, 1)
+
+        return {
+            "nodes": nodes,
+            "edges": edges,
+            "clusters": clusters_out,
+            "gaps": gaps_out,
+            "meta": {
+                "total_cards": total_cards,
+                "total_edges": len(edges),
+                "embedding_coverage_pct": coverage_pct,
+                "cluster_count": len(clusters_out),
+            },
+        }
+
     # ---------------
     # Wiki-link search & backlinks
     # ---------------
