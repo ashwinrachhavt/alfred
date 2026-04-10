@@ -5,6 +5,10 @@ import { ForceGraph3D } from "react-force-graph";
 import * as THREE from "three";
 import type { ExtendedGraphData, GraphNode } from "@/features/universe/queries";
 import { useUniverseStore } from "@/lib/stores/universe-store";
+import { CardPreviewOverlay } from "./card-preview-overlay";
+import { UniverseControls } from "./universe-controls";
+import { AIDiscoveryPanel } from "./ai-discovery-panel";
+import { CreateCardForm } from "./create-card-form";
 
 type Props = { data: ExtendedGraphData };
 
@@ -12,6 +16,7 @@ export function KnowledgeUniverse({ data }: Props) {
   const fgRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const [showCreateForm, setShowCreateForm] = useState(false);
 
   const { selectedNodeIds, selectNode, clearSelection, setHoveredNode } =
     useUniverseStore();
@@ -36,6 +41,30 @@ export function KnowledgeUniverse({ data }: Props) {
     fg.d3Force("charge")?.strength(-120);
     fg.d3Force("link")?.distance(50);
   }, [data]);
+
+  // Keyboard shortcuts: Escape to clear selection, N to create card
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      // Ignore when typing in an input/textarea
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+      if (e.key === "Escape") {
+        if (showCreateForm) {
+          setShowCreateForm(false);
+        } else {
+          clearSelection();
+        }
+      }
+
+      if (e.key === "n" || e.key === "N") {
+        setShowCreateForm((prev) => !prev);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [clearSelection, showCreateForm]);
 
   // Custom node rendering with Three.js
   const nodeThreeObject = useCallback(
@@ -82,7 +111,8 @@ export function KnowledgeUniverse({ data }: Props) {
   );
 
   return (
-    <div ref={containerRef} className="h-full w-full">
+    <div ref={containerRef} className="relative h-full w-full overflow-hidden">
+      {/* 3D Force Graph */}
       <ForceGraph3D
         ref={fgRef}
         graphData={graphData}
@@ -101,6 +131,17 @@ export function KnowledgeUniverse({ data }: Props) {
         showNavInfo={false}
         enableNavigationControls={true}
       />
+
+      {/* Overlay layer — pointer-events-none so clicks pass through to 3D */}
+      <div className="pointer-events-none absolute inset-0 z-10">
+        <UniverseControls nodes={data.nodes} graphRef={fgRef} />
+        <CardPreviewOverlay nodes={data.nodes} graphRef={fgRef} />
+        <AIDiscoveryPanel nodes={data.nodes} />
+        <CreateCardForm
+          open={showCreateForm}
+          onClose={() => setShowCreateForm(false)}
+        />
+      </div>
     </div>
   );
 }
