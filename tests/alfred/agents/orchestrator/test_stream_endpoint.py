@@ -132,7 +132,7 @@ def test_request_schema_defaults():
 def test_stream_endpoint_emits_plan_and_task_events(app_and_client, monkeypatch):
     _, client = app_and_client
     monkeypatch.setattr(
-        "alfred.agents.graph.build_alfred_graph",
+        "alfred.api.agent.routes.build_alfred_graph",
         lambda: _FakeGraph(),
     )
 
