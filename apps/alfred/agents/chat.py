@@ -33,7 +33,7 @@ Guidelines:
 async def chat(state: AlfredState) -> dict:
     """Direct conversational response — no tools, just the LLM."""
     model = ChatOpenAI(
-        model="gpt-4.1-mini",
+        model=settings.llm_model,
         api_key=(settings.openai_api_key.get_secret_value() if settings.openai_api_key else None),
         base_url=settings.openai_base_url,
     )

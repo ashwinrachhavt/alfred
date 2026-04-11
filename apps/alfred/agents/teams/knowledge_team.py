@@ -1,6 +1,6 @@
 """Knowledge team -- Knowledge + Connection + Learning agents.
 
-Uses GPT-4.1-mini for all agents.
+Uses Alfred's configured LLM model for all agents.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from alfred.core.settings import settings
 def build_knowledge_team():
     """Build the Knowledge team supervisor graph."""
     model = ChatOpenAI(
-        model="gpt-4.1-mini",
+        model=settings.llm_model,
         api_key=(settings.openai_api_key.get_secret_value() if settings.openai_api_key else None),
         base_url=settings.openai_base_url,
     )

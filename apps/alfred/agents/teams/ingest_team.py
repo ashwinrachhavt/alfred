@@ -1,6 +1,6 @@
 """Ingest team -- Connector + Import + Enrichment agents.
 
-Uses GPT-4.1-mini for all agents (mostly tool dispatch, low reasoning needed).
+Uses Alfred's configured LLM model for all agents.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from alfred.core.settings import settings
 def build_ingest_team():
     """Build the Ingest team supervisor graph."""
     model = ChatOpenAI(
-        model="gpt-4.1-mini",
+        model=settings.llm_model,
         api_key=(settings.openai_api_key.get_secret_value() if settings.openai_api_key else None),
         base_url=settings.openai_base_url,
     )

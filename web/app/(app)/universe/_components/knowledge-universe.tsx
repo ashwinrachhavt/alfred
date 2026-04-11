@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import ForceGraph3D from "react-force-graph-3d";
+import ForceGraph3D, { type ForceGraphMethods } from "react-force-graph-3d";
 import * as THREE from "three";
 import type {
   ExtendedGraphData,
@@ -22,6 +22,21 @@ const PARTICLE_SPHERE_RADIUS = 500;
 const NEBULA_SETTLE_MS = 6000;
 const LARGE_GRAPH_THRESHOLD = 2000;
 const HUGE_GRAPH_THRESHOLD = 5000;
+
+/* ------------------------------------------------------------------ */
+/*  Shared geometry cache — avoids per-node GPU allocations            */
+/* ------------------------------------------------------------------ */
+const geoCache = new Map<number, THREE.SphereGeometry>();
+function getSharedGeometry(size: number): THREE.SphereGeometry {
+  // Quantize to 0.5 increments to maximise sharing
+  const key = Math.round(size * 2) / 2;
+  let geo = geoCache.get(key);
+  if (!geo) {
+    geo = new THREE.SphereGeometry(key, 16, 12);
+    geoCache.set(key, geo);
+  }
+  return geo;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -61,13 +76,55 @@ function dueUrgency(dueAt: string | null): "overdue" | "soon" | null {
   return null;
 }
 
+/** Compute material properties for a node (pure function, no allocations). */
+function computeNodeVisuals(gn: GraphNode, isSelected: boolean) {
+  const urgency = dueUrgency(gn.due_at);
+  const heatBoost = recencyBoost(gn.updated_at);
+  const isStub = gn.status === "stub";
+
+  let emissiveIntensity = isSelected ? 0.6 : 0.15;
+  let emissiveColor = isSelected ? 0xe8590c : 0x331100;
+  if (urgency === "overdue") {
+    emissiveIntensity = 0.8;
+    emissiveColor = 0xffaa33;
+  } else if (urgency === "soon") {
+    emissiveIntensity = 0.4;
+    emissiveColor = 0xffaa33;
+  }
+  emissiveIntensity += heatBoost;
+
+  return {
+    color: isStub ? 0x555555 : 0xe8590c,
+    wireframe: isStub,
+    opacity: isSelected ? 1.0 : 0.75,
+    emissiveColor,
+    emissiveIntensity,
+  };
+}
+
 type Props = { data: ExtendedGraphData };
+type PositionedGraphNode = GraphNode & { x?: number; y?: number; z?: number };
 
 export function KnowledgeUniverse({ data }: Props) {
-  const fgRef = useRef<any>(null);
+  const fgRef = useRef<ForceGraphMethods<PositionedGraphNode, GraphEdge> | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [showCreateForm, setShowCreateForm] = useState(false);
+
+  // Mesh cache: node id → THREE.Mesh (survives re-renders, only update materials)
+  const meshCacheRef = useRef<Map<number, THREE.Mesh>>(new Map());
+
+  /** Pause auto-rotate during interaction, resume after idle. */
+  const autoRotateTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const pauseAutoRotate = useCallback(() => {
+    const controls = fgRef.current?.controls() as any;
+    if (controls) controls.autoRotate = false;
+    clearTimeout(autoRotateTimerRef.current);
+    autoRotateTimerRef.current = setTimeout(() => {
+      const c = fgRef.current?.controls() as any;
+      if (c) c.autoRotate = true;
+    }, 8000); // Resume after 8s idle
+  }, []);
 
   /* ---- Time-lapse state ---- */
   const {
@@ -87,7 +144,27 @@ export function KnowledgeUniverse({ data }: Props) {
   const isHugeGraph = data.nodes.length > HUGE_GRAPH_THRESHOLD;
 
   /* ---------------------------------------------------------------- */
-  /*  Audio refs (Task 14)                                             */
+  /*  Update cached mesh materials on selection change (no re-create)  */
+  /* ---------------------------------------------------------------- */
+  const selectedNodeIdsRef = useRef(selectedNodeIds);
+  selectedNodeIdsRef.current = selectedNodeIds;
+
+  useEffect(() => {
+    const cache = meshCacheRef.current;
+    cache.forEach((mesh, nodeId) => {
+      const mat = mesh.material as THREE.MeshPhongMaterial;
+      const node = data.nodes.find((n) => n.id === nodeId);
+      if (!node) return;
+      const isSelected = selectedNodeIds.includes(nodeId);
+      const vis = computeNodeVisuals(node, isSelected);
+      mat.opacity = vis.opacity;
+      mat.emissive.setHex(vis.emissiveColor);
+      mat.emissiveIntensity = vis.emissiveIntensity;
+    });
+  }, [selectedNodeIds, data.nodes]);
+
+  /* ---------------------------------------------------------------- */
+  /*  Audio refs                                                       */
   /* ---------------------------------------------------------------- */
   const audioCtxRef = useRef<AudioContext | null>(null);
   const oscillatorRef = useRef<OscillatorNode | null>(null);
@@ -152,18 +229,36 @@ export function KnowledgeUniverse({ data }: Props) {
     osc.stop(ctx.currentTime + 0.06);
   }, [audioEnabled]);
 
-  // Measure container with ResizeObserver
+  // Measure container with debounced ResizeObserver + pause auto-rotate on interact
   useEffect(() => {
     if (!containerRef.current) return;
+    let rafId = 0;
     const ro = new ResizeObserver(([entry]) => {
-      setDimensions({
-        width: entry.contentRect.width,
-        height: entry.contentRect.height,
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        setDimensions({
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
+        });
       });
     });
     ro.observe(containerRef.current);
-    return () => ro.disconnect();
-  }, []);
+
+    // Pause auto-rotate on any manual orbit/pan/zoom
+    const el = containerRef.current;
+    const onInteract = () => pauseAutoRotate();
+    el.addEventListener("mousedown", onInteract);
+    el.addEventListener("wheel", onInteract);
+    el.addEventListener("touchstart", onInteract);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      ro.disconnect();
+      el.removeEventListener("mousedown", onInteract);
+      el.removeEventListener("wheel", onInteract);
+      el.removeEventListener("touchstart", onInteract);
+    };
+  }, [pauseAutoRotate]);
 
   // Configure force simulation after mount
   useEffect(() => {
@@ -172,6 +267,51 @@ export function KnowledgeUniverse({ data }: Props) {
     fg.d3Force("charge")?.strength(-120);
     fg.d3Force("link")?.distance(50);
   }, [data]);
+
+  // Controls + lighting — run once after first mount
+  useEffect(() => {
+    if (!fgRef.current) return;
+    const fg = fgRef.current;
+
+    // Smooth orbit controls — low damping for long, momentum-like glide
+    const controls = fg.controls() as any;
+    if (controls) {
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.rotateSpeed = 0.5;
+      controls.zoomSpeed = 1.2;
+      controls.panSpeed = 0.4;
+      // Subtle auto-rotate so the universe feels alive when idle
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 0.3;
+      controls.minDistance = 20;
+      controls.maxDistance = 600;
+    }
+
+    // Scene lighting — dark cosmos: emissive nodes are the stars,
+    // external lights only add subtle dimensionality
+    const scene = fg.scene();
+
+    // Remove default lights
+    const existingLights = scene.children.filter(
+      (c: THREE.Object3D) => c instanceof THREE.Light,
+    );
+    existingLights.forEach((l: THREE.Object3D) => scene.remove(l));
+
+    // Hemisphere light — warm from above (like distant starlight), cool from below
+    const hemi = new THREE.HemisphereLight(0x1a1510, 0x080810, 0.4);
+    scene.add(hemi);
+
+    // Key light — neutral, gentle directional from upper-right
+    const keyLight = new THREE.DirectionalLight(0xffffff, 0.35);
+    keyLight.position.set(150, 250, 200);
+    scene.add(keyLight);
+
+    // Subtle accent — dim orange point light to catch sphere edges
+    const accentLight = new THREE.PointLight(0xe8590c, 0.15, 500);
+    accentLight.position.set(-100, -150, -200);
+    scene.add(accentLight);
+  }, []);
 
   /* ---------------------------------------------------------------- */
   /*  Ambient Particle System (skip for large graphs)                  */
@@ -206,16 +346,13 @@ export function KnowledgeUniverse({ data }: Props) {
   useEffect(() => {
     if (!fgRef.current || isLargeGraph || !data.clusters.length) return;
 
-    const timeout = setTimeout(() => {
-      if (!fgRef.current) return;
-      const scene = fgRef.current.scene();
-      const fgNodes = fgRef.current.graphData().nodes as (GraphNode & {
-        x?: number;
-        y?: number;
-        z?: number;
-      })[];
+    let sprites: THREE.Sprite[] = [];
+    let cancelled = false;
 
-      const sprites: THREE.Sprite[] = [];
+    const timeout = setTimeout(() => {
+      if (cancelled || !fgRef.current) return;
+      const scene = fgRef.current.scene();
+      const fgNodes = graphData.nodes as PositionedGraphNode[];
 
       data.clusters.forEach((cluster) => {
         const clusterNodes = fgNodes.filter((n) =>
@@ -260,25 +397,38 @@ export function KnowledgeUniverse({ data }: Props) {
         scene.add(sprite);
         sprites.push(sprite);
       });
-
-      return () => {
-        sprites.forEach((s) => {
-          s.material.dispose();
-          if ((s.material as THREE.SpriteMaterial).map)
-            (s.material as THREE.SpriteMaterial).map!.dispose();
-          scene.remove(s);
-        });
-      };
     }, NEBULA_SETTLE_MS);
 
-    return () => clearTimeout(timeout);
-  }, [data.clusters, isLargeGraph]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+      if (fgRef.current) {
+        const scene = fgRef.current.scene();
+        sprites.forEach((s) => {
+          scene.remove(s);
+          (s.material as THREE.SpriteMaterial).map?.dispose();
+          s.material.dispose();
+        });
+      }
+      sprites = [];
+    };
+  }, [data.clusters, data.edges, data.nodes, isLargeGraph, timeLapseDate]);
 
   /* ---------------------------------------------------------------- */
   /*  Keyboard shortcuts                                               */
   /* ---------------------------------------------------------------- */
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
+      // Cmd/Ctrl+K focuses search from anywhere
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        const searchInput = containerRef.current?.querySelector<HTMLInputElement>(
+          'input[placeholder*="Search"]',
+        );
+        searchInput?.focus();
+        return;
+      }
+
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
 
@@ -306,7 +456,7 @@ export function KnowledgeUniverse({ data }: Props) {
   }, [clearSelection, showCreateForm, isTimeLapsePlaying, setTimeLapsePlaying]);
 
   /* ---------------------------------------------------------------- */
-  /*  Time-Lapse Mode (Task 13)                                        */
+  /*  Time-Lapse Mode                                                  */
   /* ---------------------------------------------------------------- */
   useEffect(() => {
     if (!isTimeLapsePlaying) {
@@ -347,48 +497,36 @@ export function KnowledgeUniverse({ data }: Props) {
   }, [isTimeLapsePlaying, data.nodes, setTimeLapsePlaying]);
 
   /* ---------------------------------------------------------------- */
-  /*  Node rendering with visual polish                                */
+  /*  Node rendering — cached meshes, shared geometry                  */
   /* ---------------------------------------------------------------- */
   const nodeThreeObject = useCallback(
     (node: any) => {
       const gn = node as GraphNode & { x?: number; y?: number; z?: number };
+      const cache = meshCacheRef.current;
+
+      // Return cached mesh if it exists (material already updated by selection effect)
+      const cached = cache.get(gn.id);
+      if (cached) return cached;
+
       const size = Math.max(2, Math.log2((gn.degree || 0) + 1) * 2.5);
-      const isStub = gn.status === "stub";
-      const isSelected = selectedNodeIds.includes(gn.id);
+      const isSelected = selectedNodeIdsRef.current.includes(gn.id);
+      const vis = computeNodeVisuals(gn, isSelected);
 
-      // Spaced rep urgency
-      const urgency = dueUrgency(gn.due_at);
-      // Heat glow from recency
-      const heatBoost = recencyBoost(gn.updated_at);
-
-      // Base emissive intensity
-      let emissiveIntensity = isSelected ? 0.6 : 0.15;
-
-      // Spaced rep pulse (overdue = warm amber glow, soon = moderate)
-      let emissiveColor = isSelected ? 0xe8590c : 0x331100;
-      if (urgency === "overdue") {
-        emissiveIntensity = 0.8;
-        emissiveColor = 0xffaa33; // warm amber
-      } else if (urgency === "soon") {
-        emissiveIntensity = 0.4;
-        emissiveColor = 0xffaa33;
-      }
-
-      // Heat glow additive
-      emissiveIntensity += heatBoost;
-
-      const geometry = new THREE.SphereGeometry(size, 16, 12);
+      const geometry = getSharedGeometry(size);
       const material = new THREE.MeshPhongMaterial({
-        color: isStub ? 0x555555 : 0xe8590c,
-        wireframe: isStub,
+        color: vis.color,
+        wireframe: vis.wireframe,
         transparent: true,
-        opacity: isSelected ? 1.0 : 0.75,
-        emissive: emissiveColor,
-        emissiveIntensity,
+        opacity: vis.opacity,
+        emissive: vis.emissiveColor,
+        emissiveIntensity: vis.emissiveIntensity,
       });
-      return new THREE.Mesh(geometry, material);
+      const mesh = new THREE.Mesh(geometry, material);
+      cache.set(gn.id, mesh);
+      return mesh;
     },
-    [selectedNodeIds],
+    // No dependency on selectedNodeIds — selection updates via the effect above
+    [],
   );
 
   /* ---------------------------------------------------------------- */
@@ -404,8 +542,6 @@ export function KnowledgeUniverse({ data }: Props) {
     return edge.type === "ai-suggested" ? 1.5 : 0.5;
   }, []);
 
-  /** For 3D, dashes aren't natively supported — use link particles instead
-   *  to distinguish AI-suggested links visually. */
   const linkParticles = useCallback((link: any) => {
     const edge = link as GraphEdge;
     return edge.type === "ai-suggested" ? 3 : 0;
@@ -416,18 +552,64 @@ export function KnowledgeUniverse({ data }: Props) {
     return edge.type === "ai-suggested" ? 1.5 : 0;
   }, []);
 
-  // Click handlers (with sound)
+  /** Smooth fly-to a positioned node. */
+  const flyToNode = useCallback(
+    (node: PositionedGraphNode, distance = 80, duration = 600) => {
+      if (
+        !fgRef.current ||
+        node.x === undefined ||
+        node.y === undefined ||
+        node.z === undefined
+      )
+        return;
+      pauseAutoRotate();
+      // Offset camera from the node along the current camera direction
+      const cam = fgRef.current.camera();
+      const dir = new THREE.Vector3()
+        .subVectors(cam.position, new THREE.Vector3(node.x, node.y, node.z))
+        .normalize();
+      fgRef.current.cameraPosition(
+        {
+          x: node.x + dir.x * distance,
+          y: node.y + dir.y * distance,
+          z: node.z + dir.z * distance,
+        },
+        { x: node.x, y: node.y, z: node.z },
+        duration,
+      );
+    },
+    [pauseAutoRotate],
+  );
+
+  // Double-click detection via timing
+  const lastClickRef = useRef<{ id: number; time: number }>({ id: -1, time: 0 });
+
+  // Click handler — select + fly-to; double-click for close-up
   const handleNodeClick = useCallback(
     (node: any, event: MouseEvent) => {
       playClickSound();
+      const now = Date.now();
+      const last = lastClickRef.current;
+      const isDoubleClick = node.id === last.id && now - last.time < 350;
+      lastClickRef.current = { id: node.id, time: now };
+
       if (event.shiftKey) {
         selectNode(node.id);
+        return;
+      }
+
+      clearSelection();
+      selectNode(node.id);
+
+      if (isDoubleClick) {
+        // Close-up zoom on double-click
+        flyToNode(node as PositionedGraphNode, 35, 400);
       } else {
-        clearSelection();
-        selectNode(node.id);
+        // Gentle fly-to on single click
+        flyToNode(node as PositionedGraphNode, 80, 600);
       }
     },
-    [selectNode, clearSelection, playClickSound],
+    [selectNode, clearSelection, playClickSound, flyToNode],
   );
 
   /* ---------------------------------------------------------------- */
@@ -449,6 +631,16 @@ export function KnowledgeUniverse({ data }: Props) {
     const filteredEdges = data.edges.filter(
       (e) => nodeIds.has(e.source as any) && nodeIds.has(e.target as any),
     );
+
+    // Prune mesh cache for nodes no longer in the graph
+    const cache = meshCacheRef.current;
+    for (const id of cache.keys()) {
+      if (!nodeIds.has(id)) {
+        const mesh = cache.get(id)!;
+        (mesh.material as THREE.Material).dispose();
+        cache.delete(id);
+      }
+    }
 
     return {
       nodes: filteredNodes.map((n) => ({ ...n })),
@@ -507,6 +699,7 @@ export function KnowledgeUniverse({ data }: Props) {
         width={dimensions.width}
         height={dimensions.height}
         backgroundColor="#0F0E0D"
+        controlType="orbit"
         nodeThreeObject={nodeThreeObject}
         nodeThreeObjectExtend={false}
         onNodeClick={handleNodeClick}
@@ -519,16 +712,16 @@ export function KnowledgeUniverse({ data }: Props) {
         linkDirectionalParticles={linkParticles}
         linkDirectionalParticleWidth={linkParticleWidth}
         linkDirectionalParticleColor={linkColor}
-        warmupTicks={100}
-        cooldownTime={5000}
+        warmupTicks={30}
+        cooldownTime={3000}
         showNavInfo={false}
         enableNavigationControls={true}
       />
 
       {/* Overlay layer — pointer-events-none so clicks pass through to 3D */}
       <div className="pointer-events-none absolute inset-0 z-10">
-        <UniverseControls nodes={data.nodes} graphRef={fgRef} />
-        <CardPreviewOverlay nodes={data.nodes} graphRef={fgRef} />
+        <UniverseControls nodes={graphData.nodes as PositionedGraphNode[]} flyToNode={flyToNode} />
+        <CardPreviewOverlay nodes={graphData.nodes as PositionedGraphNode[]} graphRef={fgRef} />
         <AIDiscoveryPanel nodes={data.nodes} />
         <CreateCardForm
           open={showCreateForm}

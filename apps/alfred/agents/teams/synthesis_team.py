@@ -1,6 +1,6 @@
 """Synthesis team -- Research + Writing agents.
 
-Uses GPT-4.1 (frontier model) for deep reasoning and synthesis.
+Uses Alfred's configured LLM model for deep reasoning and synthesis.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from alfred.core.settings import settings
 def build_synthesis_team():
     """Build the Synthesis team supervisor graph."""
     model = ChatOpenAI(
-        model="gpt-4.1",
+        model=settings.llm_model,
         api_key=(settings.openai_api_key.get_secret_value() if settings.openai_api_key else None),
         base_url=settings.openai_base_url,
     )

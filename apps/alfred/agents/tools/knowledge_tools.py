@@ -102,12 +102,13 @@ def get_document(doc_id: str) -> str:
 def search_documents(query: str, content_type: str | None = None, limit: int = 10) -> str:
     """Search documents in the knowledge store by query and optional content type."""
     svc = _get_doc_service()
-    docs = svc.list_documents(limit=limit)
+    data = svc.list_documents(limit=limit)
+    items = data.get("items", []) if isinstance(data, dict) else data
     results = [
-        {"id": str(d.id), "title": d.title, "content_type": d.content_type, "summary": (d.summary or "")[:200]}
-        for d in docs
-        if (not content_type or d.content_type == content_type)
-        and (not query or (query.lower() in (d.title or "").lower()) or (query.lower() in (d.summary or "").lower()))
+        {"id": str(d.get("id", "")), "title": d.get("title", ""), "content_type": d.get("content_type", ""), "summary": (d.get("summary") or "")[:200]}
+        for d in items
+        if (not content_type or d.get("content_type") == content_type)
+        and (not query or (query.lower() in (d.get("title") or "").lower()) or (query.lower() in (d.get("summary") or "").lower()))
     ][:limit]
     return json.dumps(results)
 

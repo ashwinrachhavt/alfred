@@ -1,12 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { type ForceGraphMethods } from "react-force-graph-3d";
 import { useUniverseStore } from "@/lib/stores/universe-store";
-import type { GraphNode } from "@/features/universe/queries";
+import type { GraphEdge, GraphNode } from "@/features/universe/queries";
+
+type PositionedGraphNode = GraphNode & { x?: number; y?: number; z?: number };
+type GraphRef = React.MutableRefObject<
+  ForceGraphMethods<PositionedGraphNode, GraphEdge> | undefined
+>;
 
 type Props = {
-  nodes: GraphNode[];
-  graphRef: React.RefObject<any>;
+  nodes: PositionedGraphNode[];
+  graphRef: GraphRef;
 };
 
 export function CardPreviewOverlay({ nodes, graphRef }: Props) {
@@ -19,25 +25,32 @@ export function CardPreviewOverlay({ nodes, graphRef }: Props) {
       : null;
 
   useEffect(() => {
+    let frame = 0;
     if (!node || !graphRef.current) {
-      setPos(null);
-      return;
+      frame = window.requestAnimationFrame(() => setPos(null));
+      return () => window.cancelAnimationFrame(frame);
     }
-    // Find the node's 3D position from the force graph
-    const fgNode = graphRef.current
-      .graphData()
-      .nodes.find((n: any) => n.id === node.id);
-    if (!fgNode) {
-      setPos(null);
-      return;
+    const positionedNode = nodes.find((n) => n.id === node.id);
+    if (
+      !positionedNode
+      || positionedNode.x === undefined
+      || positionedNode.y === undefined
+      || positionedNode.z === undefined
+    ) {
+      frame = window.requestAnimationFrame(() => setPos(null));
+      return () => window.cancelAnimationFrame(frame);
     }
+
     const coords = graphRef.current.graph2ScreenCoords(
-      fgNode.x,
-      fgNode.y,
-      fgNode.z,
+      positionedNode.x,
+      positionedNode.y,
+      positionedNode.z,
     );
-    if (coords) setPos({ x: coords.x + 20, y: coords.y - 60 });
-  }, [node, graphRef, selectedNodeIds]);
+    frame = window.requestAnimationFrame(() =>
+      setPos(coords ? { x: coords.x + 20, y: coords.y - 60 } : null),
+    );
+    return () => window.cancelAnimationFrame(frame);
+  }, [graphRef, node, nodes]);
 
   if (!node || !pos) return null;
 

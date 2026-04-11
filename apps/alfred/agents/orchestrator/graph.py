@@ -16,6 +16,7 @@ from alfred.agents.orchestrator.registry import ToolRegistry
 from alfred.agents.orchestrator.state import AlfredAgentState
 from alfred.agents.utils.runtime import run_tool_calls
 from alfred.core.llm_factory import get_chat_model
+from alfred.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ def _build_system_prompt(lens: str | None = None, note_context: dict | None = No
 def build_orchestrator_graph(
     registry: ToolRegistry,
     *,
-    model: str = "gpt-4.1-mini",
+    model: str | None = None,
     max_iterations: int = 10,
     lens: str | None = None,
     note_context: dict | None = None,
@@ -124,7 +125,7 @@ def build_orchestrator_graph(
 
     def router(state: AlfredAgentState) -> dict[str, Any]:
         """Call the LLM with tools bound. Returns updated messages."""
-        model_name = state.get("model") or model
+        model_name = state.get("model") or model or settings.llm_model
         llm = get_chat_model(model=model_name)
         llm_with_tools = llm.bind_tools(lc_tools) if lc_tools else llm
 
@@ -147,7 +148,7 @@ def build_orchestrator_graph(
 
     def force_final_response(state: AlfredAgentState) -> dict[str, Any]:
         """Force a text response when max iterations reached during tool loop."""
-        model_name = state.get("model") or model
+        model_name = state.get("model") or model or settings.llm_model
         llm = get_chat_model(model=model_name)
         # Call without tools so the LLM must respond with text
         messages: list[BaseMessage] = list(state["messages"])
