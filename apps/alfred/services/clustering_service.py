@@ -14,8 +14,8 @@ from typing import Any
 import numpy as np
 from sklearn.cluster import KMeans
 
-from alfred.core.redis_client import get_redis_client
 from alfred.core.llm_factory import get_chat_model
+from alfred.core.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
 

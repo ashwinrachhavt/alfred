@@ -6,10 +6,8 @@ from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 
 from alfred.services.clustering_service import ClusteringService
-
 
 # ---------------------------------------------------------------------------
 # Helpers
