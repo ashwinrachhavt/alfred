@@ -81,17 +81,23 @@ def _simple_text_stream(text: str) -> MockAsyncStream:
 
 
 def _tool_call_stream(
-    call_id: str, tool_name: str, args: dict,
+    call_id: str,
+    tool_name: str,
+    args: dict,
 ) -> MockAsyncStream:
     """Create a stream that yields a tool call."""
     args_json = json.dumps(args)
     chunks = [
-        _make_chunk(_make_delta(
-            tool_calls=[_make_tool_call_delta(0, call_id, tool_name, None)],
-        )),
-        _make_chunk(_make_delta(
-            tool_calls=[_make_tool_call_delta(0, None, None, args_json)],
-        )),
+        _make_chunk(
+            _make_delta(
+                tool_calls=[_make_tool_call_delta(0, call_id, tool_name, None)],
+            )
+        ),
+        _make_chunk(
+            _make_delta(
+                tool_calls=[_make_tool_call_delta(0, None, None, args_json)],
+            )
+        ),
         _make_chunk(_make_delta()),
     ]
     return MockAsyncStream(chunks)
@@ -117,6 +123,16 @@ def _parse_events(raw_events: list[str]) -> list[tuple[str, dict]]:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _mock_notifications():
+    """Prevent Redis calls from _build_system_prompt notifications check."""
+    with patch(
+        "alfred.services.knowledge_notifications.get_pending_notifications",
+        return_value=[],
+    ):
+        yield
 
 
 @pytest.fixture()
@@ -157,10 +173,11 @@ async def test_happy_path_text_response(service):
     assert "token" in event_types
     assert event_types[-1] == "done"
 
-    # Verify the content was streamed
+    # Verify the content was streamed token-by-token (real streaming)
     token_events = [e for e in parsed if e[0] == "token"]
-    assert len(token_events) == 1
-    assert token_events[0][1]["content"] == "Hello!"
+    assert len(token_events) >= 1
+    full_content = "".join(e[1]["content"] for e in token_events)
+    assert full_content == "Hello!"
 
 
 @pytest.mark.asyncio
@@ -393,7 +410,8 @@ async def test_reasoning_extraction(service):
     assert "token" in event_types
 
     reasoning_events = [e for e in parsed if e[0] == "reasoning"]
-    assert reasoning_events[0][1]["content"] == "Let me think... Step 1: analyze."
+    full_reasoning = "".join(e[1]["content"] for e in reasoning_events)
+    assert full_reasoning == "Let me think... Step 1: analyze."
 
 
 @pytest.mark.asyncio
@@ -468,22 +486,30 @@ async def test_gpt4o_uses_max_tokens(service):
 # ---------------------------------------------------------------------------
 
 
-def test_build_system_prompt_basic():
-    """System prompt includes Alfred identity."""
+@patch("alfred.services.knowledge_notifications.get_pending_notifications", return_value=[])
+def test_build_system_prompt_basic(_mock_notif):
+    """System prompt includes Alfred identity and tool usage instructions."""
     prompt = _build_system_prompt()
     assert "Alfred" in prompt
     assert "knowledge" in prompt.lower()
+    assert "search_kb" in prompt  # Tool usage instructions present
+    assert "NEVER say" in prompt  # Critical rule present
 
 
-def test_build_system_prompt_with_lens():
+@patch("alfred.services.knowledge_notifications.get_pending_notifications", return_value=[])
+def test_build_system_prompt_with_lens(_mock_notif):
     """System prompt includes lens when provided."""
-    prompt = _build_system_prompt(lens="philosophical")
-    assert "philosophical" in prompt
+    prompt = _build_system_prompt(lens="socratic")
+    assert "Socratic" in prompt
+    assert "probing questions" in prompt.lower()
 
 
-def test_build_system_prompt_with_note_context():
+@patch("alfred.services.knowledge_notifications.get_pending_notifications", return_value=[])
+def test_build_system_prompt_with_note_context(_mock_notif):
     """System prompt includes note context when provided."""
-    prompt = _build_system_prompt(note_context={"title": "My Note", "content_preview": "Some content"})
+    prompt = _build_system_prompt(
+        note_context={"title": "My Note", "content_preview": "Some content"}
+    )
     assert "My Note" in prompt
     assert "Some content" in prompt
 

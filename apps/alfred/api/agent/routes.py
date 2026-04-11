@@ -13,6 +13,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from alfred.agents.graph import build_alfred_graph
 from alfred.api.dependencies import get_db_session
 from alfred.models.thinking import AgentMessageRow, ThinkingSessionRow
 from alfred.services.knowledge_notifications import (
@@ -159,7 +160,7 @@ def _persist_message(
 
 
 def _sanitize_for_json(obj: Any) -> Any:
-    """Recursively convert LangChain message objects and other non-serializable types to plain dicts/strings."""
+    """Recursively convert LangChain message objects to plain dicts."""
     if isinstance(obj, BaseMessage):
         return {"type": obj.type, "content": obj.content}
     if isinstance(obj, dict):
@@ -173,23 +174,9 @@ def _sanitize_for_json(obj: Any) -> Any:
     return obj
 
 
-class _LangChainEncoder(json.JSONEncoder):
-    """JSON encoder that handles LangChain message objects and other non-serializable types."""
-
-    def default(self, obj: Any) -> Any:
-        if isinstance(obj, BaseMessage):
-            return {"type": obj.type, "content": obj.content}
-        # Handle pydantic models (v1 and v2)
-        if hasattr(obj, "model_dump"):
-            return obj.model_dump()
-        if hasattr(obj, "dict"):
-            return obj.dict()
-        return super().default(obj)
-
-
 def _sse_event(event: str, data: dict) -> str:
     """Format a single SSE event."""
-    return f"event: {event}\ndata: {json.dumps(data, cls=_LangChainEncoder, default=str)}\n\n"
+    return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
 @router.post("/stream")
@@ -225,10 +212,7 @@ async def agent_stream(
     _persist_message(db, thread_id, "user", body.message, lens=body.lens, model=body.model)
 
     async def event_stream():
-        from alfred.agents.graph import build_alfred_graph
-
         yield _sse_event("thread_created", {"thread_id": thread_id})
-        yield _sse_event("phase", {"phase": "routing", "message": "Understanding your request..."})
 
         graph = build_alfred_graph()
 
@@ -323,7 +307,6 @@ async def agent_stream(
                 elif kind == "on_tool_end":
                     tool_name = event.get("name", "")
                     raw_output = event.get("data", {}).get("output", "")
-                    # Extract content string from LangChain ToolMessage/BaseMessage objects
                     if isinstance(raw_output, BaseMessage):
                         tool_output = raw_output.content[:500]
                     else:
@@ -367,10 +350,8 @@ async def agent_stream(
                             yield _sse_event("token", {"content": content})
 
         except Exception as e:
-            logger.exception("Graph streaming error")
+            logger.exception("Agent streaming error")
             yield _sse_event("error", {"message": str(e)})
-
-        yield _sse_event("done", {})
 
         # Persist assistant message
         if assistant_content or tool_calls_log or artifacts_log:
