@@ -1,15 +1,21 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Search, Volume2, VolumeX } from "lucide-react";
+import { Search, Volume2, VolumeX, Play, Pause } from "lucide-react";
 import type { GraphNode } from "@/features/universe/queries";
 import { useUniverseStore } from "@/lib/stores/universe-store";
 
 type Props = { nodes: GraphNode[]; graphRef: React.RefObject<any> };
 
 export function UniverseControls({ nodes, graphRef }: Props) {
-  const { audioEnabled, toggleAudio, selectNode, clearSelection } =
-    useUniverseStore();
+  const {
+    audioEnabled,
+    toggleAudio,
+    selectNode,
+    clearSelection,
+    isTimeLapsePlaying,
+    setTimeLapsePlaying,
+  } = useUniverseStore();
   const [query, setQuery] = useState("");
 
   const handleSearch = useCallback(() => {
@@ -46,6 +52,21 @@ export function UniverseControls({ nodes, graphRef }: Props) {
           className="w-40 bg-transparent font-sans text-xs text-white/80 placeholder:text-white/30 focus:outline-none"
         />
       </div>
+
+      {/* Time-lapse play/pause */}
+      <button
+        onClick={() => setTimeLapsePlaying(!isTimeLapsePlaying)}
+        className="rounded-full border border-white/10 bg-black/40 p-2 backdrop-blur-sm"
+        title={isTimeLapsePlaying ? "Pause time-lapse" : "Play time-lapse (Space)"}
+      >
+        {isTimeLapsePlaying ? (
+          <Pause className="h-3.5 w-3.5 text-[#E8590C]" />
+        ) : (
+          <Play className="h-3.5 w-3.5 text-white/40" />
+        )}
+      </button>
+
+      {/* Audio toggle */}
       <button
         onClick={toggleAudio}
         className="rounded-full border border-white/10 bg-black/40 p-2 backdrop-blur-sm"
@@ -57,6 +78,7 @@ export function UniverseControls({ nodes, graphRef }: Props) {
           <VolumeX className="h-3.5 w-3.5 text-white/40" />
         )}
       </button>
+
       <div className="rounded-full border border-white/10 bg-black/40 px-3 py-2 backdrop-blur-sm">
         <span className="font-mono text-[10px] text-white/40">
           {nodes.length} cards
