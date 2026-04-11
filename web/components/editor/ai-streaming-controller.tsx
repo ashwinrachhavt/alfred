@@ -1,13 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { Transaction } from "@tiptap/pm/state";
 import { type Editor } from "@tiptap/react";
 import { toast } from "sonner";
 import { Check, Pencil, RotateCcw, Sparkles, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { streamAIInline } from "@/lib/api/ai-stream";
-import { completeText } from "@/lib/api/ai-assist";
+import { streamWritingCompose } from "@/lib/api/writing-stream";
+import {
+  normalizeTiptapRange,
+  remapTiptapRange,
+  type TiptapRange,
+} from "@/lib/utils/tiptap-ranges";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -23,6 +28,8 @@ export type AiStreamingControllerProps = {
   state: StreamingState;
   insertAt: number;
   originalRange: { from: number; to: number; text: string } | null;
+  documentTitle?: string;
+  documentId?: string | null;
   onFinish: (action: "accept" | "discard") => void;
   onStreamComplete: () => void;
   onRetry: () => void;
@@ -38,32 +45,80 @@ export function AiStreamingController({
   state,
   insertAt,
   originalRange,
+  documentTitle,
+  documentId,
   onFinish,
   onStreamComplete,
   onRetry,
   onEditInstruction,
 }: AiStreamingControllerProps) {
   const abortRef = useRef<AbortController | null>(null);
-  const insertRangeRef = useRef<{ from: number; to: number }>({
+  const insertRangeRef = useRef<TiptapRange>({
     from: insertAt,
     to: insertAt,
   });
+  const originalRangeRef = useRef<typeof originalRange>(originalRange);
 
-  const [pillPos, setPillPos] = useState<{ top: number; left: number } | null>(
-    null,
-  );
+  const [pillPos, setPillPos] = useState<{ top: number; left: number } | null>(null);
   const [actionBarPos, setActionBarPos] = useState<{
     top: number;
     left: number;
   } | null>(null);
+
+  const clipMiddle = useCallback((text: string, maxChars: number) => {
+    if (text.length <= maxChars) return text.trim();
+    const head = text.slice(0, Math.floor(maxChars * 0.55)).trim();
+    const tail = text.slice(-Math.floor(maxChars * 0.3)).trim();
+    return `${head}\n\n[...]\n\n${tail}`.trim();
+  }, []);
+
+  const buildWritingContext = useCallback(() => {
+    const docSize = editor.state.doc.content.size;
+    const contextFrom = originalRange?.from ?? insertAt;
+    const contextTo = originalRange?.to ?? insertAt;
+    const localWindow = 2200;
+    const fullDocument = editor.state.doc.textBetween(0, docSize, "\n").trim();
+    const before = editor.state.doc
+      .textBetween(Math.max(0, contextFrom - localWindow), contextFrom, "\n")
+      .trim();
+    const after = editor.state.doc
+      .textBetween(contextTo, Math.min(docSize, contextTo + localWindow), "\n")
+      .trim();
+
+    const noteOverviewParts = [
+      documentTitle ? `Note title: ${documentTitle}` : "",
+      fullDocument ? `Note overview:\n${clipMiddle(fullDocument, 4200)}` : "",
+      before ? `Context before cursor:\n${before.slice(-1400)}` : "",
+      after ? `Context after cursor:\n${after.slice(0, 1400)}` : "",
+    ].filter(Boolean);
+
+    const localFocus = [
+      before ? `Before cursor:\n${before.slice(-1800)}` : "",
+      originalRange?.text ? `Selected text:\n${originalRange.text}` : "",
+      after ? `After cursor:\n${after.slice(0, 1800)}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    return {
+      draftExcerpt: clipMiddle(localFocus || fullDocument, 5200),
+      pageText: noteOverviewParts.join("\n\n"),
+    };
+  }, [clipMiddle, documentTitle, editor, insertAt, originalRange]);
+
+  const resolveInstruction = useCallback((instruction: string) => {
+    if (instruction === "__CONTINUE__") {
+      return "Continue this note naturally from the cursor. Match the existing voice, level of detail, and structure. Do not repeat what is already written, and do not add filler.";
+    }
+    return instruction;
+  }, []);
 
   /* ---- helpers --------------------------------------------------- */
 
   const updateActionBarPosition = useCallback(() => {
     if (!editor || editor.isDestroyed) return;
     try {
-      const to = insertRangeRef.current.to;
-      if (to > editor.state.doc.content.size) return;
+      const { to } = normalizeTiptapRange(insertRangeRef.current, editor.state.doc.content.size);
       const coords = editor.view.coordsAtPos(to);
       setActionBarPos({ top: coords.bottom + 8, left: coords.left });
     } catch {
@@ -74,8 +129,7 @@ export function AiStreamingController({
   const updatePillPosition = useCallback(() => {
     if (!editor || editor.isDestroyed) return;
     try {
-      const to = insertRangeRef.current.to;
-      if (to > editor.state.doc.content.size) return;
+      const { to } = normalizeTiptapRange(insertRangeRef.current, editor.state.doc.content.size);
       const coords = editor.view.coordsAtPos(to);
       setPillPos({ top: coords.bottom + 8, left: coords.left });
     } catch {
@@ -85,37 +139,37 @@ export function AiStreamingController({
 
   const discardInserted = useCallback(() => {
     if (!editor || editor.isDestroyed) return;
-    const { from, to } = insertRangeRef.current;
+    const { from, to } = normalizeTiptapRange(insertRangeRef.current, editor.state.doc.content.size);
     if (from < to) {
       const tr = editor.state.tr.delete(from, to);
       editor.view.dispatch(tr);
     }
+    insertRangeRef.current = { from, to: from };
+    setPillPos(null);
+    setActionBarPos(null);
   }, [editor]);
 
   /* ---- action handlers ------------------------------------------ */
 
   const handleAccept = useCallback(() => {
     if (!editor || editor.isDestroyed) return;
-    if (originalRange) {
+    const currentOriginalRange = originalRangeRef.current;
+    if (currentOriginalRange) {
       // Edit mode: delete the original text range. The AI text is already
-      // inserted AFTER the original, so deleting the original shifts
-      // the insert range backwards.
-      const deleteLen = originalRange.to - originalRange.from;
-      const tr = editor.state.tr.delete(originalRange.from, originalRange.to);
-      editor.view.dispatch(tr);
-
-      // Adjust insert range ref since deletion before shifts positions
-      insertRangeRef.current = {
-        from: insertRangeRef.current.from - deleteLen,
-        to: insertRangeRef.current.to - deleteLen,
-      };
+      // inserted AFTER the original, so deleting the original leaves only
+      // the accepted AI text. The insert range is remapped automatically.
+      const { from, to } = normalizeTiptapRange(currentOriginalRange, editor.state.doc.content.size);
+      if (from < to) {
+        const tr = editor.state.tr.delete(from, to);
+        editor.view.dispatch(tr);
+      }
 
       toast.success("AI edit applied");
     } else {
       toast.success("AI text inserted");
     }
     onFinish("accept");
-  }, [editor, originalRange, onFinish]);
+  }, [editor, onFinish]);
 
   const handleDiscard = useCallback(() => {
     if (!editor || editor.isDestroyed) return;
@@ -124,7 +178,62 @@ export function AiStreamingController({
     onFinish("discard");
   }, [editor, discardInserted, onFinish]);
 
+  const handleRetry = useCallback(() => {
+    if (!editor || editor.isDestroyed) return;
+    discardInserted();
+    onRetry();
+  }, [editor, discardInserted, onRetry]);
+
   /* ---- streaming effect ----------------------------------------- */
+
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    const docSize = editor.state.doc.content.size;
+    insertRangeRef.current = normalizeTiptapRange({ from: insertAt, to: insertAt }, docSize);
+    originalRangeRef.current = originalRange
+      ? {
+          ...normalizeTiptapRange(
+            { from: originalRange.from, to: originalRange.to },
+            docSize,
+          ),
+          text: originalRange.text,
+        }
+      : null;
+  }, [editor, insertAt, originalRange]);
+
+  useEffect(() => {
+    if (!editor || editor.isDestroyed || state.status === "idle") return;
+
+    const handleTransaction = ({ transaction }: { transaction: Transaction }) => {
+      if (!transaction.docChanged) return;
+
+      const docSize = transaction.doc.content.size;
+      insertRangeRef.current = remapTiptapRange(insertRangeRef.current, transaction.mapping, docSize);
+
+      if (originalRangeRef.current) {
+        const mappedOriginalRange = remapTiptapRange(
+          originalRangeRef.current,
+          transaction.mapping,
+          docSize,
+        );
+        originalRangeRef.current = {
+          ...originalRangeRef.current,
+          ...mappedOriginalRange,
+        };
+      }
+
+      if (state.status === "streaming") {
+        updatePillPosition();
+      } else if (state.status === "done") {
+        updateActionBarPosition();
+      }
+    };
+
+    editor.on("transaction", handleTransaction);
+    return () => {
+      editor.off("transaction", handleTransaction);
+    };
+  }, [editor, state.status, updateActionBarPosition, updatePillPosition]);
 
   useEffect(() => {
     if (state.status !== "streaming") return;
@@ -132,73 +241,55 @@ export function AiStreamingController({
     const ac = new AbortController();
     abortRef.current = ac;
 
-    let currentPos = insertAt;
-    insertRangeRef.current = { from: insertAt, to: insertAt };
+    const docSize = editor.state.doc.content.size;
+    insertRangeRef.current = normalizeTiptapRange({ from: insertAt, to: insertAt }, docSize);
 
     const run = async () => {
       try {
-        if (state.instruction === "__CONTINUE__") {
-          // Special case: use completeText instead of streaming
-          const docText = editor.state.doc.textBetween(
-            0,
-            Math.min(insertAt, editor.state.doc.content.size),
-            "\n",
-          );
-          const contextBefore = docText.slice(-1000);
+        const isEdit = originalRange !== null;
+        const { draftExcerpt, pageText } = buildWritingContext();
+        const threadId = `note-inline:${documentId ?? "local"}:${Date.now()}`;
 
-          const result = await completeText(contextBefore, "", "");
-          if (ac.signal.aborted) return;
+        await streamWritingCompose({
+          intent: isEdit ? "edit" : "compose",
+          instruction: resolveInstruction(state.instruction),
+          selection: originalRange?.text ?? "",
+          draft: draftExcerpt,
+          pageTitle: documentTitle ?? "",
+          pageText,
+          preset: "notion",
+          threadId,
+          signal: ac.signal,
+          onToken: (token: string) => {
+            if (!token || editor.isDestroyed) return;
+            const currentRange = normalizeTiptapRange(
+              insertRangeRef.current,
+              editor.state.doc.content.size,
+            );
+            insertRangeRef.current = currentRange;
 
-          const tr = editor.state.tr.insertText(result, currentPos);
-          editor.view.dispatch(tr);
-          currentPos += result.length;
-          insertRangeRef.current = {
-            from: insertAt,
-            to: currentPos,
-          };
-          updateActionBarPosition();
-          onStreamComplete();
-        } else {
-          // Normal streaming case
-          const isEdit = originalRange !== null;
-          const intentArgs = isEdit
-            ? { text: originalRange.text, instruction: state.instruction }
-            : {
-                text: editor.state.doc
-                  .textBetween(
-                    Math.max(0, insertAt - 1000),
-                    Math.min(insertAt, editor.state.doc.content.size),
-                    "\n",
-                  )
-                  .slice(-1000),
-                instruction: "Generate new content: " + state.instruction,
-              };
-
-          await streamAIInline({
-            intent: "edit_text",
-            intentArgs,
-            onToken: (token: string) => {
-              const tr = editor.state.tr.insertText(token, currentPos);
+            try {
+              const tr = editor.state.tr.insertText(token, currentRange.to);
               editor.view.dispatch(tr);
-              currentPos += token.length;
-              insertRangeRef.current = {
-                from: insertAt,
-                to: currentPos,
-              };
               updatePillPosition();
-            },
-            onComplete: () => {
-              updateActionBarPosition();
-              onStreamComplete();
-            },
-            onError: (error: Error) => {
-              toast.error(error.message || "AI streaming failed");
+            } catch (error) {
+              ac.abort();
+              const message = error instanceof Error ? error.message : "AI insert failed";
+              toast.error(message);
               discardInserted();
               onFinish("discard");
-            },
-            signal: ac.signal,
-          });
-        }
+            }
+          },
+          onComplete: () => {
+            updateActionBarPosition();
+            onStreamComplete();
+          },
+          onError: (error: Error) => {
+            toast.error(error.message || "AI streaming failed");
+            discardInserted();
+            onFinish("discard");
+          },
+        });
       } catch {
         // Errors are handled in onError / abort
       }
@@ -210,7 +301,21 @@ export function AiStreamingController({
       ac.abort();
       abortRef.current = null;
     };
-  }, [state, insertAt, originalRange, editor, onFinish, onStreamComplete, updateActionBarPosition, updatePillPosition, discardInserted]);
+  }, [
+    state,
+    insertAt,
+    originalRange,
+    documentTitle,
+    documentId,
+    editor,
+    onFinish,
+    onStreamComplete,
+    updateActionBarPosition,
+    updatePillPosition,
+    discardInserted,
+    buildWritingContext,
+    resolveInstruction,
+  ]);
 
   /* ---- keyboard shortcuts --------------------------------------- */
 
@@ -248,11 +353,11 @@ export function AiStreamingController({
     if (!pillPos) return null;
     return (
       <div
-        className="fixed z-50 flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 shadow-sm"
+        className="border-border bg-card fixed z-50 flex items-center gap-1.5 rounded-md border px-2.5 py-1 shadow-sm"
         style={{ top: pillPos.top, left: pillPos.left }}
       >
-        <Sparkles className="h-3 w-3 animate-pulse text-primary" />
-        <span className="font-mono text-[10px] uppercase tracking-wider text-primary">
+        <Sparkles className="text-primary h-3 w-3 animate-pulse" />
+        <span className="text-primary font-mono text-[10px] tracking-wider uppercase">
           Writing...
         </span>
       </div>
@@ -264,7 +369,7 @@ export function AiStreamingController({
 
   return (
     <div
-      className="fixed z-50 flex items-center gap-1 rounded-lg border border-border bg-card p-1 shadow-md"
+      className="border-border bg-card fixed z-50 flex items-center gap-1 rounded-lg border p-1 shadow-md"
       style={{ top: actionBarPos.top, left: actionBarPos.left }}
     >
       {/* Accept */}
@@ -274,7 +379,7 @@ export function AiStreamingController({
         className={cn(
           "flex items-center gap-1.5 rounded-md px-2.5 py-1.5",
           "bg-primary text-primary-foreground",
-          "font-mono text-[10px] uppercase tracking-wider",
+          "font-mono text-[10px] tracking-wider uppercase",
         )}
       >
         <Check className="h-3 w-3" />
@@ -297,7 +402,7 @@ export function AiStreamingController({
       {/* Retry */}
       <button
         type="button"
-        onClick={onRetry}
+        onClick={handleRetry}
         className={cn(
           "flex items-center gap-1.5 rounded-md px-2.5 py-1.5",
           "text-muted-foreground hover:bg-secondary hover:text-foreground",

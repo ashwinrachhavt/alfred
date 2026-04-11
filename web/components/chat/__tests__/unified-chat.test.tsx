@@ -10,14 +10,24 @@ Element.prototype.scrollIntoView = vi.fn();
 
 const mockToggleAiPanel = vi.fn();
 const mockToggleChatExpanded = vi.fn();
+const mockSetChatMode = vi.fn();
+const mockOpenZettelViewer = vi.fn();
 
 vi.mock("@/lib/stores/shell-store", () => ({
-  useShellStore: vi.fn(() => ({
-    aiPanelOpen: true,
-    chatMode: "sidebar" as const,
-    toggleAiPanel: mockToggleAiPanel,
-    toggleChatExpanded: mockToggleChatExpanded,
-  })),
+  useShellStore: Object.assign(
+    vi.fn(() => ({
+      aiPanelOpen: true,
+      chatMode: "sidebar" as const,
+      toggleAiPanel: mockToggleAiPanel,
+      toggleChatExpanded: mockToggleChatExpanded,
+    })),
+    {
+      getState: vi.fn(() => ({
+        setChatMode: mockSetChatMode,
+        openZettelViewer: mockOpenZettelViewer,
+      })),
+    },
+  ),
 }));
 
 const defaultAgentState = {
@@ -40,9 +50,12 @@ const defaultAgentState = {
 };
 
 vi.mock("@/lib/stores/agent-store", () => ({
-  useAgentStore: Object.assign(vi.fn(() => defaultAgentState), {
-    getState: vi.fn(() => defaultAgentState),
-  }),
+  useAgentStore: Object.assign(
+    vi.fn(() => defaultAgentState),
+    {
+      getState: vi.fn(() => defaultAgentState),
+    },
+  ),
   useToolCallStore: vi.fn(() => ({ activeToolCalls: [] })),
   selectOrderedMessages: vi.fn(() => []),
   PHILOSOPHICAL_LENSES: [
@@ -95,6 +108,8 @@ import { UnifiedChat } from "../unified-chat";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockSetChatMode.mockReset();
+  mockOpenZettelViewer.mockReset();
 });
 
 describe("UnifiedChat — sidebar mode", () => {
@@ -254,12 +269,8 @@ describe("UnifiedChat — expanded mode", () => {
 
     render(<UnifiedChat mode="expanded" />);
 
-    expect(
-      screen.getByText("What would you like to explore?"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Alfred will search your knowledge base/),
-    ).toBeInTheDocument();
+    expect(screen.getByText("What would you like to explore?")).toBeInTheDocument();
+    expect(screen.getByText(/Alfred will search your knowledge base/)).toBeInTheDocument();
   });
 
   it("uses max-w-3xl centered layout for messages", () => {

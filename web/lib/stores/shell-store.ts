@@ -13,19 +13,28 @@ type ShellState = {
   aiPanelOpen: boolean;
   chatMode: ChatMode;
   toolPanel: ToolPanel | null;
-  toggleAiPanel: () => void;
+  zettelViewerCardId: number | null;
+  openAiPanel: (mode?: ChatMode) => void;
+  closeAiPanel: () => void;
+  toggleAiPanel: (mode?: ChatMode) => void;
   setAiPanelOpen: (open: boolean) => void;
   setChatMode: (mode: ChatMode) => void;
   toggleChatExpanded: () => void;
   openToolPanel: (type: ToolPanelType, props?: Record<string, unknown>) => void;
   closeToolPanel: () => void;
+  openZettelViewer: (cardId: number) => void;
+  closeZettelViewer: () => void;
 };
 
 export const useShellStore = create<ShellState>((set) => ({
   aiPanelOpen: false,
   chatMode: "sidebar",
   toolPanel: null,
-  toggleAiPanel: () => set((s) => ({ aiPanelOpen: !s.aiPanelOpen, chatMode: s.aiPanelOpen ? s.chatMode : "sidebar" })),
+  zettelViewerCardId: null,
+  openAiPanel: (mode = "expanded") => set({ aiPanelOpen: true, chatMode: mode }),
+  closeAiPanel: () => set({ aiPanelOpen: false }),
+  toggleAiPanel: (mode = "sidebar") =>
+    set((s) => (s.aiPanelOpen ? { aiPanelOpen: false } : { aiPanelOpen: true, chatMode: mode })),
   setAiPanelOpen: (open) => set({ aiPanelOpen: open }),
   setChatMode: (mode) => set({ chatMode: mode, aiPanelOpen: true }),
   toggleChatExpanded: () =>
@@ -37,4 +46,6 @@ export const useShellStore = create<ShellState>((set) => ({
     }),
   openToolPanel: (type, props = {}) => set({ toolPanel: { type, props } }),
   closeToolPanel: () => set({ toolPanel: null }),
+  openZettelViewer: (cardId) => set({ zettelViewerCardId: cardId }),
+  closeZettelViewer: () => set({ zettelViewerCardId: null }),
 }));

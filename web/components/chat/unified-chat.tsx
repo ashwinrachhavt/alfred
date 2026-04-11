@@ -29,6 +29,7 @@ import {
 } from "@/lib/stores/agent-store";
 import { useShellStore, type ChatMode } from "@/lib/stores/shell-store";
 import { MessageBubble } from "@/components/chat/message-bubble";
+import { useStickToBottom } from "@/lib/hooks/use-stick-to-bottom";
 import { cn } from "@/lib/utils";
 
 const EditorDrawer = dynamic(
@@ -42,15 +43,8 @@ const EditorDrawer = dynamic(
 // --- Page-contextual suggestions ---
 
 const SUGGESTIONS: Record<string, string[]> = {
-  notes: [
-    "What are the key arguments?",
-    "Find related knowledge",
-    "Summarize this note",
-  ],
-  "notes-empty": [
-    "What do I know about...",
-    "Find connections between...",
-  ],
+  notes: ["What are the key arguments?", "Find related knowledge", "Summarize this note"],
+  "notes-empty": ["What do I know about...", "Find connections between..."],
   default: [
     "What do I know about...",
     "Summarize my recent readings",
@@ -115,9 +109,14 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
   const [showSettings, setShowSettings] = useState(false);
   const [showThreads, setShowThreads] = useState(false);
   const [editingZettelId, setEditingZettelId] = useState<number | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastThreadLoadRef = useRef(0);
+  const {
+    containerRef: messagesContainerRef,
+    endRef: messagesEndRef,
+    maybeScrollToBottom,
+    scrollToBottom,
+  } = useStickToBottom();
 
   const isSidebar = mode === "sidebar";
 
@@ -132,20 +131,30 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
     setTimeout(() => inputRef.current?.focus(), 200);
   }, [aiPanelOpen, isSidebar, loadThreads]);
 
-  // Auto-scroll
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (messages.length === 0) return;
+    maybeScrollToBottom(isStreaming ? "auto" : "smooth");
+  }, [messages, isStreaming, maybeScrollToBottom]);
+
+  useEffect(() => {
+    if (isSidebar && !aiPanelOpen) return;
+    requestAnimationFrame(() => {
+      scrollToBottom("auto");
+    });
+  }, [activeThreadId, aiPanelOpen, isSidebar, scrollToBottom]);
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text) return;
+
     setInput("");
+    scrollToBottom("smooth");
+
     if (!activeThreadId) {
       await createThread(text.slice(0, 60));
     }
     await sendMessage(text);
-  }, [input, activeThreadId, createThread, sendMessage]);
+  }, [input, activeThreadId, createThread, scrollToBottom, sendMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -154,9 +163,27 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
     }
   };
 
-  const handleArtifactClick = useCallback((artifact: ArtifactCard) => {
-    setEditingZettelId(artifact.id);
-  }, []);
+  const handleViewZettel = useCallback(
+    (zettelId: number) => {
+      const shell = useShellStore.getState();
+      shell.setChatMode("sidebar");
+      shell.openZettelViewer(zettelId);
+      setEditingZettelId(null);
+    },
+    [],
+  );
+
+  const handleArtifactClick = useCallback(
+    (artifact: ArtifactCard) => {
+      if (artifact.type !== "zettel") return;
+      if (mode === "expanded") {
+        handleViewZettel(artifact.id);
+        return;
+      }
+      setEditingZettelId(artifact.id);
+    },
+    [handleViewZettel, mode],
+  );
 
   // Determine suggestions and empty state text
   const suggestions = isOnNotes
@@ -185,9 +212,7 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
         aria-label="AI Assistant"
         className={cn(
           "flex flex-col",
-          isSidebar
-            ? "h-full w-[380px] shrink-0 border-l bg-card"
-            : "h-full flex-1",
+          isSidebar ? "bg-card h-full w-[380px] shrink-0 border-l" : "h-full flex-1",
         )}
       >
         {/* ---- Header ---- */}
@@ -216,7 +241,7 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
 
         {/* ---- Thread dropdown ---- */}
         {showThreads && (
-          <div className="border-b bg-card">
+          <div className="bg-card border-b">
             <div className="max-h-48 overflow-y-auto py-1">
               {threads.slice(0, 5).map((thread) => (
                 <button
@@ -226,31 +251,29 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
                     setShowThreads(false);
                   }}
                   className={cn(
-                    "w-full text-left px-4 py-2 text-sm hover:bg-secondary transition-colors truncate",
-                    thread.id === activeThreadId &&
-                      "bg-secondary text-foreground",
+                    "hover:bg-secondary w-full truncate px-4 py-2 text-left text-sm transition-colors",
+                    thread.id === activeThreadId && "bg-secondary text-foreground",
                   )}
                 >
                   {thread.title}
                 </button>
               ))}
               {threads.length === 0 && (
-                <p className="px-4 py-2 text-xs text-muted-foreground">
-                  No conversations yet
-                </p>
+                <p className="text-muted-foreground px-4 py-2 text-xs">No conversations yet</p>
               )}
             </div>
           </div>
         )}
 
         {/* ---- Messages area ---- */}
-        <div className="flex-1 overflow-y-auto" role="log" aria-live="polite">
+        <div
+          ref={messagesContainerRef}
+          className="flex-1 overflow-y-auto"
+          role="log"
+          aria-live="polite"
+        >
           <div
-            className={cn(
-              isSidebar
-                ? "p-4 space-y-4"
-                : "max-w-3xl mx-auto px-6 py-6 space-y-6",
-            )}
+            className={cn(isSidebar ? "space-y-4 p-4" : "mx-auto max-w-3xl space-y-6 px-6 py-6")}
           >
             {/* Empty state */}
             {messages.length === 0 && (
@@ -275,33 +298,27 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
                 mode={mode}
                 isOnNotes={!!isOnNotes}
                 onArtifactClick={handleArtifactClick}
+                onViewZettel={handleViewZettel}
               />
             ))}
 
             {/* Active tool call indicator */}
-            {isStreaming &&
-              activeToolCalls.some((tc) => tc.status === "pending") && (
-                <div className="flex items-center gap-2 py-1">
-                  <Loader2
-                    className={cn(
-                      "animate-spin text-primary",
-                      isSidebar ? "size-3" : "size-3.5",
-                    )}
-                  />
-                  <span
-                    className={cn(
-                      "text-muted-foreground",
-                      isSidebar ? "text-[11px]" : "text-xs",
-                    )}
-                  >
-                    {activeToolCalls
-                      .filter((tc) => tc.status === "pending")
-                      .map((tc) => tc.tool.replace(/_/g, " "))
-                      .join(", ")}
-                    ...
-                  </span>
-                </div>
-              )}
+            {isStreaming && activeToolCalls.some((tc) => tc.status === "pending") && (
+              <div className="flex items-center gap-2 py-1">
+                <Loader2
+                  className={cn("text-primary animate-spin", isSidebar ? "size-3" : "size-3.5")}
+                />
+                <span
+                  className={cn("text-muted-foreground", isSidebar ? "text-[11px]" : "text-xs")}
+                >
+                  {activeToolCalls
+                    .filter((tc) => tc.status === "pending")
+                    .map((tc) => tc.tool.replace(/_/g, " "))
+                    .join(", ")}
+                  ...
+                </span>
+              </div>
+            )}
 
             <div ref={messagesEndRef} />
           </div>
@@ -312,7 +329,7 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
           <div
             className={cn(
               "flex flex-wrap items-center gap-1.5 border-t",
-              isSidebar ? "px-3 py-2" : "max-w-3xl mx-auto w-full px-6 py-3",
+              isSidebar ? "px-3 py-2" : "mx-auto w-full max-w-3xl px-6 py-3",
             )}
           >
             {PHILOSOPHICAL_LENSES.map((l) => (
@@ -320,13 +337,11 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
                 key={l.id}
                 onClick={() => setLens(activeLens === l.id ? null : l.id)}
                 className={cn(
-                  "rounded-full transition-colors border",
-                  isSidebar
-                    ? "px-2.5 py-0.5 text-[10px]"
-                    : "px-3 py-1 text-[11px]",
+                  "rounded-full border transition-colors",
+                  isSidebar ? "px-2.5 py-0.5 text-[10px]" : "px-3 py-1 text-[11px]",
                   activeLens === l.id
-                    ? "border-primary bg-[var(--alfred-accent-subtle)] text-primary"
-                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
+                    ? "border-primary text-primary bg-[var(--alfred-accent-subtle)]"
+                    : "text-muted-foreground hover:border-border hover:text-foreground border-transparent",
                 )}
               >
                 {l.label}
@@ -370,10 +385,7 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
       </div>
 
       {/* Editor drawer for viewing zettels */}
-      <EditorDrawer
-        zettelId={editingZettelId}
-        onClose={() => setEditingZettelId(null)}
-      />
+      <EditorDrawer zettelId={editingZettelId} onClose={() => setEditingZettelId(null)} />
     </>
   );
 }
@@ -396,15 +408,15 @@ function SidebarHeader({
   return (
     <div className="flex items-center justify-between border-b px-4 py-2.5">
       <div className="flex items-center gap-2">
-        <div className="size-2 rounded-full bg-primary animate-pulse" />
+        <div className="bg-primary size-2 animate-pulse rounded-full" />
         <button
           onClick={() => setShowThreads(!showThreads)}
-          className="flex items-center gap-1 text-xs uppercase tracking-wider hover:text-foreground transition-colors"
+          className="hover:text-foreground flex items-center gap-1 text-xs tracking-wider uppercase transition-colors"
         >
           Alfred AI
           <ChevronDown
             className={cn(
-              "size-3 text-muted-foreground transition-transform",
+              "text-muted-foreground size-3 transition-transform",
               showThreads && "rotate-180",
             )}
           />
@@ -414,7 +426,7 @@ function SidebarHeader({
         <Button
           variant="ghost"
           size="icon"
-          className="size-8 text-muted-foreground"
+          className="text-muted-foreground size-8"
           onClick={onExpand}
           aria-label="Expand chat"
         >
@@ -423,7 +435,7 @@ function SidebarHeader({
         <Button
           variant="ghost"
           size="icon"
-          className="size-8 text-muted-foreground"
+          className="text-muted-foreground size-8"
           onClick={onNewConversation}
           aria-label="New conversation"
         >
@@ -432,7 +444,7 @@ function SidebarHeader({
         <Button
           variant="ghost"
           size="icon"
-          className="size-8 text-muted-foreground"
+          className="text-muted-foreground size-8"
           onClick={onClose}
           aria-label="Close AI panel"
         >
@@ -455,29 +467,27 @@ function ExpandedHeader({
   onToggleThreads: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 px-6 py-2 border-b">
+    <div className="flex items-center gap-2 border-b px-6 py-2">
       <button
         onClick={onToggleThreads}
-        className="flex items-center gap-2 hover:bg-secondary rounded-md px-2 py-1 transition-colors"
+        className="hover:bg-secondary flex items-center gap-2 rounded-md px-2 py-1 transition-colors"
       >
-        <span className="font-medium text-[10px] uppercase tracking-wider text-[var(--alfred-text-tertiary)]">
+        <span className="text-[10px] font-medium tracking-wider text-[var(--alfred-text-tertiary)] uppercase">
           Alfred AI
         </span>
         {activeThread && (
           <>
             <span className="text-[var(--alfred-text-tertiary)]">/</span>
-            <span className="text-sm text-foreground truncate max-w-xs">
-              {activeThread.title}
-            </span>
+            <span className="text-foreground max-w-xs truncate text-sm">{activeThread.title}</span>
           </>
         )}
-        <ChevronDown className="size-3 text-muted-foreground" />
+        <ChevronDown className="text-muted-foreground size-3" />
       </button>
       <div className="ml-auto flex items-center gap-1">
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 gap-1.5 font-medium text-[10px] uppercase tracking-wider text-muted-foreground"
+          className="text-muted-foreground h-7 gap-1.5 text-[10px] font-medium tracking-wider uppercase"
           onClick={onNewConversation}
         >
           <Plus className="size-3.5" />
@@ -486,7 +496,7 @@ function ExpandedHeader({
         <Button
           variant="ghost"
           size="icon"
-          className="size-7 text-muted-foreground"
+          className="text-muted-foreground size-7"
           onClick={onCollapse}
           aria-label="Collapse to sidebar"
         >
@@ -513,12 +523,7 @@ function EmptyState({
   const isSidebar = mode === "sidebar";
 
   return (
-    <div
-      className={cn(
-        "flex flex-col items-center text-center",
-        isSidebar ? "pt-16" : "pt-24",
-      )}
-    >
+    <div className={cn("flex flex-col items-center text-center", isSidebar ? "pt-16" : "pt-24")}>
       <div
         className={cn(
           "flex items-center justify-center rounded-full bg-[var(--alfred-accent-subtle)]",
@@ -526,21 +531,19 @@ function EmptyState({
         )}
       >
         {isSidebar ? (
-          <Sparkles className="size-6 text-primary" />
+          <Sparkles className="text-primary size-6" />
         ) : (
-          <Brain className="size-7 text-primary" />
+          <Brain className="text-primary size-7" />
         )}
       </div>
 
       {isSidebar ? (
-        <p className="text-sm text-muted-foreground mb-6">{title}</p>
+        <p className="text-muted-foreground mb-6 text-sm">{title}</p>
       ) : (
         <>
-          <h2 className="text-2xl text-foreground mb-2">{title}</h2>
+          <h2 className="text-foreground mb-2 text-2xl">{title}</h2>
           {description && (
-            <p className="text-sm text-muted-foreground max-w-sm mb-8">
-              {description}
-            </p>
+            <p className="text-muted-foreground mb-8 max-w-sm text-sm">{description}</p>
           )}
         </>
       )}
@@ -548,7 +551,7 @@ function EmptyState({
       <div
         className={cn(
           isSidebar
-            ? "flex flex-col gap-1.5 w-full max-w-[280px]"
+            ? "flex w-full max-w-[280px] flex-col gap-1.5"
             : "flex flex-wrap justify-center gap-2",
         )}
       >
@@ -557,7 +560,7 @@ function EmptyState({
             key={suggestion}
             onClick={() => onSuggestionClick(suggestion)}
             className={cn(
-              "text-muted-foreground transition-colors hover:border-primary hover:text-foreground text-left",
+              "text-muted-foreground hover:border-primary hover:text-foreground text-left transition-colors",
               isSidebar
                 ? "rounded-sm border px-3 py-1.5 text-[11px]"
                 : "rounded-full border px-4 py-2 text-[13px]",
@@ -634,7 +637,7 @@ const SidebarInput = forwardRef<
               : "Ask about your knowledge..."
           }
           rows={1}
-          className="flex-1 resize-none rounded-sm bg-secondary px-3 py-2 text-sm border border-[var(--border-strong)] outline-none placeholder:text-[var(--alfred-text-tertiary)] focus:border-[var(--accent)] transition-colors"
+          className="bg-secondary flex-1 resize-none rounded-sm border border-[var(--border-strong)] px-3 py-2 text-sm transition-colors outline-none placeholder:text-[var(--alfred-text-tertiary)] focus:border-[var(--accent)]"
           disabled={isStreaming}
         />
         <div className="flex flex-col gap-1">
@@ -642,7 +645,7 @@ const SidebarInput = forwardRef<
             <Button
               size="icon"
               variant="ghost"
-              className="size-8 text-primary"
+              className="text-primary size-8"
               onClick={onCancel}
               aria-label="Stop generating"
             >
@@ -661,19 +664,19 @@ const SidebarInput = forwardRef<
           )}
           <button
             onClick={onToggleSettings}
-            className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+            className="text-muted-foreground hover:text-foreground rounded p-1 transition-colors"
             aria-label="Toggle settings"
           >
             <Settings2 className="size-3.5" />
           </button>
         </div>
       </div>
-      <div className="flex items-center gap-1 mt-1.5">
+      <div className="mt-1.5 flex items-center gap-1">
         <span className="text-primary text-[10px]">&#9733;</span>
         <select
           value={activeModel}
           onChange={(e) => onModelChange(e.target.value)}
-          className="bg-transparent outline-none cursor-pointer text-[10px] text-muted-foreground"
+          className="text-muted-foreground cursor-pointer bg-transparent text-[10px] outline-none"
         >
           {MODEL_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -686,80 +689,78 @@ const SidebarInput = forwardRef<
   );
 });
 
-const ExpandedInput = forwardRef<HTMLTextAreaElement, InputProps>(
-  function ExpandedInput(
-    {
-      input,
-      setInput,
-      isStreaming,
-      activeModel,
-      onSend,
-      onCancel,
-      onKeyDown,
-      onModelChange,
-      onToggleSettings,
-    },
-    ref,
-  ) {
-    return (
-      <div className="border-t">
-        <div className="max-w-3xl mx-auto px-6 py-4">
-          <div className="flex items-end gap-0 rounded-xl border bg-card shadow-sm focus-within:border-primary transition-colors">
-            <textarea
-              ref={ref}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onKeyDown}
-              placeholder="Do anything with AI..."
-              rows={1}
-              className="flex-1 resize-none bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground"
-            />
-            <div className="flex items-center gap-1 px-2 py-2">
-              <button
-                onClick={onToggleSettings}
-                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground transition-colors"
+const ExpandedInput = forwardRef<HTMLTextAreaElement, InputProps>(function ExpandedInput(
+  {
+    input,
+    setInput,
+    isStreaming,
+    activeModel,
+    onSend,
+    onCancel,
+    onKeyDown,
+    onModelChange,
+    onToggleSettings,
+  },
+  ref,
+) {
+  return (
+    <div className="border-t">
+      <div className="mx-auto max-w-3xl px-6 py-4">
+        <div className="bg-card focus-within:border-primary flex items-end gap-0 rounded-xl border shadow-sm transition-colors">
+          <textarea
+            ref={ref}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Do anything with AI..."
+            rows={1}
+            className="placeholder:text-muted-foreground flex-1 resize-none bg-transparent px-4 py-3 text-sm outline-none"
+          />
+          <div className="flex items-center gap-1 px-2 py-2">
+            <button
+              onClick={onToggleSettings}
+              className="text-muted-foreground hover:text-foreground rounded-md p-1.5 transition-colors"
+            >
+              <Settings2 className="size-4" />
+            </button>
+            <button className="text-muted-foreground hover:text-foreground flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors">
+              <span className="text-primary">&#9733;</span>
+              <select
+                value={activeModel}
+                onChange={(e) => onModelChange(e.target.value)}
+                className="cursor-pointer bg-transparent text-[11px] outline-none"
               >
-                <Settings2 className="size-4" />
+                {MODEL_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </button>
+            {isStreaming ? (
+              <button
+                onClick={onCancel}
+                className="text-primary rounded-md p-1.5 transition-colors hover:bg-[var(--alfred-accent-subtle)]"
+              >
+                <Square className="size-4" />
               </button>
-              <button className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground hover:text-foreground transition-colors">
-                <span className="text-primary">&#9733;</span>
-                <select
-                  value={activeModel}
-                  onChange={(e) => onModelChange(e.target.value)}
-                  className="bg-transparent outline-none cursor-pointer text-[11px]"
-                >
-                  {MODEL_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+            ) : (
+              <button
+                onClick={onSend}
+                disabled={!input.trim()}
+                className={cn(
+                  "rounded-md p-1.5 transition-colors",
+                  input.trim()
+                    ? "text-primary hover:bg-[var(--alfred-accent-subtle)]"
+                    : "text-muted-foreground/40 cursor-not-allowed",
+                )}
+              >
+                <Send className="size-4" />
               </button>
-              {isStreaming ? (
-                <button
-                  onClick={onCancel}
-                  className="p-1.5 rounded-md text-primary hover:bg-[var(--alfred-accent-subtle)] transition-colors"
-                >
-                  <Square className="size-4" />
-                </button>
-              ) : (
-                <button
-                  onClick={onSend}
-                  disabled={!input.trim()}
-                  className={cn(
-                    "p-1.5 rounded-md transition-colors",
-                    input.trim()
-                      ? "text-primary hover:bg-[var(--alfred-accent-subtle)]"
-                      : "text-muted-foreground/40 cursor-not-allowed",
-                  )}
-                >
-                  <Send className="size-4" />
-                </button>
-              )}
-            </div>
+            )}
           </div>
         </div>
       </div>
-    );
-  },
-);
+    </div>
+  );
+});

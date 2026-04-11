@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
 import {
+  type ApiZettelCard,
+  getZettelCard,
   listZettelCards as apiListZettelCards,
   countZettelCards as apiCountZettelCards,
   listZettelLinks,
@@ -16,22 +18,7 @@ import {
   type BacklinkResponse,
 } from "@/lib/api/zettels";
 import type { Zettel, BloomLevel } from "@/app/(app)/knowledge/_components/mock-data";
-
-type ApiZettelCard = {
-  id: number;
-  title: string;
-  content: string | null;
-  summary: string | null;
-  tags: string[] | null;
-  topic: string | null;
-  source_url: string | null;
-  document_id: string | null;
-  importance: number;
-  confidence: number;
-  status: string;
-  created_at: string;
-  updated_at: string;
-};
+import { createMarkdownPreview } from "@/lib/utils/markdown";
 
 type GraphEdge = { from: number; to: number; type: string };
 type GraphSummary = { nodes: unknown[]; edges: GraphEdge[] };
@@ -54,12 +41,13 @@ function buildConnectionMap(edges: GraphEdge[]): Map<string, string[]> {
   return map;
 }
 
-function mapApiToZettel(card: ApiZettelCard, connections: string[]): Zettel {
+export function mapApiToZettel(card: ApiZettelCard, connections: string[]): Zettel {
   return {
     id: String(card.id),
     title: card.title,
     content: card.content || "",
-    summary: card.content || card.summary || "",
+    summary: card.summary || "",
+    preview: createMarkdownPreview(card.summary || card.content || ""),
     tags: card.tags || [],
     connections,
     status: card.status,
@@ -121,6 +109,23 @@ export function useZettelCards(filters?: ZettelFilterParams, pagination?: Zettel
 
       return { items, totalCount, page, pageSize, totalPages };
     },
+    staleTime: 10_000,
+  });
+}
+
+export function useZettelCard(cardId: number | null) {
+  return useQuery<Zettel>({
+    queryKey: ["zettels", "card", cardId],
+    queryFn: async () => {
+      const [card, graph] = await Promise.all([
+        getZettelCard(cardId!),
+        apiFetch<GraphSummary>(apiRoutes.zettels.graph, { cache: "no-store" }),
+      ]);
+
+      const connectionMap = buildConnectionMap(graph.edges);
+      return mapApiToZettel(card, connectionMap.get(String(card.id)) || []);
+    },
+    enabled: cardId !== null && Number.isFinite(cardId),
     staleTime: 10_000,
   });
 }
@@ -188,7 +193,10 @@ export function useBacklinks(cardId: number | null) {
 export function useZettelReviewsDue() {
   return useQuery({
     queryKey: ["zettels", "reviews", "due"],
-    queryFn: () => apiFetch<Array<{ id: number; card_id: number }>>(apiRoutes.zettels.reviewsDue, { cache: "no-store" }),
+    queryFn: () =>
+      apiFetch<Array<{ id: number; card_id: number }>>(apiRoutes.zettels.reviewsDue, {
+        cache: "no-store",
+      }),
     staleTime: 30_000,
   });
 }

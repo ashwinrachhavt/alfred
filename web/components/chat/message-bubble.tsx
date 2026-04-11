@@ -13,6 +13,7 @@ import {
   ThumbsDown,
   ThumbsUp,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import type { ChatMode } from "@/lib/stores/shell-store";
 import type { AgentMessage, ArtifactCard } from "@/lib/stores/agent-store";
@@ -21,6 +22,7 @@ import { RelatedCards } from "@/components/agent/related-cards";
 import { InsightToCard } from "@/components/agent/insight-to-card";
 import { MarkdownMessage } from "@/components/agent/markdown-message";
 import { apiFetch } from "@/lib/api/client";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 
 // --- Reasoning Trace ---
@@ -32,15 +34,13 @@ function ReasoningTrace({ reasoning }: { reasoning: string }) {
     <div className="mb-1.5">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+        className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-[10px] transition-colors"
       >
-        <ChevronRight
-          className={cn("size-3 transition-transform", open && "rotate-90")}
-        />
-        <span className="uppercase tracking-wider">Thinking</span>
+        <ChevronRight className={cn("size-3 transition-transform", open && "rotate-90")} />
+        <span className="tracking-wider uppercase">Thinking</span>
       </button>
       {open && (
-        <div className="mt-1 rounded-sm border border-dashed bg-secondary/50 px-3 py-2 text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap max-h-64 overflow-y-auto">
+        <div className="bg-secondary/50 text-muted-foreground mt-1 max-h-64 overflow-y-auto rounded-sm border border-dashed px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap">
           {reasoning}
         </div>
       )}
@@ -50,11 +50,7 @@ function ReasoningTrace({ reasoning }: { reasoning: string }) {
 
 // --- Tool Calls Display ---
 
-function ToolCallsDisplay({
-  toolCalls,
-}: {
-  toolCalls: AgentMessage["toolCalls"];
-}) {
+function ToolCallsDisplay({ toolCalls }: { toolCalls: AgentMessage["toolCalls"] }) {
   if (toolCalls.length === 0) return null;
 
   return (
@@ -62,12 +58,12 @@ function ToolCallsDisplay({
       {toolCalls.map((tc, i) => (
         <span
           key={tc.call_id ?? i}
-          className="inline-flex items-center gap-1 text-[10px] text-muted-foreground"
+          className="text-muted-foreground inline-flex items-center gap-1 text-[10px]"
         >
           {tc.status === "pending" ? (
-            <Loader2 className="size-3 animate-spin text-primary" />
+            <Loader2 className="text-primary size-3 animate-spin" />
           ) : (
-            <Check className="size-3 text-primary" />
+            <Check className="text-primary size-3" />
           )}
           {tc.tool.replace(/_/g, " ")}
         </span>
@@ -76,32 +72,72 @@ function ToolCallsDisplay({
   );
 }
 
+function CopyMessageButton({
+  content,
+  className,
+  showLabel = true,
+}: {
+  content: string;
+  className?: string;
+  showLabel?: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await copyTextToClipboard(content);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("Failed to copy response.");
+    }
+  };
+
+  return (
+    <button
+      onClick={() => void handleCopy()}
+      className={cn(
+        "flex items-center gap-1 rounded transition-colors",
+        copied ? "text-primary" : "text-muted-foreground hover:text-foreground",
+        showLabel ? "px-1.5 py-1 text-[10px]" : "p-1",
+        className,
+      )}
+      aria-label="Copy response"
+      title="Copy"
+    >
+      {copied ? <Check className="size-3" /> : <ClipboardCopy className="size-3" />}
+      {showLabel ? (copied ? "Copied" : "Copy") : null}
+    </button>
+  );
+}
+
 // --- Action Bar (sidebar mode — visible on hover) ---
 
 function ActionBar({
   message,
   isOnNotes,
-  hasCreatedZettel,
+  createdZettelId,
+  onViewZettel,
 }: {
   message: AgentMessage;
   isOnNotes: boolean;
-  hasCreatedZettel: boolean;
+  createdZettelId: number | null;
+  onViewZettel?: (zettelId: number) => void;
 }) {
-  const [savedAsZettel, setSavedAsZettel] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [savedZettelId, setSavedZettelId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const viewZettelId = createdZettelId ?? savedZettelId;
 
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(message.content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
+  const handlePrimaryAction = async () => {
+    if (viewZettelId) {
+      onViewZettel?.(viewZettelId);
+      return;
+    }
 
-  const handleSaveAsZettel = async () => {
-    if (savedAsZettel || hasCreatedZettel || saving) return;
+    if (saving) return;
     setSaving(true);
     try {
-      await apiFetch("/api/zettels/cards", {
+      const created = await apiFetch<{ id: number }>("/api/zettels/cards", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -111,7 +147,7 @@ function ActionBar({
           topic: "",
         }),
       });
-      setSavedAsZettel(true);
+      setSavedZettelId(created.id);
     } catch {
       // TODO: show error toast
     } finally {
@@ -120,10 +156,10 @@ function ActionBar({
   };
 
   return (
-    <div className="flex items-center gap-0.5 pt-0.5 opacity-0 hover:opacity-100 transition-opacity group-hover:opacity-100">
+    <div className="flex items-center gap-0.5 pt-0.5 opacity-0 transition-opacity group-hover:opacity-100 hover:opacity-100">
       {isOnNotes && (
         <button
-          className="flex items-center gap-1 px-1.5 py-1 rounded text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+          className="text-muted-foreground hover:text-foreground flex items-center gap-1 rounded px-1.5 py-1 text-[10px] transition-colors"
           aria-label="Insert response into current note"
           title="Insert into Note"
         >
@@ -133,55 +169,47 @@ function ActionBar({
       )}
 
       <button
-        onClick={handleSaveAsZettel}
-        disabled={savedAsZettel || hasCreatedZettel || saving}
+        onClick={() => void handlePrimaryAction()}
+        disabled={saving}
         className={cn(
-          "flex items-center gap-1 px-1.5 py-1 rounded text-[10px] transition-colors",
-          savedAsZettel || hasCreatedZettel
-            ? "text-primary"
-            : "text-muted-foreground hover:text-foreground",
+          "flex items-center gap-1 rounded px-1.5 py-1 text-[10px] transition-colors",
+          viewZettelId ? "text-primary" : "text-muted-foreground hover:text-foreground",
         )}
-        aria-label={savedAsZettel || hasCreatedZettel ? "View zettel" : "Save as zettel"}
-        title={savedAsZettel || hasCreatedZettel ? "View Zettel" : "Save as Zettel"}
+        aria-label={viewZettelId ? "View zettel" : "Save as zettel"}
+        title={viewZettelId ? "View Zettel" : "Save as Zettel"}
       >
         {saving ? (
           <Loader2 className="size-3 animate-spin" />
-        ) : savedAsZettel || hasCreatedZettel ? (
+        ) : viewZettelId ? (
           <Check className="size-3" />
         ) : (
           <BookmarkPlus className="size-3" />
         )}
-        {savedAsZettel || hasCreatedZettel ? "Saved" : "Save"}
+        {viewZettelId ? "View" : "Save"}
       </button>
 
-      <button
-        onClick={handleCopy}
-        className={cn(
-          "flex items-center gap-1 px-1.5 py-1 rounded text-[10px] transition-colors",
-          copied ? "text-primary" : "text-muted-foreground hover:text-foreground",
-        )}
-        aria-label="Copy response"
-        title="Copy"
-      >
-        {copied ? <Check className="size-3" /> : <ClipboardCopy className="size-3" />}
-        {copied ? "Copied" : "Copy"}
-      </button>
+      <CopyMessageButton content={message.content} />
     </div>
   );
 }
 
 // --- Feedback Buttons (expanded mode — always visible) ---
 
-function FeedbackButtons() {
+function FeedbackButtons({ content }: { content: string }) {
   return (
     <div className="flex items-center gap-1 pt-1">
-      <button className="p-1 rounded text-muted-foreground/40 hover:text-muted-foreground transition-colors">
+      <CopyMessageButton
+        content={content}
+        showLabel
+        className="text-muted-foreground/70 hover:text-foreground px-2 py-1 text-[11px]"
+      />
+      <button className="text-muted-foreground/40 hover:text-muted-foreground rounded p-1 transition-colors">
         <ThumbsUp className="size-3.5" />
       </button>
-      <button className="p-1 rounded text-muted-foreground/40 hover:text-muted-foreground transition-colors">
+      <button className="text-muted-foreground/40 hover:text-muted-foreground rounded p-1 transition-colors">
         <ThumbsDown className="size-3.5" />
       </button>
-      <button className="p-1 rounded text-muted-foreground/40 hover:text-muted-foreground transition-colors">
+      <button className="text-muted-foreground/40 hover:text-muted-foreground rounded p-1 transition-colors">
         <RotateCcw className="size-3.5" />
       </button>
     </div>
@@ -195,11 +223,13 @@ export const MessageBubble = memo(function MessageBubble({
   mode,
   isOnNotes = false,
   onArtifactClick,
+  onViewZettel,
 }: {
   message: AgentMessage;
   mode: ChatMode;
   isOnNotes?: boolean;
   onArtifactClick: (artifact: ArtifactCard) => void;
+  onViewZettel?: (zettelId: number) => void;
 }) {
   const isSidebar = mode === "sidebar";
 
@@ -209,10 +239,8 @@ export const MessageBubble = memo(function MessageBubble({
       <div className="flex justify-end">
         <div
           className={cn(
-            "rounded-lg bg-secondary text-sm text-foreground",
-            isSidebar
-              ? "max-w-[85%] px-3 py-2"
-              : "max-w-[80%] rounded-2xl px-4 py-2.5",
+            "bg-secondary text-foreground rounded-lg text-sm",
+            isSidebar ? "max-w-[85%] px-3 py-2" : "max-w-[80%] rounded-2xl px-4 py-2.5",
           )}
         >
           {message.content}
@@ -222,7 +250,8 @@ export const MessageBubble = memo(function MessageBubble({
   }
 
   // --- Assistant message ---
-  const hasCreatedZettel = message.artifacts.some((a) => a.action === "created");
+  const createdZettelId =
+    message.artifacts.find((a) => a.type === "zettel" && a.action === "created")?.id ?? null;
   const showActions = message.content && !message.content.startsWith("Sorry");
 
   const contentEl = (
@@ -231,9 +260,7 @@ export const MessageBubble = memo(function MessageBubble({
       {message.reasoning && <ReasoningTrace reasoning={message.reasoning} />}
 
       {/* Tool calls */}
-      {message.toolCalls.length > 0 && (
-        <ToolCallsDisplay toolCalls={message.toolCalls} />
-      )}
+      {message.toolCalls.length > 0 && <ToolCallsDisplay toolCalls={message.toolCalls} />}
 
       {/* Main content */}
       {message.content && <MarkdownMessage content={message.content} />}
@@ -245,9 +272,7 @@ export const MessageBubble = memo(function MessageBubble({
       {/* In expanded mode, wrap content with InsightToCard for text-selection save */}
       {!isSidebar ? (
         <InsightToCard
-          threadTopics={
-            message.artifacts.map((a) => a.topic).filter(Boolean) as string[]
-          }
+          threadTopics={message.artifacts.map((a) => a.topic).filter(Boolean) as string[]}
         >
           {contentEl}
         </InsightToCard>
@@ -280,10 +305,8 @@ export const MessageBubble = memo(function MessageBubble({
             <span
               key={gap.concept}
               className={cn(
-                "inline-flex items-center gap-1 rounded-full bg-[var(--alfred-accent-subtle)] text-primary",
-                isSidebar
-                  ? "px-2 py-0.5 text-[10px]"
-                  : "px-2.5 py-1 text-[11px]",
+                "text-primary inline-flex items-center gap-1 rounded-full bg-[var(--alfred-accent-subtle)]",
+                isSidebar ? "px-2 py-0.5 text-[10px]" : "px-2.5 py-1 text-[11px]",
               )}
             >
               gap: {gap.concept}
@@ -298,10 +321,11 @@ export const MessageBubble = memo(function MessageBubble({
           <ActionBar
             message={message}
             isOnNotes={isOnNotes}
-            hasCreatedZettel={hasCreatedZettel}
+            createdZettelId={createdZettelId}
+            onViewZettel={onViewZettel}
           />
         ) : (
-          <FeedbackButtons />
+          <FeedbackButtons content={message.content} />
         ))}
     </div>
   );

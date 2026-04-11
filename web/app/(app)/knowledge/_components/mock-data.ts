@@ -5,6 +5,7 @@ export type Zettel = {
   title: string;
   content: string;
   summary: string;
+  preview?: string;
   tags: string[];
   connections: string[];
   status: string;

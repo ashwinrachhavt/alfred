@@ -179,6 +179,9 @@ importers:
       react-force-graph:
         specifier: ^1.48.2
         version: 1.48.2(aframe@1.7.1)(react@19.2.3)(three@0.182.0)
+      react-force-graph-3d:
+        specifier: ^1.29.1
+        version: 1.29.1(react@19.2.3)
       react-markdown:
         specifier: ^10.1.0
         version: 10.1.0(@types/react@19.2.8)(react@19.2.3)
@@ -5168,6 +5171,12 @@ packages:
     resolution: {integrity: sha512-yELu4WmLPw5Mr/lmeEpox5rw3RETacE++JgHqQzd2dg+YbJuat3jH4ingc+WPZhxaoFzdv9y33G+F7Nl5O0GBg==}
     peerDependencies:
       react: ^19.2.3
+
+  react-force-graph-3d@1.29.1:
+    resolution: {integrity: sha512-5Vp+PGpYnO+zLwgK2NvNqdXHvsWLrFzpDfJW1vUA1twjo9SPvXqfUYQrnRmAbD+K2tOxkZw1BkbH31l5b4TWHg==}
+    engines: {node: '>=12'}
+    peerDependencies:
+      react: '*'
 
   react-force-graph@1.48.2:
     resolution: {integrity: sha512-VpBphuNN0X4BAl8c8h0r8M3XI18ExHfteNuUdCEzq0e9SORDi+5J2jpa2uNm9TQhoyXiUQjkIc1zvwIymaqdWw==}
@@ -11754,6 +11763,13 @@ snapshots:
     dependencies:
       react: 19.2.3
       scheduler: 0.27.0
+
+  react-force-graph-3d@1.29.1(react@19.2.3):
+    dependencies:
+      3d-force-graph: 1.80.0
+      prop-types: 15.8.1
+      react: 19.2.3
+      react-kapsule: 2.5.7(react@19.2.3)
 
   react-force-graph@1.48.2(aframe@1.7.1)(react@19.2.3)(three@0.182.0):
     dependencies:

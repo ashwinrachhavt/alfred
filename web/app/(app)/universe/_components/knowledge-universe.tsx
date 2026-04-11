@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ForceGraph3D } from "react-force-graph";
+import ForceGraph3D from "react-force-graph-3d";
 import * as THREE from "three";
 import type {
   ExtendedGraphData,

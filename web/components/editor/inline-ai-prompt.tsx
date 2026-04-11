@@ -36,20 +36,26 @@ type Preset = {
 };
 
 const GENERATE_PRESETS: Preset[] = [
-  { label: "Draft intro", prompt: "Write an engaging introduction for this section" },
-  { label: "Continue from above", prompt: "__CONTINUE__" },
-  { label: "Brainstorm", prompt: "Brainstorm ideas and list them as bullet points" },
-  { label: "Outline", prompt: "Create a structured outline for this topic" },
+  { label: "Continue", prompt: "__CONTINUE__" },
+  { label: "Draft intro", prompt: "Write a strong opening paragraph for this section" },
+  { label: "Add example", prompt: "Add a concrete example that makes this idea easier to grasp" },
+  {
+    label: "Sharpen thesis",
+    prompt: "Write a sharper paragraph that states the core idea clearly",
+  },
+  { label: "Outline", prompt: "Create a compact outline for what this section should cover next" },
 ];
 
 const EDIT_PRESETS: Preset[] = [
-  { label: "Improve", prompt: "Improve clarity and grammar" },
-  { label: "Simplify", prompt: "Simplify this text — use shorter sentences and simpler words" },
-  { label: "Fix grammar", prompt: "Fix any grammar and spelling mistakes, keep the same tone" },
-  { label: "Make shorter", prompt: "Make this more concise without losing meaning" },
-  { label: "Make longer", prompt: "Expand this with more detail and explanation" },
-  { label: "More formal", prompt: "Rewrite in a more professional, formal tone" },
-  { label: "More casual", prompt: "Rewrite in a more casual, conversational tone" },
+  { label: "Clarify", prompt: "Rewrite this so the thinking is clearer and easier to follow" },
+  {
+    label: "More precise",
+    prompt: "Make this more precise, specific, and intellectually rigorous",
+  },
+  { label: "In my voice", prompt: "Rewrite this to sound more natural, confident, and human" },
+  { label: "Condense", prompt: "Make this more concise without flattening the ideas" },
+  { label: "Expand", prompt: "Expand this with stronger explanation and sharper transitions" },
+  { label: "Stronger argument", prompt: "Strengthen the argument while preserving the core claim" },
 ];
 
 const PANEL_PRESETS: Preset[] = [
@@ -65,35 +71,27 @@ const PANEL_PRESETS: Preset[] = [
 function getPlaceholder(mode: AIPromptMode): string {
   switch (mode) {
     case "generate":
-      return "Ask AI to write...";
+      return "What should Alfred write here?";
     case "edit":
-      return "Tell AI what to do with this paragraph...";
+      return "How should Alfred revise this passage?";
     case "transform":
-      return "Tell AI what to do with selection...";
+      return "How should Alfred transform this selection?";
   }
 }
 
 function getStatusText(mode: AIPromptMode, charCount: number): string {
   if (mode === "generate") {
-    return "Generate new content · Enter to apply · Esc to cancel";
+    return "Uses full note context · Enter to write · Esc to cancel";
   }
-  return `Editing ${charCount} chars · Enter to apply · Esc to cancel`;
+  return `Editing ${charCount} chars with note context · Enter to apply · Esc to cancel`;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function InlineAIPrompt({
-  editor: _editor,
-  mode,
-  position,
-  targetText,
-  targetRange: _targetRange,
-  onSubmit,
-  onClose,
-  isStreaming,
-}: InlineAIPromptProps) {
+export function InlineAIPrompt(props: InlineAIPromptProps) {
+  const { mode, position, targetText, onSubmit, onClose, isStreaming } = props;
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -136,11 +134,9 @@ export function InlineAIPrompt({
     (preset: Preset) => {
       if (preset.panel) {
         // Open AI side panel and optionally send a message
-        useShellStore.getState().setAiPanelOpen(true);
+        useShellStore.getState().openAiPanel("sidebar");
         if (preset.prompt) {
-          const message = targetText
-            ? `${preset.prompt}:\n\n${targetText}`
-            : preset.prompt;
+          const message = targetText ? `${preset.prompt}:\n\n${targetText}` : preset.prompt;
           useAgentStore.getState().sendMessage(message);
         }
         onClose();
@@ -167,12 +163,12 @@ export function InlineAIPrompt({
   return (
     <div
       ref={containerRef}
-      className="fixed z-50 w-[420px] rounded-lg border bg-card shadow-xl"
+      className="border-border/80 bg-card/98 fixed z-50 w-[min(360px,calc(100vw-1.5rem))] rounded-xl border shadow-xl backdrop-blur"
       style={{ top: position.top, left: position.left }}
     >
       {/* Top row: icon + input + close/loading */}
       <div className="flex items-center gap-2 border-b px-3 py-2">
-        <Sparkles className="h-4 w-4 shrink-0 text-[var(--alfred-accent-subtle)]" />
+        <Sparkles className="text-primary h-4 w-4 shrink-0" />
         <input
           ref={inputRef}
           type="text"
@@ -181,7 +177,7 @@ export function InlineAIPrompt({
           onKeyDown={handleKeyDown}
           placeholder={getPlaceholder(mode)}
           disabled={isStreaming}
-          className="flex-1 bg-transparent text-sm text-foreground placeholder:text-[var(--alfred-text-tertiary)] outline-none disabled:opacity-50"
+          className="text-foreground flex-1 bg-transparent text-[13px] outline-none placeholder:text-[var(--alfred-text-tertiary)] disabled:opacity-50"
         />
         {isStreaming ? (
           <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--alfred-text-tertiary)]" />
@@ -189,7 +185,7 @@ export function InlineAIPrompt({
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 rounded p-0.5 text-[var(--alfred-text-tertiary)] hover:text-foreground transition-colors"
+            className="hover:text-foreground shrink-0 rounded p-0.5 text-[var(--alfred-text-tertiary)] transition-colors"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -205,9 +201,9 @@ export function InlineAIPrompt({
               type="button"
               onClick={() => handlePresetClick(preset)}
               className={cn(
-                "inline-flex items-center gap-1 rounded border px-2 py-1",
-                "font-mono text-[10px] uppercase tracking-wider",
-                "text-[var(--alfred-text-tertiary)] hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground",
+                "inline-flex items-center gap-1 rounded-md border px-2 py-1",
+                "text-[10px] font-medium tracking-[0.12em] uppercase",
+                "hover:text-foreground text-[var(--alfred-text-tertiary)] hover:bg-[var(--alfred-accent-subtle)]",
                 "transition-colors",
               )}
             >
@@ -220,7 +216,7 @@ export function InlineAIPrompt({
 
       {/* Status bar */}
       <div className="border-t px-3 py-1.5">
-        <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--alfred-text-tertiary)]">
+        <span className="text-[10px] font-medium tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
           {getStatusText(mode, targetText.length)}
         </span>
       </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AlertCircle, BookOpen, Layers, Link2, Loader2, Play, Plus, RefreshCw, Sparkles as SparklesIcon } from "lucide-react";
 
@@ -98,7 +98,7 @@ export function KnowledgeHub() {
 
  // Server-side allZettels data with pagination
  const { data: paginatedData, isLoading, isError, refetch } = useZettelCards(filters, { page: currentPage, pageSize: PAGE_SIZE });
- const allZettels = paginatedData?.items ?? [];
+ const allZettels = useMemo(() => paginatedData?.items ?? [], [paginatedData?.items]);
  const totalCount = paginatedData?.totalCount ?? 0;
  const { data: availableTopics = [] } = useZettelTopics();
  const { data: availableTags = [] } = useZettelTags();
@@ -207,7 +207,6 @@ export function KnowledgeHub() {
  }, [triggerWorkflow]);
 
  return (
- // eslint-disable-next-line jsx-a11y/no-static-element-interactions
  <div className="flex h-full flex-col" onKeyDown={handleKeyDown} tabIndex={-1}>
  {/* Header */}
  <div className="px-6 pt-6 pb-4">
@@ -398,6 +397,7 @@ export function KnowledgeHub() {
  {selectedZettel && (
  <div className="animate-in slide-in-from-right-4 duration-200 ease-out">
  <ZettelDetailPanel
+ key={selectedZettel.id}
  zettel={selectedZettel}
  allZettels={allZettels}
  onClose={() => setSelectedId(null)}
