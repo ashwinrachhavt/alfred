@@ -12,6 +12,7 @@ import {
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { apiPostJson } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
+import { useIsApplePlatform } from "@/lib/hooks/use-is-apple-platform";
 import { useQueryClient } from "@tanstack/react-query";
 
 type CaptureResponse = {
@@ -38,6 +39,7 @@ export function CaptureModal({ open, onOpenChange }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const queryClient = useQueryClient();
+  const isApplePlatform = useIsApplePlatform();
 
   // Focus on open
   useEffect(() => {
@@ -184,7 +186,7 @@ export function CaptureModal({ open, onOpenChange }: Props) {
                 : "Paste anything — Alfred handles the rest"}
             </span>
             <span className="text-[10px] text-muted-foreground/50">
-              {navigator.platform?.includes("Mac") ? "⌘" : "Ctrl"}+Enter to capture
+              {isApplePlatform ? "⌘" : "Ctrl"}+Enter to capture
             </span>
           </div>
         </div>

@@ -7,6 +7,7 @@ beforeEach(() => {
     aiPanelOpen: false,
     chatMode: "sidebar",
     toolPanel: null,
+    zettelViewerCardId: null,
   });
 });
 
@@ -28,6 +29,22 @@ describe("shell-store", () => {
       const state = useShellStore.getState();
       expect(state.chatMode).toBe("sidebar");
       expect(state.aiPanelOpen).toBe(true);
+    });
+  });
+
+  describe("openAiPanel", () => {
+    it("opens AI in expanded mode by default", () => {
+      useShellStore.getState().openAiPanel();
+      const state = useShellStore.getState();
+      expect(state.aiPanelOpen).toBe(true);
+      expect(state.chatMode).toBe("expanded");
+    });
+
+    it("can open AI directly in sidebar mode", () => {
+      useShellStore.getState().openAiPanel("sidebar");
+      const state = useShellStore.getState();
+      expect(state.aiPanelOpen).toBe(true);
+      expect(state.chatMode).toBe("sidebar");
     });
   });
 
@@ -62,6 +79,19 @@ describe("shell-store", () => {
       const state = useShellStore.getState();
       expect(state.aiPanelOpen).toBe(false);
       expect(state.chatMode).toBe("expanded");
+    });
+  });
+
+  describe("zettel viewer", () => {
+    it("opens the zettel viewer with a card id", () => {
+      useShellStore.getState().openZettelViewer(42);
+      expect(useShellStore.getState().zettelViewerCardId).toBe(42);
+    });
+
+    it("closes the zettel viewer", () => {
+      useShellStore.setState({ zettelViewerCardId: 42 });
+      useShellStore.getState().closeZettelViewer();
+      expect(useShellStore.getState().zettelViewerCardId).toBeNull();
     });
   });
 });

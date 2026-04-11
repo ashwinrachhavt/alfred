@@ -93,6 +93,55 @@ class GraphSummary(BaseModel):
     edges: list[dict]
 
 
+class GraphNode(BaseModel):
+    id: int
+    title: str
+    topic: str | None = None
+    tags: list[str] = []
+    degree: int = 0
+    status: str = "active"
+    cluster_id: int | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    due_at: str | None = None
+    importance: int = 0
+
+
+class GraphEdge(BaseModel):
+    source: int
+    target: int
+    type: str = "reference"
+    score: float | None = None
+
+
+class GraphCluster(BaseModel):
+    id: int
+    name: str
+    card_ids: list[int]
+    color: str
+
+
+class GraphGap(BaseModel):
+    id: int
+    title: str
+    inbound_link_count: int
+
+
+class GraphMeta(BaseModel):
+    total_cards: int
+    total_edges: int
+    embedding_coverage_pct: float
+    cluster_count: int
+
+
+class GraphSummaryExtended(BaseModel):
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+    clusters: list[GraphCluster] = []
+    gaps: list[GraphGap] = []
+    meta: GraphMeta | None = None
+
+
 class LinkQuality(BaseModel):
     semantic_score: float
     tag_overlap: float

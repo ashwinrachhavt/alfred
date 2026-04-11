@@ -18,7 +18,7 @@ import type {
 } from "@/lib/api/zettels";
 
 const ZETTEL_CARDS_KEY = ["zettels", "cards"];
-const ZETTEL_LINKS_KEY = (cardId: number) => ["zettels", "links", cardId];
+const ZETTELS_KEY = ["zettels"];
 
 export function useCreateZettel() {
   const queryClient = useQueryClient();
@@ -53,7 +53,7 @@ export function useCreateZettel() {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ZETTEL_CARDS_KEY });
+      queryClient.invalidateQueries({ queryKey: ZETTELS_KEY });
     },
   });
 }
@@ -63,7 +63,7 @@ export function useBulkCreateZettels() {
   return useMutation({
     mutationFn: (payload: ZettelCardCreatePayload[]) => bulkCreateZettelCards(payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ZETTEL_CARDS_KEY });
+      queryClient.invalidateQueries({ queryKey: ZETTELS_KEY });
     },
   });
 }
@@ -73,7 +73,7 @@ export function useUpdateZettel(cardId: number) {
   return useMutation({
     mutationFn: (payload: ZettelCardUpdatePayload) => updateZettelCard(cardId, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ZETTEL_CARDS_KEY });
+      queryClient.invalidateQueries({ queryKey: ZETTELS_KEY });
     },
   });
 }
@@ -83,7 +83,7 @@ export function useDeleteZettel() {
   return useMutation({
     mutationFn: (cardId: number) => deleteZettelCard(cardId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ZETTEL_CARDS_KEY });
+      queryClient.invalidateQueries({ queryKey: ZETTELS_KEY });
     },
   });
 }
@@ -93,19 +93,17 @@ export function useCreateZettelLink(cardId: number) {
   return useMutation({
     mutationFn: (payload: ZettelLinkCreatePayload) => createZettelLink(cardId, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ZETTEL_LINKS_KEY(cardId) });
-      queryClient.invalidateQueries({ queryKey: ZETTEL_CARDS_KEY });
+      queryClient.invalidateQueries({ queryKey: ZETTELS_KEY });
     },
   });
 }
 
-export function useDeleteZettelLink(cardId: number) {
+export function useDeleteZettelLink() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (linkId: number) => deleteZettelLink(linkId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ZETTEL_LINKS_KEY(cardId) });
-      queryClient.invalidateQueries({ queryKey: ZETTEL_CARDS_KEY });
+      queryClient.invalidateQueries({ queryKey: ZETTELS_KEY });
     },
   });
 }
@@ -115,7 +113,7 @@ export function useGenerateZettel() {
   return useMutation({
     mutationFn: (payload: AIGeneratePayload) => generateZettelCard(payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ZETTEL_CARDS_KEY });
+      queryClient.invalidateQueries({ queryKey: ZETTELS_KEY });
     },
   });
 }

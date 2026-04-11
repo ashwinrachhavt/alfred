@@ -305,7 +305,7 @@ class AgentService:
         │  5. Max iterations guard (default 10)                    │
         └─────────────────────────────────────────────────────────┘
         """
-        model_name = model or settings.llm_model or "gpt-4.1-mini"
+        model_name = model or settings.llm_model or "gpt-5.4"
 
         try:
             messages: list[dict[str, Any]] = [

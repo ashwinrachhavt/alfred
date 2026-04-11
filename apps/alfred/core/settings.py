@@ -110,7 +110,7 @@ class Settings(BaseSettings):
 
     # OpenAI (also used by downstream libs)
     openai_api_key: SecretStr | None = Field(default=None, alias="OPENAI_API_KEY")
-    openai_model: str = Field(default="gpt-5-mini", alias="OPENAI_MODEL")
+    openai_model: str = Field(default="gpt-5.4", alias="OPENAI_MODEL")
     openai_base_url: str | None = Field(default=None, alias="OPENAI_BASE_URL")
     openai_organization: str | None = Field(default=None, alias="OPENAI_ORG")
 
@@ -347,11 +347,11 @@ class Settings(BaseSettings):
 
     # --- LLM unified ---
     llm_provider: LLMProvider = Field(default=LLMProvider.openai, alias="ALFRED_LLM_PROVIDER")
-    llm_model: str = Field(default="gpt-4.1-mini", alias="ALFRED_LLM_MODEL")
+    llm_model: str = Field(default="gpt-5.4", alias="ALFRED_LLM_MODEL")
     llm_temperature: float = Field(default=0.2, alias="ALFRED_LLM_TEMPERATURE")
 
     # --- Writer (browser extension) ---
-    writer_model: str = Field(default="gpt-5.2", alias="ALFRED_WRITER_MODEL")
+    writer_model: str = Field(default="gpt-5.4", alias="ALFRED_WRITER_MODEL")
     writer_temperature: float = Field(
         default=0.4, alias="ALFRED_WRITER_TEMPERATURE", ge=0.0, le=2.0
     )

@@ -22,7 +22,7 @@ export async function streamAIInline(opts: StreamAIOptions): Promise<void> {
         message: "",
         intent,
         intent_args: intentArgs,
-        model: model ?? "gpt-4.1-mini",
+        model: model ?? "gpt-5.4",
       },
       (event, data) => {
         if (event === "token" && typeof data.content === "string") {

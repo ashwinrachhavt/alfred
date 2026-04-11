@@ -129,5 +129,6 @@ export const apiRoutes = {
   },
   today: {
     briefing: "/api/today/briefing",
+    calendar: "/api/today/calendar",
   },
 } as const;

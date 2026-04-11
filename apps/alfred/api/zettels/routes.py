@@ -3,7 +3,7 @@ from __future__ import annotations
 import json as _json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 
 from alfred.api.dependencies import get_db_session
@@ -13,14 +13,15 @@ from alfred.models.zettel import ZettelCard, ZettelReview
 _log = logging.getLogger(__name__)
 _TOPICS_CACHE_KEY = "zettel:topics"
 _TAGS_CACHE_KEY = "zettel:tags"
+_GRAPH_EXT_CACHE_KEY = "zettel:graph:extended"
 _CACHE_TTL_SECONDS = 300  # 5 minutes
+_GRAPH_EXT_CACHE_TTL = 3600  # 1 hour
 from alfred.schemas.zettel import (
     AIZettelGenerateRequest,
     BacklinkResponse,
     BulkUpdateResult,
     CardSearchResponse,
     CompleteReviewRequest,
-    GraphSummary,
     LinkSuggestion,
     PaginatedZettelResponse,
     SyncWikiLinksRequest,
@@ -57,7 +58,20 @@ def create_card(
     svc = ZettelkastenService(session)
     card = svc.create_card(**payload.model_dump())
     _invalidate_topic_tag_cache()
+    _invalidate_graph_cache()
     return _card_out(card)
+
+
+@router.post("/cards/stub", status_code=status.HTTP_201_CREATED)
+def create_stub_card(
+    title: str = Body(..., embed=True),
+    session: Session = Depends(get_db_session),
+):
+    """Create a stub card for an unresolved wiki-link target."""
+    svc = ZettelkastenService(session)
+    card = svc.create_stub_card(title)
+    _invalidate_graph_cache()
+    return {"id": card.id, "title": card.title, "status": card.status}
 
 
 @router.get("/cards", response_model=PaginatedZettelResponse)
@@ -156,6 +170,26 @@ def _invalidate_topic_tag_cache() -> None:
         redis.delete(_TOPICS_CACHE_KEY, _TAGS_CACHE_KEY)
     except Exception:
         pass
+
+
+def _cache_delete_prefix(prefix: str) -> None:
+    """Best-effort delete all Redis keys matching a prefix."""
+    redis = get_redis_client()
+    if not redis:
+        return
+    try:
+        for key in redis.scan_iter(f"{prefix}*"):
+            redis.delete(key)
+    except Exception:
+        pass
+
+
+def _invalidate_graph_cache() -> None:
+    """Bust extended graph cache + clustering cache on card mutations."""
+    from alfred.services.clustering_service import ClusteringService
+
+    _cache_delete_prefix(_GRAPH_EXT_CACHE_KEY)
+    ClusteringService.invalidate_cache()
 
 
 @router.get("/topics", response_model=list[str])
@@ -284,6 +318,7 @@ def update_card(
     data = payload.model_dump(exclude_unset=True)
     updated = svc.update_card(card, **data)
     _invalidate_topic_tag_cache()
+    _invalidate_graph_cache()
     return _card_out(updated)
 
 
@@ -298,6 +333,7 @@ def delete_card(
         raise HTTPException(status_code=404, detail="Card not found")
     svc.archive_card(card, remove_links=True)
     _invalidate_topic_tag_cache()
+    _invalidate_graph_cache()
     return {"status": "archived", "id": card_id}
 
 
@@ -478,10 +514,31 @@ def sync_wiki_links(
     return {"status": "synced", "count": len(payload.target_card_ids)}
 
 
-@router.get("/graph", response_model=GraphSummary)
-def graph(session: Session = Depends(get_db_session)) -> GraphSummary:
+@router.get("/graph")
+def graph(
+    include: str | None = None,
+    session: Session = Depends(get_db_session),
+):
     svc = ZettelkastenService(session)
-    return GraphSummary.model_validate(svc.graph_summary())
+    if include:
+        includes = set(include.split(","))
+        cache_key = f"{_GRAPH_EXT_CACHE_KEY}:{','.join(sorted(includes))}"
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            return cached
+        result = svc.extended_graph_summary(
+            include_clusters="clusters" in includes,
+            include_gaps="gaps" in includes,
+        )
+        # Cache the extended graph result with a longer TTL
+        redis = get_redis_client()
+        if redis:
+            try:
+                redis.set(cache_key, _json.dumps(result), ex=_GRAPH_EXT_CACHE_TTL)
+            except Exception:
+                pass
+        return result
+    return svc.graph_summary()
 
 
 @router.get("/reviews/due", response_model=list[ZettelReviewOut])

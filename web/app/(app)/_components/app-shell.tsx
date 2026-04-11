@@ -4,6 +4,7 @@ import { useEffect } from "react";
 
 import { useShellStore } from "@/lib/stores/shell-store";
 import { UnifiedChat } from "@/components/chat/unified-chat";
+import { ZettelFullViewDialog } from "@/app/(app)/knowledge/_components/zettel-full-view-dialog";
 
 import { CaptureButton } from "@/components/capture/capture-button";
 import { AppSidebar } from "./app-sidebar";
@@ -11,7 +12,15 @@ import { ToolPanel } from "./tool-panel";
 import { TopBar } from "./top-bar";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { toggleAiPanel, toggleChatExpanded, chatMode } = useShellStore();
+  const {
+    openAiPanel,
+    toggleAiPanel,
+    toggleChatExpanded,
+    chatMode,
+    aiPanelOpen,
+    zettelViewerCardId,
+    closeZettelViewer,
+  } = useShellStore();
 
   useEffect(() => {
     const pillarRoutes = ["/inbox", "/canvas", "#ai", "/dashboard"];
@@ -42,7 +51,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         e.preventDefault();
         const route = pillarRoutes[num - 1];
         if (route === "#ai") {
-          toggleAiPanel();
+          openAiPanel("expanded");
         } else {
           window.location.href = route;
         }
@@ -54,9 +63,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [toggleAiPanel, toggleChatExpanded]);
+  }, [openAiPanel, toggleAiPanel, toggleChatExpanded]);
 
-  const isExpanded = chatMode === "expanded";
+  const isExpanded = aiPanelOpen && chatMode === "expanded";
 
   return (
     <div className="flex h-dvh">
@@ -83,6 +92,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
       <ToolPanel />
       <CaptureButton />
+      <ZettelFullViewDialog
+        cardId={zettelViewerCardId}
+        open={zettelViewerCardId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeZettelViewer();
+          }
+        }}
+      />
     </div>
   );
 }

@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { useCreateZettel } from "@/features/zettels/mutations";
+import { useIsApplePlatform } from "@/lib/hooks/use-is-apple-platform";
 import { usePasteDetection } from "@/lib/hooks/use-paste-detection";
 import { apiPostJson } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
@@ -40,6 +41,7 @@ export function CreateZettelDialog({
  const [topic, setTopic] = useState(defaultTopic);
  const [showMeta, setShowMeta] = useState(false);
  const [isLoadingTags, setIsLoadingTags] = useState(false);
+ const isApplePlatform = useIsApplePlatform();
 
  const textareaRef = useRef<HTMLTextAreaElement>(null);
  const createMutation = useCreateZettel();
@@ -282,7 +284,7 @@ export function CreateZettelDialog({
              {isPasteMode ? "Title auto-extracted" : "Paste text or type freely"}
            </span>
            <span className="text-[10px] text-muted-foreground/50">
-             {navigator.platform?.includes("Mac") ? "⌘" : "Ctrl"}+Enter to create
+             {isApplePlatform ? "⌘" : "Ctrl"}+Enter to create
            </span>
          </div>
        </div>

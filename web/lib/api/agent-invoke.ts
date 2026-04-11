@@ -21,7 +21,7 @@ export async function agentInvoke(opts: {
       message: "",
       intent: opts.intent,
       intent_args: opts.intentArgs,
-      model: opts.model ?? "gpt-4.1-mini",
+      model: opts.model ?? "gpt-5.4",
     },
     (event, data) => {
       if (event === "token" && typeof data.content === "string") {

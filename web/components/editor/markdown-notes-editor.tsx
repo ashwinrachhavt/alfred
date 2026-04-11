@@ -10,13 +10,13 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { Markdown } from "@tiptap/markdown";
 import Typography from "@tiptap/extension-typography";
 import {
- forwardRef,
- useCallback,
- useEffect,
- useImperativeHandle,
- useMemo,
- useRef,
- useState,
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 import { toast } from "sonner";
 import { Bold, Italic, Sparkles } from "lucide-react";
@@ -24,970 +24,1041 @@ import { Bold, Italic, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { InlineAIPrompt, type AIPromptMode } from "@/components/editor/inline-ai-prompt";
-import { AiStreamingController, type StreamingState } from "@/components/editor/ai-streaming-controller";
+import {
+  AiStreamingController,
+  type StreamingState,
+} from "@/components/editor/ai-streaming-controller";
 import { WikiLink, extractWikiLinkCardIds } from "@/components/editor/extensions/wiki-link";
-import { WikiLinkAutocomplete, type WikiLinkSelection } from "@/components/editor/wiki-link-autocomplete";
+import {
+  WikiLinkAutocomplete,
+  type WikiLinkSelection,
+} from "@/components/editor/wiki-link-autocomplete";
 import { createZettelCard } from "@/lib/api/zettels";
 
 function readEditorMarkdown(editor: Editor): string {
- const maybeGetMarkdown = (editor as unknown as { getMarkdown?: () => string }).getMarkdown;
- if (typeof maybeGetMarkdown === "function") {
- return maybeGetMarkdown.call(editor) ?? "";
- }
+  const maybeGetMarkdown = (editor as unknown as { getMarkdown?: () => string }).getMarkdown;
+  if (typeof maybeGetMarkdown === "function") {
+    return maybeGetMarkdown.call(editor) ?? "";
+  }
 
- const storage = editor.storage as unknown as { markdown?: { getMarkdown?: () => string } };
- return storage.markdown?.getMarkdown?.() ?? "";
+  const storage = editor.storage as unknown as { markdown?: { getMarkdown?: () => string } };
+  return storage.markdown?.getMarkdown?.() ?? "";
 }
 
 export type MarkdownNotesEditorHandle = {
- appendMarkdown: (markdown: string) => void;
- getMarkdown: () => string;
- setMarkdown: (markdown: string) => void;
- getTiptapJson: () => Record<string, unknown> | null;
+  appendMarkdown: (markdown: string) => void;
+  getMarkdown: () => string;
+  setMarkdown: (markdown: string) => void;
+  getTiptapJson: () => Record<string, unknown> | null;
 };
 
 export type MarkdownNotesEditorProps = {
- markdown: string;
- onMarkdownChange?: (markdown: string) => void;
- onDraftChange?: (draft: { markdown: string; tiptapJson: Record<string, unknown> }) => void;
- onKeyboardCommand?: (command: "save") => void | Promise<void>;
- uploadImage?: (file: File) => Promise<string>;
- readOnly?: boolean;
- placeholder?: string;
- className?: string;
- /** Card ID for AI suggestion context (first linked card). */
- contextCardId?: number;
- /** Called when wiki-links change so the parent can sync to backend. */
- onWikiLinksChange?: (cardIds: number[]) => void;
- /** Called when a wiki-link is clicked. */
- onWikiLinkClick?: (cardId: string) => void;
+  markdown: string;
+  documentTitle?: string;
+  documentId?: string | null;
+  onMarkdownChange?: (markdown: string) => void;
+  onDraftChange?: (draft: { markdown: string; tiptapJson: Record<string, unknown> }) => void;
+  onKeyboardCommand?: (command: "save") => void | Promise<void>;
+  uploadImage?: (file: File) => Promise<string>;
+  readOnly?: boolean;
+  placeholder?: string;
+  className?: string;
+  /** Card ID for AI suggestion context (first linked card). */
+  contextCardId?: number;
+  /** Called when wiki-links change so the parent can sync to backend. */
+  onWikiLinksChange?: (cardIds: number[]) => void;
+  /** Called when a wiki-link is clicked. */
+  onWikiLinkClick?: (cardId: string) => void;
 };
 
 type SlashCommand = {
- title: string;
- description: string;
- keywords: string[];
- run: (editor: Editor) => void;
+  title: string;
+  description: string;
+  keywords: string[];
+  run: (editor: Editor) => void;
 };
 
+const EMPTY_PARAGRAPH_AI_DOUBLE_SPACE_MS = 400;
+
 function asEditorJson(value: unknown): Record<string, unknown> | null {
- if (!value || typeof value !== "object") return null;
- return value as Record<string, unknown>;
+  if (!value || typeof value !== "object") return null;
+  return value as Record<string, unknown>;
 }
 
 async function fileToDataUrl(file: File): Promise<string> {
- const dataUrl = await new Promise<string>((resolve, reject) => {
- const reader = new FileReader();
- reader.onerror = () => reject(new Error("Failed to read image file."));
- reader.onload = () => resolve(String(reader.result ?? ""));
- reader.readAsDataURL(file);
- });
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Failed to read image file."));
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.readAsDataURL(file);
+  });
 
- if (!dataUrl) {
- throw new Error("Failed to read image file.");
- }
- return dataUrl;
+  if (!dataUrl) {
+    throw new Error("Failed to read image file.");
+  }
+  return dataUrl;
 }
 
 export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, MarkdownNotesEditorProps>(
- function MarkdownNotesEditorImpl(
- { markdown, onMarkdownChange, onDraftChange, onKeyboardCommand, uploadImage, readOnly, placeholder, className, contextCardId, onWikiLinksChange, onWikiLinkClick },
- ref,
- ) {
- const [isFocused, setIsFocused] = useState(false);
-
- // Inline AI state
- const [aiPromptOpen, setAiPromptOpen] = useState(false);
- const [aiPromptMode, setAiPromptMode] = useState<AIPromptMode>("generate");
- const [aiPromptPosition, setAiPromptPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
- const [aiTargetText, setAiTargetText] = useState("");
- const [aiTargetRange, setAiTargetRange] = useState<{ from: number; to: number } | null>(null);
- const [streamingState, setStreamingState] = useState<StreamingState>({ status: "idle" });
- const [streamInsertAt, setStreamInsertAt] = useState(0);
- const [streamOriginalRange, setStreamOriginalRange] = useState<{ from: number; to: number; text: string } | null>(null);
-
- // Wiki-link autocomplete state
- const [wikiQuery, setWikiQuery] = useState<string | null>(null);
- const [wikiPosition, setWikiPosition] = useState<{ top: number; left: number } | null>(null);
- const [wikiActiveIndex, setWikiActiveIndex] = useState(0);
- const [wikiTriggerPos, setWikiTriggerPos] = useState<number | null>(null);
- const wikiQueryRef = useRef<string | null>(null);
- const wikiActiveIndexRef = useRef(0);
-
- const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
- const [slashMenuPosition, setSlashMenuPosition] = useState<{ top: number; left: number } | null>(null);
- const [slashQuery, setSlashQuery] = useState<string | null>(null);
- const [slashActiveIndex, setSlashActiveIndex] = useState(0);
-
- const isFirstRender = useRef(true);
-
- const uploadImageRef = useRef(uploadImage);
- const onKeyboardCommandRef = useRef(onKeyboardCommand);
- const slashQueryRef = useRef<string | null>(null);
- const slashCommandsRef = useRef<SlashCommand[]>([]);
- const slashActiveIndexRef = useRef(0);
-
- const extensions = useMemo(
- () => [
- WikiLink.configure({
- onClickLink: (cardId: string) => {
- onWikiLinkClick?.(cardId);
- },
- }),
- StarterKit.configure({
- heading: {
- levels: [1, 2, 3],
- },
- }),
- Link.configure({
- openOnClick: false,
- autolink: true,
- linkOnPaste: true,
- }),
- Image.configure({
- inline: false,
- allowBase64: true,
- }),
- TaskList.configure({
- HTMLAttributes: { class: "task-list" },
- }),
- TaskItem.configure({
- nested: true,
- HTMLAttributes: { class: "task-item" },
- }),
- Markdown,
- Typography,
- Placeholder.configure({
- placeholder: ({ node, editor: ed }) => {
- // First paragraph when editor is empty
- if (ed.isEmpty && node.type.name === "paragraph") {
- return placeholder ?? "Start writing, or press Space for AI...";
- }
- // Any other empty paragraph
- if (node.type.name === "paragraph" && node.textContent === "") {
- return "Space for AI  ·  / for commands";
- }
- return "";
- },
- emptyEditorClass: "is-editor-empty",
- }),
- ],
- [placeholder, onWikiLinkClick],
- );
-
- const updateMenuPosition = useCallback((editor: Editor) => {
- if (editor.state.selection.empty) {
- setMenuPosition(null);
- return;
- }
-
- const { from, to } = editor.state.selection;
- const start = editor.view.coordsAtPos(from);
- const end = editor.view.coordsAtPos(to);
-
- setMenuPosition({
- top: start.top - 48,
- left: (start.left + end.left) / 2,
- });
- }, []);
-
- const openAI = useCallback(
- (ed: Editor, modeOverride?: AIPromptMode) => {
- const { from, to } = ed.state.selection;
- const hasSelection = !ed.state.selection.empty;
- const { $from } = ed.state.selection;
- const paragraphText = $from.parent.textContent;
-
- let mode: AIPromptMode;
- let targetText: string;
- let targetRange: { from: number; to: number } | null;
-
- if (modeOverride) {
- mode = modeOverride;
- } else if (hasSelection) {
- mode = "transform";
- } else if (!paragraphText.trim()) {
- mode = "generate";
- } else {
- mode = "edit";
- }
-
- if (mode === "transform") {
- targetText = ed.state.doc.textBetween(from, to, " ");
- targetRange = { from, to };
- } else if (mode === "edit") {
- targetText = paragraphText;
- targetRange = { from: $from.start(), to: $from.end() };
- } else {
- targetText = "";
- targetRange = null;
- }
-
- const coords = ed.view.coordsAtPos(from);
- setAiPromptMode(mode);
- setAiTargetText(targetText);
- setAiTargetRange(targetRange);
- setAiPromptPosition({ top: coords.bottom + 8, left: coords.left });
- setAiPromptOpen(true);
- },
- [],
- );
-
- const slashCommands = useMemo<SlashCommand[]>(
- () => [
- {
- title: "Heading 1",
- description: "Large section heading",
- keywords: ["h1", "heading", "title"],
- run: (editor) => editor.chain().focus().toggleHeading({ level: 1 }).run(),
- },
- {
- title: "Heading 2",
- description: "Medium section heading",
- keywords: ["h2", "heading", "subtitle"],
- run: (editor) => editor.chain().focus().toggleHeading({ level: 2 }).run(),
- },
- {
- title: "Heading 3",
- description: "Small section heading",
- keywords: ["h3", "heading"],
- run: (editor) => editor.chain().focus().toggleHeading({ level: 3 }).run(),
- },
- {
- title: "Bulleted list",
- description: "Unordered list of items",
- keywords: ["bullet", "list", "ul"],
- run: (editor) => editor.chain().focus().toggleBulletList().run(),
- },
- {
- title: "Numbered list",
- description: "Ordered list of items",
- keywords: ["number", "list", "ol"],
- run: (editor) => editor.chain().focus().toggleOrderedList().run(),
- },
- {
- title: "Todo list",
- description: "Task list with checkboxes",
- keywords: ["todo", "task", "checkbox", "check"],
- run: (editor) => editor.chain().focus().toggleTaskList().run(),
- },
- {
- title: "Quote",
- description: "Blockquote for emphasis",
- keywords: ["quote", "blockquote"],
- run: (editor) => editor.chain().focus().toggleBlockquote().run(),
- },
- {
- title: "Code block",
- description: "Code with syntax highlighting",
- keywords: ["code", "block", "snippet"],
- run: (editor) => editor.chain().focus().toggleCodeBlock().run(),
- },
- {
- title: "Divider",
- description: "Horizontal ruled line",
- keywords: ["divider", "hr", "separator"],
- run: (editor) => editor.chain().focus().setHorizontalRule().run(),
- },
- {
- title: "Image",
- description: "Upload or paste an image",
- keywords: ["image", "photo", "picture", "img"],
- run: (editor) => {
- const input = document.createElement("input");
- input.type = "file";
- input.accept = "image/*";
- input.onchange = async () => {
- const file = input.files?.[0];
- if (!file) return;
- const uploader = uploadImageRef.current;
- try {
- const src = uploader ? await uploader(file) : await fileToDataUrl(file);
- if (!editor.isDestroyed) {
- editor.chain().focus().setImage({ src, alt: file.name }).run();
- }
- } catch {
- toast.error("Failed to upload image");
- }
- };
- input.click();
- },
- },
- {
- title: "Callout",
- description: "Highlighted blockquote for emphasis",
- keywords: ["callout", "note", "info", "warning", "tip"],
- run: (editor) => editor.chain().focus().toggleBlockquote().run(),
- },
- // --- AI Slash Commands ---
- {
- title: "AI Edit",
- description: "Ask AI to write, edit, or transform text",
- keywords: ["ai", "edit", "write", "generate", "ask", "alfred"],
- run: (ed) => {
- openAI(ed);
- },
- },
- ],
- [openAI],
- );
-
- const filteredSlashCommands = useMemo(() => {
- if (slashQuery === null) return [];
- const query = slashQuery.trim().toLowerCase();
- if (!query) return slashCommands;
- return slashCommands.filter((cmd) => {
- if (cmd.title.toLowerCase().includes(query)) return true;
- return cmd.keywords.some((k) => k.toLowerCase().includes(query));
- });
- }, [slashCommands, slashQuery]);
-
- const updateSlashState = useCallback((editor: Editor) => {
- const { state } = editor;
- if (!editor.isEditable || !editor.isFocused) {
- setSlashQuery(null);
- setSlashMenuPosition(null);
- return;
- }
- if (!state.selection.empty) {
- setSlashQuery(null);
- setSlashMenuPosition(null);
- return;
- }
-
- const { $from } = state.selection;
- const parent = $from.parent;
- if (parent.type.name !== "paragraph") {
- setSlashQuery(null);
- setSlashMenuPosition(null);
- return;
- }
-
- const text = parent.textContent;
- if (!text.startsWith("/")) {
- setSlashQuery(null);
- setSlashMenuPosition(null);
- return;
- }
- if (text.includes(" ")) {
- setSlashQuery(null);
- setSlashMenuPosition(null);
- return;
- }
- if (state.selection.from !== $from.end()) {
- setSlashQuery(null);
- setSlashMenuPosition(null);
- return;
- }
-
- setSlashQuery(text.slice(1));
- const coords = editor.view.coordsAtPos(state.selection.from);
- setSlashMenuPosition({ top: coords.bottom + 10, left: coords.left });
- }, []);
-
- const updateWikiLinkState = useCallback((ed: Editor) => {
- if (!ed.isEditable || !ed.isFocused || !ed.state.selection.empty) {
- setWikiQuery(null);
- setWikiPosition(null);
- setWikiTriggerPos(null);
- return;
- }
-
- const { $from } = ed.state.selection;
- const textBefore = ed.state.doc.textBetween(
- Math.max(0, $from.pos - 100),
- $from.pos,
- "",
- );
-
- // Find the last unclosed [[ (no ]] after it)
- const lastOpen = textBefore.lastIndexOf("[[");
- if (lastOpen === -1) {
- setWikiQuery(null);
- setWikiPosition(null);
- setWikiTriggerPos(null);
- return;
- }
-
- const afterOpen = textBefore.slice(lastOpen + 2);
- // If there's a ]] after [[, the link is closed
- if (afterOpen.includes("]]")) {
- setWikiQuery(null);
- setWikiPosition(null);
- setWikiTriggerPos(null);
- return;
- }
-
- // If there's a newline, don't span across paragraphs
- if (afterOpen.includes("\n")) {
- setWikiQuery(null);
- setWikiPosition(null);
- setWikiTriggerPos(null);
- return;
- }
-
- const query = afterOpen;
- const triggerAbsPos = $from.pos - afterOpen.length - 2;
- const coords = ed.view.coordsAtPos(triggerAbsPos);
-
- wikiQueryRef.current = query;
- setWikiQuery(query);
- setWikiPosition({ top: coords.bottom + 8, left: coords.left });
- setWikiTriggerPos(triggerAbsPos);
- wikiActiveIndexRef.current = 0;
- setWikiActiveIndex(0);
- }, []);
-
- const editorRef = useRef<Editor | null>(null);
-
- const handleWikiLinkSelect = useCallback(
- (selection: WikiLinkSelection) => {
- const ed = editorRef.current;
- if (!ed || ed.isDestroyed || wikiTriggerPos === null) return;
- const { from } = ed.state.selection;
- ed
- .chain()
- .focus()
- .deleteRange({ from: wikiTriggerPos, to: from })
- .insertWikiLink({ cardId: String(selection.cardId), title: selection.title })
- .run();
- setWikiQuery(null);
- setWikiPosition(null);
- setWikiTriggerPos(null);
- setWikiActiveIndex(0);
-
- setTimeout(() => {
- if (!ed.isDestroyed) {
- const json = ed.getJSON() as Record<string, unknown>;
- const cardIds = extractWikiLinkCardIds(json);
- onWikiLinksChange?.(cardIds);
- }
- }, 0);
- },
- [wikiTriggerPos, onWikiLinksChange],
- );
-
- const handleWikiLinkCreateStub = useCallback(
- async (title: string) => {
- const ed = editorRef.current;
- if (!ed || ed.isDestroyed || wikiTriggerPos === null) return;
- try {
- const card = await createZettelCard({ title, content: "" });
- handleWikiLinkSelect({ cardId: card.id, title: card.title });
- } catch {
- toast.error("Failed to create card");
- }
- },
- [wikiTriggerPos, handleWikiLinkSelect],
- );
-
- const editor = useEditor({
- extensions,
- content: markdown,
- contentType: "markdown",
- editable: !readOnly,
- immediatelyRender: false,
- editorProps: {
- attributes: {
- class: cn(
- "prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[150px] px-4 py-3",
- // Headings: Inter (sans)
- "prose-headings:font-sans prose-headings:tracking-tight prose-headings:font-semibold",
- "prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl",
- // Body: DM Sans (inherits from font-sans)
- "prose-p:leading-relaxed",
- // Code: JetBrains Mono
- "prose-code:font-mono prose-code:text-[13px] prose-code:bg-secondary prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-sm prose-code:before:content-none prose-code:after:content-none",
- "prose-pre:bg-secondary prose-pre:text-foreground prose-pre:font-mono prose-pre:text-[13px] prose-pre:rounded-md",
- // Blockquote: accent left border
- "prose-blockquote:border-l-primary prose-blockquote:bg-[var(--alfred-accent-subtle)] prose-blockquote:py-1 prose-blockquote:px-4 prose-blockquote:not-italic prose-blockquote:rounded-r-md",
- // Images
- "prose-img:rounded-lg prose-img:border prose-img:shadow-sm",
- // Links: accent color
- "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
- // HR: ruled line
- "prose-hr:border-[var(--alfred-ruled-line)]",
- // Task list: checkbox styling
- "[&_ul[data-type=taskList]]:list-none [&_ul[data-type=taskList]]:pl-2",
- "[&_li[data-type=taskItem]]:flex [&_li[data-type=taskItem]]:items-start [&_li[data-type=taskItem]]:gap-2 [&_li[data-type=taskItem]]:my-1",
- "[&_li[data-type=taskItem]>label]:flex [&_li[data-type=taskItem]>label]:items-center [&_li[data-type=taskItem]>label]:mt-0.5 [&_li[data-type=taskItem]>label]:shrink-0",
- "[&_li[data-type=taskItem]>label>input]:size-4 [&_li[data-type=taskItem]>label>input]:accent-[#E8590C] [&_li[data-type=taskItem]>label>input]:cursor-pointer",
- "[&_li[data-type=taskItem]>div]:flex-1 [&_li[data-type=taskItem]>div]:min-w-0",
- "[&_li[data-type=taskItem][data-checked=true]>div]:line-through [&_li[data-type=taskItem][data-checked=true]>div]:opacity-60",
- // Strong: slightly heavier
- "prose-strong:font-semibold",
- ),
- },
- },
- onUpdate: ({ editor }) => {
- const nextMarkdown = readEditorMarkdown(editor);
- onMarkdownChange?.(nextMarkdown);
- const tiptapJson = asEditorJson(editor.getJSON());
- if (tiptapJson) {
- onDraftChange?.({ markdown: nextMarkdown, tiptapJson });
- }
- updateMenuPosition(editor);
- updateSlashState(editor);
- updateWikiLinkState(editor);
- },
- onSelectionUpdate: ({ editor }) => {
- updateMenuPosition(editor);
- updateSlashState(editor);
- updateWikiLinkState(editor);
- },
- onFocus: () => setIsFocused(true),
- onBlur: () => {
- setIsFocused(false);
- setSlashQuery(null);
- setSlashMenuPosition(null);
- setWikiQuery(null);
- setWikiPosition(null);
- setWikiTriggerPos(null);
- },
- });
-
- // Keep editorRef in sync for wiki-link callbacks
- useEffect(() => { editorRef.current = editor ?? null; }, [editor]);
-
- const runSlashCommand = useCallback(
- (command: SlashCommand) => {
- if (!editor || editor.isDestroyed) return;
- const { $from } = editor.state.selection;
- editor
- .chain()
- .focus()
- .deleteRange({ from: $from.start(), to: $from.end() })
- .run();
- command.run(editor);
- setSlashQuery(null);
- setSlashMenuPosition(null);
- setSlashActiveIndex(0);
- },
- [editor],
- );
-
- useEffect(() => { uploadImageRef.current = uploadImage; }, [uploadImage]);
- useEffect(() => { onKeyboardCommandRef.current = onKeyboardCommand; }, [onKeyboardCommand]);
- useEffect(() => { slashQueryRef.current = slashQuery; }, [slashQuery]);
- useEffect(() => { slashCommandsRef.current = filteredSlashCommands; }, [filteredSlashCommands]);
- useEffect(() => { slashActiveIndexRef.current = slashActiveIndex; }, [slashActiveIndex]);
-
- useEffect(() => {
- if (slashQuery === null) {
- if (slashActiveIndexRef.current !== 0) slashActiveIndexRef.current = 0;
- if (slashActiveIndex !== 0) setSlashActiveIndex(0);
- return;
- }
- slashActiveIndexRef.current = 0;
- if (slashActiveIndex !== 0) setSlashActiveIndex(0);
- }, [slashActiveIndex, slashQuery]);
-
- useEffect(() => {
- if (!editor) return;
- if (slashActiveIndex >= filteredSlashCommands.length) {
- slashActiveIndexRef.current = 0;
- setSlashActiveIndex(0);
- }
- }, [editor, filteredSlashCommands.length, slashActiveIndex]);
-
- const handleAISubmit = useCallback(
- (instruction: string) => {
- setAiPromptOpen(false);
- const insertPos = aiTargetRange
- ? aiTargetRange.to
- : editor?.state.selection.from ?? 0;
- setStreamInsertAt(insertPos);
- setStreamOriginalRange(
- aiTargetRange && aiTargetText
- ? { from: aiTargetRange.from, to: aiTargetRange.to, text: aiTargetText }
- : null,
- );
- setStreamingState({ status: "streaming", instruction });
- },
- [editor, aiTargetRange, aiTargetText],
- );
-
- const handleStreamComplete = useCallback(() => {
- setStreamingState((prev) =>
- prev.status === "streaming"
- ? { status: "done", instruction: prev.instruction }
- : prev,
- );
- }, []);
-
- const handleStreamFinish = useCallback(
- (_action: "accept" | "discard") => {
- setStreamingState({ status: "idle" });
- setStreamOriginalRange(null);
- editor?.commands.focus();
- },
- [editor],
- );
-
- const handleStreamRetry = useCallback(() => {
- setStreamingState((prev) =>
- prev.status === "done"
- ? { status: "streaming", instruction: prev.instruction }
- : prev,
- );
- }, []);
-
- const handleEditInstruction = useCallback(
- (_prev: string) => {
- // Discard current AI text, re-open prompt
- if (!editor) return;
- openAI(editor);
- },
- [editor, openAI],
- );
-
- useEffect(() => {
- if (!editor) return;
-
- const dom = editor.view.dom;
-
- const onKeyDown = (event: KeyboardEvent) => {
- if (readOnly) return;
-
- const isMod = event.metaKey || event.ctrlKey;
- const key = event.key.toLowerCase();
- if (isMod && key === "s") {
- event.preventDefault();
- void Promise.resolve(onKeyboardCommandRef.current?.("save"));
- return;
- }
-
- if (isMod && key === "j") {
- event.preventDefault();
- openAI(editor);
- return;
- }
-
- // Space on empty paragraph — open AI prompt in generate mode
- if (event.key === " " && !isMod && !event.shiftKey) {
- const { $from } = editor.state.selection;
- const parent = $from.parent;
- if (
- parent.type.name === "paragraph" &&
- parent.textContent === "" &&
- editor.state.selection.empty
- ) {
- event.preventDefault();
- openAI(editor, "generate");
- return;
- }
- }
-
- // Wiki-link keyboard navigation
- if (wikiQueryRef.current !== null) {
- if (event.key === "Escape") {
- event.preventDefault();
- wikiQueryRef.current = null;
- setWikiQuery(null);
- setWikiPosition(null);
- setWikiTriggerPos(null);
- setWikiActiveIndex(0);
- return;
- }
- if (event.key === "ArrowDown") {
- event.preventDefault();
- const next = wikiActiveIndexRef.current + 1;
- wikiActiveIndexRef.current = next;
- setWikiActiveIndex(next);
- return;
- }
- if (event.key === "ArrowUp") {
- event.preventDefault();
- const next = Math.max(0, wikiActiveIndexRef.current - 1);
- wikiActiveIndexRef.current = next;
- setWikiActiveIndex(next);
- return;
- }
- // Enter/Tab handled by the autocomplete component via onSelect/onCreateStub
- }
-
- if (slashQueryRef.current === null) return;
-
- const commands = slashCommandsRef.current;
- if (event.key === "Escape") {
- event.preventDefault();
- slashQueryRef.current = null;
- slashActiveIndexRef.current = 0;
- setSlashQuery(null);
- setSlashMenuPosition(null);
- setSlashActiveIndex(0);
- return;
- }
-
- if (!commands.length) return;
-
- if (event.key === "ArrowDown") {
- event.preventDefault();
- const next = (slashActiveIndexRef.current + 1) % commands.length;
- slashActiveIndexRef.current = next;
- setSlashActiveIndex(next);
- return;
- }
-
- if (event.key === "ArrowUp") {
- event.preventDefault();
- const next = (slashActiveIndexRef.current - 1 + commands.length) % commands.length;
- slashActiveIndexRef.current = next;
- setSlashActiveIndex(next);
- return;
- }
-
- if (event.key === "Enter" || event.key === "Tab") {
- event.preventDefault();
- const idx = Math.max(0, Math.min(commands.length - 1, slashActiveIndexRef.current));
- const selected = commands[idx];
-
- const { $from } = editor.state.selection;
- editor
- .chain()
- .focus()
- .deleteRange({ from: $from.start(), to: $from.end() })
- .run();
- selected.run(editor);
-
- slashQueryRef.current = null;
- slashActiveIndexRef.current = 0;
- setSlashQuery(null);
- setSlashMenuPosition(null);
- setSlashActiveIndex(0);
- }
- };
-
- const onPaste = (event: ClipboardEvent) => {
- if (readOnly) return;
- const files = Array.from(event.clipboardData?.files ?? []);
- const image = files.find((file) => file.type.startsWith("image/"));
- if (!image) return;
-
- event.preventDefault();
- event.stopPropagation();
- void (async () => {
- const uploader = uploadImageRef.current;
- const src = uploader ? await uploader(image) : await fileToDataUrl(image);
- if (editor.isDestroyed) return;
- editor.chain().focus().setImage({ src, alt: image.name }).run();
- })().catch((err) => {
- toast.error(err instanceof Error ? err.message : "Failed to paste image.");
- });
- };
-
- const onDrop = (event: DragEvent) => {
- if (readOnly) return;
- const files = Array.from(event.dataTransfer?.files ?? []);
- const images = files.filter((file) => file.type.startsWith("image/"));
- if (!images.length) return;
-
- event.preventDefault();
- event.stopPropagation();
- void (async () => {
- const uploader = uploadImageRef.current;
- for (const image of images) {
- const src = uploader ? await uploader(image) : await fileToDataUrl(image);
- if (editor.isDestroyed) return;
- editor.chain().focus().setImage({ src, alt: image.name }).run();
- }
- })().catch((err) => {
- toast.error(err instanceof Error ? err.message : "Failed to drop image.");
- });
- };
-
- dom.addEventListener("keydown", onKeyDown, true);
- dom.addEventListener("paste", onPaste, true);
- dom.addEventListener("drop", onDrop, true);
-
- return () => {
- dom.removeEventListener("keydown", onKeyDown, true);
- dom.removeEventListener("paste", onPaste, true);
- dom.removeEventListener("drop", onDrop, true);
- };
- }, [editor, readOnly, openAI]);
-
- useEffect(() => {
- if (editor && editor.isEditable !== !readOnly) {
- editor.setEditable(!readOnly);
- }
- }, [editor, readOnly]);
-
- useEffect(() => {
- if (!editor) return;
- const currentContent = readEditorMarkdown(editor);
- if (markdown !== currentContent) {
- if (!isFocused || isFirstRender.current) {
- editor.commands.setContent(markdown, { contentType: "markdown" });
- }
- }
- isFirstRender.current = false;
- }, [editor, markdown, isFocused]);
-
- useImperativeHandle(
- ref,
- () => ({
- appendMarkdown: (nextMarkdown: string) => {
- if (!editor) return;
- const current = readEditorMarkdown(editor);
- const combined = current ?`${current}\n\n${nextMarkdown}` : nextMarkdown;
- editor.commands.setContent(combined, { contentType: "markdown" });
- editor.commands.scrollIntoView();
- },
- getMarkdown: () => (editor ? readEditorMarkdown(editor) : ""),
- setMarkdown: (nextMarkdown: string) =>
- editor?.commands.setContent(nextMarkdown, { contentType: "markdown" }),
- getTiptapJson: () => (editor ? asEditorJson(editor.getJSON()) : null),
- }),
- [editor],
- );
-
- if (!editor) return null;
-
- return (
- <div
- className={cn(
- "relative flex h-full w-full flex-col overflow-hidden rounded-lg border bg-background",
- readOnly && "opacity-80",
- className,
- )}
- >
- {/* Wiki-link autocomplete */}
- {wikiPosition && wikiQuery !== null && !readOnly && (
- <WikiLinkAutocomplete
- query={wikiQuery}
- position={wikiPosition}
- contextCardId={contextCardId}
- activeIndex={wikiActiveIndex}
- onSelect={handleWikiLinkSelect}
- onCreateStub={handleWikiLinkCreateStub}
- onClose={() => {
- setWikiQuery(null);
- setWikiPosition(null);
- setWikiTriggerPos(null);
- setWikiActiveIndex(0);
- }}
- />
- )}
-
- {/* Slash command menu */}
- {slashMenuPosition && slashQuery !== null && !readOnly ? (
- <div
- className="fixed z-50 w-64 overflow-hidden rounded-md border bg-card shadow-lg animate-in fade-in zoom-in-95 duration-100"
- style={{ top:`${slashMenuPosition.top}px`, left:`${slashMenuPosition.left}px` }}
- >
- {filteredSlashCommands.length ? (
- <div className="max-h-64 overflow-y-auto p-1">
- {filteredSlashCommands.map((cmd, idx) => (
- <button
- key={cmd.title}
- type="button"
- onMouseDown={(e) => {
- e.preventDefault();
- runSlashCommand(cmd);
- }}
- className={cn(
- "flex w-full flex-col gap-0.5 rounded-md px-3 py-2 text-left transition-colors",
- idx === slashActiveIndex
- ? "bg-[var(--alfred-accent-subtle)] text-foreground"
- : "text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground",
- )}
- >
- <span className="text-sm font-medium">{cmd.title}</span>
- <span className="text-[10px] text-[var(--alfred-text-tertiary)]">{cmd.description}</span>
- </button>
- ))}
- </div>
- ) : (
- <div className="px-3 py-2 text-[11px] text-[var(--alfred-text-tertiary)]">No commands found</div>
- )}
- </div>
- ) : null}
-
- {/* Slim bubble menu — B / I / AI */}
- {menuPosition && !editor.state.selection.empty && (
- <div
- className="fixed z-50 flex items-center gap-0.5 rounded-md border bg-card p-1 shadow-lg animate-in fade-in zoom-in-95 duration-100"
- style={{
- top: `${menuPosition.top}px`,
- left: `${menuPosition.left}px`,
- transform: "translateX(-50%)",
- }}
- >
- <Button
- variant="ghost"
- size="sm"
- onClick={() => editor.chain().focus().toggleBold().run()}
- className={cn(
- "h-7 w-7 p-0",
- editor.isActive("bold") && "bg-[var(--alfred-accent-subtle)] text-primary",
- )}
- >
- <Bold className="h-3.5 w-3.5" />
- </Button>
- <Button
- variant="ghost"
- size="sm"
- onClick={() => editor.chain().focus().toggleItalic().run()}
- className={cn(
- "h-7 w-7 p-0",
- editor.isActive("italic") && "bg-[var(--alfred-accent-subtle)] text-primary",
- )}
- >
- <Italic className="h-3.5 w-3.5" />
- </Button>
-
- <div className="mx-1 h-4 w-px bg-border" />
-
- <Button
- variant="ghost"
- size="sm"
- className="h-7 gap-1.5 px-2 font-medium text-[10px] uppercase tracking-wider text-primary hover:bg-[var(--alfred-accent-subtle)]"
- onClick={() => openAI(editor, "transform")}
- >
- <Sparkles className="h-3 w-3" />
- Ask AI
- </Button>
- </div>
- )}
-
- {/* Inline AI Prompt */}
- {aiPromptOpen && (
- <InlineAIPrompt
- editor={editor}
- mode={aiPromptMode}
- position={aiPromptPosition}
- targetText={aiTargetText}
- targetRange={aiTargetRange}
- onSubmit={handleAISubmit}
- onClose={() => {
- setAiPromptOpen(false);
- editor.commands.focus();
- }}
- isStreaming={streamingState.status === "streaming"}
- />
- )}
-
- {/* AI Streaming Controller */}
- {streamingState.status !== "idle" && (
- <AiStreamingController
- editor={editor}
- state={streamingState}
- insertAt={streamInsertAt}
- originalRange={streamOriginalRange}
- onStreamComplete={handleStreamComplete}
- onFinish={handleStreamFinish}
- onRetry={handleStreamRetry}
- onEditInstruction={handleEditInstruction}
- />
- )}
-
- <div className="flex-1 overflow-y-auto" onClick={() => editor.chain().focus().run()}>
- <EditorContent editor={editor} />
- </div>
- </div>
- );
- },
+  function MarkdownNotesEditorImpl(
+    {
+      markdown,
+      documentTitle,
+      documentId,
+      onMarkdownChange,
+      onDraftChange,
+      onKeyboardCommand,
+      uploadImage,
+      readOnly,
+      placeholder,
+      className,
+      contextCardId,
+      onWikiLinksChange,
+      onWikiLinkClick,
+    },
+    ref,
+  ) {
+    const [isFocused, setIsFocused] = useState(false);
+
+    // Inline AI state
+    const [aiPromptOpen, setAiPromptOpen] = useState(false);
+    const [aiPromptMode, setAiPromptMode] = useState<AIPromptMode>("generate");
+    const [aiPromptPosition, setAiPromptPosition] = useState<{ top: number; left: number }>({
+      top: 0,
+      left: 0,
+    });
+    const [aiTargetText, setAiTargetText] = useState("");
+    const [aiTargetRange, setAiTargetRange] = useState<{ from: number; to: number } | null>(null);
+    const [streamingState, setStreamingState] = useState<StreamingState>({ status: "idle" });
+    const [streamInsertAt, setStreamInsertAt] = useState(0);
+    const [streamOriginalRange, setStreamOriginalRange] = useState<{
+      from: number;
+      to: number;
+      text: string;
+    } | null>(null);
+
+    // Wiki-link autocomplete state
+    const [wikiQuery, setWikiQuery] = useState<string | null>(null);
+    const [wikiPosition, setWikiPosition] = useState<{ top: number; left: number } | null>(null);
+    const [wikiActiveIndex, setWikiActiveIndex] = useState(0);
+    const [wikiTriggerPos, setWikiTriggerPos] = useState<number | null>(null);
+    const wikiQueryRef = useRef<string | null>(null);
+    const wikiActiveIndexRef = useRef(0);
+
+    const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
+    const [slashMenuPosition, setSlashMenuPosition] = useState<{
+      top: number;
+      left: number;
+    } | null>(null);
+    const [slashQuery, setSlashQuery] = useState<string | null>(null);
+    const [slashActiveIndex, setSlashActiveIndex] = useState(0);
+
+    const isFirstRender = useRef(true);
+
+    const uploadImageRef = useRef(uploadImage);
+    const onKeyboardCommandRef = useRef(onKeyboardCommand);
+    const slashQueryRef = useRef<string | null>(null);
+    const slashCommandsRef = useRef<SlashCommand[]>([]);
+    const slashActiveIndexRef = useRef(0);
+    const emptyParagraphSpaceAtRef = useRef<number | null>(null);
+
+    const extensions = useMemo(
+      () => [
+        WikiLink.configure({
+          onClickLink: (cardId: string) => {
+            onWikiLinkClick?.(cardId);
+          },
+        }),
+        StarterKit.configure({
+          heading: {
+            levels: [1, 2, 3],
+          },
+        }),
+        Link.configure({
+          openOnClick: false,
+          autolink: true,
+          linkOnPaste: true,
+        }),
+        Image.configure({
+          inline: false,
+          allowBase64: true,
+        }),
+        TaskList.configure({
+          HTMLAttributes: { class: "task-list" },
+        }),
+        TaskItem.configure({
+          nested: true,
+          HTMLAttributes: { class: "task-item" },
+        }),
+        Markdown,
+        Typography,
+        Placeholder.configure({
+          placeholder: ({ node, editor: ed }) => {
+            // First paragraph when editor is empty
+            if (ed.isEmpty && node.type.name === "paragraph") {
+              return placeholder ?? "Start writing, or double-space for AI...";
+            }
+            // Any other empty paragraph
+            if (node.type.name === "paragraph" && node.textContent === "") {
+              return "Double space for AI  ·  / for commands";
+            }
+            return "";
+          },
+          emptyEditorClass: "is-editor-empty",
+        }),
+      ],
+      [placeholder, onWikiLinkClick],
+    );
+
+    const updateMenuPosition = useCallback((editor: Editor) => {
+      if (editor.state.selection.empty) {
+        setMenuPosition(null);
+        return;
+      }
+
+      const { from, to } = editor.state.selection;
+      const start = editor.view.coordsAtPos(from);
+      const end = editor.view.coordsAtPos(to);
+
+      setMenuPosition({
+        top: start.top - 48,
+        left: (start.left + end.left) / 2,
+      });
+    }, []);
+
+    const openAI = useCallback((ed: Editor, modeOverride?: AIPromptMode) => {
+      const { from, to } = ed.state.selection;
+      const hasSelection = !ed.state.selection.empty;
+      const { $from } = ed.state.selection;
+      const paragraphText = $from.parent.textContent;
+
+      let mode: AIPromptMode;
+      let targetText: string;
+      let targetRange: { from: number; to: number } | null;
+
+      if (modeOverride) {
+        mode = modeOverride;
+      } else if (hasSelection) {
+        mode = "transform";
+      } else if (!paragraphText.trim()) {
+        mode = "generate";
+      } else {
+        mode = "edit";
+      }
+
+      if (mode === "transform") {
+        targetText = ed.state.doc.textBetween(from, to, " ");
+        targetRange = { from, to };
+      } else if (mode === "edit") {
+        targetText = paragraphText;
+        targetRange = { from: $from.start(), to: $from.end() };
+      } else {
+        targetText = "";
+        targetRange = null;
+      }
+
+      const coords = ed.view.coordsAtPos(from);
+      setAiPromptMode(mode);
+      setAiTargetText(targetText);
+      setAiTargetRange(targetRange);
+      setAiPromptPosition({ top: coords.bottom + 8, left: coords.left });
+      setAiPromptOpen(true);
+    }, []);
+
+    const slashCommands = useMemo<SlashCommand[]>(
+      () => [
+        {
+          title: "Heading 1",
+          description: "Large section heading",
+          keywords: ["h1", "heading", "title"],
+          run: (editor) => editor.chain().focus().toggleHeading({ level: 1 }).run(),
+        },
+        {
+          title: "Heading 2",
+          description: "Medium section heading",
+          keywords: ["h2", "heading", "subtitle"],
+          run: (editor) => editor.chain().focus().toggleHeading({ level: 2 }).run(),
+        },
+        {
+          title: "Heading 3",
+          description: "Small section heading",
+          keywords: ["h3", "heading"],
+          run: (editor) => editor.chain().focus().toggleHeading({ level: 3 }).run(),
+        },
+        {
+          title: "Bulleted list",
+          description: "Unordered list of items",
+          keywords: ["bullet", "list", "ul"],
+          run: (editor) => editor.chain().focus().toggleBulletList().run(),
+        },
+        {
+          title: "Numbered list",
+          description: "Ordered list of items",
+          keywords: ["number", "list", "ol"],
+          run: (editor) => editor.chain().focus().toggleOrderedList().run(),
+        },
+        {
+          title: "Todo list",
+          description: "Task list with checkboxes",
+          keywords: ["todo", "task", "checkbox", "check"],
+          run: (editor) => editor.chain().focus().toggleTaskList().run(),
+        },
+        {
+          title: "Quote",
+          description: "Blockquote for emphasis",
+          keywords: ["quote", "blockquote"],
+          run: (editor) => editor.chain().focus().toggleBlockquote().run(),
+        },
+        {
+          title: "Code block",
+          description: "Code with syntax highlighting",
+          keywords: ["code", "block", "snippet"],
+          run: (editor) => editor.chain().focus().toggleCodeBlock().run(),
+        },
+        {
+          title: "Divider",
+          description: "Horizontal ruled line",
+          keywords: ["divider", "hr", "separator"],
+          run: (editor) => editor.chain().focus().setHorizontalRule().run(),
+        },
+        {
+          title: "Image",
+          description: "Upload or paste an image",
+          keywords: ["image", "photo", "picture", "img"],
+          run: (editor) => {
+            const input = document.createElement("input");
+            input.type = "file";
+            input.accept = "image/*";
+            input.onchange = async () => {
+              const file = input.files?.[0];
+              if (!file) return;
+              const uploader = uploadImageRef.current;
+              try {
+                const src = uploader ? await uploader(file) : await fileToDataUrl(file);
+                if (!editor.isDestroyed) {
+                  editor.chain().focus().setImage({ src, alt: file.name }).run();
+                }
+              } catch {
+                toast.error("Failed to upload image");
+              }
+            };
+            input.click();
+          },
+        },
+        {
+          title: "Callout",
+          description: "Highlighted blockquote for emphasis",
+          keywords: ["callout", "note", "info", "warning", "tip"],
+          run: (editor) => editor.chain().focus().toggleBlockquote().run(),
+        },
+        // --- AI Slash Commands ---
+        {
+          title: "AI Edit",
+          description: "Ask AI to write, edit, or transform text",
+          keywords: ["ai", "edit", "write", "generate", "ask", "alfred"],
+          run: (ed) => {
+            openAI(ed);
+          },
+        },
+      ],
+      [openAI],
+    );
+
+    const filteredSlashCommands = useMemo(() => {
+      if (slashQuery === null) return [];
+      const query = slashQuery.trim().toLowerCase();
+      if (!query) return slashCommands;
+      return slashCommands.filter((cmd) => {
+        if (cmd.title.toLowerCase().includes(query)) return true;
+        return cmd.keywords.some((k) => k.toLowerCase().includes(query));
+      });
+    }, [slashCommands, slashQuery]);
+
+    const updateSlashState = useCallback((editor: Editor) => {
+      const { state } = editor;
+      if (!editor.isEditable || !editor.isFocused) {
+        setSlashQuery(null);
+        setSlashMenuPosition(null);
+        return;
+      }
+      if (!state.selection.empty) {
+        setSlashQuery(null);
+        setSlashMenuPosition(null);
+        return;
+      }
+
+      const { $from } = state.selection;
+      const parent = $from.parent;
+      if (parent.type.name !== "paragraph") {
+        setSlashQuery(null);
+        setSlashMenuPosition(null);
+        return;
+      }
+
+      const text = parent.textContent;
+      if (!text.startsWith("/")) {
+        setSlashQuery(null);
+        setSlashMenuPosition(null);
+        return;
+      }
+      if (text.includes(" ")) {
+        setSlashQuery(null);
+        setSlashMenuPosition(null);
+        return;
+      }
+      if (state.selection.from !== $from.end()) {
+        setSlashQuery(null);
+        setSlashMenuPosition(null);
+        return;
+      }
+
+      setSlashQuery(text.slice(1));
+      const coords = editor.view.coordsAtPos(state.selection.from);
+      setSlashMenuPosition({ top: coords.bottom + 10, left: coords.left });
+    }, []);
+
+    const updateWikiLinkState = useCallback((ed: Editor) => {
+      if (!ed.isEditable || !ed.isFocused || !ed.state.selection.empty) {
+        setWikiQuery(null);
+        setWikiPosition(null);
+        setWikiTriggerPos(null);
+        return;
+      }
+
+      const { $from } = ed.state.selection;
+      const textBefore = ed.state.doc.textBetween(Math.max(0, $from.pos - 100), $from.pos, "");
+
+      // Find the last unclosed [[ (no ]] after it)
+      const lastOpen = textBefore.lastIndexOf("[[");
+      if (lastOpen === -1) {
+        setWikiQuery(null);
+        setWikiPosition(null);
+        setWikiTriggerPos(null);
+        return;
+      }
+
+      const afterOpen = textBefore.slice(lastOpen + 2);
+      // If there's a ]] after [[, the link is closed
+      if (afterOpen.includes("]]")) {
+        setWikiQuery(null);
+        setWikiPosition(null);
+        setWikiTriggerPos(null);
+        return;
+      }
+
+      // If there's a newline, don't span across paragraphs
+      if (afterOpen.includes("\n")) {
+        setWikiQuery(null);
+        setWikiPosition(null);
+        setWikiTriggerPos(null);
+        return;
+      }
+
+      const query = afterOpen;
+      const triggerAbsPos = $from.pos - afterOpen.length - 2;
+      const coords = ed.view.coordsAtPos(triggerAbsPos);
+
+      wikiQueryRef.current = query;
+      setWikiQuery(query);
+      setWikiPosition({ top: coords.bottom + 8, left: coords.left });
+      setWikiTriggerPos(triggerAbsPos);
+      wikiActiveIndexRef.current = 0;
+      setWikiActiveIndex(0);
+    }, []);
+
+    const editorRef = useRef<Editor | null>(null);
+
+    const handleWikiLinkSelect = useCallback(
+      (selection: WikiLinkSelection) => {
+        const ed = editorRef.current;
+        if (!ed || ed.isDestroyed || wikiTriggerPos === null) return;
+        const { from } = ed.state.selection;
+        ed.chain()
+          .focus()
+          .deleteRange({ from: wikiTriggerPos, to: from })
+          .insertWikiLink({ cardId: String(selection.cardId), title: selection.title })
+          .run();
+        setWikiQuery(null);
+        setWikiPosition(null);
+        setWikiTriggerPos(null);
+        setWikiActiveIndex(0);
+
+        setTimeout(() => {
+          if (!ed.isDestroyed) {
+            const json = ed.getJSON() as Record<string, unknown>;
+            const cardIds = extractWikiLinkCardIds(json);
+            onWikiLinksChange?.(cardIds);
+          }
+        }, 0);
+      },
+      [wikiTriggerPos, onWikiLinksChange],
+    );
+
+    const handleWikiLinkCreateStub = useCallback(
+      async (title: string) => {
+        const ed = editorRef.current;
+        if (!ed || ed.isDestroyed || wikiTriggerPos === null) return;
+        try {
+          const card = await createZettelCard({ title, content: "" });
+          handleWikiLinkSelect({ cardId: card.id, title: card.title });
+        } catch {
+          toast.error("Failed to create card");
+        }
+      },
+      [wikiTriggerPos, handleWikiLinkSelect],
+    );
+
+    const editor = useEditor({
+      extensions,
+      content: markdown,
+      contentType: "markdown",
+      editable: !readOnly,
+      immediatelyRender: false,
+      editorProps: {
+        attributes: {
+          class: cn(
+            "prose prose-sm dark:prose-invert max-w-none min-h-[220px] px-2 py-1 text-[15px] leading-[1.72] tracking-[-0.01em] text-foreground focus:outline-none [text-wrap:pretty]",
+            // Headings: Inter (sans)
+            "prose-headings:mt-6 prose-headings:mb-2 prose-headings:font-sans prose-headings:tracking-tight prose-headings:font-semibold",
+            "prose-h1:text-[2rem] prose-h2:text-[1.65rem] prose-h3:text-[1.2rem]",
+            // Body: DM Sans (inherits from font-sans)
+            "prose-p:my-2 prose-p:leading-[1.78] prose-p:text-justify",
+            // Code: JetBrains Mono
+            "prose-code:font-mono prose-code:text-[13px] prose-code:bg-secondary prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-sm prose-code:before:content-none prose-code:after:content-none",
+            "prose-pre:bg-secondary prose-pre:text-foreground prose-pre:font-mono prose-pre:text-[13px] prose-pre:rounded-md",
+            // Blockquote: accent left border
+            "prose-blockquote:my-3 prose-blockquote:border-l-primary prose-blockquote:bg-[var(--alfred-accent-subtle)] prose-blockquote:px-4 prose-blockquote:py-1 prose-blockquote:not-italic prose-blockquote:rounded-r-md prose-blockquote:text-justify",
+            // Images
+            "prose-img:rounded-lg prose-img:border prose-img:shadow-sm",
+            // Links: accent color
+            "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
+            // HR: ruled line
+            "prose-hr:my-6 prose-hr:border-[var(--alfred-ruled-line)]",
+            // Lists
+            "prose-ul:my-3 prose-ol:my-3 prose-li:my-0.5 prose-li:text-justify",
+            // Task list: checkbox styling
+            "[&_ul[data-type=taskList]]:list-none [&_ul[data-type=taskList]]:pl-2",
+            "[&_li[data-type=taskItem]]:flex [&_li[data-type=taskItem]]:items-start [&_li[data-type=taskItem]]:gap-2 [&_li[data-type=taskItem]]:my-1",
+            "[&_li[data-type=taskItem]>label]:flex [&_li[data-type=taskItem]>label]:items-center [&_li[data-type=taskItem]>label]:mt-0.5 [&_li[data-type=taskItem]>label]:shrink-0",
+            "[&_li[data-type=taskItem]>label>input]:size-4 [&_li[data-type=taskItem]>label>input]:accent-[#E8590C] [&_li[data-type=taskItem]>label>input]:cursor-pointer",
+            "[&_li[data-type=taskItem]>div]:flex-1 [&_li[data-type=taskItem]>div]:min-w-0",
+            "[&_li[data-type=taskItem][data-checked=true]>div]:line-through [&_li[data-type=taskItem][data-checked=true]>div]:opacity-60",
+            // Strong: slightly heavier
+            "prose-strong:font-semibold",
+          ),
+        },
+      },
+      onUpdate: ({ editor }) => {
+        const nextMarkdown = readEditorMarkdown(editor);
+        onMarkdownChange?.(nextMarkdown);
+        const tiptapJson = asEditorJson(editor.getJSON());
+        if (tiptapJson) {
+          onDraftChange?.({ markdown: nextMarkdown, tiptapJson });
+        }
+        updateMenuPosition(editor);
+        updateSlashState(editor);
+        updateWikiLinkState(editor);
+      },
+      onSelectionUpdate: ({ editor }) => {
+        updateMenuPosition(editor);
+        updateSlashState(editor);
+        updateWikiLinkState(editor);
+      },
+      onFocus: () => setIsFocused(true),
+      onBlur: () => {
+        setIsFocused(false);
+        setSlashQuery(null);
+        setSlashMenuPosition(null);
+        setWikiQuery(null);
+        setWikiPosition(null);
+        setWikiTriggerPos(null);
+        emptyParagraphSpaceAtRef.current = null;
+      },
+    });
+
+    // Keep editorRef in sync for wiki-link callbacks
+    useEffect(() => {
+      editorRef.current = editor ?? null;
+    }, [editor]);
+
+    const runSlashCommand = useCallback(
+      (command: SlashCommand) => {
+        if (!editor || editor.isDestroyed) return;
+        const { $from } = editor.state.selection;
+        editor.chain().focus().deleteRange({ from: $from.start(), to: $from.end() }).run();
+        command.run(editor);
+        setSlashQuery(null);
+        setSlashMenuPosition(null);
+        setSlashActiveIndex(0);
+      },
+      [editor],
+    );
+
+    useEffect(() => {
+      uploadImageRef.current = uploadImage;
+    }, [uploadImage]);
+    useEffect(() => {
+      onKeyboardCommandRef.current = onKeyboardCommand;
+    }, [onKeyboardCommand]);
+    useEffect(() => {
+      slashQueryRef.current = slashQuery;
+    }, [slashQuery]);
+    useEffect(() => {
+      slashCommandsRef.current = filteredSlashCommands;
+    }, [filteredSlashCommands]);
+    useEffect(() => {
+      slashActiveIndexRef.current = slashActiveIndex;
+    }, [slashActiveIndex]);
+
+    useEffect(() => {
+      if (slashQuery === null) {
+        if (slashActiveIndexRef.current !== 0) slashActiveIndexRef.current = 0;
+        if (slashActiveIndex !== 0) {
+          const frame = window.requestAnimationFrame(() => setSlashActiveIndex(0));
+          return () => window.cancelAnimationFrame(frame);
+        }
+        return;
+      }
+      slashActiveIndexRef.current = 0;
+      if (slashActiveIndex !== 0) {
+        const frame = window.requestAnimationFrame(() => setSlashActiveIndex(0));
+        return () => window.cancelAnimationFrame(frame);
+      }
+    }, [slashActiveIndex, slashQuery]);
+
+    useEffect(() => {
+      if (!editor) return;
+      if (slashActiveIndex >= filteredSlashCommands.length) {
+        slashActiveIndexRef.current = 0;
+        const frame = window.requestAnimationFrame(() => setSlashActiveIndex(0));
+        return () => window.cancelAnimationFrame(frame);
+      }
+    }, [editor, filteredSlashCommands.length, slashActiveIndex]);
+
+    const handleAISubmit = useCallback(
+      (instruction: string) => {
+        setAiPromptOpen(false);
+        editor?.commands.blur();
+        const insertPos = aiTargetRange ? aiTargetRange.to : (editor?.state.selection.from ?? 0);
+        setStreamInsertAt(insertPos);
+        setStreamOriginalRange(
+          aiTargetRange && aiTargetText
+            ? { from: aiTargetRange.from, to: aiTargetRange.to, text: aiTargetText }
+            : null,
+        );
+        setStreamingState({ status: "streaming", instruction });
+      },
+      [editor, aiTargetRange, aiTargetText],
+    );
+
+    const handleStreamComplete = useCallback(() => {
+      setStreamingState((prev) =>
+        prev.status === "streaming" ? { status: "done", instruction: prev.instruction } : prev,
+      );
+    }, []);
+
+    const handleStreamFinish = useCallback(
+      (action: "accept" | "discard") => {
+        if (action === "accept") {
+          void Promise.resolve(onKeyboardCommandRef.current?.("save"));
+        }
+        setStreamingState({ status: "idle" });
+        setStreamOriginalRange(null);
+        editor?.commands.focus();
+      },
+      [editor],
+    );
+
+    const handleStreamRetry = useCallback(() => {
+      setStreamingState((prev) =>
+        prev.status === "done" ? { status: "streaming", instruction: prev.instruction } : prev,
+      );
+    }, []);
+
+    const handleEditInstruction = useCallback(() => {
+      // Discard current AI text, re-open prompt
+      if (!editor) return;
+      openAI(editor);
+    }, [editor, openAI]);
+
+    useEffect(() => {
+      if (!editor) return;
+
+      const dom = editor.view.dom;
+
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (readOnly) return;
+
+        const isMod = event.metaKey || event.ctrlKey;
+        const key = event.key.toLowerCase();
+        if (event.key !== " ") {
+          emptyParagraphSpaceAtRef.current = null;
+        }
+        if (isMod && key === "s") {
+          event.preventDefault();
+          void Promise.resolve(onKeyboardCommandRef.current?.("save"));
+          return;
+        }
+
+        if (isMod && key === "j") {
+          event.preventDefault();
+          event.stopPropagation();
+          openAI(editor);
+          return;
+        }
+
+        if (isMod && key === ";") {
+          event.preventDefault();
+          event.stopPropagation();
+          openAI(editor);
+          return;
+        }
+
+        // Double-space on an empty paragraph opens the AI prompt in generate mode.
+        if (event.key === " " && !isMod && !event.shiftKey && !event.altKey) {
+          const { $from } = editor.state.selection;
+          const parent = $from.parent;
+          if (
+            parent.type.name === "paragraph" &&
+            parent.textContent === "" &&
+            editor.state.selection.empty
+          ) {
+            event.preventDefault();
+            const now = Date.now();
+            const lastSpaceAt = emptyParagraphSpaceAtRef.current;
+            if (
+              lastSpaceAt !== null &&
+              now - lastSpaceAt <= EMPTY_PARAGRAPH_AI_DOUBLE_SPACE_MS
+            ) {
+              emptyParagraphSpaceAtRef.current = null;
+              openAI(editor, "generate");
+            } else {
+              emptyParagraphSpaceAtRef.current = now;
+            }
+            return;
+          }
+          emptyParagraphSpaceAtRef.current = null;
+        }
+
+        // Wiki-link keyboard navigation
+        if (wikiQueryRef.current !== null) {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            wikiQueryRef.current = null;
+            setWikiQuery(null);
+            setWikiPosition(null);
+            setWikiTriggerPos(null);
+            setWikiActiveIndex(0);
+            return;
+          }
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            const next = wikiActiveIndexRef.current + 1;
+            wikiActiveIndexRef.current = next;
+            setWikiActiveIndex(next);
+            return;
+          }
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            const next = Math.max(0, wikiActiveIndexRef.current - 1);
+            wikiActiveIndexRef.current = next;
+            setWikiActiveIndex(next);
+            return;
+          }
+          // Enter/Tab handled by the autocomplete component via onSelect/onCreateStub
+        }
+
+        if (slashQueryRef.current === null) return;
+
+        const commands = slashCommandsRef.current;
+        if (event.key === "Escape") {
+          event.preventDefault();
+          slashQueryRef.current = null;
+          slashActiveIndexRef.current = 0;
+          setSlashQuery(null);
+          setSlashMenuPosition(null);
+          setSlashActiveIndex(0);
+          return;
+        }
+
+        if (!commands.length) return;
+
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          const next = (slashActiveIndexRef.current + 1) % commands.length;
+          slashActiveIndexRef.current = next;
+          setSlashActiveIndex(next);
+          return;
+        }
+
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          const next = (slashActiveIndexRef.current - 1 + commands.length) % commands.length;
+          slashActiveIndexRef.current = next;
+          setSlashActiveIndex(next);
+          return;
+        }
+
+        if (event.key === "Enter" || event.key === "Tab") {
+          event.preventDefault();
+          const idx = Math.max(0, Math.min(commands.length - 1, slashActiveIndexRef.current));
+          const selected = commands[idx];
+
+          const { $from } = editor.state.selection;
+          editor.chain().focus().deleteRange({ from: $from.start(), to: $from.end() }).run();
+          selected.run(editor);
+
+          slashQueryRef.current = null;
+          slashActiveIndexRef.current = 0;
+          setSlashQuery(null);
+          setSlashMenuPosition(null);
+          setSlashActiveIndex(0);
+        }
+      };
+
+      const onPaste = (event: ClipboardEvent) => {
+        if (readOnly) return;
+        const files = Array.from(event.clipboardData?.files ?? []);
+        const image = files.find((file) => file.type.startsWith("image/"));
+        if (!image) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        void (async () => {
+          const uploader = uploadImageRef.current;
+          const src = uploader ? await uploader(image) : await fileToDataUrl(image);
+          if (editor.isDestroyed) return;
+          editor.chain().focus().setImage({ src, alt: image.name }).run();
+        })().catch((err) => {
+          toast.error(err instanceof Error ? err.message : "Failed to paste image.");
+        });
+      };
+
+      const onDrop = (event: DragEvent) => {
+        if (readOnly) return;
+        const files = Array.from(event.dataTransfer?.files ?? []);
+        const images = files.filter((file) => file.type.startsWith("image/"));
+        if (!images.length) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        void (async () => {
+          const uploader = uploadImageRef.current;
+          for (const image of images) {
+            const src = uploader ? await uploader(image) : await fileToDataUrl(image);
+            if (editor.isDestroyed) return;
+            editor.chain().focus().setImage({ src, alt: image.name }).run();
+          }
+        })().catch((err) => {
+          toast.error(err instanceof Error ? err.message : "Failed to drop image.");
+        });
+      };
+
+      dom.addEventListener("keydown", onKeyDown, true);
+      dom.addEventListener("paste", onPaste, true);
+      dom.addEventListener("drop", onDrop, true);
+
+      return () => {
+        dom.removeEventListener("keydown", onKeyDown, true);
+        dom.removeEventListener("paste", onPaste, true);
+        dom.removeEventListener("drop", onDrop, true);
+      };
+    }, [editor, readOnly, openAI]);
+
+    useEffect(() => {
+      if (editor && editor.isEditable !== !readOnly) {
+        editor.setEditable(!readOnly);
+      }
+    }, [editor, readOnly]);
+
+    useEffect(() => {
+      if (!editor) return;
+      if (streamingState.status !== "idle") {
+        isFirstRender.current = false;
+        return;
+      }
+      const currentContent = readEditorMarkdown(editor);
+      if (markdown !== currentContent) {
+        if (!isFocused || isFirstRender.current) {
+          editor.commands.setContent(markdown, { contentType: "markdown" });
+        }
+      }
+      isFirstRender.current = false;
+    }, [editor, markdown, isFocused, streamingState.status]);
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        appendMarkdown: (nextMarkdown: string) => {
+          if (!editor) return;
+          const current = readEditorMarkdown(editor);
+          const combined = current ? `${current}\n\n${nextMarkdown}` : nextMarkdown;
+          editor.commands.setContent(combined, { contentType: "markdown" });
+          editor.commands.scrollIntoView();
+        },
+        getMarkdown: () => (editor ? readEditorMarkdown(editor) : ""),
+        setMarkdown: (nextMarkdown: string) =>
+          editor?.commands.setContent(nextMarkdown, { contentType: "markdown" }),
+        getTiptapJson: () => (editor ? asEditorJson(editor.getJSON()) : null),
+      }),
+      [editor],
+    );
+
+    if (!editor) return null;
+
+    return (
+      <div
+        className={cn(
+          "bg-background relative flex h-full w-full flex-col overflow-hidden rounded-lg border",
+          readOnly && "opacity-80",
+          className,
+        )}
+      >
+        {/* Wiki-link autocomplete */}
+        {wikiPosition && wikiQuery !== null && !readOnly && (
+          <WikiLinkAutocomplete
+            query={wikiQuery}
+            position={wikiPosition}
+            contextCardId={contextCardId}
+            activeIndex={wikiActiveIndex}
+            onSelect={handleWikiLinkSelect}
+            onCreateStub={handleWikiLinkCreateStub}
+            onClose={() => {
+              setWikiQuery(null);
+              setWikiPosition(null);
+              setWikiTriggerPos(null);
+              setWikiActiveIndex(0);
+            }}
+          />
+        )}
+
+        {/* Slash command menu */}
+        {slashMenuPosition && slashQuery !== null && !readOnly ? (
+          <div
+            className="bg-card animate-in fade-in zoom-in-95 fixed z-50 w-64 overflow-hidden rounded-md border shadow-lg duration-100"
+            style={{ top: `${slashMenuPosition.top}px`, left: `${slashMenuPosition.left}px` }}
+          >
+            {filteredSlashCommands.length ? (
+              <div className="max-h-64 overflow-y-auto p-1">
+                {filteredSlashCommands.map((cmd, idx) => (
+                  <button
+                    key={cmd.title}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      runSlashCommand(cmd);
+                    }}
+                    className={cn(
+                      "flex w-full flex-col gap-0.5 rounded-md px-3 py-2 text-left transition-colors",
+                      idx === slashActiveIndex
+                        ? "text-foreground bg-[var(--alfred-accent-subtle)]"
+                        : "text-muted-foreground hover:text-foreground hover:bg-[var(--alfred-accent-subtle)]",
+                    )}
+                  >
+                    <span className="text-sm font-medium">{cmd.title}</span>
+                    <span className="text-[10px] text-[var(--alfred-text-tertiary)]">
+                      {cmd.description}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="px-3 py-2 text-[11px] text-[var(--alfred-text-tertiary)]">
+                No commands found
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {/* Slim bubble menu — B / I / AI */}
+        {menuPosition && !editor.state.selection.empty && (
+          <div
+            className="bg-card animate-in fade-in zoom-in-95 fixed z-50 flex items-center gap-0.5 rounded-md border p-1 shadow-lg duration-100"
+            style={{
+              top: `${menuPosition.top}px`,
+              left: `${menuPosition.left}px`,
+              transform: "translateX(-50%)",
+            }}
+          >
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editor.chain().focus().toggleBold().run()}
+              className={cn(
+                "h-7 w-7 p-0",
+                editor.isActive("bold") && "text-primary bg-[var(--alfred-accent-subtle)]",
+              )}
+            >
+              <Bold className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editor.chain().focus().toggleItalic().run()}
+              className={cn(
+                "h-7 w-7 p-0",
+                editor.isActive("italic") && "text-primary bg-[var(--alfred-accent-subtle)]",
+              )}
+            >
+              <Italic className="h-3.5 w-3.5" />
+            </Button>
+
+            <div className="bg-border mx-1 h-4 w-px" />
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-primary h-7 gap-1.5 px-2 text-[10px] font-medium tracking-wider uppercase hover:bg-[var(--alfred-accent-subtle)]"
+              onClick={() => openAI(editor, "transform")}
+            >
+              <Sparkles className="h-3 w-3" />
+              Ask AI
+            </Button>
+          </div>
+        )}
+
+        {/* Inline AI Prompt */}
+        {aiPromptOpen && (
+          <InlineAIPrompt
+            editor={editor}
+            mode={aiPromptMode}
+            position={aiPromptPosition}
+            targetText={aiTargetText}
+            targetRange={aiTargetRange}
+            onSubmit={handleAISubmit}
+            onClose={() => {
+              setAiPromptOpen(false);
+              editor.commands.focus();
+            }}
+            isStreaming={streamingState.status === "streaming"}
+          />
+        )}
+
+        {/* AI Streaming Controller */}
+        {streamingState.status !== "idle" && (
+          <AiStreamingController
+            editor={editor}
+            state={streamingState}
+            insertAt={streamInsertAt}
+            originalRange={streamOriginalRange}
+            documentTitle={documentTitle}
+            documentId={documentId}
+            onStreamComplete={handleStreamComplete}
+            onFinish={handleStreamFinish}
+            onRetry={handleStreamRetry}
+            onEditInstruction={handleEditInstruction}
+          />
+        )}
+
+        <div
+          className="flex-1 scroll-py-24 overflow-y-auto"
+          onClick={() => editor.chain().focus().run()}
+        >
+          <EditorContent editor={editor} />
+        </div>
+      </div>
+    );
+  },
 );
 
 MarkdownNotesEditor.displayName = "MarkdownNotesEditor";
