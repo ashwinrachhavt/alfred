@@ -45,6 +45,24 @@ export default function UniversePage() {
     );
   }
 
+  // Empty state
+  if (data.nodes.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 bg-[#0F0E0D]">
+        <p className="font-sans text-sm text-white/60">Your universe is empty.</p>
+        <p className="font-sans text-xs text-white/30">
+          Start by creating your first knowledge card.
+        </p>
+        <a
+          href="/knowledge"
+          className="rounded-md bg-[#E8590C] px-4 py-2 font-sans text-xs text-white"
+        >
+          Go to Knowledge Hub
+        </a>
+      </div>
+    );
+  }
+
   return (
     <div className="relative h-full w-full bg-[#0F0E0D]">
       <KnowledgeUniverse data={data} />
