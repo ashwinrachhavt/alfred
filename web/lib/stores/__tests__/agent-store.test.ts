@@ -45,6 +45,8 @@ function normalize(msgs: MsgInput[]) {
       relatedCards: [],
       gaps: [],
       toolCalls: [],
+      plan: [],
+      pendingApprovals: [],
       timestamp: Date.now(),
       ...m,
     };

@@ -51,6 +51,8 @@ function makeMessage(overrides: Partial<AgentMessage> = {}): AgentMessage {
     relatedCards: [],
     gaps: [],
     toolCalls: [],
+    plan: [],
+    pendingApprovals: [],
     timestamp: Date.now(),
     ...overrides,
   };
@@ -184,6 +186,50 @@ describe("MessageBubble", () => {
       />,
     );
     expect(screen.getByText("gap: epistemology")).toBeInTheDocument();
+  });
+
+  it("renders orchestration plan rows", () => {
+    const msg = makeMessage({
+      plan: [
+        {
+          id: "task-1",
+          agent: "knowledge",
+          objective: "Search Alfred's knowledge base",
+          status: "running",
+        },
+      ],
+    });
+    render(
+      <MessageBubble
+        message={msg}
+        mode="sidebar"
+        onArtifactClick={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Plan")).toBeInTheDocument();
+    expect(screen.getByText(/knowledge: Search Alfred's knowledge base/)).toBeInTheDocument();
+  });
+
+  it("renders approval-required section", () => {
+    const msg = makeMessage({
+      pendingApprovals: [
+        {
+          id: "approval-1",
+          action: "create_zettel",
+          reason: "The synthesis should be saved as a new card",
+          preview: {},
+        },
+      ],
+    });
+    render(
+      <MessageBubble
+        message={msg}
+        mode="sidebar"
+        onArtifactClick={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Approval Needed")).toBeInTheDocument();
+    expect(screen.getByText(/create_zettel/)).toBeInTheDocument();
   });
 
   describe("mode differences", () => {

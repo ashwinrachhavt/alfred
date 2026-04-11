@@ -1,134 +1,121 @@
-"""Tests for the master orchestrator graph."""
+"""Tests for Alfred's orchestration graph."""
 
 from __future__ import annotations
 
-import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from langchain_core.tools import tool as lc_tool
+import pytest
+from langchain_core.messages import HumanMessage
 
 from alfred.agents.orchestrator.graph import build_orchestrator_graph
-from alfred.agents.orchestrator.registry import ToolRegistry
 
 
-@lc_tool
-def greet_tool(name: str) -> str:
-    """Greet someone by name."""
-    return f"Hello, {name}!"
-
-
-def _make_registry_with_greet() -> ToolRegistry:
-    reg = ToolRegistry()
-    reg.register(greet_tool)
-    return reg
+def _base_state(message: str) -> dict:
+    return {
+        "messages": [HumanMessage(content=message)],
+        "thread_id": "thread-1",
+        "user_id": "user-1",
+        "model": "gpt-5.4",
+        "phase": "routing",
+        "active_agents": [],
+        "plan": [],
+        "task_results": [],
+        "pending_approvals": [],
+        "artifacts": [],
+        "related_cards": [],
+        "gaps": [],
+        "final_response": None,
+    }
 
 
 def test_graph_compiles():
-    registry = _make_registry_with_greet()
-    graph = build_orchestrator_graph(registry, model="gpt-4.1-mini")
+    graph = build_orchestrator_graph()
     assert graph is not None
 
 
 def test_graph_has_expected_nodes():
-    registry = _make_registry_with_greet()
-    graph = build_orchestrator_graph(registry, model="gpt-4.1-mini")
+    graph = build_orchestrator_graph()
     node_names = set(graph.get_graph().nodes.keys())
-    assert "router" in node_names
-    assert "tool_executor" in node_names
+    assert {"planner", "direct_chat", "execute_task", "gather_results", "approval_gate", "writer", "finalizer"} <= node_names
 
 
-def test_graph_direct_response():
-    registry = _make_registry_with_greet()
-    mock_response = AIMessage(content="I can help with that!")
+@pytest.mark.asyncio
+async def test_direct_chat_path_uses_fallback_response():
+    graph = build_orchestrator_graph()
 
-    with patch("alfred.agents.orchestrator.graph.get_chat_model") as mock_factory:
-        mock_llm = mock_factory.return_value
-        mock_llm.bind_tools.return_value = mock_llm
-        mock_llm.invoke.return_value = mock_response
+    result = await graph.ainvoke(_base_state("hello"))
 
-        graph = build_orchestrator_graph(registry, model="gpt-4.1-mini")
-        result = graph.invoke({
-            "messages": [HumanMessage(content="hello")],
-            "thread_id": "test-1",
-            "model": "gpt-4.1-mini",
-            "iteration": 0,
-        })
-
-    assert len(result["messages"]) >= 2
-    last_msg = result["messages"][-1]
-    assert last_msg.content == "I can help with that!"
+    assert result["phase"] == "done"
+    assert result["active_agents"] == ["chat"]
+    assert result["final_response"] == "Alfred heard: hello"
 
 
-def test_graph_tool_call_then_response():
-    registry = _make_registry_with_greet()
-
-    tool_call_msg = AIMessage(
-        content="",
-        tool_calls=[{"name": "greet_tool", "args": {"name": "Ashwin"}, "id": "call_1"}],
+@pytest.mark.asyncio
+async def test_parallel_worker_results_are_synthesized():
+    graph = build_orchestrator_graph()
+    fake_worker = AsyncMock(
+        side_effect=[
+            {
+                "task_id": "task-k",
+                "agent": "knowledge",
+                "objective": "search",
+                "summary": "Internal context says LangGraph already exists in Alfred.",
+                "artifacts": [],
+                "related_cards": [],
+                "gaps": [],
+                "proposed_actions": [],
+            },
+            {
+                "task_id": "task-c",
+                "agent": "connection",
+                "objective": "connect",
+                "summary": "A connection worker found related notes about orchestration.",
+                "artifacts": [],
+                "related_cards": [],
+                "gaps": [],
+                "proposed_actions": [],
+            },
+        ]
     )
-    final_msg = AIMessage(content="The greeting is: Hello, Ashwin!")
 
-    call_count = 0
-
-    def mock_invoke(messages, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            return tool_call_msg
-        return final_msg
-
-    with patch("alfred.agents.orchestrator.graph.get_chat_model") as mock_factory:
-        mock_llm = mock_factory.return_value
-        mock_llm.bind_tools.return_value = mock_llm
-        mock_llm.invoke.side_effect = mock_invoke
-
-        graph = build_orchestrator_graph(registry, model="gpt-4.1-mini")
-        result = graph.invoke({
-            "messages": [HumanMessage(content="greet Ashwin")],
-            "thread_id": "test-2",
-            "model": "gpt-4.1-mini",
-            "iteration": 0,
-        })
-
-    messages = result["messages"]
-    assert any(isinstance(m, ToolMessage) for m in messages)
-    assert messages[-1].content == "The greeting is: Hello, Ashwin!"
-
-
-def test_graph_max_iterations():
-    """Graph should stop after max iterations and force a final text response."""
-    registry = _make_registry_with_greet()
-    forced_final = AIMessage(content="I ran out of iterations but here is what I found.")
-
-    def make_tool_call_msg():
-        return AIMessage(
-            content="",
-            id=str(uuid.uuid4()),
-            tool_calls=[{"name": "greet_tool", "args": {"name": "loop"}, "id": f"call_{uuid.uuid4().hex[:8]}"}],
+    with patch("alfred.agents.orchestrator.nodes.run_worker_task", fake_worker):
+        result = await graph.ainvoke(
+            _base_state("search my notes and connect related ideas about LangGraph")
         )
 
-    with patch("alfred.agents.orchestrator.graph.get_chat_model") as mock_factory:
-        mock_llm_with_tools = MagicMock()
-        mock_llm_with_tools.invoke.side_effect = lambda msgs, **kw: make_tool_call_msg()
+    assert fake_worker.await_count == 2
+    assert len(result["plan"]) == 2
+    assert len(result["task_results"]) == 2
+    assert "### Knowledge" in result["final_response"]
+    assert "### Connection" in result["final_response"]
 
-        mock_llm_plain = MagicMock()
-        mock_llm_plain.bind_tools.return_value = mock_llm_with_tools
-        mock_llm_plain.invoke.return_value = forced_final
 
-        mock_factory.return_value = mock_llm_plain
+@pytest.mark.asyncio
+async def test_pending_approvals_flow_into_writer_output():
+    graph = build_orchestrator_graph()
+    fake_worker = AsyncMock(
+        return_value={
+            "task_id": "task-k",
+            "agent": "knowledge",
+            "objective": "search",
+            "summary": "Found a strong synthesis worth saving.",
+            "artifacts": [],
+            "related_cards": [],
+            "gaps": [],
+            "proposed_actions": [
+                {
+                    "id": "approval-1",
+                    "action": "create_zettel",
+                    "reason": "This answer should become a new card.",
+                    "payload": {"title": "LangGraph orchestration in Alfred"},
+                }
+            ],
+        }
+    )
 
-        graph = build_orchestrator_graph(registry, model="gpt-4.1-mini", max_iterations=3)
-        result = graph.invoke({
-            "messages": [HumanMessage(content="loop forever")],
-            "thread_id": "test-3",
-            "model": "gpt-4.1-mini",
-            "iteration": 0,
-        })
+    with patch("alfred.agents.orchestrator.nodes.run_worker_task", fake_worker):
+        result = await graph.ainvoke(_base_state("search my knowledge and save the synthesis"))
 
-    tool_messages = [m for m in result["messages"] if isinstance(m, ToolMessage)]
-    assert len(tool_messages) <= 3
-    last_msg = result["messages"][-1]
-    assert isinstance(last_msg, AIMessage)
-    assert last_msg.content
-    assert not getattr(last_msg, "tool_calls", None)
+    assert len(result["pending_approvals"]) == 1
+    assert "### Proposed Actions" in result["final_response"]
+    assert "create_zettel" in result["final_response"]

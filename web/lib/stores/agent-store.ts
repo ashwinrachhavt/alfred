@@ -39,6 +39,20 @@ export type ToolCall = {
   status: "pending" | "done" | "error";
 };
 
+export type PlanTask = {
+  id: string;
+  agent: "knowledge" | "research" | "connection";
+  objective: string;
+  status: "queued" | "running" | "done" | "error";
+};
+
+export type PendingApproval = {
+  id: string;
+  action: string;
+  reason: string;
+  preview: Record<string, unknown>;
+};
+
 export type AgentMessage = {
   id: string;
   role: "user" | "assistant";
@@ -48,6 +62,8 @@ export type AgentMessage = {
   relatedCards: RelatedCard[];
   gaps: GapChip[];
   toolCalls: ToolCall[];
+  plan: PlanTask[];
+  pendingApprovals: PendingApproval[];
   lens?: string;
   model?: string;
   timestamp: number;
@@ -191,6 +207,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       relatedCards: [],
       gaps: [],
       toolCalls: [],
+      plan: [],
+      pendingApprovals: [],
       lens: state.activeLens ?? undefined,
       model: state.activeModel,
       timestamp: Date.now(),
@@ -204,6 +222,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       relatedCards: [],
       gaps: [],
       toolCalls: [],
+      plan: [],
+      pendingApprovals: [],
       lens: state.activeLens ?? undefined,
       model: state.activeModel,
       timestamp: Date.now(),
@@ -337,11 +357,26 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         const msg: AgentMessage = {
           ...m,
           id,
+          reasoning:
+            (m as { reasoning?: string }).reasoning ||
+            (m as { reasoning_traces?: string }).reasoning_traces,
           artifacts: m.artifacts || [],
-          relatedCards: m.relatedCards || [],
+          relatedCards:
+            m.relatedCards ||
+            (m as { related_cards?: RelatedCard[] }).related_cards ||
+            [],
           gaps: m.gaps || [],
-          toolCalls: m.toolCalls || [],
-          timestamp: new Date((m as any).createdAt ?? Date.now()).getTime(),
+          toolCalls:
+            m.toolCalls ||
+            (m as { tool_calls?: ToolCall[] }).tool_calls ||
+            [],
+          plan: m.plan || [],
+          pendingApprovals: m.pendingApprovals || [],
+          timestamp: new Date(
+            (m as { createdAt?: string; created_at?: string }).createdAt ||
+              (m as { created_at?: string }).created_at ||
+              Date.now(),
+          ).getTime(),
         };
         acc.messagesById[id] = msg;
         acc.messageOrder.push(id);
@@ -443,6 +478,62 @@ function _handleSSEEvent(
       break;
     }
 
+    case "plan": {
+      const tasks = ((data.tasks as PlanTask[]) || []).map((task) => ({
+        ...task,
+        status: task.status || "queued",
+      }));
+      set((s) => _updateLastAssistant(s, (m) => ({ ...m, plan: tasks })));
+      break;
+    }
+
+    case "task_start": {
+      const taskId = data.task_id as string;
+      const agent = data.agent as PlanTask["agent"];
+      const objective = data.objective as string;
+      set((s) =>
+        _updateLastAssistant(s, (m) => {
+          const existing = m.plan.find((task) => task.id === taskId);
+          const plan = existing
+            ? m.plan.map((task) =>
+                task.id === taskId ? { ...task, status: "running" as const } : task,
+              )
+            : [
+                ...m.plan,
+                { id: taskId, agent, objective, status: "running" as const },
+              ];
+          return { ...m, plan };
+        }),
+      );
+      break;
+    }
+
+    case "task_done": {
+      const taskId = data.task_id as string;
+      set((s) =>
+        _updateLastAssistant(s, (m) => ({
+          ...m,
+          plan: m.plan.map((task) =>
+            task.id === taskId ? { ...task, status: "done" as const } : task,
+          ),
+        })),
+      );
+      break;
+    }
+
+    case "task_error": {
+      const taskId = data.task_id as string;
+      set((s) =>
+        _updateLastAssistant(s, (m) => ({
+          ...m,
+          plan: m.plan.map((task) =>
+            task.id === taskId ? { ...task, status: "error" as const } : task,
+          ),
+        })),
+      );
+      break;
+    }
+
     case "tool_result": {
       const callId = data.call_id as string | undefined;
       set((s) => {
@@ -496,6 +587,21 @@ function _handleSSEEvent(
     case "gaps": {
       const gaps = (data.gaps as GapChip[]) || [];
       set((s) => _updateLastAssistant(s, (m) => ({ ...m, gaps })));
+      break;
+    }
+
+    case "approval_required": {
+      const actions = ((data.actions as Record<string, unknown>[]) || []).map(
+        (action) => ({
+          id: String(action.id || ""),
+          action: String(action.action || ""),
+          reason: String(action.reason || ""),
+          preview: (action.payload as Record<string, unknown>) || {},
+        }),
+      );
+      set((s) =>
+        _updateLastAssistant(s, (m) => ({ ...m, pendingApprovals: actions })),
+      );
       break;
     }
 
