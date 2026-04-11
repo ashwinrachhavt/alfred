@@ -2,6 +2,24 @@
 
 All notable changes will be documented in this file. Follow Keep a Changelog style; versions are date-stamped until releases are tagged.
 
+## [0.0.3.0] - 2026-04-11 — Planner-Driven Agent Orchestration
+
+### Added
+- **Planner-driven orchestrator**: Alfred's agent now uses a multi-step planner (planner -> tasks -> writer) instead of a flat tool loop. The planner breaks complex requests into parallel tasks routed to specialist workers (knowledge, research, synthesis).
+- **SSE streaming for orchestrator events**: The `/api/agent/stream` endpoint now emits plan, task_start, task_done, approval_required, and phase events so the frontend can show real-time orchestration progress.
+- **Orchestrator workers**: Knowledge and synthesis teams execute as worker subgraphs with their own tool sets, results gathered and optionally gated by an approval step.
+- **New orchestrator nodes**: planner, direct_chat, execute_task, gather_results, approval_gate, writer, finalizer.
+- **Frontend chat components**: MessageBubble component and updated agent store for orchestrator event handling.
+
+### Changed
+- Agent routes switched from `AgentService` (flat OpenAI loop) to `build_alfred_graph()` (LangGraph orchestrator) for all streaming.
+- Agent store refactored to handle new SSE event types (plan, task_start, task_done, phase).
+- Teams (knowledge, ingest, synthesis) simplified to worker callables for orchestrator dispatch.
+
+### Removed
+- Stopped tracking `docs/superpowers/` directory (large generated plan/spec files removed from git).
+- Removed 4,600+ lines of stale plan and spec documents.
+
 ## [0.0.2.0] - 2026-04-05 — Tech Debt Cleanup + Performance
 
 ### Removed
