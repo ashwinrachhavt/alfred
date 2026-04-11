@@ -15,17 +15,15 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import type { ChatMode } from "@/lib/stores/shell-store";
-import type { AgentMessage, ArtifactCard } from "@/lib/stores/agent-store";
 import { ArtifactCardComponent } from "@/components/agent/artifact-card";
-import { RelatedCards } from "@/components/agent/related-cards";
 import { InsightToCard } from "@/components/agent/insight-to-card";
 import { MarkdownMessage } from "@/components/agent/markdown-message";
+import { RelatedCards } from "@/components/agent/related-cards";
 import { apiFetch } from "@/lib/api/client";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import type { AgentMessage, ArtifactCard } from "@/lib/stores/agent-store";
+import type { ChatMode } from "@/lib/stores/shell-store";
 import { cn } from "@/lib/utils";
-
-// --- Reasoning Trace ---
 
 function ReasoningTrace({ reasoning }: { reasoning: string }) {
   const [open, setOpen] = useState(false);
@@ -34,38 +32,36 @@ function ReasoningTrace({ reasoning }: { reasoning: string }) {
     <div className="mb-1.5">
       <button
         onClick={() => setOpen(!open)}
-        className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-[10px] transition-colors"
+        className="flex items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
       >
         <ChevronRight className={cn("size-3 transition-transform", open && "rotate-90")} />
-        <span className="tracking-wider uppercase">Thinking</span>
+        <span className="uppercase tracking-wider">Thinking</span>
       </button>
-      {open && (
-        <div className="bg-secondary/50 text-muted-foreground mt-1 max-h-64 overflow-y-auto rounded-sm border border-dashed px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap">
+      {open ? (
+        <div className="mt-1 max-h-64 overflow-y-auto rounded-sm border border-dashed bg-secondary/50 px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
           {reasoning}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
-
-// --- Tool Calls Display ---
 
 function ToolCallsDisplay({ toolCalls }: { toolCalls: AgentMessage["toolCalls"] }) {
   if (toolCalls.length === 0) return null;
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 py-0.5">
-      {toolCalls.map((tc, i) => (
+      {toolCalls.map((toolCall, index) => (
         <span
-          key={tc.call_id ?? i}
-          className="text-muted-foreground inline-flex items-center gap-1 text-[10px]"
+          key={toolCall.call_id ?? index}
+          className="inline-flex items-center gap-1 text-[10px] text-muted-foreground"
         >
-          {tc.status === "pending" ? (
-            <Loader2 className="text-primary size-3 animate-spin" />
+          {toolCall.status === "pending" ? (
+            <Loader2 className="size-3 animate-spin text-primary" />
           ) : (
-            <Check className="text-primary size-3" />
+            <Check className="size-3 text-primary" />
           )}
-          {tc.tool.replace(/_/g, " ")}
+          {toolCall.tool.replace(/_/g, " ")}
         </span>
       ))}
     </div>
@@ -111,7 +107,48 @@ function CopyMessageButton({
   );
 }
 
-// --- Action Bar (sidebar mode — visible on hover) ---
+function PlanDisplay({ plan }: { plan: AgentMessage["plan"] }) {
+  if (plan.length === 0) return null;
+
+  return (
+    <div className="mb-2 rounded-md border bg-secondary/30 px-3 py-2">
+      <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">Plan</div>
+      <div className="space-y-1">
+        {plan.map((task) => (
+          <div key={task.id} className="flex items-center justify-between gap-3 text-xs">
+            <span className="text-foreground/90">
+              {task.agent}: {task.objective}
+            </span>
+            <span className="text-muted-foreground">{task.status}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ApprovalDisplay({
+  approvals,
+}: {
+  approvals: AgentMessage["pendingApprovals"];
+}) {
+  if (approvals.length === 0) return null;
+
+  return (
+    <div className="rounded-md border border-dashed bg-[var(--alfred-accent-subtle)]/60 px-3 py-2">
+      <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+        Approval Needed
+      </div>
+      <div className="space-y-1">
+        {approvals.map((approval) => (
+          <div key={approval.id} className="text-xs text-foreground/90">
+            <span className="font-medium">{approval.action}</span>: {approval.reason}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function ActionBar({
   message,
@@ -135,6 +172,7 @@ function ActionBar({
     }
 
     if (saving) return;
+
     setSaving(true);
     try {
       const created = await apiFetch<{ id: number }>("/api/zettels/cards", {
@@ -149,7 +187,7 @@ function ActionBar({
       });
       setSavedZettelId(created.id);
     } catch {
-      // TODO: show error toast
+      toast.error("Failed to save response as a zettel.");
     } finally {
       setSaving(false);
     }
@@ -157,16 +195,16 @@ function ActionBar({
 
   return (
     <div className="flex items-center gap-0.5 pt-0.5 opacity-0 transition-opacity group-hover:opacity-100 hover:opacity-100">
-      {isOnNotes && (
+      {isOnNotes ? (
         <button
-          className="text-muted-foreground hover:text-foreground flex items-center gap-1 rounded px-1.5 py-1 text-[10px] transition-colors"
+          className="flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
           aria-label="Insert response into current note"
           title="Insert into Note"
         >
           <FileInput className="size-3" />
           Insert
         </button>
-      )}
+      ) : null}
 
       <button
         onClick={() => void handlePrimaryAction()}
@@ -193,30 +231,25 @@ function ActionBar({
   );
 }
 
-// --- Feedback Buttons (expanded mode — always visible) ---
-
 function FeedbackButtons({ content }: { content: string }) {
   return (
     <div className="flex items-center gap-1 pt-1">
       <CopyMessageButton
         content={content}
-        showLabel
-        className="text-muted-foreground/70 hover:text-foreground px-2 py-1 text-[11px]"
+        className="px-2 py-1 text-[11px] text-muted-foreground/70 hover:text-foreground"
       />
-      <button className="text-muted-foreground/40 hover:text-muted-foreground rounded p-1 transition-colors">
+      <button className="rounded p-1 text-muted-foreground/40 transition-colors hover:text-muted-foreground">
         <ThumbsUp className="size-3.5" />
       </button>
-      <button className="text-muted-foreground/40 hover:text-muted-foreground rounded p-1 transition-colors">
+      <button className="rounded p-1 text-muted-foreground/40 transition-colors hover:text-muted-foreground">
         <ThumbsDown className="size-3.5" />
       </button>
-      <button className="text-muted-foreground/40 hover:text-muted-foreground rounded p-1 transition-colors">
+      <button className="rounded p-1 text-muted-foreground/40 transition-colors hover:text-muted-foreground">
         <RotateCcw className="size-3.5" />
       </button>
     </div>
   );
 }
-
-// --- Main MessageBubble ---
 
 export const MessageBubble = memo(function MessageBubble({
   message,
@@ -232,14 +265,19 @@ export const MessageBubble = memo(function MessageBubble({
   onViewZettel?: (zettelId: number) => void;
 }) {
   const isSidebar = mode === "sidebar";
+  const artifacts = message.artifacts ?? [];
+  const relatedCards = message.relatedCards ?? [];
+  const gaps = message.gaps ?? [];
+  const plan = message.plan ?? [];
+  const pendingApprovals = message.pendingApprovals ?? [];
+  const toolCalls = message.toolCalls ?? [];
 
-  // --- User message ---
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
         <div
           className={cn(
-            "bg-secondary text-foreground rounded-lg text-sm",
+            "rounded-lg bg-secondary text-sm text-foreground",
             isSidebar ? "max-w-[85%] px-3 py-2" : "max-w-[80%] rounded-2xl px-4 py-2.5",
           )}
         >
@@ -249,41 +287,34 @@ export const MessageBubble = memo(function MessageBubble({
     );
   }
 
-  // --- Assistant message ---
   const createdZettelId =
-    message.artifacts.find((a) => a.type === "zettel" && a.action === "created")?.id ?? null;
+    artifacts.find((artifact) => artifact.type === "zettel" && artifact.action === "created")?.id ??
+    null;
   const showActions = message.content && !message.content.startsWith("Sorry");
 
   const contentEl = (
     <>
-      {/* Reasoning trace */}
-      {message.reasoning && <ReasoningTrace reasoning={message.reasoning} />}
-
-      {/* Tool calls */}
-      {message.toolCalls.length > 0 && <ToolCallsDisplay toolCalls={message.toolCalls} />}
-
-      {/* Main content */}
-      {message.content && <MarkdownMessage content={message.content} />}
+      {plan.length > 0 ? <PlanDisplay plan={plan} /> : null}
+      {message.reasoning ? <ReasoningTrace reasoning={message.reasoning} /> : null}
+      {toolCalls.length > 0 ? <ToolCallsDisplay toolCalls={toolCalls} /> : null}
+      {message.content ? <MarkdownMessage content={message.content} /> : null}
+      {pendingApprovals.length > 0 ? <ApprovalDisplay approvals={pendingApprovals} /> : null}
     </>
   );
 
   return (
     <div className={cn("group space-y-2", !isSidebar && "space-y-3")}>
-      {/* In expanded mode, wrap content with InsightToCard for text-selection save */}
       {!isSidebar ? (
-        <InsightToCard
-          threadTopics={message.artifacts.map((a) => a.topic).filter(Boolean) as string[]}
-        >
+        <InsightToCard threadTopics={artifacts.map((artifact) => artifact.topic).filter(Boolean) as string[]}>
           {contentEl}
         </InsightToCard>
       ) : (
         contentEl
       )}
 
-      {/* Artifact cards */}
-      {message.artifacts.length > 0 && (
+      {artifacts.length > 0 ? (
         <div className={cn("space-y-1.5", !isSidebar && "space-y-2")}>
-          {message.artifacts.map((artifact) => (
+          {artifacts.map((artifact) => (
             <ArtifactCardComponent
               key={`${artifact.type}-${artifact.id}`}
               artifact={artifact}
@@ -291,21 +322,17 @@ export const MessageBubble = memo(function MessageBubble({
             />
           ))}
         </div>
-      )}
+      ) : null}
 
-      {/* Related knowledge */}
-      {message.relatedCards.length > 0 && (
-        <RelatedCards cards={message.relatedCards} onCardClick={onArtifactClick} />
-      )}
+      {relatedCards.length > 0 ? <RelatedCards cards={relatedCards} onCardClick={onArtifactClick} /> : null}
 
-      {/* Gap chips */}
-      {message.gaps.length > 0 && (
+      {gaps.length > 0 ? (
         <div className={cn("flex flex-wrap gap-1", !isSidebar && "gap-1.5")}>
-          {message.gaps.map((gap) => (
+          {gaps.map((gap) => (
             <span
               key={gap.concept}
               className={cn(
-                "text-primary inline-flex items-center gap-1 rounded-full bg-[var(--alfred-accent-subtle)]",
+                "inline-flex items-center gap-1 rounded-full bg-[var(--alfred-accent-subtle)] text-primary",
                 isSidebar ? "px-2 py-0.5 text-[10px]" : "px-2.5 py-1 text-[11px]",
               )}
             >
@@ -313,20 +340,22 @@ export const MessageBubble = memo(function MessageBubble({
             </span>
           ))}
         </div>
-      )}
+      ) : null}
 
-      {/* Actions: sidebar gets hover action bar, expanded gets feedback buttons */}
-      {showActions &&
-        (isSidebar ? (
-          <ActionBar
-            message={message}
-            isOnNotes={isOnNotes}
-            createdZettelId={createdZettelId}
-            onViewZettel={onViewZettel}
-          />
-        ) : (
-          <FeedbackButtons content={message.content} />
-        ))}
+      {showActions
+        ? isSidebar
+          ? (
+            <ActionBar
+              message={message}
+              isOnNotes={isOnNotes}
+              createdZettelId={createdZettelId}
+              onViewZettel={onViewZettel}
+            />
+            )
+          : (
+            <FeedbackButtons content={message.content} />
+            )
+        : null}
     </div>
   );
 });

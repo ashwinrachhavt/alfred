@@ -1,36 +1,28 @@
-"""Synthesis team -- Research + Writing agents.
-
-Uses Alfred's configured LLM model for deep reasoning and synthesis.
-"""
+"""Synthesis team -- Research + Writing agents."""
 
 from __future__ import annotations
 
-from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from langgraph_supervisor import create_supervisor
 
 from alfred.agents.tools.research_tools import RESEARCH_TOOLS
 from alfred.agents.tools.writing_tools import WRITING_TOOLS
-from alfred.core.settings import settings
+from alfred.core.llm_factory import get_chat_model
 
 
-def build_synthesis_team():
+def build_synthesis_team(*, model: str | None = None):
     """Build the Synthesis team supervisor graph."""
-    model = ChatOpenAI(
-        model=settings.llm_model,
-        api_key=(settings.openai_api_key.get_secret_value() if settings.openai_api_key else None),
-        base_url=settings.openai_base_url,
-    )
+    team_model = get_chat_model(model=model or "gpt-4.1")
 
     research_agent = create_react_agent(
-        model=model,
+        model=team_model,
         tools=RESEARCH_TOOLS,
         name="research_agent",
         prompt="You conduct deep research using web search, academic papers, and the knowledge base. Synthesize findings across sources.",
     )
 
     writing_agent = create_react_agent(
-        model=model,
+        model=team_model,
         tools=WRITING_TOOLS,
         name="writing_agent",
         prompt="You draft zettels, create progressive summaries, explain concepts via Feynman technique, and compare perspectives.",
@@ -38,7 +30,7 @@ def build_synthesis_team():
 
     workflow = create_supervisor(
         agents=[research_agent, writing_agent],
-        model=model,
+        model=team_model,
         prompt=(
             "You are the Synthesis team supervisor. Route tasks to the appropriate agent:\n"
             "- research_agent: Deep research, web search, academic paper search\n"

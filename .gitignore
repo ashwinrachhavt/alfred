@@ -95,3 +95,6 @@ next-env.d.ts
 # Tool configs
 .serena/
 .superpowers/
+
+# Local planning/spec docs
+docs/
