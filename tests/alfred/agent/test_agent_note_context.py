@@ -58,14 +58,21 @@ def test_stream_request_accepts_note_context(app_and_client):
     """POST /api/agent/stream with note_context returns a streaming response (200)."""
     app, client, _ = app_and_client
 
-    async def _fake_stream(**kwargs):
-        yield "event: done\ndata: {}\n\n"
+    class _FakeGraph:
+        async def astream_events(self, input_state, config=None, version=None):
+            _ = input_state, config, version
+            yield {
+                "event": "on_chain_end",
+                "name": "writer",
+                "data": {
+                    "output": {
+                        "messages": [{"type": "ai", "content": "Note-aware response"}],
+                        "final_response": "Note-aware response",
+                    }
+                },
+            }
 
-    with patch(
-        "alfred.api.agent.routes.AgentService",
-        autospec=True,
-    ) as MockService:
-        MockService.return_value.stream_turn = _fake_stream
+    with patch("alfred.agents.graph.build_alfred_graph", return_value=_FakeGraph()):
 
         resp = client.post(
             "/api/agent/stream",

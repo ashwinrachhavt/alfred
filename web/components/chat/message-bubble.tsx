@@ -76,6 +76,52 @@ function ToolCallsDisplay({
   );
 }
 
+function PlanDisplay({ plan }: { plan: AgentMessage["plan"] }) {
+  if (plan.length === 0) return null;
+
+  return (
+    <div className="mb-2 rounded-md border bg-secondary/30 px-3 py-2">
+      <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+        Plan
+      </div>
+      <div className="space-y-1">
+        {plan.map((task) => (
+          <div
+            key={task.id}
+            className="flex items-center justify-between gap-3 text-xs"
+          >
+            <span className="text-foreground/90">{task.agent}: {task.objective}</span>
+            <span className="text-muted-foreground">{task.status}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ApprovalDisplay({
+  approvals,
+}: {
+  approvals: AgentMessage["pendingApprovals"];
+}) {
+  if (approvals.length === 0) return null;
+
+  return (
+    <div className="rounded-md border border-dashed bg-[var(--alfred-accent-subtle)]/60 px-3 py-2">
+      <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+        Approval Needed
+      </div>
+      <div className="space-y-1">
+        {approvals.map((approval) => (
+          <div key={approval.id} className="text-xs text-foreground/90">
+            <span className="font-medium">{approval.action}</span>: {approval.reason}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // --- Action Bar (sidebar mode — visible on hover) ---
 
 function ActionBar({
@@ -227,6 +273,8 @@ export const MessageBubble = memo(function MessageBubble({
 
   const contentEl = (
     <>
+      {message.plan.length > 0 && <PlanDisplay plan={message.plan} />}
+
       {/* Reasoning trace */}
       {message.reasoning && <ReasoningTrace reasoning={message.reasoning} />}
 
@@ -237,6 +285,10 @@ export const MessageBubble = memo(function MessageBubble({
 
       {/* Main content */}
       {message.content && <MarkdownMessage content={message.content} />}
+
+      {message.pendingApprovals.length > 0 && (
+        <ApprovalDisplay approvals={message.pendingApprovals} />
+      )}
     </>
   );
 

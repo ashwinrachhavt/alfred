@@ -7,11 +7,11 @@ data and the conversation history.
 
 from __future__ import annotations
 
-from langchain_core.messages import SystemMessage
-from langchain_openai import ChatOpenAI
+from langchain_core.messages import AIMessage, SystemMessage
 
 from alfred.agents.state import AlfredState
-from alfred.core.settings import settings
+from alfred.core.llm_factory import get_chat_model
+from alfred.core.settings import LLMProvider, settings
 
 CHAT_SYSTEM_PROMPT = SystemMessage(content="""\
 You are Alfred, an intelligent knowledge assistant. You help the user think \
@@ -32,14 +32,15 @@ Guidelines:
 
 async def chat(state: AlfredState) -> dict:
     """Direct conversational response — no tools, just the LLM."""
-    model = ChatOpenAI(
-        model="gpt-4.1-mini",
-        api_key=(settings.openai_api_key.get_secret_value() if settings.openai_api_key else None),
-        base_url=settings.openai_base_url,
-    )
-
-    messages = [CHAT_SYSTEM_PROMPT, *state["messages"]]
-    response = await model.ainvoke(messages)
+    if settings.app_env in {"test", "ci"} or (
+        settings.llm_provider == LLMProvider.openai and not settings.openai_api_key
+    ):
+        content = str(getattr(state["messages"][-1], "content", "")).strip()
+        response = AIMessage(content=f"Alfred heard: {content}")
+    else:
+        model = get_chat_model(model=state.get("model") or "gpt-4.1-mini")
+        messages = [CHAT_SYSTEM_PROMPT, *state["messages"]]
+        response = await model.ainvoke(messages)
 
     return {
         "messages": [response],
