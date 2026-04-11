@@ -1,5 +1,14 @@
 import { create } from "zustand";
 
+function getInitialAudio(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem("universe-audio") === "on";
+  } catch {
+    return false;
+  }
+}
+
 export type UniverseState = {
   selectedNodeIds: number[];
   hoveredNodeId: number | null;
@@ -23,7 +32,7 @@ export const useUniverseStore = create<UniverseState>((set, get) => ({
   hoveredNodeId: null,
   cameraTarget: null,
   searchQuery: "",
-  audioEnabled: false,
+  audioEnabled: getInitialAudio(),
   isTimeLapsePlaying: false,
 
   selectNode: (id) => {
