@@ -43,13 +43,24 @@ const EditorDrawer = dynamic(
 // --- Page-contextual suggestions ---
 
 const SUGGESTIONS: Record<string, string[]> = {
-  notes: ["What are the key arguments?", "Find related knowledge", "Summarize this note"],
-  "notes-empty": ["What do I know about...", "Find connections between..."],
+  notes: [
+    "What are the key arguments?",
+    "Find related knowledge",
+    "Summarize this note",
+    "Quiz me on this topic",
+  ],
+  "notes-empty": [
+    "What do I know about...",
+    "Find connections between...",
+    "What happened in tech news today?",
+  ],
   default: [
     "What do I know about...",
-    "Summarize my recent readings",
-    "Find connections between...",
-    "Create a zettel about...",
+    "Search the web for...",
+    "Quiz me on my philosophy cards",
+    "Find recent papers on...",
+    "Draft a zettel comparing...",
+    "What happened in tech news today?",
   ],
 };
 
@@ -282,7 +293,7 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
                 title={emptyTitle}
                 description={
                   !isSidebar
-                    ? "Ask anything. Alfred will search your knowledge base, create new cards, and help you think."
+                    ? "Ask anything. Alfred can search your knowledge, research the web, create cards, run quizzes, find connections, and just chat."
                     : undefined
                 }
                 suggestions={suggestions}

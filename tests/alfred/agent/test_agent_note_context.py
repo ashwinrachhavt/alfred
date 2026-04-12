@@ -62,21 +62,17 @@ def test_stream_request_accepts_note_context(app_and_client):
     """POST /api/agent/stream with note_context returns a streaming response (200)."""
     app, client, _ = app_and_client
 
-    class _FakeGraph:
-        async def astream_events(self, input_state, config=None, version=None):
-            _ = input_state, config, version
-            yield {
-                "event": "on_chain_end",
-                "name": "writer",
-                "data": {
-                    "output": {
-                        "messages": [{"type": "ai", "content": "Note-aware response"}],
-                        "final_response": "Note-aware response",
-                    }
-                },
-            }
+    from unittest.mock import MagicMock
 
-    with patch("alfred.agents.graph.build_alfred_graph", return_value=_FakeGraph()):
+    async def _fake_stream_turn(**kwargs):
+        yield ("token", {"content": "Note-aware response"}, 'event: token\ndata: {"content": "Note-aware response"}\n\n')
+        yield ("done", {"thread_id": "1", "reasoning": None, "tool_calls": None, "artifacts": None}, 'event: done\ndata: {"thread_id": "1"}\n\n')
+
+    with patch("alfred.api.agent.routes.AgentService") as MockService:
+        instance = MagicMock()
+        instance.stream_turn = _fake_stream_turn
+        MockService.return_value = instance
+
         resp = client.post(
             "/api/agent/stream",
             json={

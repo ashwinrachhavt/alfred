@@ -325,6 +325,57 @@ CORE_TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "delegate_task",
+            "description": (
+                "Delegate a complex task to a specialist sub-agent that runs in its own "
+                "context window. The sub-agent has focused tools and expertise. Use this when: "
+                "(1) a task requires deep focus on a single domain (research, writing, learning), "
+                "(2) the task is complex enough that you'd need multiple sequential tool calls, "
+                "(3) you want to keep the main conversation clean while a specialist works. "
+                "Available specialists: knowledge (KB search/CRUD), research (web/papers), "
+                "writing (drafts/summaries/synthesis), learning (quizzes/reviews/assessment), "
+                "connection (find links between ideas), connector (Notion/GitHub/RSS imports)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task": {
+                        "type": "string",
+                        "description": (
+                            "Clear description of what the sub-agent should do. "
+                            "Be specific about the objective and expected output."
+                        ),
+                    },
+                    "agent_type": {
+                        "type": "string",
+                        "description": (
+                            "Which specialist to use: knowledge, research, writing, "
+                            "learning, connection, or connector."
+                        ),
+                        "enum": [
+                            "knowledge",
+                            "research",
+                            "writing",
+                            "learning",
+                            "connection",
+                            "connector",
+                        ],
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": (
+                            "Optional context to pass to the sub-agent. "
+                            "Include relevant information from the conversation."
+                        ),
+                    },
+                },
+                "required": ["task", "agent_type"],
+            },
+        },
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -533,6 +584,28 @@ async def _firecrawl_scrape(args: dict[str, Any], db: Session) -> dict[str, Any]
         return {"error": f"Firecrawl scrape failed: {exc!s}"}
 
 
+async def _delegate_task(args: dict[str, Any], db: Session) -> dict[str, Any]:
+    """Spawn a sub-agent with its own context window to handle a complex task."""
+    from alfred.services.agent.agent_types import AGENT_TYPES
+    from alfred.services.agent.subagent import SubAgentRunner
+
+    task = args.get("task", "")
+    agent_type = args.get("agent_type", "")
+    context = args.get("context")
+
+    if not task:
+        return {"error": "Task description is required."}
+    if agent_type not in AGENT_TYPES:
+        return {
+            "error": f"Unknown agent type: {agent_type}. "
+            f"Available: {', '.join(AGENT_TYPES.keys())}",
+        }
+
+    runner = SubAgentRunner(db)
+    result = await runner.run(task=task, agent_type_name=agent_type, context=context)
+    return {"agent_type": agent_type, "task": task, "result": result}
+
+
 _CORE_EXECUTORS: dict[str, Any] = {
     "search_kb": _search_kb,
     "create_zettel": _create_zettel,
@@ -542,6 +615,7 @@ _CORE_EXECUTORS: dict[str, Any] = {
     "web_search_searxng": _web_search_searxng,
     "firecrawl_search": _firecrawl_search,
     "firecrawl_scrape": _firecrawl_scrape,
+    "delegate_task": _delegate_task,
 }
 
 

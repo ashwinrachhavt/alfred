@@ -1,7 +1,25 @@
 """Agent service — OpenAI-powered streaming agent with tool calls.
 
-Streams SSE events for the agent chat endpoint. Uses AsyncOpenAI directly
-for streaming with function calling, tool dispatch, and reasoning extraction.
+Flat tool-calling loop modeled after Claude Code's architecture:
+the LLM sees all available tools and decides what to call.
+
+Yields structured tuples so the caller (routes.py) can both
+forward SSE to the client AND collect data for DB persistence.
+
+┌─────────────────────────────────────────────────────────┐
+│  AGENT LOOP (flat, Claude Code-style)                   │
+│                                                          │
+│  1. Build messages (system + history + user)             │
+│  2. Stream tokens from model → yield each to caller     │
+│  3. If model requests tool calls:                        │
+│     a. Yield tool_start events                           │
+│     b. Execute tools (with timeout + sanitization)       │
+│     c. Yield tool_result events                          │
+│     d. Inject results back into messages                 │
+│     e. LOOP to step 2                                    │
+│  4. If no tool calls → DONE                              │
+│  5. Max iterations guard                                 │
+└─────────────────────────────────────────────────────────┘
 """
 
 from __future__ import annotations
@@ -9,14 +27,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import uuid
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
-from openai import APITimeoutError, AsyncOpenAI, RateLimitError
+from openai import APIError, APITimeoutError, AsyncOpenAI, BadRequestError, RateLimitError
 from sqlmodel import Session
 
 from alfred.core.settings import settings
+from alfred.services.agent.prompts import SystemPromptBuilder
 from alfred.services.agent.tools import execute_tool, get_all_tool_schemas
 
 logger = logging.getLogger(__name__)
@@ -24,12 +44,17 @@ logger = logging.getLogger(__name__)
 # Max tool-call rounds per turn to prevent infinite loops.
 MAX_TOOL_ROUNDS = 10
 
+# Default timeout per tool (seconds).
+DEFAULT_TOOL_TIMEOUT = 30
+
 # Timeouts (seconds) per tool type.
 _TOOL_TIMEOUTS: dict[str, int] = {
     "search_kb": 30,
     "get_zettel": 30,
     "create_zettel": 60,
     "update_zettel": 60,
+    "deep_research": 120,
+    "firecrawl_scrape": 30,
 }
 
 # Models that use reasoning (o-series).
@@ -38,198 +63,22 @@ _REASONING_MODELS = {"o3", "o3-mini", "o4-mini"}
 # Models that require max_completion_tokens instead of max_tokens.
 _MAX_COMPLETION_TOKEN_PREFIXES = ("gpt-5",)
 
+# Regex for stripping HTML tags from tool results (prompt injection mitigation).
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
 
 def _sse_event(event: str, data: dict[str, Any]) -> str:
     """Format a single SSE event."""
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
-_BASE_SYSTEM_PROMPT = """You are Alfred, a personal knowledge engine. You help the user ingest, decompose, connect, and capitalize on what they know.
-
-You are NOT a generic chatbot. You are a thinking partner with access to the user's entire knowledge base — their zettels (atomic knowledge cards), ingested documents, connectors (Notion, Readwise, ArXiv, RSS, GitHub, Linear), and research tools. Your job is to help them think better, find connections they missed, and build on what they already know.
-
-## Your Personality
-- Concise and sharp. Say more with less.
-- Proactive: surface connections, flag gaps, suggest next steps without being asked.
-- Curious: ask clarifying questions when the request is ambiguous rather than guessing.
-- Honest: if you searched the knowledge base and found nothing, say so clearly. Never fabricate knowledge.
-
-## CRITICAL RULE: Use Your Tools
-
-You have powerful tools. USE THEM AGGRESSIVELY. This is the most important rule:
-
-**NEVER say "I don't have access to your knowledge base" or "I can't search your data."** You DO have access. You MUST use your tools. If you're unsure whether you have a tool for something, TRY IT.
-
-**NEVER answer questions about the user's knowledge from memory.** ALWAYS search first with `search_kb`. Even if you think you know the answer, search to verify and find related cards.
-
-**If the user asks you to do something and you have a tool for it, USE THE TOOL.** Don't explain that you "can't" — you CAN. Call the tool.
-
-## When to Use Each Tool
-
-### Knowledge Base (your primary tools — use these constantly)
-- `search_kb` — ALWAYS use first when the user asks about their knowledge. "What do I know about X?" → search_kb. "Do I have notes on Y?" → search_kb. Default to searching.
-- `list_recent_cards` — Use for browsing: "What did I learn recently?", "Show me my latest cards", "What's in my KB?"
-- `get_zettel` — Read the FULL content of a specific card when a search result looks relevant.
-- `create_zettel` — Save new knowledge. Always give clear titles and relevant tags.
-- `update_zettel` — Edit existing cards when asked to refine, correct, or add to them.
-
-### Connections & Links (use when exploring relationships)
-- `find_similar` — Find semantically similar cards to a given zettel.
-- `suggest_links` — Get link suggestions for a card based on similarity.
-- `create_link` — Create links between related cards. Types: reference, comparison, contradiction, elaboration.
-- `get_card_links` — See all connections for a card.
-- `batch_link` — Queue batch link discovery for cards with few connections.
-
-### Learning & Review (use for spaced repetition and assessment)
-- `get_due_reviews` — Find cards due for spaced repetition review.
-- `submit_review` — Record a review result (recalled: true/false, confidence: 1-5).
-- `assess_knowledge` — Assess knowledge level using Bloom's taxonomy.
-- `generate_quiz` — Create quiz questions from zettel cards.
-- `feynman_check` — Evaluate an explanation using the Feynman technique.
-
-### Writing & Synthesis (use for creating new knowledge)
-- `draft_zettel` — Generate a draft zettel using LLM with context from related cards.
-- `progressive_summary` — Create summaries at different detail levels (1-5).
-- `feynman_explain` — Generate a simple explanation for beginners/intermediate/advanced.
-- `compare_perspectives` — Compare multiple zettels for similarities, differences, contradictions.
-- `create_zettel_from_synthesis` — Create a new zettel from synthesized content, linked to sources.
-
-### Research (use for finding new information)
-- `search_web` — Search the web for current information.
-- `search_papers` — Search academic papers (ArXiv or Semantic Scholar).
-- `search_kb_for_research` — Search your KB specifically to inform research.
-- `scrape_url` — Scrape content from a URL.
-- `deep_research` — Queue a comprehensive deep research task.
-
-### Connectors (use to query external sources)
-- `query_notion` — Fetch pages from Notion workspace.
-- `query_readwise` — Fetch books and highlights from Readwise.
-- `query_arxiv` — Search arXiv for academic papers.
-- `query_rss` — Fetch entries from an RSS/Atom feed.
-- `query_web` — Search the web using configured search engine.
-- `query_wikipedia` — Search Wikipedia articles.
-- `query_github` — Search GitHub issues, PRs, or code.
-- `query_linear` — Search Linear issues.
-- `query_semantic_scholar` — Search Semantic Scholar for papers.
-
-### Web Search (ALWAYS AVAILABLE — local search infrastructure)
-- `web_search_searxng` — Search the web using SearXNG metasearch. Returns results from multiple search engines. Use for current events, facts, recent news, definitions, or ANY question that benefits from live web data. This is your primary search tool for anything outside the knowledge base.
-- `firecrawl_search` — Search the web using Firecrawl. Returns content-rich results with full page text. Use when you need detailed article content, not just snippets.
-- `firecrawl_scrape` — Scrape a specific URL to get its full content as markdown. Use when you have a URL and need to read it.
-
-**IMPORTANT: For any factual question, current events, or topic the user asks about that isn't in their knowledge base, use `web_search_searxng` or `firecrawl_search` to find the answer. Don't say "I don't have information on that" — SEARCH FOR IT.**
-
-### Document & Import Management
-- `search_documents` — Search source documents in the knowledge store.
-- `get_document` — Retrieve a source document by UUID.
-- `summarize` — Generate or retrieve a document summary.
-- `extract_concepts` — Extract key concepts from a document.
-- `classify_document` — Classify a document's topic and tags.
-- `decompose_to_zettels` — Break a document into atomic zettel cards.
-- `generate_embeddings` — Generate embeddings for a document.
-- `list_connectors` — List available import connectors and their status.
-- `run_import` — Run an import from a connector (Notion, Readwise, etc.).
-- `import_status` — Check the status of a running import.
-
-## Response Style
-- Lead with the answer, not the process. Don't say "Let me search..." — just search and present results.
-- When presenting knowledge cards, highlight what's interesting or relevant, don't just list titles.
-- When creating cards, confirm: "Created: [title] — tagged [tags]"
-- When you find connections between cards, point them out explicitly.
-- Use markdown formatting for readability (headers, bullets, bold for emphasis).
-- When multiple tools would help, use them in sequence — search first, then get details, then synthesize.
-"""
-
-# Maps lens ID to a system prompt modifier
-_LENS_PROMPTS: dict[str, str] = {
-    "socratic": (
-        "Apply the Socratic method: respond primarily with probing questions that help "
-        "the user examine their assumptions, identify contradictions, and reach deeper "
-        "understanding through guided inquiry. Ask before answering."
-    ),
-    "stoic": (
-        "Apply Stoic philosophy: help the user distinguish what is within their control "
-        "from what is not, focus on virtue and rational action, and frame challenges as "
-        "opportunities for growth."
-    ),
-    "existentialist": (
-        "Apply existentialist thinking: emphasize personal responsibility, authentic choice, "
-        "and the creation of meaning. Challenge the user to own their decisions and confront "
-        "uncertainty directly."
-    ),
-    "utilitarian": (
-        "Apply utilitarian analysis: evaluate ideas and decisions by their consequences and "
-        "overall impact. Help the user think about trade-offs, expected outcomes, and "
-        "maximizing benefit."
-    ),
-    "kantian": (
-        "Apply Kantian ethics: help the user think about universal principles, duty, and "
-        "whether their reasoning could serve as a rule for everyone. Focus on consistency "
-        "and moral obligation."
-    ),
-    "virtue_ethics": (
-        "Apply virtue ethics: focus on character development, practical wisdom, and what "
-        "a person of good character would do. Help the user think about habits, excellence, "
-        "and long-term flourishing."
-    ),
-    "eastern": (
-        "Apply Eastern philosophical perspectives: draw on Buddhist mindfulness, Taoist "
-        "balance, and Confucian harmony. Emphasize interconnectedness, non-attachment, "
-        "and the middle way."
-    ),
-}
+def _sanitize_tool_result(text: str) -> str:
+    """Strip HTML tags from tool results to mitigate prompt injection."""
+    return _HTML_TAG_RE.sub("", text)
 
 
-def _build_system_prompt(
-    lens: str | None = None,
-    note_context: dict | None = None,
-) -> str:
-    """Build the full system prompt with optional lens and note context."""
-    parts = [_BASE_SYSTEM_PROMPT]
-
-    # Active philosophical lens
-    if lens and lens in _LENS_PROMPTS:
-        parts.append(f"\n## Active Lens: {lens.title()}\n{_LENS_PROMPTS[lens]}")
-
-    # Note context
-    if note_context:
-        title = note_context.get("title", "Untitled")
-        preview = note_context.get("content_preview", "")
-        if title or preview:
-            parts.append(
-                f"\n## Current Note Context\n"
-                f'The user is currently viewing a note titled "{title}".\n'
-            )
-            if preview:
-                parts.append(f"Preview: {preview[:500]}\n")
-            parts.append(
-                "Use this context to make your responses more relevant to what they're working on."
-            )
-
-    # Knowledge notifications (proactive context)
-    try:
-        from alfred.services.knowledge_notifications import get_pending_notifications
-
-        notifications = get_pending_notifications(limit=3)
-        if notifications:
-            parts.append("\n## New Knowledge (since your last conversation)")
-            for n in notifications:
-                linked_count = len(n.get("linked_to", [])) or n.get("linked_to_count", 0)
-                line = f"- '{n['zettel_title']}'"
-                if linked_count:
-                    line += f" (linked to {linked_count} existing cards)"
-                source = n.get("source_document")
-                if source:
-                    line += f" from '{source}'"
-                parts.append(line)
-            parts.append(
-                "Mention these if relevant to the user's question. "
-                "Use search_kb to find more details."
-            )
-    except Exception:
-        pass  # Never block prompt building on notification failures
-
-    return "\n".join(parts)
+# Singleton prompt builder
+_prompt_builder = SystemPromptBuilder()
 
 
 def _is_reasoning_model(model: str) -> bool:
@@ -284,32 +133,24 @@ class AgentService:
         intent: str | None = None,
         intent_args: dict | None = None,
         max_iterations: int = 10,
-    ) -> AsyncIterator[str]:
-        """Stream SSE events for one agent turn.
+    ) -> AsyncIterator[tuple[str, dict[str, Any], str]]:
+        """Stream events for one agent turn as structured tuples.
 
-        Token-by-token streaming like Claude Code. The user sees each token
-        as it arrives, not after the full response is collected.
-
-        ┌─────────────────────────────────────────────────────────┐
-        │  AGENT LOOP (flat, Claude Code-style)                   │
-        │                                                          │
-        │  1. Build messages (system + history + user)             │
-        │  2. Stream tokens from model → yield each to client     │
-        │  3. If model requests tool calls:                        │
-        │     a. Yield tool_start events                           │
-        │     b. Execute tools (with timeout)                      │
-        │     c. Yield tool_result events                          │
-        │     d. Inject results back into messages                 │
-        │     e. LOOP to step 2                                    │
-        │  4. If no tool calls → DONE                              │
-        │  5. Max iterations guard (default 10)                    │
-        └─────────────────────────────────────────────────────────┘
+        Yields (event_name, data_dict, sse_string) so the caller can:
+        - Forward sse_string to the client
+        - Inspect data_dict to collect content for DB persistence
         """
         model_name = model or settings.llm_model or "gpt-5.4"
+        effective_max = max_iterations if max_iterations else MAX_TOOL_ROUNDS
 
         try:
             messages: list[dict[str, Any]] = [
-                {"role": "system", "content": _build_system_prompt(lens, note_context)},
+                {
+                    "role": "system",
+                    "content": _prompt_builder.build(
+                        lens=lens, note_context=note_context
+                    ),
+                },
             ]
 
             if history:
@@ -322,13 +163,16 @@ class AgentService:
             messages.append({"role": "user", "content": message})
 
             # Flat agent loop: stream → tools → re-stream → done
-            for _round in range(MAX_TOOL_ROUNDS):
+            all_tool_calls: list[dict[str, Any]] = []
+            all_artifacts: list[dict[str, Any]] = []
+            all_reasoning: list[str] = []
+
+            for _round in range(effective_max):
                 if is_disconnected and await is_disconnected():
                     return
 
                 # Stream tokens in real-time, collect tool calls
                 content_parts: list[str] = []
-                reasoning_parts: list[str] = []
                 tool_calls: list[dict[str, Any]] = []
 
                 kwargs = self._build_api_kwargs(model_name, messages)
@@ -338,17 +182,20 @@ class AgentService:
                         async for event in self._stream_tokens(kwargs, is_disconnected):
                             if event["type"] == "token":
                                 content_parts.append(event["content"])
-                                yield _sse_event("token", {"content": event["content"]})
+                                data = {"content": event["content"]}
+                                yield ("token", data, _sse_event("token", data))
                             elif event["type"] == "reasoning":
-                                reasoning_parts.append(event["content"])
-                                yield _sse_event("reasoning", {"content": event["content"]})
+                                all_reasoning.append(event["content"])
+                                data = {"content": event["content"]}
+                                yield ("reasoning", data, _sse_event("reasoning", data))
                             elif event["type"] == "tool_calls":
                                 tool_calls = event["tool_calls"]
                         break  # Success, exit retry loop
-                    except APITimeoutError:
-                        if attempt < 2:
-                            logger.warning("OpenAI timeout (attempt %d), retrying...", attempt + 1)
-                            await asyncio.sleep(1 * (attempt + 1))
+                    except (APITimeoutError, APIError) as exc:
+                        if attempt < 2 and not isinstance(exc, BadRequestError):
+                            wait = (2 if isinstance(exc, RateLimitError) else 1) * (attempt + 1)
+                            logger.warning("%s (attempt %d), retrying in %ds...", type(exc).__name__, attempt + 1, wait)
+                            await asyncio.sleep(wait)
                             continue
                         raise
                     except RateLimitError:
@@ -388,16 +235,10 @@ class AgentService:
                     tool_name = tc["name"]
                     tool_args = tc["args"]
 
-                    yield _sse_event(
-                        "tool_start",
-                        {
-                            "call_id": call_id,
-                            "tool": tool_name,
-                            "args": tool_args,
-                        },
-                    )
+                    ts_data = {"call_id": call_id, "tool": tool_name, "args": tool_args}
+                    yield ("tool_start", ts_data, _sse_event("tool_start", ts_data))
 
-                    timeout = _TOOL_TIMEOUTS.get(tool_name, 30)
+                    timeout = _TOOL_TIMEOUTS.get(tool_name, DEFAULT_TOOL_TIMEOUT)
                     try:
                         result = await asyncio.wait_for(
                             execute_tool(tool_name, tool_args, self.db),
@@ -408,13 +249,9 @@ class AgentService:
                     except Exception as exc:
                         result = {"error": f"Tool {tool_name} failed: {exc!s}"}
 
-                    yield _sse_event(
-                        "tool_result",
-                        {
-                            "call_id": call_id,
-                            "result": result,
-                        },
-                    )
+                    tr_data = {"call_id": call_id, "result": result}
+                    all_tool_calls.append({"tool": tool_name, "args": tool_args, **tr_data})
+                    yield ("tool_result", tr_data, _sse_event("tool_result", tr_data))
 
                     # Emit artifact for zettel CRUD results
                     if isinstance(result, dict) and result.get("action") in (
@@ -422,34 +259,47 @@ class AgentService:
                         "found",
                         "updated",
                     ):
-                        yield _sse_event(
-                            "artifact",
-                            {
-                                "type": "zettel",
-                                "action": result["action"],
-                                "zettel": {
-                                    "id": result.get("zettel_id"),
-                                    "title": result.get("title", ""),
-                                    "summary": result.get("summary", ""),
-                                    "topic": result.get("topic", ""),
-                                    "tags": result.get("tags", []),
-                                },
+                        artifact_data = {
+                            "type": "zettel",
+                            "action": result["action"],
+                            "zettel": {
+                                "id": result.get("zettel_id"),
+                                "title": result.get("title", ""),
+                                "summary": result.get("summary", ""),
+                                "topic": result.get("topic", ""),
+                                "tags": result.get("tags", []),
                             },
-                        )
+                        }
+                        all_artifacts.append(artifact_data)
+                        yield ("artifact", artifact_data, _sse_event("artifact", artifact_data))
 
+                    # Sanitize tool result before injecting back into messages
+                    result_str = json.dumps(result)
+                    result_str = _sanitize_tool_result(result_str)
                     messages.append(
                         {
                             "role": "tool",
                             "tool_call_id": call_id,
-                            "content": json.dumps(result),
+                            "content": result_str,
                         }
                     )
 
+        except BadRequestError as exc:
+            logger.error("Bad request to OpenAI: %s", exc)
+            err_data = {"message": f"Invalid request: {exc!s}"}
+            yield ("error", err_data, _sse_event("error", err_data))
         except Exception as exc:
             logger.exception("Agent stream_turn failed: %s", exc)
-            yield _sse_event("error", {"message": f"Agent error: {exc!s}"})
+            err_data = {"message": f"Agent error: {exc!s}"}
+            yield ("error", err_data, _sse_event("error", err_data))
 
-        yield _sse_event("done", {"thread_id": str(thread_id or "")})
+        done_data = {
+            "thread_id": str(thread_id or ""),
+            "reasoning": "".join(all_reasoning) if all_reasoning else None,
+            "tool_calls": all_tool_calls or None,
+            "artifacts": all_artifacts or None,
+        }
+        yield ("done", done_data, _sse_event("done", {"thread_id": str(thread_id or "")}))
 
     async def _stream_tokens(
         self,
