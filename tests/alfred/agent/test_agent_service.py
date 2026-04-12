@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from alfred.services.agent.service import AgentService, _build_system_prompt, _sse_event
+from alfred.services.agent.service import AgentService, _sse_event
 
 # ---------------------------------------------------------------------------
 # Helpers: mock OpenAI streaming responses
@@ -103,20 +103,31 @@ def _tool_call_stream(
     return MockAsyncStream(chunks)
 
 
-def _parse_events(raw_events: list[str]) -> list[tuple[str, dict]]:
-    """Parse SSE strings into (event_type, data) tuples."""
+def _parse_events(
+    raw_events: list[tuple[str, dict, str]] | list[str],
+) -> list[tuple[str, dict]]:
+    """Parse stream_turn output into (event_type, data) tuples.
+
+    Accepts both new-style tuples (event_name, data, sse_str) and
+    legacy SSE strings for backwards compatibility.
+    """
     parsed = []
-    for event_str in raw_events:
-        lines = event_str.strip().split("\n")
-        evt_type = ""
-        evt_data = {}
-        for line in lines:
-            if line.startswith("event: "):
-                evt_type = line[7:]
-            elif line.startswith("data: "):
-                evt_data = json.loads(line[6:])
-        if evt_type:
-            parsed.append((evt_type, evt_data))
+    for event in raw_events:
+        if isinstance(event, tuple):
+            # New tuple format: (event_name, data_dict, sse_string)
+            parsed.append((event[0], event[1]))
+        else:
+            # Legacy SSE string format
+            lines = event.strip().split("\n")
+            evt_type = ""
+            evt_data = {}
+            for line in lines:
+                if line.startswith("event: "):
+                    evt_type = line[7:]
+                elif line.startswith("data: "):
+                    evt_data = json.loads(line[6:])
+            if evt_type:
+                parsed.append((evt_type, evt_data))
     return parsed
 
 
@@ -127,7 +138,7 @@ def _parse_events(raw_events: list[str]) -> list[tuple[str, dict]]:
 
 @pytest.fixture(autouse=True)
 def _mock_notifications():
-    """Prevent Redis calls from _build_system_prompt notifications check."""
+    """Prevent Redis calls from SystemPromptBuilder notifications check."""
     with patch(
         "alfred.services.knowledge_notifications.get_pending_notifications",
         return_value=[],
@@ -486,34 +497,6 @@ async def test_gpt4o_uses_max_tokens(service):
 # ---------------------------------------------------------------------------
 
 
-@patch("alfred.services.knowledge_notifications.get_pending_notifications", return_value=[])
-def test_build_system_prompt_basic(_mock_notif):
-    """System prompt includes Alfred identity and tool usage instructions."""
-    prompt = _build_system_prompt()
-    assert "Alfred" in prompt
-    assert "knowledge" in prompt.lower()
-    assert "search_kb" in prompt  # Tool usage instructions present
-    assert "NEVER say" in prompt  # Critical rule present
-
-
-@patch("alfred.services.knowledge_notifications.get_pending_notifications", return_value=[])
-def test_build_system_prompt_with_lens(_mock_notif):
-    """System prompt includes lens when provided."""
-    prompt = _build_system_prompt(lens="socratic")
-    assert "Socratic" in prompt
-    assert "probing questions" in prompt.lower()
-
-
-@patch("alfred.services.knowledge_notifications.get_pending_notifications", return_value=[])
-def test_build_system_prompt_with_note_context(_mock_notif):
-    """System prompt includes note context when provided."""
-    prompt = _build_system_prompt(
-        note_context={"title": "My Note", "content_preview": "Some content"}
-    )
-    assert "My Note" in prompt
-    assert "Some content" in prompt
-
-
 def test_sse_event_format():
     """SSE event format is correct."""
     event = _sse_event("token", {"content": "hello"})
@@ -525,3 +508,126 @@ def test_done_event_always_emitted():
     event = _sse_event("done", {"thread_id": "123"})
     assert "event: done" in event
     assert '"thread_id": "123"' in event
+
+
+# ---------------------------------------------------------------------------
+# New tests: flat loop convergence (regression + bugs)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_general_conversation_no_tools(service):
+    """REGRESSION: 'hello' should get a text response with NO tool calls.
+
+    The old orchestrator forced search_kb on everything via regex routing.
+    The flat loop lets the LLM decide — greetings should not trigger tools.
+    """
+    stream = _simple_text_stream("Hey! How can I help?")
+
+    service.client.chat = MagicMock()
+    service.client.chat.completions = MagicMock()
+    service.client.chat.completions.create = AsyncMock(return_value=stream)
+
+    events = []
+    async for event in service.stream_turn(message="hello"):
+        events.append(event)
+
+    parsed = _parse_events(events)
+    event_types = [e[0] for e in parsed]
+
+    assert "token" in event_types
+    assert "tool_start" not in event_types
+    assert "tool_result" not in event_types
+    assert event_types[-1] == "done"
+
+
+@pytest.mark.asyncio
+async def test_max_iterations_uses_parameter(service):
+    """max_iterations parameter should be used instead of module constant."""
+    # Create a stream that always returns tool calls (would loop forever)
+    def tool_stream_factory():
+        return _tool_call_stream("call_x", "search_kb", {"query": "test"})
+
+    call_count = 0
+
+    async def mock_create(**kwargs):
+        nonlocal call_count
+        call_count += 1
+        return tool_stream_factory()
+
+    service.client.chat = MagicMock()
+    service.client.chat.completions = MagicMock()
+    service.client.chat.completions.create = AsyncMock(side_effect=mock_create)
+
+    events = []
+    with patch("alfred.services.agent.service.execute_tool", new_callable=AsyncMock) as mock_exec:
+        mock_exec.return_value = {"results": [], "count": 0}
+        async for event in service.stream_turn(message="Search", max_iterations=2):
+            events.append(event)
+
+    # Should have stopped after 2 iterations, not 10
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_reasoning_in_done_event(service):
+    """Reasoning traces should be included in the done event data."""
+    chunks = [
+        _make_chunk(_make_delta(reasoning="Thinking step 1.")),
+        _make_chunk(_make_delta(reasoning=" Step 2.")),
+        _make_chunk(_make_delta(content="Final answer.")),
+        _make_chunk(_make_delta()),
+    ]
+    stream = MockAsyncStream(chunks)
+
+    service.client.chat = MagicMock()
+    service.client.chat.completions = MagicMock()
+    service.client.chat.completions.create = AsyncMock(return_value=stream)
+
+    events = []
+    async for event in service.stream_turn(message="Think", model="o3"):
+        events.append(event)
+
+    parsed = _parse_events(events)
+    done_events = [e for e in parsed if e[0] == "done"]
+    assert len(done_events) == 1
+    assert done_events[0][1]["reasoning"] == "Thinking step 1. Step 2."
+
+
+@pytest.mark.asyncio
+async def test_tool_result_sanitization(service):
+    """HTML tags in tool results should be stripped before injection."""
+    tool_stream = _tool_call_stream("call_scrape", "firecrawl_scrape", {"url": "http://example.com"})
+    text_stream = _simple_text_stream("Here's what I found.")
+
+    call_count = 0
+
+    async def mock_create(**kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return tool_stream
+        # Verify the injected tool result has HTML stripped
+        tool_messages = [m for m in kwargs["messages"] if m.get("role") == "tool"]
+        if tool_messages:
+            content = tool_messages[-1]["content"]
+            assert "<script>" not in content
+            assert "alert" in content  # text preserved, tags stripped
+        return text_stream
+
+    service.client.chat = MagicMock()
+    service.client.chat.completions = MagicMock()
+    service.client.chat.completions.create = AsyncMock(side_effect=mock_create)
+
+    html_result = {
+        "title": "Test Page",
+        "content": "Hello <script>alert('xss')</script> world",
+    }
+
+    events = []
+    with patch("alfred.services.agent.service.execute_tool", new_callable=AsyncMock) as mock_exec:
+        mock_exec.return_value = html_result
+        async for event in service.stream_turn(message="Scrape this"):
+            events.append(event)
+
+    assert call_count == 2  # tool call + final text
