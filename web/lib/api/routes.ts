@@ -78,6 +78,7 @@ export const apiRoutes = {
   },
   canvas: {
     generateDiagram: "/api/canvas/generate-diagram",
+    generateMermaid: "/api/canvas/generate-mermaid",
   },
   learning: {
     topics: "/api/learning/topics",

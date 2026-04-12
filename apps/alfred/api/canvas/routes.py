@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -22,8 +23,23 @@ class DiagramRequest(BaseModel):
 class DiagramResponse(BaseModel):
     """Generated diagram elements and description."""
 
-    elements: list[dict]
+    elements: list[dict[str, Any]]
     description: str | None = None
+
+
+def _response_to_text(response: Any) -> str:
+    content = response.content if hasattr(response, "content") else response
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+            else:
+                parts.append(str(item))
+        return "".join(parts)
+    return str(content)
 
 
 @router.post("/generate-diagram", response_model=DiagramResponse)
@@ -36,7 +52,7 @@ def generate_diagram(payload: DiagramRequest) -> DiagramResponse:
         prompt = build_diagram_prompt(payload.prompt, payload.canvas_context)
         model = get_chat_model()
         response = model.invoke(prompt)
-        content = response.content if hasattr(response, "content") else str(response)
+        content = _response_to_text(response)
         result = parse_diagram_response(content)
         return DiagramResponse(**result)
     except Exception as exc:

@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { Bold, Italic, Sparkles } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { normalizePastedEditorText } from "@/lib/utils/editor-paste";
 import { Button } from "@/components/ui/button";
 import { InlineAIPrompt, type AIPromptMode } from "@/components/editor/inline-ai-prompt";
 import {
@@ -547,6 +548,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
             "prose-strong:font-semibold",
           ),
         },
+        transformPastedText: (text) => normalizePastedEditorText(text),
       },
       onUpdate: ({ editor }) => {
         const nextMarkdown = readEditorMarkdown(editor);
