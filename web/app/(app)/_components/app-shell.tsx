@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 
 import { useShellStore } from "@/lib/stores/shell-store";
 import { UnifiedChat } from "@/components/chat/unified-chat";
@@ -21,6 +22,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     zettelViewerCardId,
     closeZettelViewer,
   } = useShellStore();
+
+  // Auto-collapse expanded AI panel when navigating to a different page
+  const pathname = usePathname();
+  const prevPathRef = useRef(pathname);
+  useEffect(() => {
+    if (prevPathRef.current !== pathname) {
+      prevPathRef.current = pathname;
+      const { aiPanelOpen: open, chatMode: mode } = useShellStore.getState();
+      if (open && mode === "expanded") {
+        // Collapse to sidebar so the destination page is visible
+        useShellStore.setState({ chatMode: "sidebar" });
+      }
+    }
+  }, [pathname]);
 
   useEffect(() => {
     const pillarRoutes = ["/inbox", "/canvas", "#ai", "/dashboard"];
@@ -81,7 +96,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <main
                 id="main-content"
                 tabIndex={-1}
-                className="flex-1 overflow-y-auto focus:outline-none"
+                className="flex-1 animate-in fade-in duration-150 overflow-y-auto focus:outline-none"
               >
                 {children}
               </main>

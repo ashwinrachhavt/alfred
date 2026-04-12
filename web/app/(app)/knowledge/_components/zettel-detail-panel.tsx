@@ -91,7 +91,7 @@ export function ZettelDetailPanel({ zettel, allZettels, onClose, onSelectZettel 
             autoFocus
           />
         ) : (
-          <h2 className="text-lg leading-snug">{zettel.title}</h2>
+          <h2 className="min-w-0 text-lg leading-snug line-clamp-2">{zettel.title}</h2>
         )}
         <Button variant="ghost" size="icon" className="size-7 shrink-0" onClick={onClose}>
           <X className="size-4" />
@@ -143,7 +143,7 @@ export function ZettelDetailPanel({ zettel, allZettels, onClose, onSelectZettel 
                 <button
                   key={c.id}
                   onClick={() => onSelectZettel(c.id)}
-                  className="text-muted-foreground hover:border-primary hover:text-foreground rounded-md border px-2.5 py-1 text-[12px] transition-colors"
+                  className="text-muted-foreground hover:border-primary hover:text-foreground max-w-full truncate rounded-md border px-2.5 py-1 text-[12px] transition-colors"
                 >
                   {c.title}
                 </button>

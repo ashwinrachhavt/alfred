@@ -192,7 +192,7 @@ export function ZettelFullView({ zettelId, variant = "page" }: Props) {
                       key={card.id}
                       type="button"
                       onClick={() => openZettelViewer(card.id)}
-                      className="text-muted-foreground hover:border-primary hover:text-foreground rounded-md border px-2.5 py-1 text-[12px] transition-colors"
+                      className="text-muted-foreground hover:border-primary hover:text-foreground max-w-full truncate rounded-md border px-2.5 py-1 text-[12px] transition-colors"
                     >
                       {card.title}
                     </button>

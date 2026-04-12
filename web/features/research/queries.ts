@@ -17,6 +17,7 @@ export function useRecentResearchReports(limit = 20) {
   return useQuery({
     queryKey: recentResearchReportsQueryKey(limit),
     queryFn: () => listRecentResearchReports(limit),
+    staleTime: 30_000,
   });
 }
 
@@ -27,5 +28,6 @@ export function useResearchReport(reportId: string | null) {
       ? researchReportQueryKey(reportId)
       : ["research", "reports", "disabled"],
     queryFn: () => getResearchReportById(reportId!),
+    staleTime: 60_000,
   });
 }

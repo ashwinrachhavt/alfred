@@ -78,7 +78,7 @@ export function ZettelTable({ zettels, selectedId, onSelect }: Props) {
  : "hover:bg-[var(--alfred-accent-subtle)]",
  )}
  >
- <td className="px-4 py-3 text-[14px]">{z.title}</td>
+ <td className="max-w-[300px] truncate px-4 py-3 text-[14px]">{z.title}</td>
  <td className="px-4 py-3">
  <span className="rounded-sm bg-[var(--alfred-accent-subtle)] px-2 py-0.5 font-medium text-[9px] uppercase tracking-wider text-primary">
  {z.tags[0]}

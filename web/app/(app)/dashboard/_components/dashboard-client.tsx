@@ -208,7 +208,7 @@ export function DashboardClient() {
                 <li key={doc.id} className="flex items-start justify-between gap-3">
                   <Link
                     href={`/documents/${doc.id}`}
-                    className="hover:text-foreground text-sm leading-snug font-medium underline-offset-4 hover:underline"
+                    className="hover:text-foreground min-w-0 truncate text-sm leading-snug font-medium underline-offset-4 hover:underline"
                   >
                     {doc.title || "Untitled document"}
                   </Link>

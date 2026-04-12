@@ -489,7 +489,7 @@ function ExpandedHeader({
         {activeThread && (
           <>
             <span className="text-[var(--alfred-text-tertiary)]">/</span>
-            <span className="text-foreground max-w-xs truncate text-sm">{activeThread.title}</span>
+            <span className="text-foreground min-w-0 max-w-xs truncate text-sm">{activeThread.title}</span>
           </>
         )}
         <ChevronDown className="text-muted-foreground size-3" />
