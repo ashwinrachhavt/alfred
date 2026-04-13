@@ -129,7 +129,7 @@ export function ZettelDetailPanel({ zettel, allZettels, onClose, onSelectZettel 
             </div>
           </>
         ) : (
-          <ZettelReadContent summary={zettel.summary} content={zettel.content} />
+          <ZettelReadContent title={zettel.title} summary={zettel.summary} content={zettel.content} />
         )}
 
         {/* Connections */}

@@ -10,7 +10,7 @@ import { TaskCenterSheet } from "@/components/task-center-sheet";
 import { Toaster } from "@/components/ui/sonner";
 import { TaskTrackerProvider } from "@/features/tasks/task-tracker-provider";
 
-function createQueryClient(): QueryClient {
+export function createQueryClient(): QueryClient {
  return new QueryClient({
  defaultOptions: {
  queries: {

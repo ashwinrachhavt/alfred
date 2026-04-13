@@ -17,7 +17,7 @@ export function ZettelFullViewDialog({ cardId, open, onOpenChange }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="h-[min(88vh,920px)] max-w-[min(1180px,calc(100vw-2rem))] gap-0 overflow-hidden p-0"
+        className="h-[min(88vh,920px)] max-w-[calc(100vw-2rem)] gap-0 overflow-hidden p-0 sm:max-w-[min(1180px,calc(100vw-2rem))]"
       >
         <VisuallyHidden>
           <DialogTitle>Expanded zettel view</DialogTitle>
