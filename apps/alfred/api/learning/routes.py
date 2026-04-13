@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+import random
 from datetime import UTC, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from alfred.api.dependencies import get_db_session
 from alfred.core.celery_client import get_celery_client
 from alfred.core.settings import settings
-from alfred.models.learning import LearningQuiz, LearningReview, LearningTopic
+from alfred.models.learning import (
+    LearningQuiz,
+    LearningResource,
+    LearningReview,
+    LearningTopic,
+)
 from alfred.schemas.learning import (
     GraphResponse,
     QuizAttemptOut,
@@ -116,6 +122,133 @@ def _review_out(r: LearningReview) -> ReviewOut:
         attempt_id=r.attempt_id,
         created_at=r.created_at,
         updated_at=r.updated_at,
+    )
+
+
+class DeckItemSource(BaseModel):
+    title: str | None = None
+    source_url: str | None = None
+    document_id: str | None = None
+    captured_at: datetime | None = None
+
+
+class DeckItem(BaseModel):
+    review_id: int
+    topic_id: int
+    topic_name: str
+    stage: int
+    question: str
+    answer: str | None = None
+    source: DeckItemSource | None = None
+    needs_quiz_generation: bool = False
+
+
+class DailyDeckResponse(BaseModel):
+    items: list[DeckItem]
+    total_due: int
+    showing: int
+    estimated_minutes: int
+
+
+@router.get("/daily-deck", response_model=DailyDeckResponse)
+def daily_deck(
+    limit: int = Query(default=20, ge=1, le=200),
+    session: Session = Depends(get_db_session),
+) -> DailyDeckResponse:
+    """Aggregate endpoint: returns today's review deck with topics, quiz items, and sources."""
+    now = datetime.now(UTC)
+    svc = LearningService(session)
+
+    all_due = svc.list_due_reviews(now=now, limit=200)
+    total_due = len(all_due)
+    reviews = all_due[:limit]
+
+    if not reviews:
+        return DailyDeckResponse(items=[], total_due=0, showing=0, estimated_minutes=0)
+
+    topic_ids = list({r.topic_id for r in reviews})
+
+    topics_by_id: dict[int, LearningTopic] = {}
+    for tid in topic_ids:
+        t = session.get(LearningTopic, tid)
+        if t:
+            topics_by_id[tid] = t
+
+    quizzes_by_topic: dict[int, LearningQuiz] = {}
+    quiz_stmt = (
+        select(LearningQuiz)
+        .where(LearningQuiz.topic_id.in_(topic_ids))
+        .order_by(LearningQuiz.created_at.desc())
+    )
+    for q in session.exec(quiz_stmt):
+        if q.topic_id not in quizzes_by_topic and q.items:
+            quizzes_by_topic[q.topic_id] = q
+
+    resources_by_topic: dict[int, LearningResource] = {}
+    res_stmt = (
+        select(LearningResource)
+        .where(LearningResource.topic_id.in_(topic_ids))
+        .order_by(LearningResource.added_at.desc())
+    )
+    for r in session.exec(res_stmt):
+        if r.topic_id not in resources_by_topic:
+            resources_by_topic[r.topic_id] = r
+
+    items: list[DeckItem] = []
+    for review in reviews:
+        topic = topics_by_id.get(review.topic_id)
+        if not topic:
+            continue
+
+        quiz = quizzes_by_topic.get(review.topic_id)
+        needs_gen = quiz is None or not quiz.items
+
+        question = ""
+        answer = None
+        if quiz and quiz.items:
+            item = random.choice(quiz.items)
+            question = (item or {}).get("question", "")
+            answer = (item or {}).get("answer")
+
+        source = None
+        if quiz and quiz.resource_id:
+            res = session.get(LearningResource, quiz.resource_id)
+            if res:
+                source = DeckItemSource(
+                    title=res.title,
+                    source_url=res.source_url,
+                    document_id=res.document_id,
+                    captured_at=res.added_at,
+                )
+        elif review.topic_id in resources_by_topic:
+            res = resources_by_topic[review.topic_id]
+            source = DeckItemSource(
+                title=res.title,
+                source_url=res.source_url,
+                document_id=res.document_id,
+                captured_at=res.added_at,
+            )
+
+        items.append(
+            DeckItem(
+                review_id=review.id or 0,
+                topic_id=review.topic_id,
+                topic_name=topic.name,
+                stage=int(review.stage),
+                question=question,
+                answer=answer,
+                source=source,
+                needs_quiz_generation=needs_gen,
+            )
+        )
+
+    estimated_minutes = max(1, len(items) * 40 // 60)
+
+    return DailyDeckResponse(
+        items=items,
+        total_due=total_due,
+        showing=len(items),
+        estimated_minutes=estimated_minutes,
     )
 
 
