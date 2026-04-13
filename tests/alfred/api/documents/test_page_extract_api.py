@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from alfred.api.documents import routes as doc_routes
+from alfred.core.celery_client import BrokerUnavailableError
 from alfred.core.exceptions import register_exception_handlers
 
 
@@ -13,6 +14,7 @@ class _FakeDocStorage:
     def __init__(self) -> None:
         self._next_id = 1
         self.last_ingest: dict[str, Any] | None = None
+        self.last_ingest_kwargs: dict[str, Any] | None = None
         self.duplicate_next = False
 
     def ingest_document_store_only(self, ingest, **kwargs: Any) -> dict[str, Any]:
@@ -22,6 +24,7 @@ class _FakeDocStorage:
             "cleaned_text": ingest.cleaned_text,
             "content_type": ingest.content_type,
         }
+        self.last_ingest_kwargs = kwargs
         if self.duplicate_next:
             return {"id": "dup-id", "duplicate": True}
         doc_id = str(self._next_id)
@@ -79,6 +82,67 @@ def test_page_extract_duplicate_short_circuits() -> None:
     assert data["id"] == "dup-id"
 
 
+def test_page_extract_returns_accepted_when_queue_dispatch_fails(monkeypatch) -> None:
+    fake = _FakeDocStorage()
+    client = _app_with_fake_service(fake)
+    calls: list[dict[str, Any]] = []
+
+    def fake_dispatch(task_name: str, *, kwargs: dict[str, Any]) -> None:
+        calls.append({"task_name": task_name, "kwargs": kwargs})
+        raise BrokerUnavailableError("Background worker unavailable")
+
+    monkeypatch.setattr(doc_routes, "dispatch_task", fake_dispatch)
+
+    resp = client.post(
+        "/api/documents/page/extract",
+        json={
+            "raw_text": "x" * 60,
+            "raw_markdown": "# Example\n\nBody",
+            "page_url": "https://example.com/post",
+            "page_title": "Example",
+        },
+    )
+
+    assert resp.status_code == 201
+    assert resp.json() == {"id": "1", "status": "accepted", "task_id": None, "status_url": None}
+    assert fake.last_ingest_kwargs == {"skip_pipeline": True}
+    assert calls == [
+        {
+            "task_name": "alfred.tasks.capture_coordinator.coordinate_capture",
+            "kwargs": {
+                "doc_id": "1",
+                "source_url": "https://example.com/post",
+                "has_images": False,
+                "content_type_hint": "generic",
+            },
+        },
+        {
+            "task_name": "alfred.tasks.document_pipeline.run_document_pipeline",
+            "kwargs": {"doc_id": "1"},
+        },
+    ]
+
+
+def test_page_extract_rejects_empty_cleaned_content() -> None:
+    fake = _FakeDocStorage()
+    client = _app_with_fake_service(fake)
+
+    cookie_wall = ("We use cookies to improve your experience.\n" * 10).strip()
+
+    resp = client.post(
+        "/api/documents/page/extract",
+        json={
+            "raw_text": cookie_wall,
+            "page_url": "https://example.com",
+            "selection_type": "full_page",
+        },
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["error"] == "No extractable text found in page content."
+    assert fake.last_ingest is None
+
+
 def test_enqueue_document_enrichment(monkeypatch) -> None:
     app = FastAPI()
     register_exception_handlers(app)
@@ -89,16 +153,13 @@ def test_enqueue_document_enrichment(monkeypatch) -> None:
         def __init__(self, task_id: str) -> None:
             self.id = task_id
 
-    class _FakeCelery:
-        def __init__(self) -> None:
-            self.calls: list[dict[str, Any]] = []
+    calls: list[dict[str, Any]] = []
 
-        def send_task(self, name: str, *, kwargs: dict[str, Any]) -> _FakeAsyncResult:
-            self.calls.append({"name": name, "kwargs": kwargs})
-            return _FakeAsyncResult("task-123")
+    def fake_dispatch(task_name: str, *, kwargs: dict[str, Any]) -> _FakeAsyncResult:
+        calls.append({"task_name": task_name, "kwargs": kwargs})
+        return _FakeAsyncResult("task-123")
 
-    fake_celery = _FakeCelery()
-    monkeypatch.setattr(doc_routes, "get_celery_client", lambda: fake_celery)
+    monkeypatch.setattr(doc_routes, "dispatch_task", fake_dispatch)
 
     resp = client.post("/api/documents/doc/abc/enrich", params={"force": "true"})
     assert resp.status_code == 200
@@ -107,9 +168,30 @@ def test_enqueue_document_enrichment(monkeypatch) -> None:
     assert data["status"] == "queued"
     assert data["task_id"] == "task-123"
     assert data["status_url"] == "/tasks/task-123"
-    assert fake_celery.calls == [
+    assert calls == [
         {
-            "name": "alfred.tasks.document_enrichment.enrich",
+            "task_name": "alfred.tasks.document_enrichment.enrich",
             "kwargs": {"doc_id": "abc", "force": True},
         }
     ]
+
+
+def test_enqueue_document_enrichment_returns_503_when_worker_is_unavailable(monkeypatch) -> None:
+    app = FastAPI()
+    register_exception_handlers(app)
+    app.include_router(doc_routes.router)
+    client = TestClient(app)
+    monkeypatch.setattr(
+        doc_routes,
+        "dispatch_task",
+        lambda task_name, *, kwargs: (_ for _ in ()).throw(
+            BrokerUnavailableError("Background worker unavailable")
+        ),
+    )
+
+    resp = client.post("/api/documents/doc/abc/enrich")
+
+    assert resp.status_code == 503
+    assert resp.json()["error"] == "Background worker unavailable"
+    assert resp.json()["code"] == "service_unavailable"
+    assert resp.json()["type"] == "ServiceUnavailableError"

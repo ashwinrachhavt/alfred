@@ -11,6 +11,8 @@ import logging
 
 from langchain_core.tools import tool
 
+from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,9 +20,10 @@ logger = logging.getLogger(__name__)
 def deep_research(topic: str, refresh: bool = False) -> str:
     """Queue a comprehensive deep research task. Returns task ID for tracking."""
     try:
-        from alfred.tasks.deep_research import deep_research_task
-
-        result = deep_research_task.delay(topic=topic, refresh=refresh)
+        result = dispatch_task(
+            "alfred.tasks.deep_research.generate",
+            kwargs={"topic": topic, "refresh": refresh},
+        )
         return json.dumps({
             "ok": True,
             "topic": topic,
@@ -28,6 +31,9 @@ def deep_research(topic: str, refresh: bool = False) -> str:
             "status": "queued",
             "message": f"Deep research queued for: {topic}",
         })
+    except BrokerUnavailableError as exc:
+        logger.warning("deep_research unavailable for %s: %s", topic, exc)
+        return json.dumps({"error": "Background worker unavailable"})
     except Exception as exc:
         logger.error("deep_research failed: %s", exc)
         return json.dumps({"error": str(exc)})

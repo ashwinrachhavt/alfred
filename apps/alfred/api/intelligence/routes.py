@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
+from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
 from alfred.core.dependencies import (
     get_language_service,
     get_memory_service,
     get_summarization_service,
     get_text_assist_service,
 )
+from alfred.core.exceptions import ServiceUnavailableError
 from alfred.schemas.intelligence import (
     AutocompleteRequest,
     AutocompleteResponse,
@@ -39,11 +41,8 @@ router = APIRouter(prefix="/api/intelligence", tags=["intelligence"])
 )
 def create_plan(payload: PlanCreateRequest) -> dict:
     """Queue plan generation as a background task."""
-    from alfred.core.celery_client import get_celery_client
-
     try:
-        celery_client = get_celery_client()
-        async_result = celery_client.send_task(
+        async_result = dispatch_task(
             "alfred.tasks.planning.generate_plan",
             kwargs={
                 "goal": payload.goal,
@@ -52,6 +51,8 @@ def create_plan(payload: PlanCreateRequest) -> dict:
             },
         )
         return {"task_id": async_result.id, "status": "pending"}
+    except BrokerUnavailableError as exc:  # pragma: no cover - defensive
+        raise ServiceUnavailableError("Background worker unavailable") from exc
     except Exception as exc:  # pragma: no cover - defensive
         raise HTTPException(status_code=500, detail="Failed to enqueue plan generation") from exc
 
@@ -303,5 +304,4 @@ def qa(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - defensive
         raise HTTPException(status_code=500, detail="Q&A failed") from exc
-
 

@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json as _json
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
 from alfred.api.dependencies import get_db_session
+from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
+from alfred.core.exceptions import ServiceUnavailableError
 from alfred.core.redis_client import get_redis_client
 from alfred.models.zettel import ZettelCard, ZettelReview
 
@@ -50,6 +53,22 @@ def _link_out(link) -> ZettelLinkOut:
 
 def _review_out(review) -> ZettelReviewOut:
     return ZettelReviewOut.model_validate(review)
+
+
+def _enqueue_task_or_raise(
+    task_name: str,
+    *,
+    kwargs: dict[str, Any],
+    action: str,
+):
+    try:
+        return dispatch_task(task_name, kwargs=kwargs)
+    except BrokerUnavailableError as exc:  # pragma: no cover - external IO
+        _log.warning("%s: %s", action, exc)
+        raise ServiceUnavailableError("Background worker unavailable") from exc
+    except Exception as exc:  # pragma: no cover - external IO
+        _log.exception("%s: %s", action, exc)
+        raise ServiceUnavailableError("Background worker unavailable") from exc
 
 
 @router.post("/cards", response_model=ZettelCardOut, status_code=status.HTTP_201_CREATED)
@@ -468,12 +487,14 @@ def batch_link(
     auto_link: bool = True,
 ) -> dict:
     """Queue batch link generation for cards with few connections."""
-    from alfred.tasks.batch_linking import batch_link_task
-
-    result = batch_link_task.delay(
-        limit=limit,
-        max_existing_links=max_existing_links,
-        auto_link=auto_link,
+    result = _enqueue_task_or_raise(
+        "alfred.tasks.batch_linking.batch_link",
+        kwargs={
+            "limit": limit,
+            "max_existing_links": max_existing_links,
+            "auto_link": auto_link,
+        },
+        action="Failed to enqueue batch link generation",
     )
     return {"task_id": result.id}
 
@@ -481,9 +502,11 @@ def batch_link(
 @router.post("/cards/{card_id}/generate-links", status_code=status.HTTP_202_ACCEPTED)
 def generate_links_for_card(card_id: int) -> dict:
     """Queue link generation for a single card via Celery."""
-    from alfred.tasks.batch_linking import link_card_task
-
-    result = link_card_task.delay(card_id=card_id, auto_link=True)
+    result = _enqueue_task_or_raise(
+        "alfred.tasks.batch_linking.link_card",
+        kwargs={"card_id": card_id, "auto_link": True},
+        action=f"Failed to enqueue link generation for card {card_id}",
+    )
     return {"task_id": result.id, "card_id": card_id}
 
 

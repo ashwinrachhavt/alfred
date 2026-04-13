@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import Response
 
-from alfred.core.celery_client import get_celery_client
+from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
 from alfred.core.dependencies import get_doc_storage_service
 from alfred.core.exceptions import ServiceUnavailableError
 from alfred.core.settings import settings
@@ -211,8 +211,7 @@ def start_notion_import(
     """Import Notion pages into Alfred documents (async by default)."""
 
     try:
-        celery_client = get_celery_client()
-        async_result = celery_client.send_task(
+        async_result = dispatch_task(
             "alfred.tasks.notion_import.import_workspace",
             kwargs={
                 "workspace_id": payload.workspace_id,
@@ -227,6 +226,9 @@ def start_notion_import(
             task_id=async_result.id,
             status_url=f"/tasks/{async_result.id}",
         )
+    except BrokerUnavailableError as exc:
+        if not payload.run_inline:
+            raise ServiceUnavailableError("Background worker unavailable") from exc
     except Exception as exc:
         if not payload.run_inline:
             raise HTTPException(status_code=500, detail="Failed to enqueue Notion import") from exc

@@ -11,6 +11,7 @@ import logging
 
 from langchain_core.tools import tool
 
+from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
 from alfred.core.database import SessionLocal
 from alfred.services.doc_storage_pg import DocStorageService
 
@@ -160,9 +161,10 @@ def classify_document(doc_id: str) -> str:
 def decompose_to_zettels(doc_id: str, auto_link: bool = True) -> str:
     """Decompose a document into atomic zettel cards. Queues enrichment task, returns task ID."""
     try:
-        from alfred.tasks.document_enrichment import enrich_document_task
-
-        result = enrich_document_task.delay(doc_id=doc_id)
+        result = dispatch_task(
+            "alfred.tasks.document_enrichment.enrich",
+            kwargs={"doc_id": doc_id},
+        )
         return json.dumps({
             "ok": True,
             "doc_id": doc_id,
@@ -170,6 +172,9 @@ def decompose_to_zettels(doc_id: str, auto_link: bool = True) -> str:
             "status": "queued",
             "message": "Document decomposition queued",
         })
+    except BrokerUnavailableError as exc:
+        logger.warning("decompose_to_zettels unavailable for %s: %s", doc_id, exc)
+        return json.dumps({"error": "Background worker unavailable"})
     except Exception as exc:
         logger.error("decompose_to_zettels failed: %s", exc)
         return json.dumps({"error": str(exc)})

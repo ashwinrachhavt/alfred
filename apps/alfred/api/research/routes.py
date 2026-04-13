@@ -9,7 +9,7 @@ from sqlalchemy.exc import ProgrammingError
 from sqlmodel import select
 from starlette.concurrency import run_in_threadpool
 
-from alfred.core.celery_client import get_celery_client
+from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
 from alfred.core.database import SessionLocal
 from alfred.core.dependencies import get_research_service
 from alfred.core.exceptions import ServiceUnavailableError
@@ -120,11 +120,13 @@ async def deep_research(
                 if cached:
                     return cached
 
-            celery_client = get_celery_client()
-            async_result = celery_client.send_task(
-                "alfred.tasks.deep_research.generate",
-                kwargs={"topic": topic, "refresh": refresh},
-            )
+            try:
+                async_result = dispatch_task(
+                    "alfred.tasks.deep_research.generate",
+                    kwargs={"topic": topic, "refresh": refresh},
+                )
+            except BrokerUnavailableError as exc:
+                raise ServiceUnavailableError("Background worker unavailable") from exc
             response.status_code = status.HTTP_202_ACCEPTED
             return {
                 "task_id": async_result.id,
@@ -135,6 +137,8 @@ async def deep_research(
         return await run_in_threadpool(service.generate_report, topic, refresh=refresh)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ServiceUnavailableError:
+        raise
     except Exception as exc:
         logger.exception("Deep research failed")
         raise ServiceUnavailableError("Deep research failed") from exc

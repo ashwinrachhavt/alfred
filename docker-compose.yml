@@ -1,0 +1,173 @@
+# Alfred — Development Stack
+# Usage:  docker compose up           (all services)
+#         docker compose up -d        (detached)
+#         docker compose logs -f api  (tail one service)
+#         docker compose down         (stop all)
+#         docker compose down -v      (stop + wipe volumes)
+#
+# Neo4j is optional:  docker compose --profile graph up
+# Production stack:   infra/docker-compose.yml
+
+x-api-build: &api-build
+  context: .
+  dockerfile: apps/alfred/Dockerfile
+
+x-api-env: &api-env
+  PYTHONDONTWRITEBYTECODE: "1"
+  # These override any values from env_file so Docker networking works
+  DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/alfred
+  REDIS_URL: redis://redis:6379/0
+
+x-api-volumes: &api-volumes
+  - ./apps:/app/apps
+  - ./.alfred_data:/app/.alfred_data
+  - ./data:/app/data
+
+services:
+  # ── Infrastructure ─────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: alfred
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d alfred"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis/redis-stack-server:latest
+    volumes:
+      - redisdata:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # ── Database Migrations ────────────────────────────
+
+  migrate:
+    build: *api-build
+    env_file:
+      - path: apps/alfred/.env
+        required: false
+    environment:
+      <<: *api-env
+    command: alembic -c alembic.ini upgrade head
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # ── Backend API (hot reload) ───────────────────────
+
+  api:
+    build: *api-build
+    env_file:
+      - path: apps/alfred/.env
+        required: false
+    environment:
+      <<: *api-env
+    command: >
+      uvicorn alfred.main:app
+        --host 0.0.0.0
+        --port 8000
+        --reload
+        --reload-dir /app/apps/alfred
+    volumes: *api-volumes
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  # ── Celery Worker ──────────────────────────────────
+
+  worker:
+    build: *api-build
+    env_file:
+      - path: apps/alfred/.env
+        required: false
+    environment:
+      <<: *api-env
+    command: >
+      celery -A alfred.celery_app.app worker
+        -l INFO
+        --concurrency=2
+        -Q default,llm,agent
+    volumes: *api-volumes
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  # ── Celery Beat (scheduled tasks) ──────────────────
+
+  beat:
+    build: *api-build
+    env_file:
+      - path: apps/alfred/.env
+        required: false
+    environment:
+      <<: *api-env
+    command: celery -A alfred.celery_app.app beat -l INFO
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  # ── Frontend (Next.js dev server with HMR) ─────────
+
+  frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    environment:
+      ALFRED_API_BASE_URL: http://api:8000
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ./web:/app
+      - frontend_node_modules:/app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+  # ── Neo4j (optional) ──────────────────────────────
+
+  neo4j:
+    image: neo4j:5
+    profiles: ["graph"]
+    environment:
+      NEO4J_AUTH: neo4j/neo4j_password
+    volumes:
+      - neo4jdata:/data
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p neo4j_password 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  pgdata:
+  redisdata:
+  neo4jdata:
+  frontend_node_modules:

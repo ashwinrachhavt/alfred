@@ -11,6 +11,7 @@ import logging
 
 from langchain_core.tools import tool
 
+from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
 from alfred.core.database import SessionLocal
 from alfred.services.zettelkasten_service import ZettelkastenService
 
@@ -126,14 +127,15 @@ def get_card_links(zettel_id: int) -> str:
 def batch_link(limit: int = 50, max_existing_links: int = 3, min_confidence: float = 0.6, auto_link: bool = True) -> str:
     """Queue batch link generation for cards with few existing links. Returns task IDs."""
     try:
-        from alfred.tasks.batch_linking import batch_link_task
-
-        result = batch_link_task.delay(
-            limit=limit,
-            max_existing_links=max_existing_links,
-            min_confidence=min_confidence,
-            auto_link=auto_link,
-            enqueue_only=True,
+        result = dispatch_task(
+            "alfred.tasks.batch_linking.batch_link",
+            kwargs={
+                "limit": limit,
+                "max_existing_links": max_existing_links,
+                "min_confidence": min_confidence,
+                "auto_link": auto_link,
+                "enqueue_only": True,
+            },
         )
         return json.dumps({
             "ok": True,
@@ -141,6 +143,9 @@ def batch_link(limit: int = 50, max_existing_links: int = 3, min_confidence: flo
             "status": "queued",
             "message": f"Batch linking queued for up to {limit} cards",
         })
+    except BrokerUnavailableError as exc:
+        logger.warning("batch_link unavailable: %s", exc)
+        return json.dumps({"error": "Background worker unavailable"})
     except Exception as exc:
         logger.error("batch_link failed: %s", exc)
         return json.dumps({"error": str(exc)})

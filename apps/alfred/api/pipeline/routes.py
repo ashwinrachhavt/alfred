@@ -6,7 +6,8 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Query
 
-from alfred.core.celery_client import get_celery_client
+from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
+from alfred.core.exceptions import ServiceUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -33,15 +34,17 @@ def replay_document(
     force: bool = Query(False),
 ):
     """Replay the pipeline for a document. Dispatches to Celery."""
-    celery_client = get_celery_client()
-    async_result = celery_client.send_task(
-        "alfred.tasks.document_pipeline.run_document_pipeline",
-        kwargs={
-            "doc_id": doc_id,
-            "force_replay": force,
-            "replay_from": from_stage,
-        },
-    )
+    try:
+        async_result = dispatch_task(
+            "alfred.tasks.document_pipeline.run_document_pipeline",
+            kwargs={
+                "doc_id": doc_id,
+                "force_replay": force,
+                "replay_from": from_stage,
+            },
+        )
+    except BrokerUnavailableError as exc:
+        raise ServiceUnavailableError("Background worker unavailable") from exc
 
     return {
         "doc_id": doc_id,
@@ -81,20 +84,22 @@ def replay_batch(
     """Replay pipeline for documents missing enrichment."""
     from alfred.core.dependencies import get_doc_storage_service
 
-    celery_client = get_celery_client()
     svc = get_doc_storage_service()
     docs = svc.list_documents_needing_concepts_extraction(limit=limit)
 
     task_ids = []
     for doc in docs:
         doc_id = str(doc.id) if hasattr(doc, "id") else str(doc["id"])
-        async_result = celery_client.send_task(
-            "alfred.tasks.document_pipeline.run_document_pipeline",
-            kwargs={
-                "doc_id": doc_id,
-                "force_replay": force,
-            },
-        )
+        try:
+            async_result = dispatch_task(
+                "alfred.tasks.document_pipeline.run_document_pipeline",
+                kwargs={
+                    "doc_id": doc_id,
+                    "force_replay": force,
+                },
+            )
+        except BrokerUnavailableError as exc:
+            raise ServiceUnavailableError("Background worker unavailable") from exc
         task_ids.append({"doc_id": doc_id, "task_id": async_result.id})
 
     return {"queued": len(task_ids), "tasks": task_ids}
