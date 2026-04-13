@@ -38,9 +38,21 @@ class ZettelCreationStream:
         db_session_factory: Callable[[], Session] | None = None,
     ) -> None:
         self.payload = payload
-        self._db_factory = db_session_factory or (lambda: next(get_db_session()))
+        self._uses_default_factory = db_session_factory is None
+        if self._uses_default_factory:
+            self._db_factory = self._default_session_factory
+        else:
+            self._db_factory = db_session_factory
         self.card_id: int | None = None
         self._card_title: str = ""
+
+    @staticmethod
+    def _default_session_factory() -> Session:
+        """Create and return a fresh DB session.
+
+        Caller is responsible for closing the session.
+        """
+        return next(get_db_session())
 
     def _save_card_and_invalidate(self) -> dict[str, Any]:
         """Synchronous card save + cache invalidation. Runs in executor.
@@ -48,19 +60,25 @@ class ZettelCreationStream:
         Cache invalidation happens here (not Phase 2) so the card is visible
         in the UI immediately, even if the stream dies during enrichment.
 
-        Note: session lifecycle is managed by the factory (e.g. FastAPI's
-        ``get_db_session`` generator handles cleanup automatically).
+        Sessions created from the default factory are properly closed via
+        finally. Injected sessions (e.g., in tests) are managed by the caller.
         """
         session = self._db_factory()
-        svc = ZettelkastenService(session)
-        card = svc.create_card(**self.payload.model_dump())
-        self.card_id = card.id
-        self._card_title = card.title
+        try:
+            svc = ZettelkastenService(session)
+            card = svc.create_card(**self.payload.model_dump())
+            self.card_id = card.id
+            self._card_title = card.title
 
-        # Invalidate caches immediately so card appears in UI
-        self._invalidate_caches()
+            # Invalidate caches immediately so card appears in UI
+            self._invalidate_caches()
 
-        return {"id": card.id, "title": card.title, "status": card.status}
+            return {"id": card.id, "title": card.title, "status": card.status}
+        finally:
+            # Only close if we created the session (default factory).
+            # Injected sessions (e.g., in tests) are managed by the caller.
+            if self._uses_default_factory:
+                session.close()
 
     def _invalidate_caches(self) -> None:
         """Invalidate topic/tag/graph caches after creation."""
