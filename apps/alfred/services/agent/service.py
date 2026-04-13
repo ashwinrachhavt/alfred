@@ -35,6 +35,7 @@ from typing import Any
 from openai import APIError, APITimeoutError, AsyncOpenAI, BadRequestError, RateLimitError
 from sqlmodel import Session
 
+from alfred.core.llm_factory import get_async_openai_client
 from alfred.core.settings import settings
 from alfred.services.agent.prompts import SystemPromptBuilder
 from alfred.services.agent.tools import execute_tool, get_all_tool_schemas
@@ -93,20 +94,6 @@ def _uses_max_completion_tokens(model: str) -> bool:
     )
 
 
-def _make_client() -> AsyncOpenAI:
-    """Create an AsyncOpenAI client from settings."""
-    kwargs: dict[str, object] = {}
-    if settings.openai_api_key:
-        val = settings.openai_api_key.get_secret_value()
-        if val:
-            kwargs["api_key"] = val
-    if settings.openai_base_url:
-        kwargs["base_url"] = settings.openai_base_url
-    if settings.openai_organization:
-        kwargs["organization"] = settings.openai_organization
-    return AsyncOpenAI(**kwargs)
-
-
 class AgentService:
     """Orchestrates an agentic chat turn with tool calls and streaming."""
 
@@ -117,7 +104,7 @@ class AgentService:
     @property
     def client(self) -> AsyncOpenAI:
         if self._client is None:
-            self._client = _make_client()
+            self._client = get_async_openai_client()
         return self._client
 
     async def stream_turn(

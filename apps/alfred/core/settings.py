@@ -106,7 +106,19 @@ class Settings(BaseSettings):
     # Qdrant
     qdrant_url: str | None = Field(default=None, alias="QDRANT_URL")
     qdrant_api_key: SecretStr | None = Field(default=None, alias="QDRANT_API_KEY")
+    qdrant_local_url: str | None = Field(
+        default="http://localhost:6333",
+        alias="QDRANT_LOCAL_URL",
+    )
+    qdrant_prefer_local: bool = Field(
+        default=((os.getenv("APP_ENV") or "dev").strip().lower() in {"", "dev", "local"}),
+        alias="QDRANT_PREFER_LOCAL",
+    )
     qdrant_collection: str = Field(default="alfred_docs", alias="QDRANT_COLLECTION")
+    qdrant_zettels_collection: str = Field(
+        default="alfred_zettels",
+        alias="QDRANT_ZETTELS_COLLECTION",
+    )
 
     # OpenAI (also used by downstream libs)
     openai_api_key: SecretStr | None = Field(default=None, alias="OPENAI_API_KEY")
@@ -349,6 +361,7 @@ class Settings(BaseSettings):
     llm_provider: LLMProvider = Field(default=LLMProvider.openai, alias="ALFRED_LLM_PROVIDER")
     llm_model: str = Field(default="gpt-5.4", alias="ALFRED_LLM_MODEL")
     llm_temperature: float = Field(default=0.2, alias="ALFRED_LLM_TEMPERATURE")
+    zettel_analysis_model: str = Field(default="o4-mini", alias="ALFRED_ZETTEL_ANALYSIS_MODEL")
 
     # --- Writer (browser extension) ---
     writer_model: str = Field(default="gpt-5.4", alias="ALFRED_WRITER_MODEL")
