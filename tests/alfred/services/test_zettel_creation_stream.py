@@ -52,9 +52,7 @@ def db_session() -> Session:
 
 
 @pytest.mark.asyncio
-@patch(
-    "alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index"
-)
+@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
 async def test_phase0_emits_card_saved(mock_sync, db_session):
     """Phase 0 should save the card and emit card_saved as the first event."""
     payload = ZettelCardCreate(title="Test Card", content="Some content")
@@ -74,9 +72,7 @@ async def test_phase0_emits_card_saved(mock_sync, db_session):
 
 
 @pytest.mark.asyncio
-@patch(
-    "alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index"
-)
+@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
 async def test_phase0_card_persisted_in_db(mock_sync, db_session):
     """The card should actually exist in the database after Phase 0."""
     payload = ZettelCardCreate(title="Persisted Card", content="Content here")
@@ -120,9 +116,7 @@ async def test_sse_format():
 
 
 @pytest.mark.asyncio
-@patch(
-    "alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index"
-)
+@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
 async def test_full_run_emits_card_saved_then_done(mock_sync, db_session):
     """Full run() should emit card_saved first and done last."""
     payload = ZettelCardCreate(title="Full Run Test", content="Content")
@@ -140,9 +134,7 @@ async def test_full_run_emits_card_saved_then_done(mock_sync, db_session):
 
 
 @pytest.mark.asyncio
-@patch(
-    "alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index"
-)
+@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
 async def test_full_run_done_contains_card_info(mock_sync, db_session):
     """The done event should include the card id and title."""
     payload = ZettelCardCreate(title="Info Card", content="Details")
@@ -188,6 +180,7 @@ async def test_full_run_on_phase0_failure_emits_done_with_error():
 # Track A tests
 # ---------------------------------------------------------------------------
 
+
 def _make_suggestion(
     to_card_id: int, title: str, composite_score: float, reason: str = "test"
 ) -> LinkSuggestion:
@@ -222,9 +215,7 @@ def _make_link(
 
 
 @pytest.mark.asyncio
-@patch(
-    "alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index"
-)
+@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
 async def test_track_a_emits_embedding_and_links(mock_sync, db_session):
     """Track A should emit embedding_done, tool_start, and links_found."""
     payload = ZettelCardCreate(title="Track A Card", content="Some content about AI")
@@ -276,9 +267,7 @@ async def test_track_a_emits_embedding_and_links(mock_sync, db_session):
 
 
 @pytest.mark.asyncio
-@patch(
-    "alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index"
-)
+@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
 async def test_track_a_empty_suggestions(mock_sync, db_session):
     """Empty suggest_links result should yield links_found with empty list, no links_created."""
     payload = ZettelCardCreate(title="Lonely Card", content="Unique content")
@@ -288,9 +277,7 @@ async def test_track_a_empty_suggestions(mock_sync, db_session):
         pass
 
     with (
-        patch.object(
-            ZettelkastenService, "ensure_embedding", side_effect=lambda card: card
-        ),
+        patch.object(ZettelkastenService, "ensure_embedding", side_effect=lambda card: card),
         patch.object(ZettelkastenService, "suggest_links", return_value=[]),
     ):
         events = []
@@ -308,9 +295,7 @@ async def test_track_a_empty_suggestions(mock_sync, db_session):
 
 
 @pytest.mark.asyncio
-@patch(
-    "alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index"
-)
+@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
 async def test_track_a_threshold_boundary(mock_sync, db_session):
     """Score >= 0.75 should be auto-linked; score < 0.75 should not."""
     payload = ZettelCardCreate(title="Threshold Card", content="Boundary test")
@@ -320,14 +305,14 @@ async def test_track_a_threshold_boundary(mock_sync, db_session):
         pass
 
     at_threshold = _make_suggestion(to_card_id=100, title="At Threshold", composite_score=0.75)
-    below_threshold = _make_suggestion(to_card_id=200, title="Below Threshold", composite_score=0.74)
+    below_threshold = _make_suggestion(
+        to_card_id=200, title="Below Threshold", composite_score=0.74
+    )
 
     created_link = _make_link(10, stream.card_id, 100)
 
     with (
-        patch.object(
-            ZettelkastenService, "ensure_embedding", side_effect=lambda card: card
-        ),
+        patch.object(ZettelkastenService, "ensure_embedding", side_effect=lambda card: card),
         patch.object(
             ZettelkastenService, "suggest_links", return_value=[at_threshold, below_threshold]
         ),
@@ -361,9 +346,7 @@ async def test_track_a_threshold_boundary(mock_sync, db_session):
 
 
 @pytest.mark.asyncio
-@patch(
-    "alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index"
-)
+@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
 async def test_track_a_error_emits_error_event(mock_sync, db_session):
     """If ensure_embedding raises, Track A should emit an error event, not crash."""
     payload = ZettelCardCreate(title="Error Card", content="Will fail embedding")
@@ -417,6 +400,7 @@ async def test_track_a_no_card_id():
 
 # Mock helpers for OpenAI streaming
 
+
 class MockStreamChunk:
     def __init__(self, content=None, reasoning=None):
         self.choices = [MagicMock()]
@@ -441,23 +425,25 @@ class MockStream:
             raise StopAsyncIteration from None
 
 
-VALID_ANALYSIS_JSON = json.dumps({
-    "enrichment": {
-        "suggested_title": "Better Title",
-        "summary": "A concise summary.",
-        "suggested_tags": ["ai", "ml"],
-        "suggested_topic": "AI Engineering",
-    },
-    "decomposition": {
-        "is_atomic": True,
-        "reason": "Single concept covered.",
-        "suggested_cards": [],
-    },
-    "gaps": {
-        "missing_topics": ["reinforcement learning"],
-        "weak_areas": [{"topic": "NLP", "existing_count": 2, "note": "Could use more depth"}],
-    },
-})
+VALID_ANALYSIS_JSON = json.dumps(
+    {
+        "enrichment": {
+            "suggested_title": "Better Title",
+            "summary": "A concise summary.",
+            "suggested_tags": ["ai", "ml"],
+            "suggested_topic": "AI Engineering",
+        },
+        "decomposition": {
+            "is_atomic": True,
+            "reason": "Single concept covered.",
+            "suggested_cards": [],
+        },
+        "gaps": {
+            "missing_topics": ["reinforcement learning"],
+            "weak_areas": [{"topic": "NLP", "existing_count": 2, "note": "Could use more depth"}],
+        },
+    }
+)
 
 
 def _mock_openai_client(chunks):
@@ -470,9 +456,7 @@ def _mock_openai_client(chunks):
 
 
 @pytest.mark.asyncio
-@patch(
-    "alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index"
-)
+@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
 async def test_track_b_emits_thinking_and_enrichment(mock_sync, db_session):
     """Track B should emit thinking, enrichment, decomposition, and gaps events."""
     payload = ZettelCardCreate(title="Track B Card", content="Deep learning fundamentals")
@@ -493,9 +477,7 @@ async def test_track_b_emits_thinking_and_enrichment(mock_sync, db_session):
     mock_client = _mock_openai_client(chunks)
 
     with (
-        patch(
-            "alfred.core.redis_client.get_redis_client", return_value=None
-        ),
+        patch("alfred.core.redis_client.get_redis_client", return_value=None),
         patch(
             "alfred.core.llm_factory.get_async_openai_client",
             return_value=mock_client,
@@ -525,9 +507,7 @@ async def test_track_b_emits_thinking_and_enrichment(mock_sync, db_session):
 
 
 @pytest.mark.asyncio
-@patch(
-    "alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index"
-)
+@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
 async def test_track_b_error_emits_error_event(mock_sync, db_session):
     """If the OpenAI client raises, Track B should emit an error event."""
     payload = ZettelCardCreate(title="Error Card B", content="Content")
@@ -540,14 +520,10 @@ async def test_track_b_error_emits_error_event(mock_sync, db_session):
     mock_client = MagicMock()
     mock_client.chat = MagicMock()
     mock_client.chat.completions = MagicMock()
-    mock_client.chat.completions.create = AsyncMock(
-        side_effect=RuntimeError("API key invalid")
-    )
+    mock_client.chat.completions.create = AsyncMock(side_effect=RuntimeError("API key invalid"))
 
     with (
-        patch(
-            "alfred.core.redis_client.get_redis_client", return_value=None
-        ),
+        patch("alfred.core.redis_client.get_redis_client", return_value=None),
         patch(
             "alfred.core.llm_factory.get_async_openai_client",
             return_value=mock_client,
@@ -638,20 +614,22 @@ def test_parse_analysis_response_partial_keys():
     payload = ZettelCardCreate(title="Test", content="Test")
     stream = ZettelCreationStream(payload, db_session_factory=lambda: MagicMock())
 
-    partial = json.dumps({
-        "enrichment": {
-            "suggested_title": None,
-            "summary": "A summary.",
-            "suggested_tags": ["tag1"],
-            "suggested_topic": None,
-        },
-        "decomposition": {
-            "is_atomic": True,
-            "reason": "Single idea.",
-            "suggested_cards": [],
-        },
-        # Note: no "gaps" key
-    })
+    partial = json.dumps(
+        {
+            "enrichment": {
+                "suggested_title": None,
+                "summary": "A summary.",
+                "suggested_tags": ["tag1"],
+                "suggested_topic": None,
+            },
+            "decomposition": {
+                "is_atomic": True,
+                "reason": "Single idea.",
+                "suggested_cards": [],
+            },
+            # Note: no "gaps" key
+        }
+    )
     events = stream._parse_analysis_response(partial)
 
     parsed = _parse_sse_events(events)
@@ -661,3 +639,117 @@ def test_parse_analysis_response_partial_keys():
     assert "enrichment" in event_names
     assert "decomposition" in event_names
     assert "gaps" not in event_names
+
+
+# ---------------------------------------------------------------------------
+# Full pipeline tests (Phase 0 + concurrent Phase 1 + Phase 2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
+async def test_full_pipeline_emits_card_saved_first_and_done_last(mock_sync, db_session):
+    """Full pipeline: card_saved is first event, done is last, with enrichment in between."""
+    payload = ZettelCardCreate(title="Pipeline Card", content="Full pipeline test content")
+    stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
+
+    # Mock Track A: embedding + empty suggestions
+    mock_embed = patch.object(
+        ZettelkastenService, "ensure_embedding", side_effect=lambda card: card
+    )
+    mock_suggest = patch.object(ZettelkastenService, "suggest_links", return_value=[])
+
+    # Mock Track B: OpenAI streaming with valid JSON
+    chunks = [
+        MockStreamChunk(reasoning="Analyzing..."),
+        MockStreamChunk(content=VALID_ANALYSIS_JSON),
+    ]
+    mock_client = _mock_openai_client(chunks)
+
+    with (
+        mock_embed,
+        mock_suggest,
+        patch("alfred.core.redis_client.get_redis_client", return_value=None),
+        patch(
+            "alfred.core.llm_factory.get_async_openai_client",
+            return_value=mock_client,
+        ),
+    ):
+        events = []
+        async for sse in stream.run():
+            events.append(sse)
+
+    parsed = _parse_sse_events(events)
+    event_names = [e[0] for e in parsed]
+
+    # card_saved must be first
+    assert event_names[0] == "card_saved"
+
+    # done must be last
+    assert event_names[-1] == "done"
+
+    # done should contain final card info
+    done_data = parsed[-1][1]
+    assert done_data["card"]["id"] is not None
+    assert done_data["card"]["title"] == "Pipeline Card"
+    assert done_data["stats"]["card_id"] is not None
+
+    # Phase 1 events should be present between card_saved and done
+    assert "embedding_done" in event_names
+    assert "links_found" in event_names
+    assert "thinking" in event_names
+    assert "enrichment" in event_names
+
+
+@pytest.mark.asyncio
+@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
+async def test_full_pipeline_both_tracks_error(mock_sync, db_session):
+    """Both tracks erroring should still produce card_saved first and done last with card info."""
+    payload = ZettelCardCreate(title="Error Pipeline Card", content="Both tracks fail")
+    stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
+
+    # Mock Track A: ensure_embedding raises
+    mock_embed = patch.object(
+        ZettelkastenService,
+        "ensure_embedding",
+        side_effect=RuntimeError("Qdrant down"),
+    )
+
+    # Mock Track B: OpenAI client raises
+    mock_client = MagicMock()
+    mock_client.chat = MagicMock()
+    mock_client.chat.completions = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(side_effect=RuntimeError("API quota exceeded"))
+
+    with (
+        mock_embed,
+        patch("alfred.core.redis_client.get_redis_client", return_value=None),
+        patch(
+            "alfred.core.llm_factory.get_async_openai_client",
+            return_value=mock_client,
+        ),
+    ):
+        events = []
+        async for sse in stream.run():
+            events.append(sse)
+
+    parsed = _parse_sse_events(events)
+    event_names = [e[0] for e in parsed]
+
+    # card_saved must still be first (Phase 0 succeeded)
+    assert event_names[0] == "card_saved"
+
+    # done must be last
+    assert event_names[-1] == "done"
+
+    # Two error events from the tracks
+    error_events = [(n, d) for n, d in parsed if n == "error"]
+    assert len(error_events) == 2
+    error_steps = {d["step"] for _, d in error_events}
+    assert "track_a" in error_steps
+    assert "track_b" in error_steps
+
+    # done event should still contain the card info
+    done_data = parsed[-1][1]
+    assert done_data["card"]["id"] is not None
+    assert done_data["card"]["title"] == "Error Pipeline Card"

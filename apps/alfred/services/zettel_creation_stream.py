@@ -108,7 +108,9 @@ class ZettelCreationStream:
     async def run_track_a(self) -> AsyncGenerator[str, None]:
         """Track A: ensure embedding -> suggest links -> auto-create links."""
         if self.card_id is None:
-            yield _sse("error", {"step": "track_a", "message": "No card_id — Phase 0 must run first"})
+            yield _sse(
+                "error", {"step": "track_a", "message": "No card_id — Phase 0 must run first"}
+            )
             return
 
         try:
@@ -119,7 +121,9 @@ class ZettelCreationStream:
 
                 card = session.get(ZettelCard, self.card_id)
                 if not card:
-                    yield _sse("error", {"step": "track_a", "message": f"Card {self.card_id} not found"})
+                    yield _sse(
+                        "error", {"step": "track_a", "message": f"Card {self.card_id} not found"}
+                    )
                     return
 
                 # Step 1: Ensure embedding (generates + syncs to Qdrant)
@@ -156,12 +160,14 @@ class ZettelCreationStream:
                             bidirectional=True,
                         )
                         for link in links:
-                            auto_linked.append({
-                                "id": link.id,
-                                "source_id": link.from_card_id,
-                                "target_id": link.to_card_id,
-                                "type": link.type,
-                            })
+                            auto_linked.append(
+                                {
+                                    "id": link.id,
+                                    "source_id": link.from_card_id,
+                                    "target_id": link.to_card_id,
+                                    "type": link.type,
+                                }
+                            )
                 if auto_linked:
                     yield _sse("links_created", {"links": auto_linked})
 
@@ -176,7 +182,9 @@ class ZettelCreationStream:
     async def run_track_b(self) -> AsyncGenerator[str, None]:
         """Track B: o4-mini reasoning + enrichment + decomposition + gaps."""
         if self.card_id is None:
-            yield _sse("error", {"step": "track_b", "message": "No card_id — Phase 0 must run first"})
+            yield _sse(
+                "error", {"step": "track_b", "message": "No card_id — Phase 0 must run first"}
+            )
             return
 
         try:
@@ -249,9 +257,9 @@ class ZettelCreationStream:
             from alfred.models.zettel import ZettelCard
 
             total = session.exec(
-                select(sa_func.count()).select_from(ZettelCard).where(
-                    ZettelCard.status != "archived"
-                )
+                select(sa_func.count())
+                .select_from(ZettelCard)
+                .where(ZettelCard.status != "archived")
             ).one()
 
             topics_rows = session.exec(
@@ -350,8 +358,36 @@ class ZettelCreationStream:
 
         return events
 
+    def _fetch_final_card(self) -> dict[str, Any]:
+        """Fetch the final card state for the done event."""
+        session = self._db_factory()
+        try:
+            from alfred.models.zettel import ZettelCard
+
+            card = session.get(ZettelCard, self.card_id)
+            if not card:
+                return {"id": self.card_id}
+            return {
+                "id": card.id,
+                "title": card.title,
+                "content": card.content,
+                "summary": card.summary,
+                "tags": card.tags,
+                "topic": card.topic,
+                "status": card.status,
+                "importance": card.importance,
+                "confidence": card.confidence,
+                "created_at": card.created_at.isoformat() if card.created_at else None,
+                "updated_at": card.updated_at.isoformat() if card.updated_at else None,
+            }
+        finally:
+            if self._uses_default_factory:
+                session.close()
+
     async def run(self) -> AsyncGenerator[str, None]:
         """Full pipeline: Phase 0 -> Phase 1 (concurrent tracks) -> Phase 2."""
+        from alfred.core.async_merge import merge_async_generators
+
         # Phase 0: save card + invalidate caches
         async for event in self.run_phase0():
             yield event
@@ -361,5 +397,10 @@ class ZettelCreationStream:
             yield _sse("done", {"card": None, "stats": {"error": "card_save_failed"}})
             return
 
-        # Phase 1 and 2 will be added in later tasks
-        yield _sse("done", {"card": {"id": self.card_id, "title": self._card_title}, "stats": {}})
+        # Phase 1: run Track A and Track B concurrently, merge their events
+        async for event in merge_async_generators(self.run_track_a(), self.run_track_b()):
+            yield event
+
+        # Phase 2: fetch final card state
+        final_card = await asyncio.to_thread(self._fetch_final_card)
+        yield _sse("done", {"card": final_card, "stats": {"card_id": self.card_id}})
