@@ -29,6 +29,9 @@ def _sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
+AUTO_LINK_THRESHOLD = 0.75
+
+
 class ZettelCreationStream:
     """Orchestrates streaming zettel creation with concurrent enrichment."""
 
@@ -101,6 +104,74 @@ class ZettelCreationStream:
         except Exception as exc:
             logger.error("Phase 0 failed: %s", exc, exc_info=True)
             yield _sse("error", {"step": "card_save", "message": str(exc)})
+
+    async def run_track_a(self) -> AsyncGenerator[str, None]:
+        """Track A: ensure embedding -> suggest links -> auto-create links."""
+        if self.card_id is None:
+            yield _sse("error", {"step": "track_a", "message": "No card_id — Phase 0 must run first"})
+            return
+
+        try:
+            session = self._db_factory()
+            try:
+                svc = ZettelkastenService(session)
+                from alfred.models.zettel import ZettelCard
+
+                card = session.get(ZettelCard, self.card_id)
+                if not card:
+                    yield _sse("error", {"step": "track_a", "message": f"Card {self.card_id} not found"})
+                    return
+
+                # Step 1: Ensure embedding (generates + syncs to Qdrant)
+                card = await asyncio.to_thread(svc.ensure_embedding, card)
+                yield _sse("embedding_done", {"card_id": self.card_id})
+
+                # Step 2: Find similar cards
+                yield _sse("tool_start", {"step": "searching_kb"})
+                suggestions = await asyncio.to_thread(
+                    svc.suggest_links, self.card_id, min_confidence=0.6, limit=10
+                )
+
+                suggestion_data = [
+                    {
+                        "card_id": s.to_card_id,
+                        "title": s.to_title,
+                        "score": round(s.scores.composite_score, 2),
+                        "reason": s.reason,
+                    }
+                    for s in suggestions
+                ]
+                yield _sse("links_found", {"suggestions": suggestion_data})
+
+                # Step 3: Auto-create links above threshold
+                auto_linked: list[dict[str, Any]] = []
+                for s in suggestions:
+                    if s.scores.composite_score >= AUTO_LINK_THRESHOLD:
+                        links = await asyncio.to_thread(
+                            svc.create_link,
+                            from_card_id=self.card_id,
+                            to_card_id=s.to_card_id,
+                            type="auto_stream",
+                            context=s.reason,
+                            bidirectional=True,
+                        )
+                        for link in links:
+                            auto_linked.append({
+                                "id": link.id,
+                                "source_id": link.from_card_id,
+                                "target_id": link.to_card_id,
+                                "type": link.type,
+                            })
+                if auto_linked:
+                    yield _sse("links_created", {"links": auto_linked})
+
+            finally:
+                if self._uses_default_factory:
+                    session.close()
+
+        except Exception as exc:
+            logger.warning("Track A failed for card %s: %s", self.card_id, exc, exc_info=True)
+            yield _sse("error", {"step": "track_a", "message": str(exc)})
 
     async def run(self) -> AsyncGenerator[str, None]:
         """Full pipeline: Phase 0 -> Phase 1 (concurrent tracks) -> Phase 2."""
