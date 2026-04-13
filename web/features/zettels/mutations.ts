@@ -1,9 +1,11 @@
+import { useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
   bulkCreateZettelCards,
   createZettelCard,
   createZettelLink,
+  createZettelStream,
   deleteZettelCard,
   deleteZettelLink,
   generateZettelCard,
@@ -16,6 +18,7 @@ import type {
   ZettelCardUpdatePayload,
   ZettelLinkCreatePayload,
 } from "@/lib/api/zettels";
+import { useZettelCreationStore } from "@/lib/stores/zettel-creation-store";
 
 const ZETTEL_CARDS_KEY = ["zettels", "cards"];
 const ZETTELS_KEY = ["zettels"];
@@ -116,4 +119,31 @@ export function useGenerateZettel() {
       queryClient.invalidateQueries({ queryKey: ZETTELS_KEY });
     },
   });
+}
+
+/**
+ * Start a streaming zettel creation. Connects SSE and
+ * feeds events to the Zustand store.
+ */
+export function useCreateZettelStream() {
+  const store = useZettelCreationStore();
+
+  const startStream = useCallback(
+    async (payload: ZettelCardCreatePayload, signal?: AbortSignal) => {
+      store.startStream();
+      try {
+        await createZettelStream(payload, store.handleEvent, signal);
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") {
+          store.handleEvent("error", {
+            step: "connection",
+            message: (err as Error).message,
+          });
+        }
+      }
+    },
+    [store],
+  );
+
+  return { startStream };
 }

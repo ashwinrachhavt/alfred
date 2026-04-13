@@ -8,8 +8,9 @@ import {
  DialogTitle,
 } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
-import { useCreateZettel } from "@/features/zettels/mutations";
+import { useCreateZettel, useCreateZettelStream } from "@/features/zettels/mutations";
 import { useIsApplePlatform } from "@/lib/hooks/use-is-apple-platform";
+import { StreamingCreationModal } from "./streaming-creation-modal";
 import { usePasteDetection } from "@/lib/hooks/use-paste-detection";
 import { apiPostJson } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
@@ -46,6 +47,9 @@ export function CreateZettelDialog({
  const textareaRef = useRef<HTMLTextAreaElement>(null);
  const createMutation = useCreateZettel();
  const { isPasteMode, tokenEstimate, handlePaste, extractTitle, reset: resetPaste } = usePasteDetection();
+ const [showStreamingModal, setShowStreamingModal] = useState(false);
+ const { startStream } = useCreateZettelStream();
+ const abortRef = useRef<AbortController | null>(null);
 
  // Auto-resize textarea
  const autoResize = useCallback(() => {
@@ -92,32 +96,31 @@ export function CreateZettelDialog({
    const text = content.trim();
    if (!text) return;
 
-   // Auto-extract title from first line if not manually set
    const finalTitle = title.trim() || extractTitle(text) || "Untitled";
-
    const tagList = tags
      .split(",")
      .map((t) => t.trim().toLowerCase())
      .filter(Boolean);
 
-   createMutation.mutate(
-     {
-       title: finalTitle,
-       content: text,
-       summary: summary.trim() || undefined,
-       tags: tagList.length > 0 ? tagList : undefined,
-       topic: topic.trim() || undefined,
-       importance: 5,
-       confidence: 0.5,
-     },
-     {
-       onSuccess: () => {
-         reset();
-         onOpenChange(false);
-       },
-     },
-   );
- }, [title, content, summary, tags, topic, createMutation, reset, onOpenChange, extractTitle]);
+   const payload = {
+     title: finalTitle,
+     content: text,
+     summary: summary.trim() || undefined,
+     tags: tagList.length > 0 ? tagList : undefined,
+     topic: topic.trim() || undefined,
+     importance: 5,
+     confidence: 0.5,
+   };
+
+   // Close form dialog, open streaming modal
+   setShowStreamingModal(true);
+   onOpenChange(false);
+
+   // Launch the stream
+   const abort = new AbortController();
+   abortRef.current = abort;
+   startStream(payload, abort.signal);
+ }, [title, content, summary, tags, topic, startStream, onOpenChange, extractTitle]);
 
  const handleContentPaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
    handlePaste(e);
@@ -156,8 +159,9 @@ export function CreateZettelDialog({
  const canSubmit = content.trim().length > 0 && !createMutation.isPending;
 
  return (
-   <Dialog open={open} onOpenChange={onOpenChange}>
-     <DialogContent className="sm:max-w-[680px] p-0 gap-0 overflow-hidden">
+   <>
+     <Dialog open={open} onOpenChange={onOpenChange}>
+       <DialogContent className="sm:max-w-[680px] p-0 gap-0 overflow-hidden">
        <VisuallyHidden><DialogTitle>Create new zettel</DialogTitle></VisuallyHidden>
        {/* Header — minimal */}
        <div className="flex items-center justify-between px-5 pt-4 pb-2">
@@ -290,5 +294,16 @@ export function CreateZettelDialog({
        </div>
      </DialogContent>
    </Dialog>
+   <StreamingCreationModal
+     open={showStreamingModal}
+     onOpenChange={(nextOpen) => {
+       setShowStreamingModal(nextOpen);
+       if (!nextOpen) {
+         abortRef.current?.abort();
+         reset();
+       }
+     }}
+   />
+   </>
  );
 }
