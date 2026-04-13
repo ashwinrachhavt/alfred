@@ -52,8 +52,7 @@ def db_session() -> Session:
 
 
 @pytest.mark.asyncio
-@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
-async def test_phase0_emits_card_saved(mock_sync, db_session):
+async def test_phase0_emits_card_saved(db_session):
     """Phase 0 should save the card and emit card_saved as the first event."""
     payload = ZettelCardCreate(title="Test Card", content="Some content")
     stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
@@ -72,8 +71,7 @@ async def test_phase0_emits_card_saved(mock_sync, db_session):
 
 
 @pytest.mark.asyncio
-@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
-async def test_phase0_card_persisted_in_db(mock_sync, db_session):
+async def test_phase0_card_persisted_in_db(db_session):
     """The card should actually exist in the database after Phase 0."""
     payload = ZettelCardCreate(title="Persisted Card", content="Content here")
     stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
@@ -116,8 +114,7 @@ async def test_sse_format():
 
 
 @pytest.mark.asyncio
-@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
-async def test_full_run_emits_card_saved_then_done(mock_sync, db_session):
+async def test_full_run_emits_card_saved_then_done(db_session):
     """Full run() should emit card_saved first and done last."""
     payload = ZettelCardCreate(title="Full Run Test", content="Content")
     stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
@@ -134,8 +131,7 @@ async def test_full_run_emits_card_saved_then_done(mock_sync, db_session):
 
 
 @pytest.mark.asyncio
-@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
-async def test_full_run_done_contains_card_info(mock_sync, db_session):
+async def test_full_run_done_contains_card_info(db_session):
     """The done event should include the card id and title."""
     payload = ZettelCardCreate(title="Info Card", content="Details")
     stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
@@ -215,8 +211,7 @@ def _make_link(
 
 
 @pytest.mark.asyncio
-@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
-async def test_track_a_emits_embedding_and_links(mock_sync, db_session):
+async def test_track_a_emits_embedding_and_links(db_session):
     """Track A should emit embedding_done, tool_start, and links_found."""
     payload = ZettelCardCreate(title="Track A Card", content="Some content about AI")
     stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
@@ -267,8 +262,7 @@ async def test_track_a_emits_embedding_and_links(mock_sync, db_session):
 
 
 @pytest.mark.asyncio
-@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
-async def test_track_a_empty_suggestions(mock_sync, db_session):
+async def test_track_a_empty_suggestions(db_session):
     """Empty suggest_links result should yield links_found with empty list, no links_created."""
     payload = ZettelCardCreate(title="Lonely Card", content="Unique content")
     stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
@@ -295,8 +289,7 @@ async def test_track_a_empty_suggestions(mock_sync, db_session):
 
 
 @pytest.mark.asyncio
-@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
-async def test_track_a_threshold_boundary(mock_sync, db_session):
+async def test_track_a_threshold_boundary(db_session):
     """Score >= 0.75 should be auto-linked; score < 0.75 should not."""
     payload = ZettelCardCreate(title="Threshold Card", content="Boundary test")
     stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
@@ -346,8 +339,7 @@ async def test_track_a_threshold_boundary(mock_sync, db_session):
 
 
 @pytest.mark.asyncio
-@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
-async def test_track_a_error_emits_error_event(mock_sync, db_session):
+async def test_track_a_error_emits_error_event(db_session):
     """If ensure_embedding raises, Track A should emit an error event, not crash."""
     payload = ZettelCardCreate(title="Error Card", content="Will fail embedding")
     stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
@@ -456,8 +448,7 @@ def _mock_openai_client(chunks):
 
 
 @pytest.mark.asyncio
-@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
-async def test_track_b_emits_thinking_and_enrichment(mock_sync, db_session):
+async def test_track_b_emits_thinking_and_enrichment(db_session):
     """Track B should emit thinking, enrichment, decomposition, and gaps events."""
     payload = ZettelCardCreate(title="Track B Card", content="Deep learning fundamentals")
     stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
@@ -507,8 +498,7 @@ async def test_track_b_emits_thinking_and_enrichment(mock_sync, db_session):
 
 
 @pytest.mark.asyncio
-@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
-async def test_track_b_error_emits_error_event(mock_sync, db_session):
+async def test_track_b_error_emits_error_event(db_session):
     """If the OpenAI client raises, Track B should emit an error event."""
     payload = ZettelCardCreate(title="Error Card B", content="Content")
     stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
@@ -647,8 +637,7 @@ def test_parse_analysis_response_partial_keys():
 
 
 @pytest.mark.asyncio
-@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
-async def test_full_pipeline_emits_card_saved_first_and_done_last(mock_sync, db_session):
+async def test_full_pipeline_emits_card_saved_first_and_done_last(db_session):
     """Full pipeline: card_saved is first event, done is last, with enrichment in between."""
     payload = ZettelCardCreate(title="Pipeline Card", content="Full pipeline test content")
     stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
@@ -702,8 +691,7 @@ async def test_full_pipeline_emits_card_saved_first_and_done_last(mock_sync, db_
 
 
 @pytest.mark.asyncio
-@patch("alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index")
-async def test_full_pipeline_both_tracks_error(mock_sync, db_session):
+async def test_full_pipeline_both_tracks_error(db_session):
     """Both tracks erroring should still produce card_saved first and done last with card info."""
     payload = ZettelCardCreate(title="Error Pipeline Card", content="Both tracks fail")
     stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
