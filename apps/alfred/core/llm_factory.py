@@ -40,6 +40,7 @@ def get_chat_model(
     raise ValueError(f"Unsupported provider: {provider}")
 
 
+# Safe as singleton: FastAPI uses one event loop per uvicorn worker.
 @lru_cache(maxsize=1)
 def get_async_openai_client() -> AsyncOpenAI:
     """Cached AsyncOpenAI client for direct API usage (streaming, reasoning models)."""
