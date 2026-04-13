@@ -56,6 +56,7 @@ const navSections: NavSection[] = [
     items: [
       { label: "Research", href: "/research", icon: Search },
       { label: "Knowledge", href: "/knowledge", icon: BookOpen },
+      { label: "Review", href: "/knowledge?view=review", icon: Brain },
       { label: "Universe", href: "/universe", icon: Orbit },
       { label: "Dictionary", href: "/dictionary", icon: BookA },
     ],

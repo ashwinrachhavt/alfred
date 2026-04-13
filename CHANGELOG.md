@@ -2,6 +2,21 @@
 
 All notable changes will be documented in this file. Follow Keep a Changelog style; versions are date-stamped until releases are tagged.
 
+## [0.1.0.0] - 2026-04-12 — Interactive Learning: Daily Review Deck
+
+### Added
+- **Daily review deck**: ReviewStation now fetches real review data from the spaced repetition system. Open Knowledge > Review to complete today's cards with self-grading (Forgot / Partial / Nailed it) and keyboard shortcuts (Space / 1 / 2 / 3).
+- **Aggregate daily-deck endpoint**: `GET /api/learning/daily-deck` returns reviews, topics, quiz items, and source provenance in a single call, avoiding N+1 request waterfalls.
+- **Source provenance on review cards**: every question shows which document it came from and when it was captured, so you can verify answers against original sources.
+- **Session summary**: after completing a deck, see recall percentage, weak topics, and how many items are due tomorrow.
+- **Sidebar "Review" entry**: Brain icon in the Discover section for quick access to the daily review.
+- **Spaced repetition tests**: 4 dedicated tests covering all branches of `compute_next_review_schedule` (pass, pass-at-max, fail, null-score).
+- **Review safety guards**: guard clause prevents double-grading from stale tabs; quiz generation is now idempotent (returns existing quiz on retry instead of creating duplicates).
+
+### Changed
+- **Design system fonts**: layout.tsx and globals.css now wire Source Serif 4 (display), DM Sans (body/UI), and JetBrains Mono (data/system) per DESIGN.md specification. Replaces Inter + Instrument Serif + Geist.
+- **ReviewStation default mode**: switches from mock-data flashcards to the real Daily Review backed by the daily-deck API.
+
 ## [0.0.3.0] - 2026-04-11 — Planner-Driven Agent Orchestration
 
 ### Added

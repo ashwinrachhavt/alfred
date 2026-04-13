@@ -80,6 +80,7 @@ export const apiRoutes = {
     generateDiagram: "/api/canvas/generate-diagram",
   },
   learning: {
+    dailyDeck: "/api/learning/daily-deck",
     topics: "/api/learning/topics",
     graph: "/api/learning/graph",
     retentionMetrics: "/api/learning/metrics/retention",

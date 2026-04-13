@@ -72,6 +72,59 @@ def test_quiz_fallback_and_attempt_scoring(db_session: Session) -> None:
         svc.submit_quiz(quiz=quiz, known=[True], responses=None)
 
 
+def test_complete_review_guard_prevents_double_complete(db_session: Session) -> None:
+    """Completing an already-completed review is a no-op (idempotent)."""
+    svc = LearningService(db_session)
+    topic = svc.create_topic(name="Guard test")
+    svc.add_resource(topic=topic, title="Resource", notes="Notes")
+
+    review = db_session.exec(
+        select(LearningReview)
+        .where(LearningReview.topic_id == topic.id)
+        .where(LearningReview.completed_at.is_(None))
+    ).first()
+    assert review is not None
+
+    review.due_at = datetime.utcnow() - timedelta(minutes=1)
+    db_session.add(review)
+    db_session.commit()
+
+    # First complete
+    result1 = svc.complete_review(review=review, score=1.0)
+    assert result1.completed_at is not None
+    first_completed_at = result1.completed_at
+
+    # Count reviews after first complete
+    all_reviews_after_first = list(
+        db_session.exec(select(LearningReview).where(LearningReview.topic_id == topic.id))
+    )
+    count_after_first = len(all_reviews_after_first)
+
+    # Second complete (should be no-op)
+    result2 = svc.complete_review(review=review, score=0.5)
+    assert result2.completed_at == first_completed_at
+
+    # No new reviews created
+    all_reviews_after_second = list(
+        db_session.exec(select(LearningReview).where(LearningReview.topic_id == topic.id))
+    )
+    assert len(all_reviews_after_second) == count_after_first
+
+
+def test_generate_quiz_idempotent_without_source(db_session: Session) -> None:
+    """generate_quiz returns existing quiz when called without source_text or resource_id."""
+    svc = LearningService(db_session)
+    topic = svc.create_topic(name="Idempotency test")
+
+    # First call creates quiz
+    quiz1 = svc.generate_quiz(topic=topic, question_count=3, source_text="Study text.")
+    assert quiz1.id is not None
+
+    # Second call without source_text should return existing quiz
+    quiz2 = svc.generate_quiz(topic=topic, question_count=3)
+    assert quiz2.id == quiz1.id
+
+
 def test_planner_prioritizes_due_reviews(db_session: Session) -> None:
     svc = LearningService(db_session)
     topic = svc.create_topic(name="RLHF")

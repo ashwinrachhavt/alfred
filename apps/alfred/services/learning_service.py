@@ -238,6 +238,8 @@ class LearningService:
         attempt_id: int | None = None,
         pass_threshold: float = 0.8,
     ) -> LearningReview:
+        if review.completed_at is not None:
+            return review
         now = _utcnow()
         review.completed_at = now
         review.score = score
@@ -280,6 +282,17 @@ class LearningService:
         source_text: str | None = None,
     ) -> LearningQuiz:
         question_count = clamp_int(question_count, lo=1, hi=25)
+
+        # Idempotency: return existing quiz if one already has items for this topic
+        if not source_text and not resource_id:
+            existing_stmt = (
+                select(LearningQuiz)
+                .where(LearningQuiz.topic_id == (topic.id or 0))
+                .order_by(LearningQuiz.created_at.desc())
+            )
+            existing = self.session.exec(existing_stmt).first()
+            if existing and existing.items:
+                return existing
 
         text = (source_text or "").strip()
         chosen_resource: LearningResource | None = None
