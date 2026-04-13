@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy import create_engine
@@ -409,3 +409,255 @@ async def test_track_a_no_card_id():
     assert event_name == "error"
     assert data["step"] == "track_a"
     assert "Phase 0" in data["message"]
+
+
+# ---------------------------------------------------------------------------
+# Track B tests
+# ---------------------------------------------------------------------------
+
+# Mock helpers for OpenAI streaming
+
+class MockStreamChunk:
+    def __init__(self, content=None, reasoning=None):
+        self.choices = [MagicMock()]
+        self.choices[0].delta = MagicMock()
+        self.choices[0].delta.content = content
+        # Both attributes for o3/o4 compatibility
+        self.choices[0].delta.reasoning = reasoning
+        self.choices[0].delta.reasoning_content = reasoning
+
+
+class MockStream:
+    def __init__(self, chunks):
+        self._chunks = iter(chunks)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._chunks)
+        except StopIteration:
+            raise StopAsyncIteration from None
+
+
+VALID_ANALYSIS_JSON = json.dumps({
+    "enrichment": {
+        "suggested_title": "Better Title",
+        "summary": "A concise summary.",
+        "suggested_tags": ["ai", "ml"],
+        "suggested_topic": "AI Engineering",
+    },
+    "decomposition": {
+        "is_atomic": True,
+        "reason": "Single concept covered.",
+        "suggested_cards": [],
+    },
+    "gaps": {
+        "missing_topics": ["reinforcement learning"],
+        "weak_areas": [{"topic": "NLP", "existing_count": 2, "note": "Could use more depth"}],
+    },
+})
+
+
+def _mock_openai_client(chunks):
+    """Build a mock AsyncOpenAI client whose chat.completions.create returns a MockStream."""
+    mock_client = MagicMock()
+    mock_client.chat = MagicMock()
+    mock_client.chat.completions = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(return_value=MockStream(chunks))
+    return mock_client
+
+
+@pytest.mark.asyncio
+@patch(
+    "alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index"
+)
+async def test_track_b_emits_thinking_and_enrichment(mock_sync, db_session):
+    """Track B should emit thinking, enrichment, decomposition, and gaps events."""
+    payload = ZettelCardCreate(title="Track B Card", content="Deep learning fundamentals")
+    stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
+
+    # Phase 0: save the card first
+    async for _ in stream.run_phase0():
+        pass
+    assert stream.card_id is not None
+
+    # Build mock chunks: reasoning tokens then completion tokens
+    chunks = [
+        MockStreamChunk(reasoning="Let me analyze this card..."),
+        MockStreamChunk(reasoning="Checking knowledge base context..."),
+        MockStreamChunk(content=VALID_ANALYSIS_JSON[:50]),
+        MockStreamChunk(content=VALID_ANALYSIS_JSON[50:]),
+    ]
+    mock_client = _mock_openai_client(chunks)
+
+    with (
+        patch(
+            "alfred.core.redis_client.get_redis_client", return_value=None
+        ),
+        patch(
+            "alfred.core.llm_factory.get_async_openai_client",
+            return_value=mock_client,
+        ),
+    ):
+        events = []
+        async for sse in stream.run_track_b():
+            events.append(sse)
+
+    parsed = _parse_sse_events(events)
+    event_names = [e[0] for e in parsed]
+
+    assert "thinking" in event_names
+    assert "enrichment" in event_names
+    assert "decomposition" in event_names
+    assert "gaps" in event_names
+
+    # Verify thinking content
+    thinking_events = [d for n, d in parsed if n == "thinking"]
+    assert len(thinking_events) == 2
+    assert "analyze" in thinking_events[0]["content"]
+
+    # Verify enrichment data
+    enrichment_data = next(d for n, d in parsed if n == "enrichment")
+    assert enrichment_data["suggested_title"] == "Better Title"
+    assert "ai" in enrichment_data["suggested_tags"]
+
+
+@pytest.mark.asyncio
+@patch(
+    "alfred.services.zettelkasten_service.ZettelkastenService._try_sync_card_to_vector_index"
+)
+async def test_track_b_error_emits_error_event(mock_sync, db_session):
+    """If the OpenAI client raises, Track B should emit an error event."""
+    payload = ZettelCardCreate(title="Error Card B", content="Content")
+    stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
+
+    async for _ in stream.run_phase0():
+        pass
+    assert stream.card_id is not None
+
+    mock_client = MagicMock()
+    mock_client.chat = MagicMock()
+    mock_client.chat.completions = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        side_effect=RuntimeError("API key invalid")
+    )
+
+    with (
+        patch(
+            "alfred.core.redis_client.get_redis_client", return_value=None
+        ),
+        patch(
+            "alfred.core.llm_factory.get_async_openai_client",
+            return_value=mock_client,
+        ),
+    ):
+        events = []
+        async for sse in stream.run_track_b():
+            events.append(sse)
+
+    parsed = _parse_sse_events(events)
+    assert len(parsed) == 1
+    event_name, data = parsed[0]
+    assert event_name == "error"
+    assert data["step"] == "track_b"
+    assert "API key invalid" in data["message"]
+
+
+@pytest.mark.asyncio
+async def test_track_b_no_card_id():
+    """Track B without Phase 0 should emit error about missing card_id."""
+    payload = ZettelCardCreate(title="No Phase 0 B", content="Skipped save")
+    stream = ZettelCreationStream(payload, db_session_factory=lambda: MagicMock())
+
+    assert stream.card_id is None
+
+    events = []
+    async for sse in stream.run_track_b():
+        events.append(sse)
+
+    parsed = _parse_sse_events(events)
+    assert len(parsed) == 1
+    event_name, data = parsed[0]
+    assert event_name == "error"
+    assert data["step"] == "track_b"
+    assert "Phase 0" in data["message"]
+
+
+def test_parse_analysis_response_valid_json():
+    """_parse_analysis_response should return enrichment, decomposition, gaps events."""
+    payload = ZettelCardCreate(title="Test", content="Test")
+    stream = ZettelCreationStream(payload, db_session_factory=lambda: MagicMock())
+
+    events = stream._parse_analysis_response(VALID_ANALYSIS_JSON)
+
+    parsed = _parse_sse_events(events)
+    event_names = [e[0] for e in parsed]
+
+    assert len(parsed) == 3
+    assert "enrichment" in event_names
+    assert "decomposition" in event_names
+    assert "gaps" in event_names
+
+
+def test_parse_analysis_response_markdown_fences():
+    """JSON wrapped in markdown fences should still parse."""
+    payload = ZettelCardCreate(title="Test", content="Test")
+    stream = ZettelCreationStream(payload, db_session_factory=lambda: MagicMock())
+
+    fenced = f"```json\n{VALID_ANALYSIS_JSON}\n```"
+    events = stream._parse_analysis_response(fenced)
+
+    parsed = _parse_sse_events(events)
+    event_names = [e[0] for e in parsed]
+
+    assert len(parsed) == 3
+    assert "enrichment" in event_names
+    assert "decomposition" in event_names
+    assert "gaps" in event_names
+
+
+def test_parse_analysis_response_garbage():
+    """Non-JSON input should return an error event."""
+    payload = ZettelCardCreate(title="Test", content="Test")
+    stream = ZettelCreationStream(payload, db_session_factory=lambda: MagicMock())
+
+    events = stream._parse_analysis_response("this is not json at all {{{")
+
+    parsed = _parse_sse_events(events)
+    assert len(parsed) == 1
+    event_name, data = parsed[0]
+    assert event_name == "error"
+    assert data["step"] == "track_b_parse"
+    assert "Failed to parse" in data["message"]
+
+
+def test_parse_analysis_response_partial_keys():
+    """JSON missing 'gaps' key should return events for present keys only."""
+    payload = ZettelCardCreate(title="Test", content="Test")
+    stream = ZettelCreationStream(payload, db_session_factory=lambda: MagicMock())
+
+    partial = json.dumps({
+        "enrichment": {
+            "suggested_title": None,
+            "summary": "A summary.",
+            "suggested_tags": ["tag1"],
+            "suggested_topic": None,
+        },
+        "decomposition": {
+            "is_atomic": True,
+            "reason": "Single idea.",
+            "suggested_cards": [],
+        },
+        # Note: no "gaps" key
+    })
+    events = stream._parse_analysis_response(partial)
+
+    parsed = _parse_sse_events(events)
+    event_names = [e[0] for e in parsed]
+
+    assert len(parsed) == 2
+    assert "enrichment" in event_names
+    assert "decomposition" in event_names
+    assert "gaps" not in event_names

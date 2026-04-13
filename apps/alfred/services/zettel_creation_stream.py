@@ -173,6 +173,183 @@ class ZettelCreationStream:
             logger.warning("Track A failed for card %s: %s", self.card_id, exc, exc_info=True)
             yield _sse("error", {"step": "track_a", "message": str(exc)})
 
+    async def run_track_b(self) -> AsyncGenerator[str, None]:
+        """Track B: o4-mini reasoning + enrichment + decomposition + gaps."""
+        if self.card_id is None:
+            yield _sse("error", {"step": "track_b", "message": "No card_id — Phase 0 must run first"})
+            return
+
+        try:
+            # Fetch lightweight KB context (prefer Redis cache)
+            context = await asyncio.to_thread(self._fetch_kb_context)
+
+            # Build prompt
+            messages = self._build_analysis_prompt(context)
+
+            # Stream from reasoning model
+            from alfred.core.llm_factory import get_async_openai_client
+            from alfred.core.settings import settings
+
+            client = get_async_openai_client()
+            model = settings.zettel_analysis_model
+
+            completion_buffer = ""
+            stream = await client.chat.completions.create(
+                model=model,
+                messages=messages,
+                stream=True,
+                max_completion_tokens=4096,
+            )
+
+            async for chunk in stream:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+
+                # Reasoning tokens (o3/o4 models)
+                reasoning = getattr(delta, "reasoning", None) or getattr(
+                    delta, "reasoning_content", None
+                )
+                if reasoning:
+                    yield _sse("thinking", {"content": reasoning})
+
+                # Completion tokens (the JSON response)
+                if delta.content:
+                    completion_buffer += delta.content
+
+            # Parse the structured JSON response
+            if completion_buffer:
+                for event in self._parse_analysis_response(completion_buffer):
+                    yield event
+
+        except Exception as exc:
+            logger.warning("Track B failed for card %s: %s", self.card_id, exc, exc_info=True)
+            yield _sse("error", {"step": "track_b", "message": str(exc)})
+
+    def _fetch_kb_context(self) -> dict[str, Any]:
+        """Fetch lightweight KB context for the AI prompt. Prefers Redis cache."""
+        # Try Redis cache first
+        try:
+            from alfred.core.redis_client import get_redis_client
+
+            redis = get_redis_client()
+            if redis:
+                cached_topics = redis.get("zettel:topics:distribution")
+                if cached_topics:
+                    return json.loads(cached_topics)
+        except Exception:
+            pass
+
+        # Fall back to DB
+        session = self._db_factory()
+        try:
+            from sqlalchemy import func as sa_func
+            from sqlmodel import select
+
+            from alfred.models.zettel import ZettelCard
+
+            total = session.exec(
+                select(sa_func.count()).select_from(ZettelCard).where(
+                    ZettelCard.status != "archived"
+                )
+            ).one()
+
+            topics_rows = session.exec(
+                select(ZettelCard.topic, sa_func.count())
+                .where(ZettelCard.topic.isnot(None), ZettelCard.status != "archived")
+                .group_by(ZettelCard.topic)
+                .order_by(sa_func.count().desc())
+                .limit(30)
+            ).all()
+
+            return {
+                "total_cards": total,
+                "topics": [{"topic": t, "count": c} for t, c in topics_rows],
+            }
+        finally:
+            if self._uses_default_factory:
+                session.close()
+
+    def _build_analysis_prompt(self, context: dict[str, Any]) -> list[dict[str, str]]:
+        """Build the o4-mini prompt for enrichment + decomposition + gaps."""
+        topics_str = (
+            ", ".join(f"{t['topic']} ({t['count']})" for t in context.get("topics", []))
+            or "none yet"
+        )
+
+        system = (
+            "You are a knowledge analyst for a Zettelkasten system. "
+            "The user is creating a new knowledge card. Analyze it and provide "
+            "enrichment, decomposition assessment, and knowledge gap analysis.\n\n"
+            f"Knowledge base context:\n"
+            f"- Total cards: {context.get('total_cards', 0)}\n"
+            f"- Topics (with card counts): {topics_str}\n\n"
+            "Respond ONLY with valid JSON (no markdown fences, no commentary):\n"
+            "{\n"
+            '  "enrichment": {\n'
+            '    "suggested_title": "..." or null (only if meaningfully better),\n'
+            '    "summary": "one-sentence distillation",\n'
+            '    "suggested_tags": ["tag1", "tag2"],\n'
+            '    "suggested_topic": "..." or null\n'
+            "  },\n"
+            '  "decomposition": {\n'
+            '    "is_atomic": true/false,\n'
+            '    "reason": "why or why not",\n'
+            '    "suggested_cards": [{"title": "...", "content": "..."}]\n'
+            "  },\n"
+            '  "gaps": {\n'
+            '    "missing_topics": ["topic1"],\n'
+            '    "weak_areas": [{"topic": "...", "existing_count": N, "note": "..."}]\n'
+            "  }\n"
+            "}"
+        )
+
+        content_str = self.payload.content or ""
+        tags_str = ", ".join(self.payload.tags or [])
+        user = (
+            f"New card being created:\n"
+            f"Title: {self.payload.title}\n"
+            f"Content: {content_str}\n"
+            f"Tags: {tags_str}\n"
+            f"Topic: {self.payload.topic or 'not set'}"
+        )
+
+        return [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+
+    def _parse_analysis_response(self, raw: str) -> list[str]:
+        """Parse the JSON response from the analysis model into SSE events."""
+        events: list[str] = []
+        try:
+            cleaned = raw.strip()
+            if cleaned.startswith("```"):
+                cleaned = "\n".join(cleaned.split("\n")[1:])
+            if cleaned.endswith("```"):
+                cleaned = "\n".join(cleaned.split("\n")[:-1])
+            cleaned = cleaned.strip()
+
+            data = json.loads(cleaned)
+
+            if "enrichment" in data:
+                events.append(_sse("enrichment", data["enrichment"]))
+            if "decomposition" in data:
+                events.append(_sse("decomposition", data["decomposition"]))
+            if "gaps" in data:
+                events.append(_sse("gaps", data["gaps"]))
+
+        except (json.JSONDecodeError, KeyError) as exc:
+            logger.warning("Failed to parse Track B response: %s", exc)
+            events.append(
+                _sse(
+                    "error",
+                    {"step": "track_b_parse", "message": f"Failed to parse AI response: {exc}"},
+                )
+            )
+
+        return events
+
     async def run(self) -> AsyncGenerator[str, None]:
         """Full pipeline: Phase 0 -> Phase 1 (concurrent tracks) -> Phase 2."""
         # Phase 0: save card + invalidate caches
