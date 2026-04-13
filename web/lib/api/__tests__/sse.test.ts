@@ -127,10 +127,10 @@ describe("streamSSE", () => {
   });
 
   it("handles chunked delivery split mid-data-line", async () => {
-    // When a data line is split across chunks but event+data arrive in the same
-    // logical chunk after buffering, the event fires correctly.
+    // When a data line is split across chunks, the parser buffers until it sees
+    // a complete event block (terminated by \n\n) before processing.
     const encoder = new TextEncoder();
-    // Chunk 1 ends mid-data-line (buffer retains incomplete line)
+    // Chunk 1 ends mid-data-line (buffer retains incomplete block)
     const chunk1 = 'event: token\ndata: {"cont';
     // Chunk 2 completes the data line and includes the blank separator
     const chunk2 = 'ent":"split"}\n\nevent: done\ndata: {}\n\n';
@@ -151,13 +151,79 @@ describe("streamSSE", () => {
     const onEvent = vi.fn();
     await streamSSE("/api/agent/stream", {}, onEvent);
 
-    // The first event (token) is lost because eventType resets per read() call.
-    // The buffered data line arrives in chunk2 but without the event: prefix
-    // in the same read. Only the "done" event fires because both its event:
-    // and data: lines arrive in chunk2.
-    // This is a known limitation of the current parser.
-    expect(onEvent).toHaveBeenCalledTimes(1);
-    expect(onEvent).toHaveBeenCalledWith("done", {});
+    // Both events fire correctly — the parser buffers until it sees
+    // a complete event block (terminated by \n\n).
+    expect(onEvent).toHaveBeenCalledTimes(2);
+    expect(onEvent).toHaveBeenNthCalledWith(1, "token", { content: "split" });
+    expect(onEvent).toHaveBeenNthCalledWith(2, "done", {});
+  });
+
+  it("handles chunk boundary between event: and data: lines", async () => {
+    // The chunk boundary falls exactly between the event: line and the data: line.
+    // The parser must buffer until it sees \n\n before processing the event block.
+    const encoder = new TextEncoder();
+    const chunk1 = "event: thinking\n";
+    const chunk2 = 'data: {"content":"deep thought"}\n\n';
+    const chunk3 = 'event: done\ndata: {"status":"ok"}\n\n';
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(chunk1));
+        controller.enqueue(encoder.encode(chunk2));
+        controller.enqueue(encoder.encode(chunk3));
+        controller.close();
+      },
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(mockResponse(stream)),
+    );
+
+    const onEvent = vi.fn();
+    await streamSSE("/api/agent/stream", {}, onEvent);
+
+    expect(onEvent).toHaveBeenCalledTimes(2);
+    expect(onEvent).toHaveBeenNthCalledWith(1, "thinking", { content: "deep thought" });
+    expect(onEvent).toHaveBeenNthCalledWith(2, "done", { status: "ok" });
+  });
+
+  it("handles rapid events split across many small chunks", async () => {
+    // Each line arrives as its own chunk — worst case for the old line-by-line parser.
+    const encoder = new TextEncoder();
+    const chunks = [
+      "event: token\n",
+      'data: {"content":"a"}\n',
+      "\n",
+      "event: token\n",
+      'data: {"content":"b"}\n',
+      "\n",
+      "event: done\n",
+      "data: {}\n",
+      "\n",
+    ];
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        controller.close();
+      },
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(mockResponse(stream)),
+    );
+
+    const onEvent = vi.fn();
+    await streamSSE("/api/agent/stream", {}, onEvent);
+
+    expect(onEvent).toHaveBeenCalledTimes(3);
+    expect(onEvent).toHaveBeenNthCalledWith(1, "token", { content: "a" });
+    expect(onEvent).toHaveBeenNthCalledWith(2, "token", { content: "b" });
+    expect(onEvent).toHaveBeenNthCalledWith(3, "done", {});
   });
 
   it("handles chunked delivery when event+data arrive in same read", async () => {

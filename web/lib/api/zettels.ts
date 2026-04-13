@@ -1,5 +1,6 @@
 import { apiFetch, apiPatchJson, apiPostJson } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
+import { streamSSE } from "@/lib/api/sse";
 
 // --------------- Types ---------------
 
@@ -310,4 +311,16 @@ export async function listZettelTopics(): Promise<string[]> {
 
 export async function listZettelTags(): Promise<string[]> {
   return apiFetch<string[]>(apiRoutes.zettels.tags, { cache: "no-store" });
+}
+
+/**
+ * Streaming zettel creation. Connects to the SSE endpoint and
+ * calls onEvent for each event (card_saved, thinking, enrichment, etc.).
+ */
+export async function createZettelStream(
+  payload: ZettelCardCreatePayload,
+  onEvent: (event: string, data: Record<string, unknown>) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return streamSSE(apiRoutes.zettels.createStream, payload, onEvent, signal);
 }

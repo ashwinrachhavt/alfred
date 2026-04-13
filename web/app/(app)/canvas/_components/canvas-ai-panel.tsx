@@ -1,20 +1,29 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bot, GripVertical, Loader2, Send, X } from "lucide-react";
+import { Bot, GripVertical, Loader2, MessageSquareText, Send, Sparkles, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { streamSSE } from "@/lib/api/sse";
 import { useStickToBottom } from "@/lib/hooks/use-stick-to-bottom";
 import { apiRoutes } from "@/lib/api/routes";
 import { safeGetItem, safeSetItem } from "@/lib/storage";
 import { useAgentStore } from "@/lib/stores/agent-store";
 
+type CanvasMode = "ask" | "visualize";
+
 type CanvasAIPanelProps = {
   canvasTitle: string;
+  getCanvasContext?: () => string;
   onInsertText: (text: string) => void;
-  onInsertElements: (elements: unknown[]) => void;
+  onInsertDiagram: (payload: {
+    elements: unknown[];
+    prompt: string;
+    description?: string;
+    canvasContext?: string;
+  }) => Promise<void> | void;
   onClose: () => void;
 };
 
@@ -22,33 +31,43 @@ type Message = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  mode: CanvasMode;
+};
+
+type DiagramResponse = {
+  elements: unknown[];
+  description?: string | null;
 };
 
 const STORAGE_KEY = "alfred:canvas:ai-panel-pos:v1";
 const MIN_W = 320;
 const MIN_H = 300;
 const MAX_W = 600;
-const DEFAULT_W = 380;
-const DEFAULT_H = 400;
-
-// Keywords that indicate a diagram generation request
-const DIAGRAM_KEYWORDS = [
-  "draw",
-  "diagram",
-  "flowchart",
-  "architecture",
-  "mind map",
-  "chart",
-  "graph",
-  "layout",
-  "schema",
-  "visualize",
-  "sketch",
+const DEFAULT_W = 400;
+const DEFAULT_H = 430;
+const DEFAULT_MODE: CanvasMode = "visualize";
+const STARTER_PROMPTS = [
+  {
+    label: "User flow",
+    prompt: "Map the user flow from landing page to successful signup and activation.",
+  },
+  {
+    label: "Mind map",
+    prompt: "Turn this topic into a mind map with core idea, major branches, and sub-branches.",
+  },
+  {
+    label: "Architecture",
+    prompt: "Visualize this system architecture with main services, data stores, and request flow.",
+  },
+  {
+    label: "Decision tree",
+    prompt: "Create a decision tree that compares the main options and key tradeoffs.",
+  },
 ];
 
-function isDiagramRequest(text: string): boolean {
-  const lowerText = text.toLowerCase();
-  return DIAGRAM_KEYWORDS.some((keyword) => lowerText.includes(keyword));
+function readCanvasContext(canvasTitle: string, getCanvasContext?: () => string): string {
+  const context = getCanvasContext?.().trim();
+  return context || `Canvas: "${canvasTitle}"`;
 }
 
 function loadPersistedLayout(): { x: number; y: number; w: number; h: number } {
@@ -67,7 +86,7 @@ function loadPersistedLayout(): { x: number; y: number; w: number; h: number } {
       };
     }
   } catch {
-    // ignore
+    // ignore persisted layout errors
   }
   return {
     x: window.innerWidth - DEFAULT_W - 20,
@@ -87,12 +106,14 @@ function clamp(val: number, min: number, max: number) {
 
 export function CanvasAIPanel({
   canvasTitle,
+  getCanvasContext,
   onInsertText,
-  onInsertElements,
+  onInsertDiagram,
   onClose,
 }: CanvasAIPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [mode, setMode] = useState<CanvasMode>(DEFAULT_MODE);
   const [isStreaming, setIsStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -104,14 +125,13 @@ export function CanvasAIPanel({
     scrollToBottom,
   } = useStickToBottom();
 
-  // --- Drag / Resize state ---
   const [pos, setPos] = useState<{ x: number; y: number }>(() => {
-    const l = loadPersistedLayout();
-    return { x: l.x, y: l.y };
+    const layout = loadPersistedLayout();
+    return { x: layout.x, y: layout.y };
   });
   const [size, setSize] = useState<{ w: number; h: number }>(() => {
-    const l = loadPersistedLayout();
-    return { w: l.w, h: l.h };
+    const layout = loadPersistedLayout();
+    return { w: layout.w, h: layout.h };
   });
 
   const dragRef = useRef<{
@@ -128,7 +148,6 @@ export function CanvasAIPanel({
     startH: number;
   } | null>(null);
 
-  // Persist on change (debounced)
   const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (persistTimeoutRef.current) clearTimeout(persistTimeoutRef.current);
@@ -140,7 +159,20 @@ export function CanvasAIPanel({
     };
   }, [pos, size]);
 
-  // --- Drag handlers ---
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+    },
+    [],
+  );
+
   const onDragStart = useCallback(
     (e: React.PointerEvent) => {
       dragRef.current = {
@@ -168,7 +200,6 @@ export function CanvasAIPanel({
     dragRef.current = null;
   }, []);
 
-  // --- Resize handlers ---
   const onResizeStart = useCallback(
     (e: React.PointerEvent) => {
       resizeRef.current = {
@@ -212,6 +243,9 @@ export function CanvasAIPanel({
     const text = input.trim();
     if (!text || isStreaming) return;
 
+    const nextMode = mode;
+    const canvasContext = readCanvasContext(canvasTitle, getCanvasContext);
+
     setInput("");
     scrollToBottom("smooth");
 
@@ -219,12 +253,14 @@ export function CanvasAIPanel({
       id: `user-${Date.now()}`,
       role: "user",
       content: text,
+      mode: nextMode,
     };
 
     const assistantMsg: Message = {
       id: `assistant-${Date.now()}`,
       role: "assistant",
       content: "",
+      mode: nextMode,
     };
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
@@ -234,47 +270,57 @@ export function CanvasAIPanel({
     abortRef.current = controller;
 
     try {
-      // Check if this is a diagram request
-      if (isDiagramRequest(text)) {
-        // Generate diagram using the diagram API
+      if (nextMode === "visualize") {
         const response = await fetch(apiRoutes.canvas.generateDiagram, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             prompt: text,
-            canvas_context: `Canvas: "${canvasTitle}"`,
+            canvas_context: canvasContext,
           }),
           signal: controller.signal,
         });
 
+        const data = (await response.json().catch(() => null)) as DiagramResponse | null;
         if (!response.ok) {
-          throw new Error("Failed to generate diagram");
+          throw new Error(data?.description || "Failed to generate diagram");
         }
 
-        const data = (await response.json()) as { elements: unknown[]; description?: string };
+        if (!data || !Array.isArray(data.elements) || data.elements.length === 0) {
+          throw new Error(
+            data?.description || "Alfred could not generate a diagram for that prompt.",
+          );
+        }
 
-        // Insert elements onto canvas
-        onInsertElements(data.elements);
+        await Promise.resolve(
+          onInsertDiagram({
+            elements: data.elements,
+            prompt: text,
+            description: data.description ?? undefined,
+            canvasContext,
+          }),
+        );
 
-        // Show description as chat message
-        const description = data.description || `Created ${data.elements.length} diagram elements`;
+        const description =
+          data.description || `Created ${data.elements.length} diagram elements on the canvas.`;
         setMessages((prev) =>
-          prev.map((m, i) =>
-            i === prev.length - 1 && m.role === "assistant" ? { ...m, content: description } : m,
+          prev.map((message, index) =>
+            index === prev.length - 1 && message.role === "assistant"
+              ? { ...message, content: description }
+              : message,
           ),
         );
       } else {
-        // Regular text response via streaming
         let buffer = "";
         await streamSSE(
           apiRoutes.agent.stream,
           {
-            message: `[Canvas context: "${canvasTitle}"]\n\n${text}`,
+            message: `[Canvas context]\n${canvasContext}\n\n${text}`,
             lens: null,
             model: activeModel,
-            history: messages.slice(-10).map((m) => ({
-              role: m.role,
-              content: m.content,
+            history: messages.slice(-10).map((message) => ({
+              role: message.role,
+              content: message.content,
             })),
           },
           (event, data) => {
@@ -282,8 +328,10 @@ export function CanvasAIPanel({
               buffer += data.content as string;
               const current = buffer;
               setMessages((prev) =>
-                prev.map((m, i) =>
-                  i === prev.length - 1 && m.role === "assistant" ? { ...m, content: current } : m,
+                prev.map((message, index) =>
+                  index === prev.length - 1 && message.role === "assistant"
+                    ? { ...message, content: current }
+                    : message,
                 ),
               );
             }
@@ -292,14 +340,14 @@ export function CanvasAIPanel({
         );
       }
     } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        // User cancelled
-      } else {
+      if (!(err instanceof DOMException && err.name === "AbortError")) {
+        const message =
+          err instanceof Error ? err.message : "Something went wrong. Please try again.";
         setMessages((prev) =>
-          prev.map((m, i) =>
-            i === prev.length - 1 && m.role === "assistant" && !m.content
-              ? { ...m, content: "Something went wrong. Please try again." }
-              : m,
+          prev.map((entry, index) =>
+            index === prev.length - 1 && entry.role === "assistant"
+              ? { ...entry, content: message }
+              : entry,
           ),
         );
       }
@@ -307,7 +355,22 @@ export function CanvasAIPanel({
       setIsStreaming(false);
       abortRef.current = null;
     }
-  }, [input, isStreaming, messages, canvasTitle, activeModel, onInsertElements, scrollToBottom]);
+  }, [
+    activeModel,
+    canvasTitle,
+    getCanvasContext,
+    input,
+    isStreaming,
+    messages,
+    mode,
+    onInsertDiagram,
+    scrollToBottom,
+  ]);
+
+  const placeholder =
+    mode === "visualize"
+      ? "Describe what to draw: flowchart, mind map, user journey, architecture, timeline..."
+      : "Ask Alfred about this canvas...";
 
   return (
     <div
@@ -319,9 +382,8 @@ export function CanvasAIPanel({
         height: size.h,
       }}
     >
-      {/* Draggable title bar */}
       <header
-        className="bg-secondary flex cursor-grab items-center justify-between gap-2 rounded-t-lg border-b px-3 py-2 select-none active:cursor-grabbing"
+        className="bg-secondary flex cursor-grab items-center justify-between gap-3 rounded-t-lg border-b px-3 py-2 select-none active:cursor-grabbing"
         onPointerDown={onDragStart}
         onPointerMove={onDragMove}
         onPointerUp={onDragEnd}
@@ -333,62 +395,123 @@ export function CanvasAIPanel({
             Alfred AI
           </span>
         </div>
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          className="size-7"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={onClose}
-        >
-          <X className="size-3.5" />
-          <span className="sr-only">Close AI panel</span>
-        </Button>
+
+        <div className="flex items-center gap-2" onPointerDown={(e) => e.stopPropagation()}>
+          <div className="bg-background flex items-center rounded-md border p-0.5">
+            <button
+              type="button"
+              className={cn(
+                "flex items-center gap-1 rounded-[6px] px-2 py-1 text-[11px] font-medium transition-colors",
+                mode === "visualize"
+                  ? "text-foreground bg-[var(--alfred-accent-subtle)]"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => setMode("visualize")}
+              disabled={isStreaming}
+            >
+              <Sparkles className="size-3.5" />
+              Visualize
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "flex items-center gap-1 rounded-[6px] px-2 py-1 text-[11px] font-medium transition-colors",
+                mode === "ask"
+                  ? "text-foreground bg-[var(--alfred-accent-subtle)]"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => setMode("ask")}
+              disabled={isStreaming}
+            >
+              <MessageSquareText className="size-3.5" />
+              Ask
+            </button>
+          </div>
+
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="size-7"
+            onClick={() => {
+              abortRef.current?.abort();
+              onClose();
+            }}
+          >
+            <X className="size-3.5" />
+            <span className="sr-only">Close AI panel</span>
+          </Button>
+        </div>
       </header>
 
-      {/* Messages */}
       <div
         ref={messagesContainerRef}
         className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3"
       >
         {messages.length === 0 && (
-          <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
             <Bot className="text-muted-foreground/40 size-8" />
             <p className="text-muted-foreground text-sm">
-              Ask Alfred anything about your canvas. Responses can be inserted as text elements.
+              {mode === "visualize"
+                ? "Describe any concept and Alfred will turn it into a smart, editable diagram on your canvas."
+                : "Ask Alfred about the current canvas. Chat responses stay textual and can be copied onto the board."}
             </p>
+
+            {mode === "visualize" && (
+              <div className="flex flex-wrap justify-center gap-2">
+                {STARTER_PROMPTS.map((starter) => (
+                  <button
+                    key={starter.label}
+                    type="button"
+                    className="bg-background rounded-md border px-2.5 py-1.5 text-[11px] transition-colors hover:bg-[var(--alfred-accent-subtle)]"
+                    onClick={() => {
+                      setMode("visualize");
+                      setInput(starter.prompt);
+                      window.requestAnimationFrame(() => inputRef.current?.focus());
+                    }}
+                  >
+                    {starter.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {messages.map((msg) => (
-          <div key={msg.id} className="space-y-1">
+        {messages.map((message) => (
+          <div key={message.id} className="space-y-1">
             <span className="text-[10px] font-medium tracking-widest text-[var(--alfred-text-tertiary)] uppercase">
-              {msg.role === "user" ? "You" : "Alfred"}
+              {message.role === "user" ? "You" : "Alfred"}
             </span>
             <div
               className={
-                msg.role === "user"
+                message.role === "user"
                   ? "bg-muted/50 rounded-md px-3 py-2 text-sm"
                   : "prose prose-sm dark:prose-invert max-w-none text-sm"
               }
             >
-              {msg.role === "assistant" ? (
+              {message.role === "assistant" ? (
                 <>
-                  <ReactMarkdown>{msg.content || "..."}</ReactMarkdown>
-                  {msg.content && !isStreaming && (
+                  <ReactMarkdown>{message.content || "..."}</ReactMarkdown>
+                  {message.content && !isStreaming && message.mode === "ask" && (
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
                       className="mt-2 h-7 text-[10px]"
-                      onClick={() => onInsertText(msg.content)}
+                      onClick={() => onInsertText(message.content)}
                     >
                       Insert on canvas
                     </Button>
                   )}
+                  {message.content && message.mode === "visualize" && (
+                    <div className="text-muted-foreground mt-2 text-[10px] font-medium tracking-widest uppercase">
+                      Inserted on canvas
+                    </div>
+                  )}
                 </>
               ) : (
-                msg.content
+                message.content
               )}
             </div>
           </div>
@@ -397,8 +520,10 @@ export function CanvasAIPanel({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
       <div className="border-t px-3 py-2">
+        <div className="text-muted-foreground mb-2 text-[10px] font-medium tracking-widest uppercase">
+          {mode === "visualize" ? "Diagram mode" : "Chat mode"}
+        </div>
         <div className="flex items-end gap-2">
           <textarea
             ref={inputRef}
@@ -410,15 +535,15 @@ export function CanvasAIPanel({
                 void handleSend();
               }
             }}
-            placeholder="Ask Alfred..."
-            rows={1}
-            className="placeholder:text-muted-foreground/60 flex-1 resize-none bg-transparent text-sm outline-none"
+            placeholder={placeholder}
+            rows={2}
+            className="placeholder:text-muted-foreground/60 min-h-[52px] flex-1 resize-none bg-transparent text-sm outline-none"
           />
           <Button
             type="button"
             size="icon"
             variant="ghost"
-            className="size-7 shrink-0"
+            className="size-8 shrink-0"
             disabled={!input.trim() || isStreaming}
             onClick={() => void handleSend()}
           >
@@ -431,7 +556,6 @@ export function CanvasAIPanel({
         </div>
       </div>
 
-      {/* Resize handle — bottom-right corner */}
       <div
         className="absolute right-0 bottom-0 flex size-4 cursor-se-resize items-center justify-center rounded-bl-sm"
         onPointerDown={onResizeStart}

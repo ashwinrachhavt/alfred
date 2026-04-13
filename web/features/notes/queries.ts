@@ -28,7 +28,7 @@ export function useNoteTree(workspaceId: string | null) {
     enabled: Boolean(workspaceId),
     queryKey: workspaceId ? noteTreeQueryKey(workspaceId) : ["notes", "tree", "disabled"],
     queryFn: () => getNoteTree(workspaceId!),
-    staleTime: 10_000,
+    staleTime: 30_000,
   });
 }
 

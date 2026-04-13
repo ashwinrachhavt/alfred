@@ -17,6 +17,7 @@ function createQueryClient(): QueryClient {
  retry: 1,
  refetchOnWindowFocus: false,
  staleTime: 30_000,
+ gcTime: 10 * 60 * 1000, // keep unused data in cache for 10 minutes
  },
  },
  });

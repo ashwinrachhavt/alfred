@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 
 import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
@@ -109,7 +109,8 @@ export function useZettelCards(filters?: ZettelFilterParams, pagination?: Zettel
 
       return { items, totalCount, page, pageSize, totalPages };
     },
-    staleTime: 10_000,
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
 }
 

@@ -202,7 +202,7 @@ export function AiPanel() {
  variant="ghost"
  size="icon"
  className="size-8 text-muted-foreground"
- onClick={toggleAiPanel}
+ onClick={() => toggleAiPanel()}
  aria-label="Close AI panel"
  >
  <X className="size-4" />

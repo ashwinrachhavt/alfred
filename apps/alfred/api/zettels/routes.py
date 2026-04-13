@@ -4,6 +4,7 @@ import json as _json
 import logging
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
 from alfred.api.dependencies import get_db_session
@@ -33,6 +34,7 @@ from alfred.schemas.zettel import (
     ZettelLinkOut,
     ZettelReviewOut,
 )
+from alfred.services.zettel_creation_stream import ZettelCreationStream
 from alfred.services.zettelkasten_service import ZettelkastenService
 
 router = APIRouter(prefix="/api/zettels", tags=["zettels"])
@@ -60,6 +62,24 @@ def create_card(
     _invalidate_topic_tag_cache()
     _invalidate_graph_cache()
     return _card_out(card)
+
+
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
+
+
+@router.post("/cards/create-stream")
+async def create_card_stream(payload: ZettelCardCreate) -> StreamingResponse:
+    """Create a zettel with streaming enrichment via SSE."""
+    stream = ZettelCreationStream(payload)
+    return StreamingResponse(
+        stream.run(),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
 
 
 @router.post("/cards/stub", status_code=status.HTTP_201_CREATED)
@@ -132,8 +152,11 @@ def count_cards(
 ) -> dict:
     svc = ZettelkastenService(session)
     total = svc.count_cards(
-        q=q, topic=topic, tags=tags or None,
-        importance_min=importance_min, status=card_status,
+        q=q,
+        topic=topic,
+        tags=tags or None,
+        importance_min=importance_min,
+        status=card_status,
     )
     return {"total": total}
 
@@ -428,8 +451,13 @@ def suggest_links(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail="Failed to generate link suggestions") from exc
+    except Exception:
+        _log.warning(
+            "Link suggestions unavailable for card %s; returning empty result set",
+            card_id,
+            exc_info=True,
+        )
+        return []
     return suggestions
 
 

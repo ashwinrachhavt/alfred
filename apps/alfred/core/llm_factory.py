@@ -6,6 +6,7 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from openai import AsyncOpenAI
 
 from .settings import LLMProvider, settings
 
@@ -37,6 +38,23 @@ def get_chat_model(
         )
 
     raise ValueError(f"Unsupported provider: {provider}")
+
+
+# Safe as singleton: FastAPI uses one event loop per uvicorn worker.
+@lru_cache(maxsize=1)
+def get_async_openai_client() -> AsyncOpenAI:
+    """Cached AsyncOpenAI client for direct API usage (streaming, reasoning models)."""
+    cfg = settings
+    kwargs: dict[str, object] = {}
+    if cfg.openai_api_key:
+        val = cfg.openai_api_key.get_secret_value()
+        if val:
+            kwargs["api_key"] = val
+    if cfg.openai_base_url:
+        kwargs["base_url"] = cfg.openai_base_url
+    if cfg.openai_organization:
+        kwargs["organization"] = cfg.openai_organization
+    return AsyncOpenAI(**kwargs)
 
 
 @lru_cache(maxsize=8)
