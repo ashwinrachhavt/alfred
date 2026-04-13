@@ -2060,3 +2060,53 @@ Expected: No errors
 git add -A
 git commit -m "fix: address integration test findings for streaming zettel creation"
 ```
+
+---
+
+## Eng Review Changes (apply during implementation)
+
+These changes were agreed during `/plan-eng-review` and override the task code above:
+
+### Scope Reduction
+- **Drop `apps/alfred/api/zettels/stream_routes.py`** — inline the route into existing `routes.py`
+- **Drop `apps/alfred/utils/__init__.py`** — move `async_merge.py` into `apps/alfred/core/`
+- **Extract shared utils:** `_make_client()` → `get_async_openai_client()` with `@lru_cache` in `core/llm_factory.py`. `_sse()` → shared SSE helper. Update `agent/service.py` to import from shared location.
+
+### Architecture Fixes
+- **Client caching:** `get_async_openai_client()` in `core/llm_factory.py` with `@lru_cache`. Not per-call creation.
+- **Model config:** Add `zettel_analysis_model: str = Field(default="o4-mini")` to `core/settings.py`. Use `settings.zettel_analysis_model` instead of hardcoded constant.
+- **Cross-track sync:** Dropped for v1. Topic/tag distribution sufficient for gap detection.
+- **Cache invalidation timing:** Move to Phase 0 (immediately after card save), not Phase 2. Ensures card visible in UI even if stream dies.
+- **OpenAI streaming pattern:** Use `stream = await client.chat.completions.create(...); async for chunk in stream` — NOT `async with await`. Match `agent/service.py` pattern.
+
+### Code Quality Fixes
+- **One session per track:** Track A creates one DB session for all 4 steps. Track B gets one session for context fetch. Not session-per-method.
+- **Simplify Track A:** Use `ensure_embedding()` → emit `embedding_done` → `suggest_links()` → emit events → `create_link()`. Remove `_embed_card()` and `_sync_to_qdrant()` wrappers.
+
+### Performance Fix
+- **Redis cache for context:** `_fetch_kb_context()` reads topic/tag distribution from existing Redis cache, falls back to DB on cache miss.
+
+### SSE Parser Fix (prerequisite)
+- **Fix `web/lib/api/sse.ts`** chunk-split bug: accumulate complete events (event + data + blank line) before parsing. Affects both agent chat and this new feature.
+
+### Additional Tests (add to Tasks 3-5)
+- `_parse_analysis_response`: valid JSON, markdown fences wrapping, partial keys, garbage string
+- Track A: empty suggestions list, threshold boundary (score exactly 0.75)
+- Track B: malformed JSON from LLM
+- Full pipeline: both tracks error, card still returned in done event
+- Phase 0: DB connection failure emits error event (add try/except to `run_phase0`)
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | — |
+| Codex Review | `/codex review` | Independent 2nd opinion | 2 | ISSUES | 10 findings, 3 accepted |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 2 | CLEAR | 6 issues, 0 critical gaps |
+| Design Review | `/plan-design-review` | UI/UX gaps | 1 | OPEN | score: 3/10 → 7/10, 11 decisions |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
+
+**CODEX:** 10 findings. Accepted: cache timing fix, SSE parser fix, OpenAI API pattern fix. Rejected: architecture size (intentional), kitchen sink (by design), parallelism order (acceptable tradeoff).
+**CROSS-MODEL:** Both agree on cache timing, SSE parser, API pattern. Disagree on architecture size (review says acceptable after scope reduction, Codex wants thinner).
+**UNRESOLVED:** 0
+**VERDICT:** ENG CLEARED — ready to implement. Design review has 6 unresolved items from prior session.
