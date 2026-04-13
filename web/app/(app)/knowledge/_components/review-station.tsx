@@ -1,18 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { BookOpen, MessageSquare, ListChecks } from "lucide-react";
+import { BookOpen, Brain, MessageSquare, ListChecks } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { type Zettel } from "./mock-data";
-import { ReviewFlashcard } from "./review-flashcard";
+import { DailyReview } from "./daily-review";
 import { ReviewFeynman } from "./review-feynman";
 import { ReviewQuiz } from "./review-quiz";
 
-type ReviewMode = "flashcard" | "feynman" | "quiz";
+type ReviewMode = "daily" | "feynman" | "quiz";
 
 const modes: { key: ReviewMode; label: string; icon: typeof BookOpen }[] = [
- { key: "flashcard", label: "Flashcard", icon: BookOpen },
+ { key: "daily", label: "Daily Review", icon: Brain },
  { key: "feynman", label: "Feynman", icon: MessageSquare },
  { key: "quiz", label: "Quiz", icon: ListChecks },
 ];
@@ -22,16 +22,16 @@ type Props = {
 };
 
 export function ReviewStation({ zettels }: Props) {
- const [mode, setMode] = useState<ReviewMode>("flashcard");
+ const [mode, setMode] = useState<ReviewMode>("daily");
 
  return (
  <div className="border-t border-[var(--alfred-ruled-line)]">
  {/* Header + tabs */}
  <div className="flex items-center justify-between px-6 pt-5 pb-3">
  <div>
- <h2 className="text-xl">Review Station</h2>
+ <h2 className="font-serif text-xl">Daily Review</h2>
  <p className="mt-0.5 font-medium text-[10px] uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
- Test your understanding
+ Keep your knowledge alive
  </p>
  </div>
  <div className="flex gap-1">
@@ -55,7 +55,7 @@ export function ReviewStation({ zettels }: Props) {
 
  {/* Content */}
  <div className="px-6 pb-6">
- {mode === "flashcard" && <ReviewFlashcard zettels={zettels} />}
+ {mode === "daily" && <DailyReview />}
  {mode === "feynman" && <ReviewFeynman zettels={zettels} />}
  {mode === "quiz" && <ReviewQuiz zettels={zettels} />}
  </div>

@@ -84,6 +84,7 @@ export const apiRoutes = {
     generateMermaid: "/api/canvas/generate-mermaid",
   },
   learning: {
+    dailyDeck: "/api/learning/daily-deck",
     topics: "/api/learning/topics",
     graph: "/api/learning/graph",
     retentionMetrics: "/api/learning/metrics/retention",

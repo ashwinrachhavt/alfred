@@ -1,29 +1,23 @@
 import type { Metadata } from "next";
-import { Inter, Instrument_Serif, JetBrains_Mono, Geist } from "next/font/google";
+import { Source_Serif_4, DM_Sans, JetBrains_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import "@excalidraw/excalidraw/index.css";
 
 import { Providers } from "@/app/providers";
 
-const inter = Inter({
- variable: "--font-inter",
+const sourceSerif = Source_Serif_4({
+ variable: "--font-source-serif",
  subsets: ["latin"],
 });
 
-const instrumentSerif = Instrument_Serif({
- variable: "--font-instrument-serif",
- weight: "400",
+const dmSans = DM_Sans({
+ variable: "--font-dm-sans",
  subsets: ["latin"],
 });
 
 const jetbrainsMono = JetBrains_Mono({
  variable: "--font-jetbrains-mono",
- subsets: ["latin"],
-});
-
-const geist = Geist({
- variable: "--font-geist",
  subsets: ["latin"],
 });
 
@@ -50,7 +44,7 @@ export default function RootLayout({
  />
  </head>
  <body
- className={`${inter.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable} ${geist.variable} font-sans antialiased`}
+ className={`${sourceSerif.variable} ${dmSans.variable} ${jetbrainsMono.variable} font-sans antialiased`}
  >
  <ClerkProvider>
  <Providers>{children}</Providers>
