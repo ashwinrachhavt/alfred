@@ -59,7 +59,7 @@ export function useCanvas(id: number | null) {
     enabled: id !== null,
     queryKey: id !== null ? canvasDetailQueryKey(id) : ["canvases", "detail", "disabled"],
     queryFn: () => apiFetch<Whiteboard>(apiRoutes.whiteboards.byId(id!)),
-    staleTime: 0,
+    staleTime: 30_000,
   });
 }
 

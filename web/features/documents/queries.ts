@@ -28,7 +28,7 @@ export function useRecentDocuments(limit = 6) {
   return useQuery({
     queryKey: recentDocumentsQueryKey(cappedLimit),
     queryFn: () => listExplorerDocuments({ limit: cappedLimit }),
-    staleTime: 10_000,
+    staleTime: 30_000,
   });
 }
 
@@ -50,7 +50,7 @@ export function useExplorerDocuments(
         search: search || null,
       }),
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
-    staleTime: 10_000,
+    staleTime: 30_000,
   });
 }
 

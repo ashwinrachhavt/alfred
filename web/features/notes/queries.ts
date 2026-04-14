@@ -37,7 +37,7 @@ export function useNote(noteId: string | null) {
     enabled: Boolean(noteId),
     queryKey: noteId ? noteDetailsQueryKey(noteId) : ["notes", "details", "disabled"],
     queryFn: () => getNote(noteId!),
-    staleTime: 0,
+    staleTime: 15_000,
   });
 }
 

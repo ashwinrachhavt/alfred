@@ -178,7 +178,7 @@ export function useCardSearch(query: string | null, contextCardId?: number) {
     queryKey: ["zettels", "search", query, contextCardId],
     queryFn: () => apiSearchCards(query ?? undefined, contextCardId),
     enabled: query !== null,
-    staleTime: 5_000,
+    staleTime: 30_000,
   });
 }
 
