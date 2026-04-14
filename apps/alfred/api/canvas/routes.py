@@ -42,22 +42,17 @@ def _response_to_text(response: Any) -> str:
     return str(content)
 
 
-@router.post("/generate-diagram", response_model=DiagramResponse)
-def generate_diagram(payload: DiagramRequest) -> DiagramResponse:
-    """Generate Excalidraw diagram elements from natural language."""
-    from alfred.core.llm_factory import get_chat_model
-    from alfred.services.excalidraw_agent import build_diagram_prompt, parse_diagram_response
+@router.post("/generate-diagram")
+def generate_diagram(payload: DiagramRequest) -> dict:
+    """Dispatch diagram generation to Celery, return task ID."""
+    from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
+    from alfred.core.exceptions import ServiceUnavailableError
 
     try:
-        prompt = build_diagram_prompt(payload.prompt, payload.canvas_context)
-        model = get_chat_model()
-        response = model.invoke(prompt)
-        content = _response_to_text(response)
-        result = parse_diagram_response(content)
-        return DiagramResponse(**result)
-    except Exception as exc:
-        logger.warning("Diagram generation failed: %s", exc)
-        return DiagramResponse(
-            elements=[],
-            description=f"Failed to generate diagram: {exc}",
+        task_result = dispatch_task(
+            "canvas.generate_diagram",
+            kwargs={"prompt": payload.prompt, "canvas_context": payload.canvas_context},
         )
+        return {"task_id": task_result.id, "status": "pending"}
+    except BrokerUnavailableError as exc:
+        raise ServiceUnavailableError("Background worker unavailable") from exc
