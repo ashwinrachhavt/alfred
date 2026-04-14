@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, queryOptions, keepPreviousData } from "@tanstack/react-query";
 
 import {
   getEntry,
@@ -17,17 +17,27 @@ export function useDictionaryLookup(word: string | null) {
   });
 }
 
+export function dictionaryEntriesQueryOptions(filters?: {
+  save_intent?: SaveIntent;
+  domain?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  return queryOptions({
+    queryKey: ["dictionary", "entries", filters ?? null] as const,
+    queryFn: () => listEntries(filters),
+    staleTime: 10_000,
+    placeholderData: keepPreviousData,
+  });
+}
+
 export function useVocabularyEntries(filters?: {
   save_intent?: SaveIntent;
   domain?: string;
   limit?: number;
   offset?: number;
 }) {
-  return useQuery({
-    queryKey: ["dictionary", "entries", filters ?? null],
-    queryFn: () => listEntries(filters),
-    staleTime: 10_000,
-  });
+  return useQuery(dictionaryEntriesQueryOptions(filters));
 }
 
 export function useVocabularyEntry(id: number | null) {

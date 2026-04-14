@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, queryOptions, keepPreviousData } from "@tanstack/react-query";
 
 import { getNote, getNoteTree, listWorkspaces } from "@/lib/api/notes";
 
@@ -14,13 +14,18 @@ export function noteDetailsQueryKey(noteId: string) {
   return ["notes", "details", noteId] as const;
 }
 
-export function useWorkspaces(params: { userId?: number | null } = {}) {
+export function workspacesQueryOptions(params: { userId?: number | null } = {}) {
   const userId = params.userId ?? null;
-  return useQuery({
+  return queryOptions({
     queryKey: workspacesQueryKey(userId),
     queryFn: () => listWorkspaces({ userId }),
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
+}
+
+export function useWorkspaces(params: { userId?: number | null } = {}) {
+  return useQuery(workspacesQueryOptions(params));
 }
 
 export function useNoteTree(workspaceId: string | null) {

@@ -1,4 +1,4 @@
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useQuery, keepPreviousData, queryOptions } from "@tanstack/react-query";
 
 import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
@@ -81,14 +81,14 @@ export type PaginatedZettels = {
   totalPages: number;
 };
 
-export function useZettelCards(filters?: ZettelFilterParams, pagination?: ZettelPaginationOptions) {
+export function zettelCardsQueryOptions(filters?: ZettelFilterParams, pagination?: ZettelPaginationOptions) {
   const page = pagination?.page ?? 1;
   const pageSize = pagination?.pageSize ?? 24;
   const skip = (page - 1) * pageSize;
 
-  return useQuery<PaginatedZettels>({
-    queryKey: ["zettels", "cards", filters || null, page, pageSize],
-    queryFn: async () => {
+  return queryOptions({
+    queryKey: ["zettels", "cards", filters || null, page, pageSize] as const,
+    queryFn: async (): Promise<PaginatedZettels> => {
       // When no status filter is set, fetch all non-archived cards (active + draft)
       const effectiveFilters = {
         ...filters,
@@ -112,6 +112,10 @@ export function useZettelCards(filters?: ZettelFilterParams, pagination?: Zettel
     staleTime: 30_000,
     placeholderData: keepPreviousData,
   });
+}
+
+export function useZettelCards(filters?: ZettelFilterParams, pagination?: ZettelPaginationOptions) {
+  return useQuery(zettelCardsQueryOptions(filters, pagination));
 }
 
 export function useZettelCard(cardId: number | null) {
