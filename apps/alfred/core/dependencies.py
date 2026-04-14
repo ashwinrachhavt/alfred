@@ -193,3 +193,24 @@ def get_summarization_service():
         llm_service=get_llm_service(),
         language_service=get_language_service(),
     )
+
+
+@lru_cache(maxsize=1)
+def get_qdrant_client():
+    """Return a Qdrant client or None if unavailable."""
+    try:
+        from qdrant_client import QdrantClient
+    except ImportError:
+        return None
+
+    url = settings.qdrant_url
+    if settings.qdrant_prefer_local and settings.qdrant_local_url:
+        url = settings.qdrant_local_url
+    if not url:
+        return None
+
+    try:
+        api_key = settings.qdrant_api_key.get_secret_value() if settings.qdrant_api_key else None
+        return QdrantClient(url=url, api_key=api_key)
+    except Exception:
+        return None

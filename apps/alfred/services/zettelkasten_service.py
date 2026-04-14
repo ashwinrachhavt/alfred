@@ -21,6 +21,7 @@ from alfred.core.utils import STAGE_TO_DELTA, clamp_int
 from alfred.core.utils import utcnow_naive as _utcnow
 from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview
 from alfred.schemas.zettel import LinkQuality, LinkSuggestion
+from alfred.core.dependencies import get_qdrant_client
 from alfred.services.spaced_repetition import compute_next_review_schedule
 
 
@@ -813,7 +814,7 @@ class ZettelkastenService:
         )
 
     def find_similar_cards(
-        self, card_id: int, *, threshold: float = 0.7, limit: int = 10
+        self, card_id: int, *, threshold: float = 0.5, limit: int = 10
     ) -> list[tuple[ZettelCard, LinkQuality]]:
         card = self.session.get(ZettelCard, card_id)
         if not card:
@@ -826,6 +827,67 @@ class ZettelkastenService:
 
         existing_links = self._existing_links(card_id)
 
+        qdrant = get_qdrant_client()
+        if qdrant is not None:
+            return self._find_similar_via_qdrant(
+                card, base_embedding, existing_links, qdrant,
+                threshold=threshold, limit=limit,
+            )
+        return self._find_similar_via_scan(
+            card, card_id, base_embedding, existing_links,
+            threshold=threshold, limit=limit,
+        )
+
+    def _find_similar_via_qdrant(
+        self,
+        card: ZettelCard,
+        base_embedding: list[float],
+        existing_links: set,
+        qdrant,
+        *,
+        threshold: float,
+        limit: int,
+    ) -> list[tuple[ZettelCard, LinkQuality]]:
+        from alfred.core.settings import settings
+
+        try:
+            results = qdrant.query_points(
+                collection_name=settings.qdrant_zettels_collection,
+                query=base_embedding,
+                limit=limit * 3,
+                score_threshold=threshold,
+            )
+        except Exception:
+            return self._find_similar_via_scan(
+                card, card.id, base_embedding, existing_links,
+                threshold=threshold, limit=limit,
+            )
+
+        scored: list[tuple[ZettelCard, LinkQuality]] = []
+        for hit in results.points:
+            hit_id = int(hit.id) if not isinstance(hit.id, int) else hit.id
+            if hit_id == card.id or (card.id, hit_id) in existing_links:
+                continue
+            cand = self.session.get(ZettelCard, hit_id)
+            if not cand:
+                continue
+            quality = self._quality(card, cand, semantic_score=hit.score)
+            scored.append((cand, quality))
+
+        scored.sort(key=lambda item: item[1].composite_score, reverse=True)
+        return scored[:limit]
+
+    def _find_similar_via_scan(
+        self,
+        card: ZettelCard,
+        card_id: int,
+        base_embedding: list[float],
+        existing_links: set,
+        *,
+        threshold: float,
+        limit: int,
+    ) -> list[tuple[ZettelCard, LinkQuality]]:
+        """Original O(n) fallback when Qdrant is unavailable."""
         candidates = self.session.exec(select(ZettelCard).where(ZettelCard.id != card_id))
         scored: list[tuple[ZettelCard, LinkQuality]] = []
         for cand in candidates:
