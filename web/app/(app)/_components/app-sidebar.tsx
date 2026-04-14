@@ -3,7 +3,9 @@
 import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 
+import { prefetchRouteData } from "@/lib/prefetch";
 import {
   Bell,
   BookA,
@@ -71,6 +73,7 @@ const navSections: NavSection[] = [
 ];
 
 function SidebarNavItem({ item, isActive }: { item: NavItem; isActive: boolean }) {
+  const queryClient = useQueryClient();
   const { openAiPanel, aiPanelOpen, chatMode } = useShellStore();
 
   const aiActive = item.action === "toggle-ai-panel" && aiPanelOpen;
@@ -111,7 +114,12 @@ function SidebarNavItem({ item, isActive }: { item: NavItem; isActive: boolean }
   }
 
   return (
-    <Link href={item.href} prefetch className={classes}>
+    <Link
+      href={item.href}
+      prefetch
+      onMouseEnter={() => prefetchRouteData(item.href, queryClient)}
+      className={classes}
+    >
       {inner}
     </Link>
   );
