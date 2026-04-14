@@ -4,7 +4,7 @@ import json as _json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
@@ -127,7 +127,9 @@ def list_cards(
     limit: int = 50,
     skip: int = 0,
     session: Session = Depends(get_db_session),
+    response: Response = None,
 ) -> PaginatedZettelResponse:
+    _set_cache_headers(response)
     all_tags = list(tags or [])
     if tag and tag not in all_tags:
         all_tags.append(tag)
@@ -234,8 +236,13 @@ def _invalidate_graph_cache() -> None:
     ClusteringService.invalidate_cache()
 
 
+def _set_cache_headers(response: Response, max_age: int = 30) -> None:
+    response.headers["Cache-Control"] = f"private, max-age={max_age}"
+
+
 @router.get("/topics", response_model=list[str])
-def get_topics(session: Session = Depends(get_db_session)) -> list[str]:
+def get_topics(session: Session = Depends(get_db_session), response: Response = None) -> list[str]:
+    _set_cache_headers(response)
     cached = _cache_get(_TOPICS_CACHE_KEY)
     if cached is not None:
         return cached
@@ -252,7 +259,8 @@ def get_topics(session: Session = Depends(get_db_session)) -> list[str]:
 
 
 @router.get("/tags", response_model=list[str])
-def get_tags(session: Session = Depends(get_db_session)) -> list[str]:
+def get_tags(session: Session = Depends(get_db_session), response: Response = None) -> list[str]:
+    _set_cache_headers(response)
     cached = _cache_get(_TAGS_CACHE_KEY)
     if cached is not None:
         return cached

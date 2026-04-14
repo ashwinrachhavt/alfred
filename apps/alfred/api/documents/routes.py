@@ -62,6 +62,10 @@ def _send_task_best_effort(
         logger.exception("%s", action)
 
 
+def _set_cache_headers(response: Response, max_age: int = 30) -> None:
+    response.headers["Cache-Control"] = f"private, max-age={max_age}"
+
+
 @router.post(
     "/notes",
     response_model=NoteResponse,
@@ -504,7 +508,9 @@ def list_explorer_documents(
     filter_topic: str | None = Query(None, description="Filter by primary topic"),
     search: str | None = Query(None, description="Optional search query"),
     svc: DocStorageService = Depends(get_doc_storage_service),
+    response: Response = None,
 ) -> dict:
+    _set_cache_headers(response)
     try:
         return svc.list_explorer_documents(
             limit=limit,
