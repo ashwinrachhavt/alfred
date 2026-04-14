@@ -294,21 +294,16 @@ export function KnowledgeHub() {
  <div className="flex flex-1 overflow-hidden">
  {/* Main view */}
  <div className="flex-1 overflow-y-auto">
- <div className="p-4">
  {/* Loading state */}
- {isLoading && (
- <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
- {Array.from({ length: 6 }).map((_, i) => (
- <CardSkeleton key={i} />
- ))}
- </div>
- )}
+ {isLoading && <KnowledgeSkeleton />}
 
+ {!isLoading && (
+ <div className="p-4">
  {/* Error state */}
- {isError && !isLoading && <ErrorState onRetry={() => refetch()} />}
+ {isError && <ErrorState onRetry={() => refetch()} />}
 
  {/* Empty state */}
- {!isLoading && !isError && allZettels.length === 0 && (
+ {!isError && allZettels.length === 0 && (
  <EmptyState
  onCreateClick={() => setShowCreate(true)}
  onAIClick={() => setShowAIGenerate(true)}
@@ -316,7 +311,7 @@ export function KnowledgeHub() {
  )}
 
  {/* Content views */}
- {!isLoading && !isError && allZettels.length > 0 && (
+ {!isError && allZettels.length > 0 && (
  <>
  {activeView === "cards" && (
  <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
@@ -371,7 +366,7 @@ export function KnowledgeHub() {
  )}
 
  {/* Pagination controls */}
- {!isLoading && !isError && totalPages > 1 && (
+ {totalPages > 1 && (
  <PaginationControls
  currentPage={currentPage}
  totalPages={totalPages}
@@ -379,6 +374,7 @@ export function KnowledgeHub() {
  />
  )}
  </div>
+ )}
 
  {/* Review Station */}
  {allZettels.length > 0 && <ReviewStation zettels={allZettels} />}
