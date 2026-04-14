@@ -7,7 +7,6 @@ import { AlertCircle, BookOpen, Layers, Link2, Loader2, Play, Plus, RefreshCw, S
 
 import { Button } from "@/components/ui/button";
 import { PaginationControls } from "@/components/ui/pagination-controls";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useZettelCards, useZettelTopics, useZettelTags } from "@/features/zettels/queries";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 import { apiPostJson } from "@/lib/api/client";
