@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import React, { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -72,9 +72,20 @@ const navSections: NavSection[] = [
   },
 ];
 
-function SidebarNavItem({ item, isActive }: { item: NavItem; isActive: boolean }) {
+type NavItemProps = {
+  item: NavItem;
+  isActive: boolean;
+  aiPanelOpen?: boolean;
+  chatMode?: string;
+};
+
+const SidebarNavItem = React.memo(function SidebarNavItem({
+  item,
+  isActive,
+  aiPanelOpen,
+  chatMode,
+}: NavItemProps) {
   const queryClient = useQueryClient();
-  const { openAiPanel, aiPanelOpen, chatMode } = useShellStore();
 
   const aiActive = item.action === "toggle-ai-panel" && aiPanelOpen;
   const aiExpanded = item.action === "toggle-ai-panel" && chatMode === "expanded";
@@ -107,7 +118,11 @@ function SidebarNavItem({ item, isActive }: { item: NavItem; isActive: boolean }
 
   if (item.action === "toggle-ai-panel") {
     return (
-      <button type="button" onClick={() => openAiPanel("expanded")} className={classes}>
+      <button
+        type="button"
+        onClick={() => useShellStore.getState().openAiPanel("expanded")}
+        className={classes}
+      >
         {inner}
       </button>
     );
@@ -123,9 +138,9 @@ function SidebarNavItem({ item, isActive }: { item: NavItem; isActive: boolean }
       {inner}
     </Link>
   );
-}
+});
 
-function TaskCenterButton() {
+const TaskCenterButton = React.memo(function TaskCenterButton() {
   const { activeCount, setTaskCenterOpen } = useTaskTracker();
   const mounted = useSyncExternalStore(
     () => () => {},
@@ -154,7 +169,7 @@ function TaskCenterButton() {
       {showBadge && <span className="text-primary ml-auto text-[10px]">{activeCount} active</span>}
     </button>
   );
-}
+});
 
 export function AppSidebar() {
   const pathname = usePathname();
@@ -181,7 +196,15 @@ export function AppSidebar() {
             </div>
             {section.items.map((item) => {
               const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
-              return <SidebarNavItem key={item.href} item={item} isActive={isActive} />;
+              return (
+                <SidebarNavItem
+                  key={item.href}
+                  item={item}
+                  isActive={isActive}
+                  aiPanelOpen={item.action === "toggle-ai-panel" ? aiPanelOpen : undefined}
+                  chatMode={item.action === "toggle-ai-panel" ? chatMode : undefined}
+                />
+              );
             })}
           </div>
         ))}
