@@ -4,6 +4,14 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Force opaque dark background on the Universe 3D canvas.
+   react-force-graph-3d creates the WebGLRenderer with alpha:true,
+   making the canvas transparent. CSS is the only reliable fix. */
+.scene-container canvas,
+.scene-container {
+  background: #0F0E0D !important;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

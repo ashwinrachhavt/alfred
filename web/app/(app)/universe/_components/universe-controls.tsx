@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Search, Volume2, VolumeX, Play, Pause } from "lucide-react";
+import { Search, Volume2, VolumeX, Play, Pause, Keyboard } from "lucide-react";
 import type { GraphNode } from "@/features/universe/queries";
 import { useUniverseStore } from "@/lib/stores/universe-store";
 
@@ -25,6 +25,7 @@ export function UniverseControls({ nodes, flyToNode }: Props) {
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -134,7 +135,7 @@ export function UniverseControls({ nodes, flyToNode }: Props) {
               setTimeout(() => setIsOpen(false), 150);
             }}
             placeholder="Search cards... (⌘K)"
-            className="w-48 bg-transparent font-sans text-xs text-white/80 placeholder:text-white/30 focus:outline-none"
+            className="w-48 bg-transparent font-sans text-base text-white/80 placeholder:text-white/30 focus:outline-none"
           />
           {query && (
             <button
@@ -145,7 +146,7 @@ export function UniverseControls({ nodes, flyToNode }: Props) {
               }}
               className="text-white/30 hover:text-white/60"
             >
-              <span className="font-mono text-[10px]">×</span>
+              <span className="font-mono text-base">×</span>
             </button>
           )}
         </div>
@@ -168,20 +169,20 @@ export function UniverseControls({ nodes, flyToNode }: Props) {
                     : "hover:bg-white/[0.03]"
                 }`}
               >
-                <span className="truncate font-sans text-xs text-white/80">
+                <span className="truncate font-sans text-base text-white/80">
                   {highlightMatch(node.title)}
                 </span>
                 <div className="mt-0.5 flex items-center gap-2">
                   {node.topic && (
-                    <span className="font-mono text-[9px] uppercase tracking-wider text-[#E8590C]/60">
+                    <span className="font-mono text-base uppercase tracking-wider text-[#E8590C]/60">
                       {node.topic}
                     </span>
                   )}
-                  <span className="font-mono text-[9px] text-white/25">
+                  <span className="font-mono text-base text-white/25">
                     {node.degree} links
                   </span>
                   {node.tags.length > 0 && (
-                    <span className="truncate font-mono text-[9px] text-white/20">
+                    <span className="truncate font-mono text-base text-white/20">
                       {node.tags.slice(0, 3).join(", ")}
                     </span>
                   )}
@@ -189,7 +190,7 @@ export function UniverseControls({ nodes, flyToNode }: Props) {
               </button>
             ))}
             <div className="border-t border-white/5 px-3 py-1.5">
-              <span className="font-mono text-[9px] text-white/20">
+              <span className="font-mono text-base text-white/20">
                 ↑↓ navigate · enter select · esc close
               </span>
             </div>
@@ -199,7 +200,7 @@ export function UniverseControls({ nodes, flyToNode }: Props) {
         {/* No results */}
         {isOpen && query.trim().length > 0 && results.length === 0 && (
           <div className="absolute left-0 top-full mt-1 w-72 rounded-lg border border-white/10 bg-[#1a1918]/95 px-3 py-3 shadow-2xl backdrop-blur-sm">
-            <span className="font-sans text-xs text-white/30">
+            <span className="font-sans text-base text-white/30">
               No cards matching &ldquo;{query}&rdquo;
             </span>
           </div>
@@ -232,8 +233,44 @@ export function UniverseControls({ nodes, flyToNode }: Props) {
         )}
       </button>
 
+      {/* Keyboard shortcuts */}
+      <div className="relative">
+        <button
+          onClick={() => setShowShortcuts((s) => !s)}
+          className="rounded-full border border-white/10 bg-black/40 p-2 backdrop-blur-sm"
+          title="Keyboard shortcuts (?)"
+        >
+          <Keyboard className="h-3.5 w-3.5 text-white/40" />
+        </button>
+        {showShortcuts && (
+          <div className="absolute left-0 top-full mt-1 w-56 rounded-lg border border-white/10 bg-[#1a1918]/95 p-3 shadow-2xl backdrop-blur-sm">
+            <div className="mb-2 font-mono text-base uppercase tracking-wider text-white/50">
+              Shortcuts
+            </div>
+            {[
+              ["← → ↑ ↓", "Orbit (hold to glide)"],
+              ["+ / −", "Zoom in / out"],
+              ["[ ]", "Cycle through nodes"],
+              ["Home", "Reset view"],
+              ["⌘K", "Search cards"],
+              ["N", "New card"],
+              ["Space", "Time-lapse"],
+              ["Click", "Select + fly to"],
+              ["Dbl-click", "Close-up zoom"],
+              ["Shift+click", "Multi-select (max 5)"],
+              ["Esc", "Deselect / close"],
+            ].map(([key, desc]) => (
+              <div key={key} className="flex items-center justify-between py-0.5">
+                <span className="font-mono text-base text-white/60">{key}</span>
+                <span className="font-sans text-base text-white/30">{desc}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="rounded-full border border-white/10 bg-black/40 px-3 py-2 backdrop-blur-sm">
-        <span className="font-mono text-[10px] text-white/40">
+        <span className="font-mono text-base text-white/40">
           {nodes.length} cards
         </span>
       </div>

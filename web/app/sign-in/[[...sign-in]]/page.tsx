@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 
 import { SignIn } from "@clerk/nextjs";
-import { auth } from "@clerk/nextjs/server";
 
 import { isClerkEnabled } from "@/lib/auth";
+import { getAuth } from "@/lib/auth.server";
 
 export default async function SignInPage() {
   if (!isClerkEnabled()) {
@@ -22,7 +22,7 @@ export default async function SignInPage() {
   }
 
   try {
-    const { userId } = await auth();
+    const { userId } = await getAuth();
     if (userId) {
       redirect("/inbox");
     }

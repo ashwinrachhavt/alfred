@@ -19,11 +19,26 @@ import { ArtifactCardComponent } from "@/components/agent/artifact-card";
 import { InsightToCard } from "@/components/agent/insight-to-card";
 import { MarkdownMessage } from "@/components/agent/markdown-message";
 import { RelatedCards } from "@/components/agent/related-cards";
+import { apiRoutes } from "@/lib/api/routes";
 import { apiFetch } from "@/lib/api/client";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import type { AgentMessage, ArtifactCard } from "@/lib/stores/agent-store";
 import type { ChatMode } from "@/lib/stores/shell-store";
+import { markdownToPlainText } from "@/lib/utils/markdown";
 import { cn } from "@/lib/utils";
+
+type ActionTone = "default" | "subtle";
+
+function getActionToneClasses(tone: ActionTone): string {
+  return tone === "subtle"
+    ? "text-muted-foreground/70 hover:text-foreground"
+    : "text-muted-foreground hover:text-foreground";
+}
+
+function buildZettelTitle(content: string): string {
+  const plainText = markdownToPlainText(content);
+  return plainText.slice(0, 60).trim() || "Untitled response";
+}
 
 function ReasoningTrace({ reasoning }: { reasoning: string }) {
   const [open, setOpen] = useState(false);
@@ -72,10 +87,12 @@ function CopyMessageButton({
   content,
   className,
   showLabel = true,
+  tone = "default",
 }: {
   content: string;
   className?: string;
   showLabel?: boolean;
+  tone?: ActionTone;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -91,10 +108,11 @@ function CopyMessageButton({
 
   return (
     <button
+      type="button"
       onClick={() => void handleCopy()}
       className={cn(
         "flex items-center gap-1 rounded transition-colors",
-        copied ? "text-primary" : "text-muted-foreground hover:text-foreground",
+        copied ? "text-primary" : getActionToneClasses(tone),
         showLabel ? "px-1.5 py-1 text-[10px]" : "p-1",
         className,
       )}
@@ -103,6 +121,91 @@ function CopyMessageButton({
     >
       {copied ? <Check className="size-3" /> : <ClipboardCopy className="size-3" />}
       {showLabel ? (copied ? "Copied" : "Copy") : null}
+    </button>
+  );
+}
+
+function ZettelMessageButton({
+  content,
+  createdZettelId,
+  onViewZettel,
+  className,
+  showLabel = true,
+  tone = "default",
+  idleLabel = "Save",
+  savedLabel = "View",
+  createAriaLabel = "Create zettel from response",
+  viewAriaLabel = "View zettel",
+  createTitle = "Create Zettel",
+  viewTitle = "View Zettel",
+}: {
+  content: string;
+  createdZettelId: number | null;
+  onViewZettel?: (zettelId: number) => void;
+  className?: string;
+  showLabel?: boolean;
+  tone?: ActionTone;
+  idleLabel?: string;
+  savedLabel?: string;
+  createAriaLabel?: string;
+  viewAriaLabel?: string;
+  createTitle?: string;
+  viewTitle?: string;
+}) {
+  const [savedZettelId, setSavedZettelId] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const viewZettelId = createdZettelId ?? savedZettelId;
+
+  const handleClick = async () => {
+    if (viewZettelId) {
+      onViewZettel?.(viewZettelId);
+      return;
+    }
+
+    if (saving) return;
+
+    setSaving(true);
+    try {
+      const created = await apiFetch<{ id: number }>(apiRoutes.zettels.cards, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: buildZettelTitle(content),
+          content,
+          tags: [],
+          topic: "",
+        }),
+      });
+      setSavedZettelId(created.id);
+    } catch {
+      toast.error("Failed to save response as a zettel.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={() => void handleClick()}
+      disabled={saving}
+      className={cn(
+        "flex items-center gap-1 rounded transition-colors",
+        viewZettelId ? "text-primary" : getActionToneClasses(tone),
+        showLabel ? "px-1.5 py-1 text-[10px]" : "p-1",
+        className,
+      )}
+      aria-label={viewZettelId ? viewAriaLabel : createAriaLabel}
+      title={viewZettelId ? viewTitle : createTitle}
+    >
+      {saving ? (
+        <Loader2 className="size-3 animate-spin" />
+      ) : viewZettelId ? (
+        <Check className="size-3" />
+      ) : (
+        <BookmarkPlus className="size-3" />
+      )}
+      {showLabel ? (viewZettelId ? savedLabel : idleLabel) : null}
     </button>
   );
 }
@@ -161,42 +264,11 @@ function ActionBar({
   createdZettelId: number | null;
   onViewZettel?: (zettelId: number) => void;
 }) {
-  const [savedZettelId, setSavedZettelId] = useState<number | null>(null);
-  const [saving, setSaving] = useState(false);
-  const viewZettelId = createdZettelId ?? savedZettelId;
-
-  const handlePrimaryAction = async () => {
-    if (viewZettelId) {
-      onViewZettel?.(viewZettelId);
-      return;
-    }
-
-    if (saving) return;
-
-    setSaving(true);
-    try {
-      const created = await apiFetch<{ id: number }>("/api/zettels/cards", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: message.content.slice(0, 60).replace(/[#*_]/g, "").trim(),
-          content: message.content,
-          tags: [],
-          topic: "",
-        }),
-      });
-      setSavedZettelId(created.id);
-    } catch {
-      toast.error("Failed to save response as a zettel.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <div className="flex items-center gap-0.5 pt-0.5 opacity-0 transition-opacity group-hover:opacity-100 hover:opacity-100">
       {isOnNotes ? (
         <button
+          type="button"
           className="flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
           aria-label="Insert response into current note"
           title="Insert into Note"
@@ -206,45 +278,68 @@ function ActionBar({
         </button>
       ) : null}
 
-      <button
-        onClick={() => void handlePrimaryAction()}
-        disabled={saving}
-        className={cn(
-          "flex items-center gap-1 rounded px-1.5 py-1 text-[10px] transition-colors",
-          viewZettelId ? "text-primary" : "text-muted-foreground hover:text-foreground",
-        )}
-        aria-label={viewZettelId ? "View zettel" : "Save as zettel"}
-        title={viewZettelId ? "View Zettel" : "Save as Zettel"}
-      >
-        {saving ? (
-          <Loader2 className="size-3 animate-spin" />
-        ) : viewZettelId ? (
-          <Check className="size-3" />
-        ) : (
-          <BookmarkPlus className="size-3" />
-        )}
-        {viewZettelId ? "View" : "Save"}
-      </button>
+      <ZettelMessageButton
+        content={message.content}
+        createdZettelId={createdZettelId}
+        onViewZettel={onViewZettel}
+        idleLabel="Save"
+        savedLabel="View"
+        createAriaLabel="Save as zettel"
+        createTitle="Save as Zettel"
+      />
 
       <CopyMessageButton content={message.content} />
     </div>
   );
 }
 
-function FeedbackButtons({ content }: { content: string }) {
+function FeedbackButtons({
+  content,
+  createdZettelId,
+  onViewZettel,
+}: {
+  content: string;
+  createdZettelId: number | null;
+  onViewZettel?: (zettelId: number) => void;
+}) {
   return (
     <div className="flex items-center gap-1 pt-1">
       <CopyMessageButton
         content={content}
-        className="px-2 py-1 text-[11px] text-muted-foreground/70 hover:text-foreground"
+        tone="subtle"
+        className="px-2 py-1 text-[11px]"
       />
-      <button className="rounded p-1 text-muted-foreground/40 transition-colors hover:text-muted-foreground">
+      <ZettelMessageButton
+        content={content}
+        createdZettelId={createdZettelId}
+        onViewZettel={onViewZettel}
+        tone="subtle"
+        className="px-2 py-1 text-[11px]"
+        idleLabel="Zettel"
+        savedLabel="View"
+      />
+      <button
+        type="button"
+        className="rounded p-1 text-muted-foreground/40 transition-colors hover:text-muted-foreground"
+        aria-label="Like response"
+        title="Like response"
+      >
         <ThumbsUp className="size-3.5" />
       </button>
-      <button className="rounded p-1 text-muted-foreground/40 transition-colors hover:text-muted-foreground">
+      <button
+        type="button"
+        className="rounded p-1 text-muted-foreground/40 transition-colors hover:text-muted-foreground"
+        aria-label="Dislike response"
+        title="Dislike response"
+      >
         <ThumbsDown className="size-3.5" />
       </button>
-      <button className="rounded p-1 text-muted-foreground/40 transition-colors hover:text-muted-foreground">
+      <button
+        type="button"
+        className="rounded p-1 text-muted-foreground/40 transition-colors hover:text-muted-foreground"
+        aria-label="Regenerate response"
+        title="Regenerate response"
+      >
         <RotateCcw className="size-3.5" />
       </button>
     </div>
@@ -353,7 +448,11 @@ export const MessageBubble = memo(function MessageBubble({
             />
             )
           : (
-            <FeedbackButtons content={message.content} />
+            <FeedbackButtons
+              content={message.content}
+              createdZettelId={createdZettelId}
+              onViewZettel={onViewZettel}
+            />
             )
         : null}
     </div>

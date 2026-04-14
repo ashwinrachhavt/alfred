@@ -5,6 +5,7 @@ import "./globals.css";
 import "@excalidraw/excalidraw/index.css";
 
 import { Providers } from "@/app/providers";
+import { isClerkEnabled } from "@/lib/auth";
 
 const sourceSerif = Source_Serif_4({
  variable: "--font-source-serif",
@@ -46,9 +47,13 @@ export default function RootLayout({
  <body
  className={`${sourceSerif.variable} ${dmSans.variable} ${jetbrainsMono.variable} font-sans antialiased`}
  >
+ {isClerkEnabled() ? (
  <ClerkProvider>
  <Providers>{children}</Providers>
  </ClerkProvider>
+ ) : (
+ <Providers>{children}</Providers>
+ )}
  </body>
  </html>
  );

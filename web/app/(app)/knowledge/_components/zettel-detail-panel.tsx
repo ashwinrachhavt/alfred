@@ -80,7 +80,7 @@ export function ZettelDetailPanel({ zettel, allZettels, onClose, onSelectZettel 
   }, [confirmDelete, cardId, deleteMutation, onClose]);
 
   return (
-    <aside className="bg-card flex h-full w-[320px] shrink-0 flex-col border-l">
+    <aside className="bg-card flex max-h-[80vh] w-full flex-col rounded-xl border shadow-2xl">
       {/* Header */}
       <div className="flex items-start justify-between gap-2 border-b p-4">
         {isEditing ? (

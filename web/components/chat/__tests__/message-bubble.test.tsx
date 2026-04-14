@@ -205,6 +205,15 @@ describe("MessageBubble", () => {
     expect(screen.getByText("Copy")).toBeInTheDocument();
   });
 
+  it("shows a zettel action for assistant messages in expanded chat", () => {
+    const message = makeMessage({ content: "This is copied text." });
+
+    render(<MessageBubble message={message} mode="expanded" onArtifactClick={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "Create zettel from response" })).toBeInTheDocument();
+    expect(screen.getByText("Zettel")).toBeInTheDocument();
+  });
+
   it("copies the assistant message text when copy is clicked", async () => {
     const user = userEvent.setup();
     const message = makeMessage({ content: "This is copied text." });
@@ -244,6 +253,50 @@ describe("MessageBubble", () => {
     await user.click(screen.getByRole("button", { name: "View zettel" }));
 
     expect(onViewZettel).toHaveBeenCalledWith(321);
+  });
+
+  it("creates a zettel in expanded mode and opens it once saved", async () => {
+    const user = userEvent.setup();
+    const onViewZettel = vi.fn();
+    const message = makeMessage({
+      content: "## Systems thinking\n\nFeedback loops shape behavior over time.",
+    });
+
+    vi.mocked(apiFetch).mockResolvedValue({ id: 654 });
+
+    render(
+      <MessageBubble
+        message={message}
+        mode="expanded"
+        onArtifactClick={vi.fn()}
+        onViewZettel={onViewZettel}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Create zettel from response" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "View zettel" })).toBeInTheDocument();
+    });
+
+    expect(vi.mocked(apiFetch)).toHaveBeenCalledWith(
+      "/api/zettels/cards",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+
+    const [, requestInit] = vi.mocked(apiFetch).mock.calls[0] ?? [];
+    expect(JSON.parse(String(requestInit?.body))).toMatchObject({
+      title: "Systems thinking Feedback loops shape behavior over time.",
+      content: "## Systems thinking\n\nFeedback loops shape behavior over time.",
+      tags: [],
+      topic: "",
+    });
+
+    await user.click(screen.getByRole("button", { name: "View zettel" }));
+
+    expect(onViewZettel).toHaveBeenCalledWith(654);
   });
 
   describe("mode differences", () => {
@@ -288,13 +341,13 @@ describe("MessageBubble", () => {
 
     it("expanded mode shows feedback buttons", () => {
       const message = makeMessage({ content: "A valid response" });
-      const { container } = render(
-        <MessageBubble message={message} mode="expanded" onArtifactClick={vi.fn()} />,
-      );
+      render(<MessageBubble message={message} mode="expanded" onArtifactClick={vi.fn()} />);
 
-      const buttons = container.querySelectorAll("button");
-
-      expect(buttons.length).toBeGreaterThanOrEqual(4);
+      expect(screen.getByRole("button", { name: "Copy response" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Create zettel from response" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Like response" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Dislike response" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Regenerate response" })).toBeInTheDocument();
     });
   });
 });
