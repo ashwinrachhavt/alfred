@@ -51,7 +51,7 @@ class DailyReflectionRow(Model, table=True):
     stats: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     pipeline_run_id: str = Field(sa_column=Column(String(64), nullable=False))
     stages_ran: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
-    generated_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    generated_at: datetime = Field(sa_column=Column(DateTime(), nullable=False))
 
 
 __all__ = ["DailyEntryRow", "DailyReflectionRow"]

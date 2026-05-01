@@ -63,7 +63,7 @@ def upgrade() -> None:
         sa.Column("stats", sa.JSON(), nullable=False),
         sa.Column("pipeline_run_id", sa.String(length=64), nullable=False),
         sa.Column("stages_ran", sa.JSON(), nullable=False),
-        sa.Column("generated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("generated_at", sa.DateTime(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
