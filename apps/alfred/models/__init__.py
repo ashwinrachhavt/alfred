@@ -27,7 +27,7 @@ from alfred.models.thinking import AgentMessageRow, ThinkingSessionRow
 from alfred.models.today import DailyEntryRow, DailyReflectionRow
 from alfred.models.user import User
 from alfred.models.whiteboard import Whiteboard, WhiteboardComment, WhiteboardRevision
-from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview
+from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview, ZettelSession
 
 __all__ = [
     "Model",
@@ -45,6 +45,7 @@ __all__ = [
     "ZettelCard",
     "ZettelLink",
     "ZettelReview",
+    "ZettelSession",
     "Whiteboard",
     "WhiteboardRevision",
     "WhiteboardComment",
