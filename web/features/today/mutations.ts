@@ -4,6 +4,7 @@ import type { Query } from "@tanstack/react-query";
 import {
   createTodayEntry,
   deleteTodayEntry,
+  runTodayPipeline,
   updateTodayEntry,
 } from "@/lib/api/today";
 import type {
@@ -11,6 +12,8 @@ import type {
   DailyEntryCreate,
   DailyEntryItem,
   DailyEntryUpdate,
+  RunTodayPipelineBody,
+  RunTodayPipelineResponse,
 } from "@/features/today/types";
 
 const TODAY_ENTRIES_KEY = ["today", "entries"] as const;
@@ -125,6 +128,27 @@ export function useDeleteTodayEntry() {
   return useMutation<void, Error, number>({
     mutationFn: (id: number) => deleteTodayEntry(id),
     onSuccess: () => {
+      void invalidateTodayEntries(queryClient);
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Manual pipeline trigger (T12)
+// ---------------------------------------------------------------------------
+
+/**
+ * Run or enqueue the Today pipeline. On success, invalidates both the
+ * reflection cache (so the new digest shows up) and the entries cache
+ * (so carry-over'd todos surface on today's views).
+ */
+export function useRunTodayPipeline() {
+  const queryClient = useQueryClient();
+
+  return useMutation<RunTodayPipelineResponse, Error, RunTodayPipelineBody>({
+    mutationFn: (body: RunTodayPipelineBody) => runTodayPipeline(body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["today", "reflection"] });
       void invalidateTodayEntries(queryClient);
     },
   });

@@ -137,5 +137,8 @@ export const apiRoutes = {
     calendar: "/api/today/calendar",
     entries: "/api/today/entries",
     entryById: (id: number) => `/api/today/entries/${id}`,
+    reflectionByDate: (date: string) => `/api/today/reflections/${date}`,
+    reflections: "/api/today/reflections",
+    pipelineRun: "/api/today/pipeline/run",
   },
 } as const;

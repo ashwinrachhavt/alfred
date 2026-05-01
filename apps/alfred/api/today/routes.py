@@ -5,14 +5,18 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from alfred.api.dependencies import get_db_session
+from alfred.models.today import DailyReflectionRow
 from alfred.schemas.today import (
     DailyEntriesResponse,
     DailyEntryCreate,
     DailyEntryItem,
     DailyEntryUpdate,
+    DailyReflectionResponse,
+    PipelineRunRequest,
+    PipelineRunResponse,
     TodayBriefingResponse,
     TodayCalendarResponse,
 )
@@ -22,6 +26,7 @@ from alfred.services.today.entry_service import (
     VALID_STATUSES,
     EntryService,
 )
+from alfred.services.today.reflection_service import ReflectionService
 
 router = APIRouter(prefix="/api/today", tags=["today"])
 
@@ -247,3 +252,80 @@ def delete_entry(
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Daily reflections (T12)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/reflections/{entry_date}", response_model=DailyReflectionResponse)
+def get_reflection(
+    entry_date: date,
+    tz: str = Query(default="UTC", min_length=1, max_length=64),
+    session: Session = Depends(get_db_session),
+) -> DailyReflectionResponse:
+    """Fetch the reflection row for a specific date. 404 if none."""
+    row = ReflectionService(session=session).get_for_date(entry_date)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no reflection for {entry_date.isoformat()}",
+        )
+    return DailyReflectionResponse.from_row(row)
+
+
+@router.get("/reflections", response_model=list[DailyReflectionResponse])
+def list_reflections(
+    start: date = Query(...),
+    end: date = Query(...),
+    tz: str = Query(default="UTC", min_length=1, max_length=64),
+    session: Session = Depends(get_db_session),
+) -> list[DailyReflectionResponse]:
+    """List reflections in a date range (descending). Capped to 62 days
+    to match the ``/entries`` window contract."""
+    delta = (end - start).days
+    if delta < 0 or delta > 62:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="invalid date range (0..62 days)",
+        )
+
+    stmt = (
+        select(DailyReflectionRow)
+        .where(DailyReflectionRow.entry_date >= start)
+        .where(DailyReflectionRow.entry_date <= end)
+        .order_by(DailyReflectionRow.entry_date.desc())
+    )
+    rows = session.exec(stmt).all()
+    return [DailyReflectionResponse.from_row(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Manual pipeline trigger (T12)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/pipeline/run", response_model=PipelineRunResponse)
+def trigger_pipeline(body: PipelineRunRequest) -> PipelineRunResponse:
+    """Manually run or enqueue the Today pipeline for a specific date.
+
+    Not auth-gated at PoC; idempotent via the Redis lock inside the task
+    body. ``enqueue=False`` runs synchronously in-process (dev / small
+    deployments); ``enqueue=True`` dispatches to Celery.
+    """
+    # Inline imports so the route module doesn't force celery/app-context
+    # at import time during unit tests.
+    from alfred.tasks.today_pipeline import _run
+    from alfred.tasks.today_pipeline import run_for_date as _run_for_date_task
+
+    if body.enqueue:
+        async_result = _run_for_date_task.delay(
+            entry_date=body.entry_date.isoformat(),
+            tz_name=body.tz,
+            user_id=body.user_id,
+        )
+        return PipelineRunResponse(dispatched=True, task_id=async_result.id)
+
+    result = _run(body.entry_date, body.tz, body.user_id)
+    return PipelineRunResponse(dispatched=False, result=result)

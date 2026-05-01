@@ -71,3 +71,36 @@ export interface ListTodayEntriesParams {
   limit?: number;
   cursor?: string;
 }
+
+// ---------------------------------------------------------------------------
+// DailyReflection (T12)
+// ---------------------------------------------------------------------------
+
+/**
+ * End-of-day digest as returned by ``GET /api/today/reflections/{date}``.
+ * ``digest_md`` is freeform markdown produced by the DigestAgent; ``stats``
+ * is a loose bag of entry counts + pipeline metadata.
+ */
+export interface DailyReflection {
+  id: number;
+  entry_date: string;
+  digest_md: string;
+  stats: Record<string, unknown>;
+  pipeline_run_id: string;
+  stages_ran: string[];
+  generated_at: string;
+  user_id: string | null;
+}
+
+export interface RunTodayPipelineBody {
+  entry_date: string;
+  tz?: string;
+  user_id?: string | null;
+  enqueue?: boolean;
+}
+
+export interface RunTodayPipelineResponse {
+  dispatched: boolean;
+  task_id?: string | null;
+  result?: Record<string, unknown> | null;
+}

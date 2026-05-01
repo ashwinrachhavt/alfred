@@ -1,11 +1,14 @@
-import { apiFetch, apiPatchJson, apiPostJson } from "@/lib/api/client";
+import { ApiError, apiFetch, apiPatchJson, apiPostJson } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
 import type {
   DailyEntriesResponse,
   DailyEntryCreate,
   DailyEntryItem,
   DailyEntryUpdate,
+  DailyReflection,
   ListTodayEntriesParams,
+  RunTodayPipelineBody,
+  RunTodayPipelineResponse,
 } from "@/features/today/types";
 
 export type TodayCaptureItem = {
@@ -190,4 +193,38 @@ export async function updateTodayEntry(
 
 export async function deleteTodayEntry(entryId: number): Promise<void> {
   await apiFetch<unknown>(apiRoutes.today.entryById(entryId), { method: "DELETE" });
+}
+
+// ---------------------------------------------------------------------------
+// Daily reflection + manual pipeline trigger (T12)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch the digest for a given date. Returns ``null`` for 404 (no
+ * reflection yet) because the UI renders nothing in that case rather
+ * than showing an error.
+ */
+export async function getTodayReflection(
+  date: string,
+  tz?: string,
+): Promise<DailyReflection | null> {
+  const base = apiRoutes.today.reflectionByDate(date);
+  const url = tz ? `${base}?tz=${encodeURIComponent(tz)}` : base;
+  try {
+    return await apiFetch<DailyReflection>(url, { cache: "no-store" });
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function runTodayPipeline(
+  body: RunTodayPipelineBody,
+): Promise<RunTodayPipelineResponse> {
+  return apiPostJson<RunTodayPipelineResponse, RunTodayPipelineBody>(
+    apiRoutes.today.pipelineRun,
+    body,
+  );
 }

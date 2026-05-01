@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -149,3 +150,58 @@ class DailyEntriesResponse(BaseModel):
     entries: list[DailyEntryItem]
     next_cursor: str | None = None
     total: int = 0
+
+
+# ---------------------------------------------------------------------------
+# Daily reflection + manual pipeline trigger (T12)
+# ---------------------------------------------------------------------------
+
+
+class DailyReflectionResponse(BaseModel):
+    """End-of-day digest returned by ``GET /api/today/reflections/{date}``."""
+
+    id: int
+    entry_date: str  # ISO date
+    digest_md: str
+    stats: dict
+    pipeline_run_id: str
+    stages_ran: list[str]
+    generated_at: str
+    user_id: str | None = None
+
+    @classmethod
+    def from_row(cls, row: Any) -> DailyReflectionResponse:
+        """Build the response from a :class:`DailyReflectionRow`.
+
+        Typed as ``Any`` to avoid a schema->model import cycle; the
+        attribute access is structural and safe because the row shape is
+        stable (see ``alfred.models.today.DailyReflectionRow``).
+        """
+        generated_at = getattr(row, "generated_at", None)
+        return cls(
+            id=row.id,
+            entry_date=row.entry_date.isoformat(),
+            digest_md=row.digest_md or "",
+            stats=dict(row.stats or {}),
+            pipeline_run_id=row.pipeline_run_id or "",
+            stages_ran=list(row.stages_ran or []),
+            generated_at=generated_at.isoformat() if generated_at else "",
+            user_id=getattr(row, "user_id", None),
+        )
+
+
+class PipelineRunRequest(BaseModel):
+    """Payload for ``POST /api/today/pipeline/run`` manual trigger."""
+
+    entry_date: date
+    tz: str = "UTC"
+    user_id: str | None = None
+    # ``False`` — synchronous execution for dev / small deployments.
+    # ``True``  — dispatch to the Celery worker via ``.delay(...)``.
+    enqueue: bool = False
+
+
+class PipelineRunResponse(BaseModel):
+    dispatched: bool
+    task_id: str | None = None
+    result: dict | None = None

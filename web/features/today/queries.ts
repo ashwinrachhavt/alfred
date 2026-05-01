@@ -1,8 +1,17 @@
 import { addMonths, endOfMonth, format, startOfMonth, subMonths } from "date-fns";
 import { useQuery } from "@tanstack/react-query";
 
-import { getTodayBriefing, getTodayCalendar, listTodayEntries } from "@/lib/api/today";
-import type { DailyEntriesResponse, ListTodayEntriesParams } from "@/features/today/types";
+import {
+  getTodayBriefing,
+  getTodayCalendar,
+  getTodayReflection,
+  listTodayEntries,
+} from "@/lib/api/today";
+import type {
+  DailyEntriesResponse,
+  DailyReflection,
+  ListTodayEntriesParams,
+} from "@/features/today/types";
 
 export function toIsoDay(value: Date): string {
   return format(value, "yyyy-MM-dd");
@@ -87,5 +96,23 @@ export function useTodayEntries(params: UseTodayEntriesParams) {
     queryFn: () => listTodayEntries(listParams),
     staleTime: 30_000,
     placeholderData: (previous) => previous,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Reflection (T12)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch the digest for a specific ISO date. Returns ``null`` when no
+ * reflection exists yet (swallowed 404 in the fetch fn). Query stays
+ * idle until a date is provided.
+ */
+export function useTodayReflection(date: string | undefined, tz?: string) {
+  return useQuery<DailyReflection | null>({
+    enabled: Boolean(date),
+    queryKey: ["today", "reflection", date ?? null, tz ?? null],
+    queryFn: () => getTodayReflection(date as string, tz),
+    staleTime: 60_000,
   });
 }
