@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { FilePlus2, Search, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, FilePlus2, Search, Trash2 } from "lucide-react";
 
 import type { NoteTreeResponse, Workspace } from "@/lib/api/types/notes";
 
@@ -33,6 +33,21 @@ type NotesSidebarProps = {
 
 type TreeNode = NoteTreeResponse["items"][number];
 
+function findAncestorIds(nodes: TreeNode[], targetId: string): string[] | null {
+ for (const node of nodes) {
+ if (node.note.id === targetId) {
+ return [];
+ }
+
+ const childAncestors = findAncestorIds(node.children, targetId);
+ if (childAncestors !== null) {
+ return [node.note.id, ...childAncestors];
+ }
+ }
+
+ return null;
+}
+
 function matchesQuery(title: string, query: string): boolean {
  const q = query.trim().toLowerCase();
  if (!q) return true;
@@ -55,34 +70,62 @@ function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
 function TreeList({
  nodes,
  depth,
+ collapsedBranches,
+ selectedAncestorIds,
+ searchActive,
  selectedNoteId,
+ onToggleExpanded,
  onSelectNoteId,
  onRequestDelete,
 }: {
  nodes: TreeNode[];
  depth: number;
+ collapsedBranches: Record<string, boolean>;
+ selectedAncestorIds: Set<string>;
+ searchActive: boolean;
  selectedNoteId: string | null;
+ onToggleExpanded: (noteId: string) => void;
  onSelectNoteId: (noteId: string) => void;
  onRequestDelete?: (noteId: string, title: string) => void;
 }) {
  return (
  <ul className="space-y-0.5">
  {nodes.map((node) => {
+ const isBranch = node.children.length > 0;
  const isSelected = selectedNoteId === node.note.id;
- const icon = node.note.icon?.trim() || "📄";
+ const isExpanded =
+ isBranch &&
+ (searchActive || selectedAncestorIds.has(node.note.id) || !collapsedBranches[node.note.id]);
+ const icon = node.note.icon?.trim() || (isBranch ? "📁" : "📄");
 
  return (
  <li key={node.note.id} className="group/note relative">
- <div className="flex items-center">
+ <div className="flex items-center" style={{ paddingLeft:`${depth * 12}px` }}>
+ {isBranch ? (
+ <button
+ type="button"
+ className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground"
+ onClick={() => onToggleExpanded(node.note.id)}
+ aria-label={`${isExpanded ? "Collapse" : "Expand"} ${node.note.title || "Untitled"}`}
+ >
+ {isExpanded ? (
+ <ChevronDown className="size-3.5" aria-hidden="true" />
+ ) : (
+ <ChevronRight className="size-3.5" aria-hidden="true" />
+ )}
+ </button>
+ ) : (
+ <span className="size-6 shrink-0" aria-hidden="true" />
+ )}
+
  <button
  type="button"
  className={cn(
- "flex flex-1 items-center gap-2 truncate rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+ "flex min-w-0 flex-1 items-center gap-2 truncate rounded-md px-2 py-1.5 text-left text-sm transition-colors",
  isSelected
  ? "border-l-2 border-primary bg-[var(--alfred-accent-subtle)] text-foreground"
  : "border-l-2 border-transparent text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground",
  )}
- style={{ paddingLeft:`${8 + depth * 12}px` }}
  onClick={() => onSelectNoteId(node.note.id)}
  >
  <span className="text-sm" aria-hidden="true">
@@ -107,12 +150,16 @@ function TreeList({
  )}
  </div>
 
- {node.children.length ? (
+ {isBranch && isExpanded ? (
  <div className="pt-0.5">
  <TreeList
  nodes={node.children}
  depth={depth + 1}
+ collapsedBranches={collapsedBranches}
+ selectedAncestorIds={selectedAncestorIds}
+ searchActive={searchActive}
  selectedNoteId={selectedNoteId}
+ onToggleExpanded={onToggleExpanded}
  onSelectNoteId={onSelectNoteId}
  onRequestDelete={onRequestDelete}
  />
@@ -138,6 +185,16 @@ export function NotesSidebar({
 }: NotesSidebarProps) {
  const nodes = useMemo(() => tree?.items ?? [], [tree]);
  const filtered = useMemo(() => filterTree(nodes, search), [nodes, search]);
+ const selectedAncestorIds = useMemo(() => {
+ if (!selectedNoteId) {
+ return [];
+ }
+
+ return findAncestorIds(nodes, selectedNoteId) ?? [];
+ }, [nodes, selectedNoteId]);
+ const selectedAncestorSet = useMemo(() => new Set(selectedAncestorIds), [selectedAncestorIds]);
+ const [collapsedBranches, setCollapsedBranches] = useState<Record<string, boolean>>({});
+ const isSearchActive = search.trim().length > 0;
 
  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
 
@@ -189,7 +246,23 @@ export function NotesSidebar({
  <TreeList
  nodes={filtered}
  depth={0}
+ collapsedBranches={collapsedBranches}
+ selectedAncestorIds={selectedAncestorSet}
+ searchActive={isSearchActive}
  selectedNoteId={selectedNoteId}
+ onToggleExpanded={(noteId) =>
+ setCollapsedBranches((previous) => {
+ const next = { ...previous };
+
+ if (previous[noteId]) {
+ delete next[noteId];
+ } else {
+ next[noteId] = true;
+ }
+
+ return next;
+ })
+ }
  onSelectNoteId={onSelectNoteId}
  onRequestDelete={
  onDeleteNote

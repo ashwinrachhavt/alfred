@@ -1,4 +1,5 @@
 import { NotesWorkbenchClient } from "@/app/(app)/notes/_components/notes-workbench-client";
+import { NotesQueryProvider } from "@/app/(app)/notes/_components/notes-query-provider";
 
 type NotesPageProps = {
  searchParams?: Promise<{
@@ -17,8 +18,9 @@ export default async function NotesPage({ searchParams }: NotesPageProps) {
 
  return (
  <div className="h-[calc(100dvh-3.5rem)] w-full">
+ <NotesQueryProvider>
  <NotesWorkbenchClient initialNoteId={initialNoteId} />
+ </NotesQueryProvider>
  </div>
  );
 }
-

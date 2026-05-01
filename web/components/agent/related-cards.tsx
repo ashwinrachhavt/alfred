@@ -38,11 +38,11 @@ export function RelatedCards({
  }
  className="w-full text-left px-3 py-2 rounded-md bg-secondary hover:bg-muted transition-colors"
  >
- <div className="flex items-center gap-2">
- <span className="font-medium text-[10px] uppercase tracking-wider text-primary">
+ <div className="flex min-w-0 items-center gap-2">
+ <span className="shrink-0 font-medium text-[10px] uppercase tracking-wider text-primary">
  {card.domain}
  </span>
- <span className="text-xs text-foreground truncate">
+ <span className="min-w-0 truncate text-xs text-foreground">
  {card.title}
  </span>
  </div>

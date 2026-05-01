@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from alfred.core.celery_client import get_celery_client
+from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
 from alfred.core.dependencies import get_doc_storage_service
-from alfred.core.exceptions import AlfredException
+from alfred.core.exceptions import AlfredException, ServiceUnavailableError
 from alfred.schemas.documents import (
     DocumentDetailsResponse,
     DocumentIngest,
@@ -26,6 +26,44 @@ from alfred.services.doc_storage_pg import DocStorageService
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 logger = logging.getLogger(__name__)
+
+
+def _send_task(task_name: str, *, kwargs: dict[str, Any]) -> Any:
+    return dispatch_task(task_name, kwargs=kwargs)
+
+
+def _send_task_or_raise(
+    task_name: str,
+    *,
+    kwargs: dict[str, Any],
+    action: str,
+) -> Any:
+    try:
+        return _send_task(task_name, kwargs=kwargs)
+    except BrokerUnavailableError as exc:  # pragma: no cover - external IO
+        logger.warning("%s: %s", action, exc)
+        raise ServiceUnavailableError("Background worker unavailable") from exc
+    except Exception as exc:  # pragma: no cover - external IO
+        logger.exception("%s: %s", action, exc)
+        raise ServiceUnavailableError("Background worker unavailable") from exc
+
+
+def _send_task_best_effort(
+    task_name: str,
+    *,
+    kwargs: dict[str, Any],
+    action: str,
+) -> None:
+    try:
+        _send_task(task_name, kwargs=kwargs)
+    except BrokerUnavailableError as exc:  # pragma: no cover - external IO
+        logger.warning("%s: %s", action, exc)
+    except Exception:  # pragma: no cover - external IO
+        logger.exception("%s", action)
+
+
+def _set_cache_headers(response: Response, max_age: int = 30) -> None:
+    response.headers["Cache-Control"] = f"private, max-age={max_age}"
 
 
 @router.post(
@@ -141,6 +179,11 @@ def create_page(
         if payload.selection_type == "full_page":
             from alfred.services.doc_storage._content_cleaner import clean_web_content
             cleaned_text = clean_web_content(cleaned_text)
+            if not cleaned_text:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="No extractable text found in page content.",
+                )
 
         # Cap raw_markdown at 200KB
         raw_markdown = payload.raw_markdown
@@ -169,24 +212,50 @@ def create_page(
             return PageResponse(id=res["id"], status="duplicate")
 
         if use_coordinator:
+            has_images = bool(raw_markdown and "![" in raw_markdown)
+            coordinator_kwargs = {
+                "doc_id": res["id"],
+                "source_url": payload.page_url or "",
+                "has_images": has_images,
+                "content_type_hint": payload.content_type_hint or "generic",
+            }
             try:
-                from alfred.tasks.capture_coordinator import coordinate_capture
-
-                has_images = bool(raw_markdown and "![" in raw_markdown)
-                coordinate_capture.delay(
-                    doc_id=res["id"],
-                    source_url=payload.page_url or "",
-                    has_images=has_images,
-                    content_type_hint=payload.content_type_hint or "generic",
+                _send_task(
+                    "alfred.tasks.capture_coordinator.coordinate_capture",
+                    kwargs=coordinator_kwargs,
+                )
+            except BrokerUnavailableError as exc:
+                logger.warning(
+                    "Coordinator dispatch unavailable for %s, falling back to pipeline: %s",
+                    res["id"],
+                    exc,
+                )
+                _send_task_best_effort(
+                    "alfred.tasks.document_pipeline.run_document_pipeline",
+                    kwargs={"doc_id": res["id"]},
+                    action=(
+                        f"Fallback pipeline dispatch failed for {res['id']}; "
+                        "document remains stored but pending processing"
+                    ),
                 )
             except Exception:
-                # Coordinator failed — fall back to direct pipeline dispatch
-                logger.warning("Coordinator dispatch failed for %s, falling back to pipeline", res["id"])
-                from alfred.tasks.document_pipeline import run_document_pipeline
-                run_document_pipeline.delay(doc_id=res["id"])
+                logger.exception(
+                    "Coordinator dispatch failed for %s, falling back to pipeline",
+                    res["id"],
+                )
+                _send_task_best_effort(
+                    "alfred.tasks.document_pipeline.run_document_pipeline",
+                    kwargs={"doc_id": res["id"]},
+                    action=(
+                        f"Fallback pipeline dispatch failed for {res['id']}; "
+                        "document remains stored but pending processing"
+                    ),
+                )
 
         return PageResponse(id=res["id"], status="accepted")
     except AlfredException:
+        raise
+    except HTTPException:
         raise
     except Exception as exc:  # pragma: no cover - external IO
         logger.exception("Page extract ingestion failed: %s", exc)
@@ -201,10 +270,10 @@ def enqueue_document_enrichment(
     """Enqueue asynchronous enrichment for a stored document."""
 
     try:
-        celery_client = get_celery_client()
-        async_result = celery_client.send_task(
+        async_result = _send_task_or_raise(
             "alfred.tasks.document_enrichment.enrich",
             kwargs={"doc_id": id, "force": force},
+            action=f"Failed to enqueue document enrichment for {id}",
         )
         return PageResponse(
             id=id,
@@ -212,6 +281,8 @@ def enqueue_document_enrichment(
             task_id=async_result.id,
             status_url=f"/tasks/{async_result.id}",
         )
+    except AlfredException:
+        raise
     except Exception as exc:  # pragma: no cover - external IO
         logger.exception("Failed to enqueue document enrichment: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to enqueue enrichment") from exc
@@ -251,10 +322,10 @@ def fetch_and_organize(
             raise HTTPException(status_code=400, detail="No source URL to fetch from")
 
         # Dispatch async task for Firecrawl scraping
-        celery_client = get_celery_client()
-        async_result = celery_client.send_task(
+        async_result = _send_task_or_raise(
             "alfred.tasks.document_processing.fetch_organize",
             kwargs={"doc_id": id, "source_url": source_url, "force": force},
+            action=f"Failed to enqueue fetch and organize for {id}",
         )
         return FetchOrganizeResponse(
             id=id,
@@ -310,8 +381,7 @@ def generate_document_image(
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
 
-        celery_client = get_celery_client()
-        async_result = celery_client.send_task(
+        async_result = _send_task_or_raise(
             "alfred.tasks.document_title_image.generate",
             kwargs={
                 "doc_id": id,
@@ -320,6 +390,7 @@ def generate_document_image(
                 "size": payload.size,
                 "quality": payload.quality,
             },
+            action=f"Failed to enqueue document image generation for {id}",
         )
         return DocumentTitleImageResponse(
             id=id,
@@ -345,8 +416,7 @@ def enqueue_document_image_generation(
     """Enqueue asynchronous title-image generation for a stored document."""
 
     try:
-        celery_client = get_celery_client()
-        async_result = celery_client.send_task(
+        async_result = _send_task_or_raise(
             "alfred.tasks.document_title_image.generate",
             kwargs={
                 "doc_id": id,
@@ -355,6 +425,7 @@ def enqueue_document_image_generation(
                 "size": payload.size,
                 "quality": payload.quality,
             },
+            action=f"Failed to enqueue document image generation for {id}",
         )
         return PageResponse(
             id=id,
@@ -362,6 +433,8 @@ def enqueue_document_image_generation(
             task_id=async_result.id,
             status_url=f"/tasks/{async_result.id}",
         )
+    except AlfredException:
+        raise
     except Exception as exc:  # pragma: no cover - external IO
         logger.exception("Failed to enqueue document image generation: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to enqueue image generation") from exc
@@ -435,7 +508,9 @@ def list_explorer_documents(
     filter_topic: str | None = Query(None, description="Filter by primary topic"),
     search: str | None = Query(None, description="Optional search query"),
     svc: DocStorageService = Depends(get_doc_storage_service),
+    response: Response = None,
 ) -> dict:
+    _set_cache_headers(response)
     try:
         return svc.list_explorer_documents(
             limit=limit,

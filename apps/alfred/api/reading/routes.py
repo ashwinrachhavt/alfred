@@ -20,28 +20,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-class TrackEvent(BaseModel):
-    url: str
-    title: str | None = None
-    domain: str | None = None
-    score: int = 0
-    active_time_ms: int = 0
-    scroll_depth: int = 0
-    selection_count: int = 0
-    copy_count: int = 0
-    is_revisit: bool = False
-    timestamp: str | None = None
-
-
-class TrackRequest(BaseModel):
-    events: list[TrackEvent]
-
-
-class TrackResponse(BaseModel):
-    received: int
-    ingested: int
-
-
 class IngestRequest(BaseModel):
     url: str
     title: str | None = None
@@ -111,22 +89,6 @@ class HistoryResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
-
-
-@router.post("/track", response_model=TrackResponse)
-def track_reading(
-    payload: TrackRequest,
-    svc: ReadingService = Depends(get_reading_service),
-) -> TrackResponse:
-    """Receive a batch of reading engagement events from the extension."""
-    try:
-        result = svc.track_events([ev.model_dump() for ev in payload.events])
-        return TrackResponse(**result)
-    except AlfredException:
-        raise
-    except Exception as exc:  # pragma: no cover - external IO
-        logger.exception("Failed to track reading events: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to track reading events") from exc
 
 
 @router.post("/ingest", response_model=IngestResponse)

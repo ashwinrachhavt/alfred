@@ -11,6 +11,8 @@ import logging
 
 from langchain_core.tools import tool
 
+from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
+
 logger = logging.getLogger(__name__)
 
 # Registry of available connectors
@@ -94,8 +96,10 @@ def run_import(connector_name: str, incremental: bool = True, limit: int | None 
     try:
         # Dynamically import and run the appropriate task
         if connector_name == "notion":
-            from alfred.tasks.notion_import import notion_import_task
-            result = notion_import_task.delay(incremental=incremental)
+            result = dispatch_task(
+                "alfred.tasks.notion_import.import_workspace",
+                kwargs={"incremental": incremental},
+            )
             return json.dumps({
                 "ok": True,
                 "connector": connector_name,
@@ -109,6 +113,9 @@ def run_import(connector_name: str, incremental: bool = True, limit: int | None 
                 "error": f"Import task not implemented for {connector_name}",
                 "status": "not_implemented",
             })
+    except BrokerUnavailableError as exc:
+        logger.warning("run_import unavailable for %s: %s", connector_name, exc)
+        return json.dumps({"error": "Background worker unavailable"})
     except Exception as exc:
         logger.error("run_import failed for %s: %s", connector_name, exc)
         return json.dumps({"error": str(exc)})

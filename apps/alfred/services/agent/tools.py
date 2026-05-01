@@ -20,9 +20,14 @@ from typing import Any
 from langchain_core.tools import BaseTool
 from sqlmodel import Session
 
+from alfred.core.settings import settings
 from alfred.services.zettelkasten_service import ZettelkastenService
 
 logger = logging.getLogger(__name__)
+
+
+def _join_url(base_url: str, path: str) -> str:
+    return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
 
 
 # ---------------------------------------------------------------------------
@@ -503,11 +508,14 @@ async def _web_search_searxng(args: dict[str, Any], db: Session) -> dict[str, An
 
     query = args.get("query", "")
     max_results = args.get("max_results", 5)
+    searxng_host = settings.searxng_host or settings.searx_host
+    if not searxng_host:
+        return {"error": "SearXNG is not configured. Set SEARXNG_HOST or SEARX_HOST."}
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
-                "http://localhost:8080/search",
+                _join_url(searxng_host, "/search"),
                 params={"q": query, "format": "json"},
             )
             resp.raise_for_status()
@@ -537,7 +545,7 @@ async def _firecrawl_search(args: dict[str, Any], db: Session) -> dict[str, Any]
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
-                "http://localhost:3002/v1/search",
+                _join_url(settings.firecrawl_base_url, "/search"),
                 json={"query": query, "limit": limit},
             )
             resp.raise_for_status()
@@ -566,7 +574,7 @@ async def _firecrawl_scrape(args: dict[str, Any], db: Session) -> dict[str, Any]
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
-                "http://localhost:3002/v1/scrape",
+                _join_url(settings.firecrawl_base_url, "/scrape"),
                 json={"url": url, "formats": ["markdown"]},
             )
             resp.raise_for_status()

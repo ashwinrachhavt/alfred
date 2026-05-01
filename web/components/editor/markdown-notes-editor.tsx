@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { Bold, Italic, Sparkles } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { normalizePastedEditorText } from "@/lib/utils/editor-paste";
 import { Button } from "@/components/ui/button";
 import { InlineAIPrompt, type AIPromptMode } from "@/components/editor/inline-ai-prompt";
 import {
@@ -196,11 +197,11 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           placeholder: ({ node, editor: ed }) => {
             // First paragraph when editor is empty
             if (ed.isEmpty && node.type.name === "paragraph") {
-              return placeholder ?? "Start writing, or double-space for AI...";
+              return placeholder ?? "Start writing...";
             }
-            // Any other empty paragraph
+            // Any other empty paragraph — keep hint minimal like Notion
             if (node.type.name === "paragraph" && node.textContent === "") {
-              return "Double space for AI  ·  / for commands";
+              return "Type / for commands";
             }
             return "";
           },
@@ -520,14 +521,14 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
             "prose prose-sm dark:prose-invert max-w-none min-h-[220px] px-2 py-1 text-[15px] leading-[1.72] tracking-[-0.01em] text-foreground focus:outline-none [text-wrap:pretty]",
             // Headings: Inter (sans)
             "prose-headings:mt-6 prose-headings:mb-2 prose-headings:font-sans prose-headings:tracking-tight prose-headings:font-semibold",
-            "prose-h1:text-[2rem] prose-h2:text-[1.65rem] prose-h3:text-[1.2rem]",
+            "prose-h1:text-[2rem] prose-h2:text-[1.65rem] prose-h3:text-[1.4rem]",
             // Body: DM Sans (inherits from font-sans)
-            "prose-p:my-2 prose-p:leading-[1.78] prose-p:text-justify",
+            "prose-p:my-2 prose-p:leading-[1.78] prose-p:text-left",
             // Code: JetBrains Mono
             "prose-code:font-mono prose-code:text-[13px] prose-code:bg-secondary prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-sm prose-code:before:content-none prose-code:after:content-none",
             "prose-pre:bg-secondary prose-pre:text-foreground prose-pre:font-mono prose-pre:text-[13px] prose-pre:rounded-md",
             // Blockquote: accent left border
-            "prose-blockquote:my-3 prose-blockquote:border-l-primary prose-blockquote:bg-[var(--alfred-accent-subtle)] prose-blockquote:px-4 prose-blockquote:py-1 prose-blockquote:not-italic prose-blockquote:rounded-r-md prose-blockquote:text-justify",
+            "prose-blockquote:my-3 prose-blockquote:border-l-primary prose-blockquote:bg-[var(--alfred-accent-subtle)] prose-blockquote:px-4 prose-blockquote:py-1 prose-blockquote:not-italic prose-blockquote:rounded-r-md prose-blockquote:text-left",
             // Images
             "prose-img:rounded-lg prose-img:border prose-img:shadow-sm",
             // Links: accent color
@@ -535,7 +536,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
             // HR: ruled line
             "prose-hr:my-6 prose-hr:border-[var(--alfred-ruled-line)]",
             // Lists
-            "prose-ul:my-3 prose-ol:my-3 prose-li:my-0.5 prose-li:text-justify",
+            "prose-ul:my-3 prose-ol:my-3 prose-li:my-0.5 prose-li:text-left",
             // Task list: checkbox styling
             "[&_ul[data-type=taskList]]:list-none [&_ul[data-type=taskList]]:pl-2",
             "[&_li[data-type=taskItem]]:flex [&_li[data-type=taskItem]]:items-start [&_li[data-type=taskItem]]:gap-2 [&_li[data-type=taskItem]]:my-1",
@@ -547,6 +548,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
             "prose-strong:font-semibold",
           ),
         },
+        transformPastedText: (text) => normalizePastedEditorText(text),
       },
       onUpdate: ({ editor }) => {
         const nextMarkdown = readEditorMarkdown(editor);
@@ -579,6 +581,19 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
     // Keep editorRef in sync for wiki-link callbacks
     useEffect(() => {
       editorRef.current = editor ?? null;
+    }, [editor]);
+
+    // Auto-focus: place cursor at end when editor mounts (Notion-like)
+    useEffect(() => {
+      if (!editor || readOnly) return;
+      // Small delay so the editor is fully mounted before focusing
+      const timer = window.setTimeout(() => {
+        if (editor.isDestroyed) return;
+        editor.commands.focus("end");
+      }, 50);
+      return () => window.clearTimeout(timer);
+      // Only run once when editor is first created
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [editor]);
 
     const runSlashCommand = useCallback(
@@ -909,7 +924,8 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
     return (
       <div
         className={cn(
-          "bg-background relative flex h-full w-full flex-col overflow-hidden rounded-lg border",
+          "bg-background relative flex h-full w-full flex-col overflow-hidden rounded-lg border transition-colors duration-200",
+          isFocused && !readOnly && "border-[var(--alfred-accent-muted)]",
           readOnly && "opacity-80",
           className,
         )}

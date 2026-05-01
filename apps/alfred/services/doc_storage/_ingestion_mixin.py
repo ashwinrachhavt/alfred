@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -9,6 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import load_only
 from sqlmodel import select
 
+from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
 from alfred.core.exceptions import BadRequestError, NotFoundError
 from alfred.core.settings import settings
 from alfred.models.doc_storage import DocChunkRow, DocumentRow
@@ -35,6 +37,8 @@ from alfred.services.doc_storage.utils import (
 
 from ._chunking_helpers import _build_doc_chunk_rows, _chunk_payloads_for_text
 from ._session import _session_scope
+
+logger = logging.getLogger(__name__)
 
 
 class IngestionMixin:
@@ -154,19 +158,21 @@ class IngestionMixin:
         # Fire document pipeline (non-blocking) unless caller will handle it
         if not skip_pipeline:
             try:
-                from alfred.tasks.document_pipeline import run_document_pipeline
-
-                run_document_pipeline.delay(
-                    doc_id=doc_id,
-                    user_id=(payload.metadata or {}).get("user_id", ""),
+                dispatch_task(
+                    "alfred.tasks.document_pipeline.run_document_pipeline",
+                    kwargs={
+                        "doc_id": doc_id,
+                        "user_id": (payload.metadata or {}).get("user_id", ""),
+                    },
+                )
+            except BrokerUnavailableError as exc:
+                logger.warning(
+                    "Background worker unavailable; pipeline not queued for %s: %s",
+                    doc_id,
+                    exc,
                 )
             except Exception:
-                import logging
-                logging.getLogger(__name__).warning(
-                    "Failed to enqueue pipeline task for %s",
-                    doc_id,
-                    exc_info=True,
-                )
+                logger.exception("Failed to enqueue pipeline task for %s", doc_id)
 
         return {
             "id": doc_id,

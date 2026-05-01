@@ -39,6 +39,8 @@ export const apiRoutes = {
     workspaces: "/api/v1/workspaces",
     createWorkspace: "/api/v1/workspaces",
     tree: "/api/v1/notes/tree",
+    filesystemBrowse: "/api/v1/notes/filesystem/browse",
+    filesystemImport: "/api/v1/notes/filesystem/import",
     createNote: "/api/v1/notes",
     noteById: (noteId: string) => `/api/v1/notes/${noteId}`,
     noteAssets: (noteId: string) => `/api/v1/notes/${noteId}/assets`,
@@ -53,7 +55,10 @@ export const apiRoutes = {
     cardLinks: (id: number) => `/api/zettels/cards/${id}/links`,
     suggestLinks: (id: number) => `/api/zettels/cards/${id}/suggest-links`,
     deleteLink: (id: number) => `/api/zettels/links/${id}`,
+    updateLink: (id: number) => `/api/zettels/links/${id}`,
+    linkTypes: "/api/zettels/link-types",
     generate: "/api/zettels/cards/generate",
+    createStream: "/api/zettels/cards/create-stream",
     suggestTags: "/api/zettels/suggest-tags",
     graph: "/api/zettels/graph",
     batchLink: "/api/zettels/batch-link",
@@ -78,6 +83,7 @@ export const apiRoutes = {
   },
   canvas: {
     generateDiagram: "/api/canvas/generate-diagram",
+    generateMermaid: "/api/canvas/generate-mermaid",
   },
   learning: {
     dailyDeck: "/api/learning/daily-deck",
@@ -131,5 +137,10 @@ export const apiRoutes = {
   today: {
     briefing: "/api/today/briefing",
     calendar: "/api/today/calendar",
+    entries: "/api/today/entries",
+    entryById: (id: number) => `/api/today/entries/${id}`,
+    reflectionByDate: (date: string) => `/api/today/reflections/${date}`,
+    reflections: "/api/today/reflections",
+    pipelineRun: "/api/today/pipeline/run",
   },
 } as const;

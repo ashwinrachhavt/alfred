@@ -192,22 +192,34 @@ class ClusteringService:
     # Helpers
     # ------------------------------------------------------------------
 
+    # Diverse nebula palette — muted, space-appropriate hues that stay
+    # warm-leaning for the Midnight Editorial aesthetic.  The accent orange
+    # (#E8590C) is deliberately excluded so UI elements remain distinct.
+    _NEBULA_PALETTE = [
+        "#C47A5A",  # terracotta
+        "#7A9E7E",  # sage
+        "#8B7EC8",  # lavender
+        "#C2956B",  # gold ochre
+        "#6B9EB8",  # dusty teal
+        "#B87A8F",  # rose
+        "#9BB86B",  # olive
+        "#C4855A",  # sienna
+        "#6B7EB8",  # slate blue
+        "#B8A06B",  # wheat
+        "#8FB87A",  # fern
+        "#A07AB8",  # mauve
+        "#B88F6B",  # amber
+        "#7AB8A0",  # mint
+        "#B87A7A",  # clay
+        "#7A8FB8",  # steel
+    ]
+
     @staticmethod
     def _cluster_color(idx: int, total: int) -> str:
-        """Return a hex color from a monochrome orange gradient.
+        """Return a visually distinct color for each cluster.
 
-        Interpolates from #FFB088 (light) at idx=0 to #C44600 (dark) at
-        idx=total-1.
+        Cycles through a hand-curated nebula palette designed for maximum
+        hue separation on a dark background.
         """
-        if total <= 1:
-            return "#FFB088"
-
-        t = idx / (total - 1)
-
-        # Start: #FFB088 → (255, 176, 136)
-        # End:   #C44600 → (196, 70, 0)
-        r = int(255 + t * (196 - 255))
-        g = int(176 + t * (70 - 176))
-        b = int(136 + t * (0 - 136))
-
-        return f"#{r:02X}{g:02X}{b:02X}"
+        palette = ClusteringService._NEBULA_PALETTE
+        return palette[idx % len(palette)]

@@ -192,18 +192,22 @@ class TestGenerateClusterNames:
 
 
 class TestClusterColor:
-    def test_single_cluster_returns_start_color(self) -> None:
+    def test_single_cluster_returns_first_palette_color(self) -> None:
         color = ClusteringService._cluster_color(0, 1)
-        assert color == "#FFB088"
+        assert color == "#C47A5A"
 
-    def test_gradient_endpoints(self) -> None:
-        start = ClusteringService._cluster_color(0, 5)
-        end = ClusteringService._cluster_color(4, 5)
-        assert start == "#FFB088"
-        assert end == "#C44600"
+    def test_distinct_colors_for_different_indices(self) -> None:
+        colors = [ClusteringService._cluster_color(i, 5) for i in range(5)]
+        assert len(set(colors)) == 5  # all distinct
 
     def test_returns_valid_hex(self) -> None:
         for i in range(10):
             color = ClusteringService._cluster_color(i, 10)
             assert color.startswith("#")
             assert len(color) == 7
+
+    def test_wraps_beyond_palette_length(self) -> None:
+        palette_len = len(ClusteringService._NEBULA_PALETTE)
+        color_a = ClusteringService._cluster_color(0, palette_len + 1)
+        color_b = ClusteringService._cluster_color(palette_len, palette_len + 1)
+        assert color_a == color_b  # wraps around

@@ -1,0 +1,679 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e4]:
+      - generic [ref=e7]:
+        - heading "Claude Code Unpacked" [level=1] [ref=e8]
+        - generic [ref=e9]:
+          - link "Ask DeepWiki" [ref=e10] [cursor=pointer]:
+            - /url: https://deepwiki.com/zackautocracy/claude-code
+          - link "Featured on Hacker News" [ref=e11] [cursor=pointer]:
+            - /url: https://news.ycombinator.com/item?id=47597085
+            - img [ref=e12]:
+              - generic [ref=e14]: "Y"
+            - text: Featured on Hacker News
+        - paragraph [ref=e15]: What actually happens when you type a message into Claude Code? The agent loop, 50+ tools, multi-agent orchestration, and unreleased features, mapped straight from the source.
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - generic [ref=e18]: 0+
+          - generic [ref=e19]: Files
+        - generic [ref=e20]:
+          - generic [ref=e21]: 0K+
+          - generic [ref=e22]: Lines of Code
+        - generic [ref=e23]:
+          - generic [ref=e24]: 0+
+          - generic [ref=e25]: Tools
+        - generic [ref=e26]:
+          - generic [ref=e27]: 0+
+          - generic [ref=e28]: Commands
+      - link "Start exploring ↓" [ref=e29] [cursor=pointer]:
+        - /url: "#agent-loop"
+        - text: Start exploring
+        - generic [ref=e30]: ↓
+    - generic [ref=e32]:
+      - generic [ref=e33]:
+        - generic [ref=e35]: "01"
+        - heading "The Agent Loop" [level=2] [ref=e37]
+        - paragraph [ref=e38]: From keypress to rendered response, step by step through the source.
+      - generic [ref=e39]:
+        - navigation "Agent loop pipeline steps" [ref=e41]:
+          - 'button "Step 1: User Input (current)" [ref=e44] [cursor=pointer]':
+            - generic: "1"
+            - generic: Input
+          - 'button "Step 2: Message Creation" [ref=e46] [cursor=pointer]':
+            - generic: "2"
+            - generic: Message
+          - 'button "Step 3: History Append" [ref=e48] [cursor=pointer]':
+            - generic: "3"
+            - generic: History
+          - 'button "Step 4: System Prompt Assembly" [ref=e50] [cursor=pointer]':
+            - generic: "4"
+            - generic: System
+          - 'button "Step 5: API Streaming" [ref=e52] [cursor=pointer]':
+            - generic: "5"
+            - generic: API
+          - 'button "Step 6: Token Parsing" [ref=e54] [cursor=pointer]':
+            - generic: "6"
+            - generic: Tokens
+          - 'button "Step 7: Tool Detection" [ref=e56] [cursor=pointer]':
+            - generic: "7"
+            - generic: Tools?
+          - 'button "Step 8: Tool Execution Loop" [ref=e58] [cursor=pointer]':
+            - generic: "8"
+            - generic: Loop
+          - 'button "Step 9: Response Rendering" [ref=e60] [cursor=pointer]':
+            - generic: "9"
+            - generic: Render
+          - 'button "Step 10: Post-Sampling Hooks" [ref=e62] [cursor=pointer]':
+            - generic: "10"
+            - generic: Hooks
+          - 'button "Step 11: Await Next Input" [ref=e64] [cursor=pointer]':
+            - generic: "11"
+            - generic: Await
+        - generic [ref=e66]:
+          - generic [ref=e67]:
+            - button "Start simulation" [ref=e68]:
+              - img [ref=e69]
+            - paragraph [ref=e71]: Watch what happens when you send a message to Claude Code
+          - generic [ref=e72]:
+            - generic [ref=e73]:
+              - heading "1 User Input" [level=3] [ref=e74]:
+                - generic [ref=e75]: "1"
+                - generic [ref=e76]: User Input
+              - link "src/components/TextInput.tsx" [ref=e77] [cursor=pointer]:
+                - /url: https://github.com/zackautocracy/claude-code/blob/main/src/components/TextInput.tsx
+                - img [ref=e78]
+                - generic [ref=e82]: src/components/TextInput.tsx
+            - paragraph [ref=e83]:
+              - generic [ref=e84]:
+                - text: User types a message or pipes input through
+                - code [ref=e85]: stdin
+          - region "Step 1 visualization" [ref=e87]:
+            - generic [ref=e90]:
+              - generic [ref=e91]:
+                - generic [ref=e92]: ●
+                - text: claude-code
+              - generic [ref=e94]: $
+          - paragraph [ref=e98]:
+            - generic [ref=e99]:
+              - text: Keyboard input comes from Ink's
+              - code [ref=e100]: TextInput
+              - text: component. In non-interactive mode, it reads from piped
+              - code [ref=e101]: stdin
+              - text: instead.
+          - generic [ref=e102]:
+            - generic [ref=e103]:
+              - button "Previous step" [disabled] [ref=e104]:
+                - img [ref=e105]
+              - button "Play simulation" [ref=e107]:
+                - img [ref=e108]
+              - button "Next step" [ref=e110]:
+                - img [ref=e111]
+            - generic [ref=e113]: 1/11
+            - generic [ref=e114]:
+              - button "0.5x speed" [ref=e115]: 0.5x
+              - button "1x speed" [ref=e116]: 1x
+              - button "2x speed" [ref=e117]: 2x
+    - generic [ref=e119]:
+      - generic [ref=e120]:
+        - generic [ref=e122]: "02"
+        - heading "Architecture Explorer" [level=2] [ref=e124]
+        - paragraph [ref=e125]: Click around the source tree to explore what's inside.
+      - generic [ref=e126]:
+        - generic [ref=e127]:
+          - generic [ref=e130]: Tools & Commands
+          - generic [ref=e133]: Core Processing
+          - generic [ref=e136]: UI Layer
+          - generic [ref=e139]: Infrastructure
+          - generic [ref=e142]: Support & Utilities
+          - generic [ref=e145]: Personality & UX
+        - navigation "Treemap navigation" [ref=e146]:
+          - generic [ref=e148]: src
+        - img "Treemap visualization of Claude Code source architecture" [ref=e151]:
+          - button "utils directory, 564 files. Shared utility modules — the largest directory by far" [ref=e152] [cursor=pointer]:
+            - generic: utils/
+            - generic: 564 files
+          - 'button "components directory, 389 files. React (`Ink`) components for the terminal UI" [ref=e154]':
+            - generic: components/
+            - generic: 389 files
+          - 'button "commands directory, 189 files. 95 CLI command handlers — from `/init` to `/ultraplan`" [ref=e156]':
+            - generic: commands/
+            - generic: 189 files
+          - 'button "tools directory, 184 files. 42 built-in tool implementations plus 11 feature-gated tools registered in `tools.ts`" [ref=e158]':
+            - generic: tools/
+            - generic: 184 files
+          - button "services directory, 130 files. Core service layer — API, MCP, compaction, streaming, analytics" [ref=e160] [cursor=pointer]:
+            - generic: services/
+            - generic: 130 files
+          - button "hooks directory, 104 files. React hooks for terminal UI state management" [ref=e162]:
+            - generic: hooks/
+            - generic: 104 files
+          - 'button "ink directory, 96 files. `Ink` framework extensions — React rendering in the terminal via `Yoga` flexbox" [ref=e164]':
+            - generic: ink/
+            - generic: 96 files
+          - button "bridge directory, 31 files. Remote control infrastructure — control Claude Code from phone or browser" [ref=e166]:
+            - generic: bridge/
+            - generic: 31 files
+          - button "constants directory, 21 files. Configuration constants, feature flags, default values" [ref=e168]:
+            - generic: constants/
+            - generic: 21 files
+          - button "skills directory, 20 files. Skill system — loadable prompt modules for specialized tasks" [ref=e170]:
+            - generic: skills/
+            - generic: 20 files
+          - 'button "cli directory, 19 files. CLI transport layer — `stdin`/`stdout`, `NDJSON`, remote IO" [ref=e172]':
+            - generic: cli/
+          - button "keybindings directory, 14 files. Terminal keyboard shortcuts and Vim mode bindings" [ref=e174]
+          - button "tasks directory, 12 files. Background task management for agent sub-tasks" [ref=e176]
+          - button "types directory, 11 files. Shared TypeScript type definitions" [ref=e178]
+          - button "migrations directory, 11 files. Data migration scripts between versions" [ref=e180]
+          - 'button "context directory, 9 files. Context assembly — `CLAUDE.md`, tools, memory, system prompt" [ref=e182]'
+          - button "memdir directory, 8 files. Persistent memory directory — session-to-session knowledge" [ref=e184]
+          - 'button "entrypoints directory, 8 files. CLI bootstrap — main entry points for the `claude` command" [ref=e186]'
+          - button "state directory, 6 files. Global state management stores" [ref=e188]
+          - button "buddy directory, 6 files. AI companion pet — an easter egg with species, rarity, and personality" [ref=e190]
+          - button "vim directory, 5 files. Vim mode — modal editing keybindings for the terminal UI" [ref=e192]
+          - button "remote directory, 4 files. Remote session management" [ref=e194]
+          - button "query directory, 4 files. Query processing pipeline" [ref=e196]
+          - button "native-ts directory, 4 files. Native TypeScript compilation helpers" [ref=e198]
+          - 'button "server directory, 3 files. `HTTP`/`WebSocket` server for bridge and remote modes" [ref=e200]'
+          - button "screens directory, 3 files. Full-screen terminal UI views" [ref=e202]
+          - 'button "upstreamproxy directory, 2 files. `HTTP` proxy for API request interception" [ref=e204]'
+          - button "plugins directory, 2 files. Plugin system — external extension loading" [ref=e206]
+          - button "voice directory, 1 files. Voice mode — microphone input for hands-free coding" [ref=e208]
+          - 'button "schemas directory, 1 files. `Zod` schemas for configuration validation" [ref=e210]'
+          - button "outputStyles directory, 1 files. Terminal output formatting styles" [ref=e212]
+          - button "moreright directory, 1 files. Extended permission rule helpers" [ref=e214]
+          - 'button "coordinator directory, 1 files. Multi-agent mode toggle — actual orchestration lives in `utils/swarm/`" [ref=e216]'
+          - button "bootstrap directory, 1 files. Application bootstrap state" [ref=e218]
+          - button "assistant directory, 1 files. Session history for assistant mode" [ref=e220]
+    - generic [ref=e223]:
+      - generic [ref=e224]:
+        - generic [ref=e226]: "03"
+        - heading "Tool System" [level=2] [ref=e228]
+        - paragraph [ref=e229]: Every built-in tool Claude Code can call, sorted by what it does.
+      - generic [ref=e230]:
+        - generic [ref=e232]:
+          - generic [ref=e233]:
+            - generic [ref=e234]:
+              - generic [ref=e235]: File Operations
+              - generic [ref=e236]: 6 tools
+            - 'button "FileRead: Read the contents of a file from the filesystem" [ref=e237] [cursor=pointer]':
+              - generic [ref=e238]: FileRead
+            - 'button "FileEdit: Make targeted edits to existing files using search and replace" [ref=e239] [cursor=pointer]':
+              - generic [ref=e240]: FileEdit
+            - 'button "FileWrite: Create new files or overwrite existing ones" [ref=e241] [cursor=pointer]':
+              - generic [ref=e242]: FileWrite
+            - 'button "Glob: Find files matching a glob pattern across the project" [ref=e243] [cursor=pointer]':
+              - generic [ref=e244]: Glob
+            - 'button "Grep: Search file contents using regular expressions" [ref=e245] [cursor=pointer]':
+              - generic [ref=e246]: Grep
+            - 'button "NotebookEdit: Replace, insert, or delete Jupyter notebook cells" [ref=e247] [cursor=pointer]':
+              - generic [ref=e248]: NotebookEdit
+          - generic [ref=e249]:
+            - generic [ref=e250]:
+              - generic [ref=e251]: Execution
+              - generic [ref=e252]: 3 tools
+            - 'button "Bash: Execute shell commands in the user''s terminal with safety analysis" [ref=e253] [cursor=pointer]':
+              - generic [ref=e254]: Bash
+            - 'button "PowerShell: Execute PowerShell commands on Windows systems" [ref=e255] [cursor=pointer]':
+              - generic [ref=e256]: PowerShell
+            - 'button "REPL: Run code in an interactive REPL session (Python, Node, etc.)" [ref=e257] [cursor=pointer]':
+              - generic [ref=e258]: REPL
+          - generic [ref=e259]:
+            - generic [ref=e260]:
+              - generic [ref=e261]: Search & Fetch
+              - generic [ref=e262]: 4 tools
+            - 'button "WebBrowser: Control a headless browser for web interaction (feature-gated)" [ref=e263] [cursor=pointer]':
+              - generic [ref=e264]: WebBrowser
+              - generic [ref=e265]: 🔒
+            - 'button "WebFetch: Fetch a URL and process it with an AI model" [ref=e266] [cursor=pointer]':
+              - generic [ref=e267]: WebFetch
+            - 'button "WebSearch: Search the web and return results" [ref=e268] [cursor=pointer]':
+              - generic [ref=e269]: WebSearch
+            - 'button "ToolSearch: Search for available MCP tools by name or description" [ref=e270] [cursor=pointer]':
+              - generic [ref=e271]: ToolSearch
+          - generic [ref=e272]:
+            - generic [ref=e273]:
+              - generic [ref=e274]: Agents & Tasks
+              - generic [ref=e275]: 11 tools
+            - 'button "Agent: Spawn a sub-agent to handle complex tasks autonomously" [ref=e276] [cursor=pointer]':
+              - generic [ref=e277]: Agent
+            - 'button "SendMessage: Send messages between agents in multi-agent orchestration" [ref=e278] [cursor=pointer]':
+              - generic [ref=e279]: SendMessage
+            - 'button "TaskCreate: Create a new task in the task list" [ref=e280] [cursor=pointer]':
+              - generic [ref=e281]: TaskCreate
+            - 'button "TaskGet: Get a task by ID from the task list" [ref=e282] [cursor=pointer]':
+              - generic [ref=e283]: TaskGet
+            - 'button "TaskList: List all tasks in the task list" [ref=e284] [cursor=pointer]':
+              - generic [ref=e285]: TaskList
+            - 'button "TaskUpdate: Update a task in the task list" [ref=e286] [cursor=pointer]':
+              - generic [ref=e287]: TaskUpdate
+            - 'button "TaskStop: Stop a running background task" [ref=e288] [cursor=pointer]':
+              - generic [ref=e289]: TaskStop
+            - 'button "TaskOutput: [Deprecated] Get the output from a task" [ref=e290] [cursor=pointer]':
+              - generic [ref=e291]: TaskOutput
+            - 'button "TeamCreate: Create a team of agents with defined roles and capabilities" [ref=e292] [cursor=pointer]':
+              - generic [ref=e293]: TeamCreate
+            - 'button "TeamDelete: Remove a team and clean up its resources" [ref=e294] [cursor=pointer]':
+              - generic [ref=e295]: TeamDelete
+            - 'button "ListPeers: Discover other running Claude Code sessions (feature-gated)" [ref=e296] [cursor=pointer]':
+              - generic [ref=e297]: ListPeers
+              - generic [ref=e298]: 🔒
+          - generic [ref=e299]:
+            - generic [ref=e300]:
+              - generic [ref=e301]: Planning
+              - generic [ref=e302]: 5 tools
+            - 'button "EnterPlanMode: Switch to plan mode — outline steps before executing" [ref=e303] [cursor=pointer]':
+              - generic [ref=e304]: EnterPlanMode
+            - 'button "ExitPlanMode: Prompt the user to exit plan mode and start coding" [ref=e305] [cursor=pointer]':
+              - generic [ref=e306]: ExitPlanMode
+            - 'button "EnterWorktree: Create or enter an isolated git worktree for safe experimentation" [ref=e307] [cursor=pointer]':
+              - generic [ref=e308]: EnterWorktree
+            - 'button "ExitWorktree: Exit the current worktree and return to the main branch" [ref=e309] [cursor=pointer]':
+              - generic [ref=e310]: ExitWorktree
+            - 'button "VerifyPlanExecution: Check whether a plan step was executed correctly (feature-gated)" [ref=e311] [cursor=pointer]':
+              - generic [ref=e312]: VerifyPlanExecution
+              - generic [ref=e313]: 🔒
+          - generic [ref=e314]:
+            - generic [ref=e315]:
+              - generic [ref=e316]: MCP
+              - generic [ref=e317]: 4 tools
+            - 'button "mcp: Invoke a tool from a connected MCP (Model Context Protocol) server" [ref=e318] [cursor=pointer]':
+              - generic [ref=e319]: mcp
+            - 'button "ListMcpResources: List available resources from connected MCP servers" [ref=e320] [cursor=pointer]':
+              - generic [ref=e321]: ListMcpResources
+            - 'button "ReadMcpResource: Read data from a specific MCP resource" [ref=e322] [cursor=pointer]':
+              - generic [ref=e323]: ReadMcpResource
+            - 'button "McpAuth: Authenticate with an MCP server using OAuth or tokens" [ref=e324] [cursor=pointer]':
+              - generic [ref=e325]: McpAuth
+          - generic [ref=e326]:
+            - generic [ref=e327]:
+              - generic [ref=e328]: System
+              - generic [ref=e329]: 11 tools
+            - 'button "AskUserQuestion: Prompt the user for input or confirmation" [ref=e330] [cursor=pointer]':
+              - generic [ref=e331]: AskUserQuestion
+            - 'button "TodoWrite: Create and manage a persistent to-do list file" [ref=e332] [cursor=pointer]':
+              - generic [ref=e333]: TodoWrite
+            - 'button "Skill: Load and execute a specialized skill module" [ref=e334] [cursor=pointer]':
+              - generic [ref=e335]: Skill
+            - 'button "Config: Read and update Claude Code configuration settings" [ref=e336] [cursor=pointer]':
+              - generic [ref=e337]: Config
+            - 'button "RemoteTrigger: Trigger an action on a remote Claude Code instance (feature-gated)" [ref=e338] [cursor=pointer]':
+              - generic [ref=e339]: RemoteTrigger
+              - generic [ref=e340]: 🔒
+            - 'button "CronCreate: Schedule a new recurring cron job (feature-gated)" [ref=e341] [cursor=pointer]':
+              - generic [ref=e342]: CronCreate
+              - generic [ref=e343]: 🔒
+            - 'button "CronDelete: Cancel a scheduled cron job (feature-gated)" [ref=e344] [cursor=pointer]':
+              - generic [ref=e345]: CronDelete
+              - generic [ref=e346]: 🔒
+            - 'button "CronList: List all active cron jobs (feature-gated)" [ref=e347] [cursor=pointer]':
+              - generic [ref=e348]: CronList
+              - generic [ref=e349]: 🔒
+            - 'button "Snip: Trim old conversation turns to free context space (feature-gated)" [ref=e350] [cursor=pointer]':
+              - generic [ref=e351]: Snip
+              - generic [ref=e352]: 🔒
+            - 'button "Workflow: Run a named workflow script (feature-gated)" [ref=e353] [cursor=pointer]':
+              - generic [ref=e354]: Workflow
+              - generic [ref=e355]: 🔒
+            - 'button "TerminalCapture: Capture the current state of a terminal panel (feature-gated)" [ref=e356] [cursor=pointer]':
+              - generic [ref=e357]: TerminalCapture
+              - generic [ref=e358]: 🔒
+          - generic [ref=e359]:
+            - generic [ref=e360]:
+              - generic [ref=e361]: Experimental
+              - generic [ref=e362]: 8 tools
+            - 'button "Sleep: Pause execution for a specified duration" [ref=e363] [cursor=pointer]':
+              - generic [ref=e364]: Sleep
+            - 'button "SendUserMessage: Send a message to the user" [ref=e365] [cursor=pointer]':
+              - generic [ref=e366]: SendUserMessage
+            - 'button "StructuredOutput: Return structured output in the requested format (feature-gated)" [ref=e367] [cursor=pointer]':
+              - generic [ref=e368]: StructuredOutput
+              - generic [ref=e369]: 🔒
+            - 'button "LSP: Query Language Server Protocol for code intelligence (feature-gated)" [ref=e370] [cursor=pointer]':
+              - generic [ref=e371]: LSP
+              - generic [ref=e372]: 🔒
+            - 'button "SendUserFile: Send a file to the user''s connected device (feature-gated)" [ref=e373] [cursor=pointer]':
+              - generic [ref=e374]: SendUserFile
+              - generic [ref=e375]: 🔒
+            - 'button "PushNotification: Push a notification to the user''s device (feature-gated)" [ref=e376] [cursor=pointer]':
+              - generic [ref=e377]: PushNotification
+              - generic [ref=e378]: 🔒
+            - 'button "Monitor: Stream events from a background process (feature-gated)" [ref=e379] [cursor=pointer]':
+              - generic [ref=e380]: Monitor
+              - generic [ref=e381]: 🔒
+            - 'button "SubscribePR: Subscribe to GitHub pull request events (feature-gated)" [ref=e382] [cursor=pointer]':
+              - generic [ref=e383]: SubscribePR
+              - generic [ref=e384]: 🔒
+        - paragraph [ref=e385]: Click a tool to see details and source code
+    - generic [ref=e387]:
+      - generic [ref=e388]:
+        - generic [ref=e390]: "04"
+        - heading "Command Catalog" [level=2] [ref=e392]
+        - paragraph [ref=e393]: Every slash command available in Claude Code, sorted by what it does.
+      - generic [ref=e394]:
+        - generic [ref=e395]:
+          - generic [ref=e396]:
+            - generic [ref=e397]:
+              - generic [ref=e399]: Setup & Config
+              - generic [ref=e400]: "12"
+            - generic [ref=e402]:
+              - 'button "/init: Initialize a project with a CLAUDE.md file" [ref=e403] [cursor=pointer]':
+                - generic [ref=e404]: /init
+              - 'button "/login: Authenticate with your Anthropic account" [ref=e405] [cursor=pointer]':
+                - generic [ref=e406]: /login
+              - 'button "/logout: Sign out of your Anthropic account" [ref=e407] [cursor=pointer]':
+                - generic [ref=e408]: /logout
+              - 'button "/config: View or modify Claude Code configuration" [ref=e409] [cursor=pointer]':
+                - generic [ref=e410]: /config
+              - 'button "/permissions: View and manage tool permissions" [ref=e411] [cursor=pointer]':
+                - generic [ref=e412]: /permissions
+              - 'button "/model: Switch the active AI model" [ref=e413] [cursor=pointer]':
+                - generic [ref=e414]: /model
+              - 'button "/theme: Change the terminal color theme" [ref=e415] [cursor=pointer]':
+                - generic [ref=e416]: /theme
+              - 'button "/terminal-setup: Install terminal key bindings" [ref=e417] [cursor=pointer]':
+                - generic [ref=e418]: /terminal-setup
+              - 'button "/doctor: Diagnose common setup issues" [ref=e419] [cursor=pointer]':
+                - generic [ref=e420]: /doctor
+              - 'button "/onboarding: Disabled stub" [ref=e421] [cursor=pointer]':
+                - generic [ref=e422]: /onboarding
+              - 'button "/mcp: Manage Model Context Protocol servers" [ref=e423] [cursor=pointer]':
+                - generic [ref=e424]: /mcp
+              - 'button "/hooks: View hook configurations for tool events" [ref=e425] [cursor=pointer]':
+                - generic [ref=e426]: /hooks
+          - generic [ref=e427]:
+            - generic [ref=e428]:
+              - generic [ref=e430]: Daily Workflow
+              - generic [ref=e431]: "24"
+            - generic [ref=e433]:
+              - 'button "/compact: Clear conversation history but keep a summary in context" [ref=e434] [cursor=pointer]':
+                - generic [ref=e435]: /compact
+              - 'button "/memory: Read and write to persistent memory files" [ref=e436] [cursor=pointer]':
+                - generic [ref=e437]: /memory
+              - 'button "/context: Visualize current context usage as a colored grid" [ref=e438] [cursor=pointer]':
+                - generic [ref=e439]: /context
+              - 'button "/plan: Enable plan mode or view the current session plan" [ref=e440] [cursor=pointer]':
+                - generic [ref=e441]: /plan
+              - 'button "/resume: Resume a previous session or plan" [ref=e442] [cursor=pointer]':
+                - generic [ref=e443]: /resume
+              - 'button "/session: Show remote session URL and QR code" [ref=e444] [cursor=pointer]':
+                - generic [ref=e445]: /session
+              - 'button "/files: List files currently in context" [ref=e446] [cursor=pointer]':
+                - generic [ref=e447]: /files
+              - 'button "/add-dir: Add a directory to the working context" [ref=e448] [cursor=pointer]':
+                - generic [ref=e449]: /add-dir
+              - 'button "/copy: Copy Claude''s last response to clipboard" [ref=e450] [cursor=pointer]':
+                - generic [ref=e451]: /copy
+              - 'button "/export: Export the current conversation to a file or clipboard" [ref=e452] [cursor=pointer]':
+                - generic [ref=e453]: /export
+              - 'button "/summary: Generate a summary of the current session" [ref=e454] [cursor=pointer]':
+                - generic [ref=e455]: /summary
+              - 'button "/clear: Clear conversation history and free up context" [ref=e456] [cursor=pointer]':
+                - generic [ref=e457]: /clear
+              - 'button "/brief: Toggle brief response mode" [ref=e458] [cursor=pointer]':
+                - generic [ref=e459]: /brief
+              - 'button "/output-style: Deprecated: use /config to change output style" [ref=e460] [cursor=pointer]':
+                - generic [ref=e461]: /output-style
+                - generic [ref=e462]: 🔒
+              - 'button "/color: Set the prompt bar color for this session" [ref=e463] [cursor=pointer]':
+                - generic [ref=e464]: /color
+              - 'button "/vim: Toggle vim keybindings for input" [ref=e465] [cursor=pointer]':
+                - generic [ref=e466]: /vim
+              - 'button "/keybindings: View and customize keyboard shortcuts" [ref=e467] [cursor=pointer]':
+                - generic [ref=e468]: /keybindings
+              - 'button "/skills: List available skills" [ref=e469] [cursor=pointer]':
+                - generic [ref=e470]: /skills
+              - 'button "/tasks: Manage background tasks and parallel work" [ref=e471] [cursor=pointer]':
+                - generic [ref=e472]: /tasks
+              - 'button "/agents: Manage agent configurations" [ref=e473] [cursor=pointer]':
+                - generic [ref=e474]: /agents
+              - 'button "/fast: Toggle fast mode for quicker responses" [ref=e475] [cursor=pointer]':
+                - generic [ref=e476]: /fast
+              - 'button "/effort: Set the thinking effort level" [ref=e477] [cursor=pointer]':
+                - generic [ref=e478]: /effort
+              - 'button "/extra-usage: Configure extra usage provisioning" [ref=e479] [cursor=pointer]':
+                - generic [ref=e480]: /extra-usage
+              - 'button "/rate-limit-options: Show rate limit options dialog" [ref=e481] [cursor=pointer]':
+                - generic [ref=e482]: /rate-limit-options
+          - generic [ref=e483]:
+            - generic [ref=e484]:
+              - generic [ref=e486]: Code Review & Git
+              - generic [ref=e487]: "13"
+            - generic [ref=e489]:
+              - 'button "/review: Review a pull request" [ref=e490] [cursor=pointer]':
+                - generic [ref=e491]: /review
+              - 'button "/commit: Generate a commit message and commit changes" [ref=e492] [cursor=pointer]':
+                - generic [ref=e493]: /commit
+              - 'button "/commit-push-pr: Commit, push, and create a pull request in one step" [ref=e494] [cursor=pointer]':
+                - generic [ref=e495]: /commit-push-pr
+              - 'button "/diff: View uncommitted changes and per-turn diffs" [ref=e496] [cursor=pointer]':
+                - generic [ref=e497]: /diff
+              - 'button "/pr_comments: View and respond to PR review comments" [ref=e498] [cursor=pointer]':
+                - generic [ref=e499]: /pr_comments
+              - 'button "/branch: Create a branch of the current conversation at this point" [ref=e500] [cursor=pointer]':
+                - generic [ref=e501]: /branch
+              - 'button "/issue: View and work on GitHub issues" [ref=e502] [cursor=pointer]':
+                - generic [ref=e503]: /issue
+              - 'button "/security-review: Run a security-focused code review" [ref=e504] [cursor=pointer]':
+                - generic [ref=e505]: /security-review
+              - 'button "/autofix-pr: Disabled stub" [ref=e506] [cursor=pointer]':
+                - generic [ref=e507]: /autofix-pr
+                - generic [ref=e508]: 🔒
+              - 'button "/share: Disabled stub" [ref=e509] [cursor=pointer]':
+                - generic [ref=e510]: /share
+              - 'button "/install-github-app: Set up Claude GitHub Actions for a repository" [ref=e511] [cursor=pointer]':
+                - generic [ref=e512]: /install-github-app
+                - generic [ref=e513]: 🔒
+              - 'button "/install-slack-app: Install the Claude Code Slack App" [ref=e514] [cursor=pointer]':
+                - generic [ref=e515]: /install-slack-app
+                - generic [ref=e516]: 🔒
+              - 'button "/tag: Toggle a searchable tag on the current session" [ref=e517] [cursor=pointer]':
+                - generic [ref=e518]: /tag
+          - generic [ref=e519]:
+            - generic [ref=e520]:
+              - generic [ref=e522]: Debugging & Diagnostics
+              - generic [ref=e523]: "23"
+            - generic [ref=e525]:
+              - 'button "/status: Show Claude Code status" [ref=e526] [cursor=pointer]':
+                - generic [ref=e527]: /status
+              - 'button "/stats: Show token usage and performance statistics" [ref=e528] [cursor=pointer]':
+                - generic [ref=e529]: /stats
+              - 'button "/cost: Show the cost of the current session" [ref=e530] [cursor=pointer]':
+                - generic [ref=e531]: /cost
+              - 'button "/usage: Show plan usage limits" [ref=e532] [cursor=pointer]':
+                - generic [ref=e533]: /usage
+              - 'button "/version: Show the installed Claude Code version" [ref=e534] [cursor=pointer]':
+                - generic [ref=e535]: /version
+              - 'button "/feedback: Send feedback to the Claude Code team" [ref=e536] [cursor=pointer]':
+                - generic [ref=e537]: /feedback
+              - 'button "/think-back: Your 2025 Claude Code Year in Review" [ref=e538] [cursor=pointer]':
+                - generic [ref=e539]: /think-back
+              - 'button "/thinkback-play: Play the thinkback animation" [ref=e540] [cursor=pointer]':
+                - generic [ref=e541]: /thinkback-play
+              - 'button "/rewind: Restore code and/or conversation to a previous point" [ref=e542] [cursor=pointer]':
+                - generic [ref=e543]: /rewind
+              - 'button "/ctx_viz: Disabled stub" [ref=e544] [cursor=pointer]':
+                - generic [ref=e545]: /ctx_viz
+              - 'button "/debug-tool-call: Debug a specific tool call by ID" [ref=e546] [cursor=pointer]':
+                - generic [ref=e547]: /debug-tool-call
+              - 'button "/perf-issue: Disabled stub" [ref=e548] [cursor=pointer]':
+                - generic [ref=e549]: /perf-issue
+              - 'button "/heapdump: Dump the JS heap to ~/Desktop" [ref=e550] [cursor=pointer]':
+                - generic [ref=e551]: /heapdump
+              - 'button "/ant-trace: Disabled stub" [ref=e552] [cursor=pointer]':
+                - generic [ref=e553]: /ant-trace
+              - 'button "/backfill-sessions: Disabled stub" [ref=e554] [cursor=pointer]':
+                - generic [ref=e555]: /backfill-sessions
+                - generic [ref=e556]: 🔒
+              - 'button "/break-cache: Disabled stub" [ref=e557] [cursor=pointer]':
+                - generic [ref=e558]: /break-cache
+                - generic [ref=e559]: 🔒
+              - 'button "/bridge-kick: Inject bridge failure states for testing" [ref=e560] [cursor=pointer]':
+                - generic [ref=e561]: /bridge-kick
+                - generic [ref=e562]: 🔒
+              - 'button "/mock-limits: Disabled stub" [ref=e563] [cursor=pointer]':
+                - generic [ref=e564]: /mock-limits
+                - generic [ref=e565]: 🔒
+              - 'button "/oauth-refresh: Force refresh OAuth tokens" [ref=e566] [cursor=pointer]':
+                - generic [ref=e567]: /oauth-refresh
+                - generic [ref=e568]: 🔒
+              - 'button "/reset-limits: Reset usage limit counters" [ref=e569] [cursor=pointer]':
+                - generic [ref=e570]: /reset-limits
+                - generic [ref=e571]: 🔒
+              - 'button "/env: Disabled stub" [ref=e572] [cursor=pointer]':
+                - generic [ref=e573]: /env
+              - 'button "/bughunter: Disabled stub" [ref=e574] [cursor=pointer]':
+                - generic [ref=e575]: /bughunter
+                - generic [ref=e576]: 🔒
+              - 'button "/passes: Share a free week of Claude Code with friends" [ref=e577] [cursor=pointer]':
+                - generic [ref=e578]: /passes
+                - generic [ref=e579]: 🔒
+          - generic [ref=e580]:
+            - generic [ref=e581]:
+              - generic [ref=e583]: Advanced & Experimental
+              - generic [ref=e584]: "23"
+            - generic [ref=e586]:
+              - 'button "/advisor: Configure the advisor model" [ref=e587] [cursor=pointer]':
+                - generic [ref=e588]: /advisor
+              - 'button "/ultraplan: Run an advanced plan on Claude Code on the web" [ref=e589] [cursor=pointer]':
+                - generic [ref=e590]: /ultraplan
+                - generic [ref=e591]: 🔒
+              - 'button "/remote-control: Connect this terminal for remote-control sessions" [ref=e592] [cursor=pointer]':
+                - generic [ref=e593]: /remote-control
+                - generic [ref=e594]: 🔒
+              - 'button "/teleport: Disabled stub" [ref=e595] [cursor=pointer]':
+                - generic [ref=e596]: /teleport
+              - 'button "/voice: Toggle voice mode" [ref=e597] [cursor=pointer]':
+                - generic [ref=e598]: /voice
+                - generic [ref=e599]: 🔒
+              - 'button "/desktop: Continue the current session in Claude Desktop" [ref=e600] [cursor=pointer]':
+                - generic [ref=e601]: /desktop
+                - generic [ref=e602]: 🔒
+              - 'button "/chrome: Claude in Chrome (Beta) settings" [ref=e603] [cursor=pointer]':
+                - generic [ref=e604]: /chrome
+                - generic [ref=e605]: 🔒
+              - 'button "/mobile: Show QR code to download the Claude mobile app" [ref=e606] [cursor=pointer]':
+                - generic [ref=e607]: /mobile
+                - generic [ref=e608]: 🔒
+              - 'button "/sandbox: Configure command sandboxing" [ref=e609] [cursor=pointer]':
+                - generic [ref=e610]: /sandbox
+              - 'button "/plugin: Manage Claude Code plugins" [ref=e611] [cursor=pointer]':
+                - generic [ref=e612]: /plugin
+              - 'button "/reload-plugins: Activate pending plugin changes" [ref=e613] [cursor=pointer]':
+                - generic [ref=e614]: /reload-plugins
+              - 'button "/web-setup: Setup Claude Code on the web" [ref=e615] [cursor=pointer]':
+                - generic [ref=e616]: /web-setup
+              - 'button "/remote-env: Configure the default remote environment for teleport" [ref=e617] [cursor=pointer]':
+                - generic [ref=e618]: /remote-env
+              - 'button "/ide: Manage IDE integrations and show status" [ref=e619] [cursor=pointer]':
+                - generic [ref=e620]: /ide
+              - 'button "/stickers: Order Claude Code stickers" [ref=e621] [cursor=pointer]':
+                - generic [ref=e622]: /stickers
+              - 'button "/good-claude: Disabled stub" [ref=e623] [cursor=pointer]':
+                - generic [ref=e624]: /good-claude
+              - 'button "/btw: Ask a quick side question without interrupting the main conversation" [ref=e625] [cursor=pointer]':
+                - generic [ref=e626]: /btw
+              - 'button "/upgrade: Upgrade to Max for higher rate limits" [ref=e627] [cursor=pointer]':
+                - generic [ref=e628]: /upgrade
+              - 'button "/release-notes: View release notes for the current version" [ref=e629] [cursor=pointer]':
+                - generic [ref=e630]: /release-notes
+              - 'button "/privacy-settings: Configure privacy and data sharing settings" [ref=e631] [cursor=pointer]':
+                - generic [ref=e632]: /privacy-settings
+              - 'button "/help: Show available commands and usage information" [ref=e633] [cursor=pointer]':
+                - generic [ref=e634]: /help
+              - 'button "/exit: Exit Claude Code" [ref=e635] [cursor=pointer]':
+                - generic [ref=e636]: /exit
+              - 'button "/rename: Rename the current conversation" [ref=e637] [cursor=pointer]':
+                - generic [ref=e638]: /rename
+        - paragraph [ref=e639]: Click a command to see details and source code
+    - generic [ref=e641]:
+      - generic [ref=e642]:
+        - generic [ref=e644]: "05"
+        - heading "Hidden Features" [level=2] [ref=e646]
+        - paragraph [ref=e647]: Stuff that's in the code but not shipped yet. Feature-flagged, env-gated, or just commented out.
+      - generic [ref=e648]:
+        - generic [ref=e650]:
+          - 'button "Buddy: A virtual pet that lives in your terminal. Species and rarity are derived from your account ID." [ref=e651] [cursor=pointer]':
+            - link "Ask DeepWiki about this feature" [ref=e652]:
+              - /url: https://deepwiki.com/search/how-does-the-buddy-feature-wor_2d64811c-634e-476c-9461-46a6252b8edd?mode=fast
+            - heading "Buddy" [level=3] [ref=e653]
+            - paragraph [ref=e654]:
+              - generic [ref=e655]: A virtual pet that lives in your terminal. Species and rarity are derived from your account ID.
+          - 'button "Kairos: Persistent mode with memory consolidation between sessions and autonomous background actions." [ref=e656] [cursor=pointer]':
+            - link "Ask DeepWiki about this feature" [ref=e657]:
+              - /url: https://deepwiki.com/search/how-does-the-kairos-feature-wo_3576a384-da6e-4072-ad5c-bd2d8e26e12c?mode=fast
+            - heading "Kairos" [level=3] [ref=e658]
+            - paragraph [ref=e659]:
+              - generic [ref=e660]: Persistent mode with memory consolidation between sessions and autonomous background actions.
+          - 'button "UltraPlan: Long planning sessions on Opus-class models, up to 30-minute execution windows." [ref=e661] [cursor=pointer]':
+            - link "Ask DeepWiki about this feature" [ref=e662]:
+              - /url: https://deepwiki.com/search/how-does-the-ultraplan-feature_8ca6fc2e-8748-40a7-a620-274c08e1f327?mode=fast
+            - heading "UltraPlan" [level=3] [ref=e663]
+            - paragraph [ref=e664]:
+              - generic [ref=e665]: Long planning sessions on Opus-class models, up to 30-minute execution windows.
+          - 'button "Coordinator Mode: A lead agent breaks tasks apart, spawns parallel workers in isolated git worktrees, collects results." [ref=e666] [cursor=pointer]':
+            - link "Ask DeepWiki about this feature" [ref=e667]:
+              - /url: https://deepwiki.com/search/how-does-the-coordinator-mode_4039dc3a-6099-4b9f-b7a1-8c325bd1408a?mode=fast
+            - heading "Coordinator Mode" [level=3] [ref=e668]
+            - paragraph [ref=e669]:
+              - generic [ref=e670]: A lead agent breaks tasks apart, spawns parallel workers in isolated git worktrees, collects results.
+          - 'button "Bridge: Control Claude Code from your phone or a browser. Full remote session with permission approvals." [ref=e671] [cursor=pointer]':
+            - link "Ask DeepWiki about this feature" [ref=e672]:
+              - /url: https://deepwiki.com/search/how-does-the-bridge-feature-wo_c49c5b30-85e4-45e1-8ad8-b2d97eaea726?mode=fast
+            - heading "Bridge" [level=3] [ref=e673]
+            - paragraph [ref=e674]:
+              - generic [ref=e675]: Control Claude Code from your phone or a browser. Full remote session with permission approvals.
+          - 'button "Daemon Mode: Run sessions in the background with `--bg`. Uses `tmux` under the hood." [ref=e676] [cursor=pointer]':
+            - link "Ask DeepWiki about this feature" [ref=e677]:
+              - /url: https://deepwiki.com/search/how-does-the-daemon-mode-featu_8ecab5b1-6631-48eb-942f-b5eff8dfbe71?mode=fast
+            - heading "Daemon Mode" [level=3] [ref=e678]
+            - paragraph [ref=e679]:
+              - generic [ref=e680]:
+                - text: Run sessions in the background with
+                - code [ref=e681]: "--bg"
+                - text: . Uses
+                - code [ref=e682]: tmux
+                - text: under the hood.
+          - 'button "UDS Inbox: Sessions talk to each other over Unix domain sockets." [ref=e683] [cursor=pointer]':
+            - link "Ask DeepWiki about this feature" [ref=e684]:
+              - /url: https://deepwiki.com/search/how-does-the-uds-inbox-feature_fd97d225-9297-4991-bbdd-d7c9096426c9?mode=fast
+            - heading "UDS Inbox" [level=3] [ref=e685]
+            - paragraph [ref=e686]:
+              - generic [ref=e687]: Sessions talk to each other over Unix domain sockets.
+          - 'button "Auto-Dream: Between sessions, the AI reviews what happened and organizes what it learned." [ref=e688] [cursor=pointer]':
+            - link "Ask DeepWiki about this feature" [ref=e689]:
+              - /url: https://deepwiki.com/search/how-does-the-autodream-feature_86ca103d-7743-4c3d-a77b-80a8361d33a9?mode=fast
+            - heading "Auto-Dream" [level=3] [ref=e690]
+            - paragraph [ref=e691]:
+              - generic [ref=e692]: Between sessions, the AI reviews what happened and organizes what it learned.
+        - paragraph [ref=e693]: Click a feature to explore
+  - contentinfo [ref=e694]:
+    - generic [ref=e695]:
+      - generic [ref=e696]:
+        - generic [ref=e697]:
+          - heading "Claude Code Unpacked" [level=2] [ref=e698]
+          - paragraph [ref=e699]: Unofficial. Not affiliated with Anthropic. Based on publicly available source code, so some things might be wrong or outdated. Curation assisted by AI.
+          - paragraph [ref=e700]: "Analysis date: March 31, 2026"
+        - generic [ref=e701]:
+          - generic [ref=e702]: Created by
+          - generic [ref=e703]:
+            - generic [ref=e704]: Zakaria O. I. A.
+            - generic [ref=e705]: /
+            - generic [ref=e706]: "@razakiau"
+          - generic [ref=e707]:
+            - link "GitHub" [ref=e708] [cursor=pointer]:
+              - /url: https://github.com/razakiau
+              - img [ref=e709]
+            - link "LinkedIn" [ref=e711] [cursor=pointer]:
+              - /url: https://www.linkedin.com/in/razakiau/
+              - img [ref=e712]
+            - link "X (Twitter)" [ref=e714] [cursor=pointer]:
+              - /url: https://x.com/razakiau
+              - img [ref=e715]
+            - link "Bluesky" [ref=e717] [cursor=pointer]:
+              - /url: https://bsky.app/profile/razakiau.bsky.social
+              - img [ref=e718]
+      - paragraph [ref=e721]:
+        - text: Analysis based on the Claude Code source shared in
+        - link "this post by @Fried_rice" [ref=e722] [cursor=pointer]:
+          - /url: https://x.com/Fried_rice/status/2038894956459290963

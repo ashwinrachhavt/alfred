@@ -22,6 +22,7 @@ from alfred.connectors.firecrawl_connector import FirecrawlClient
 from alfred.connectors.web_connector import SearchHit, WebConnector
 from alfred.core.database import SessionLocal
 from alfred.core.exceptions import ConfigurationError
+from alfred.core.openai_compat import add_temperature_if_supported
 from alfred.core.settings import settings
 from alfred.core.utils import utcnow as _utcnow
 from alfred.models.company import ResearchReportRow
@@ -304,13 +305,14 @@ class ResearchService:
             raise RuntimeError(
                 "OpenAI not configured: set OPENAI_API_KEY to enable research"
             )
-        llm = ChatOpenAI(
-            model=self._model_name,
-            temperature=0.15,
-            api_key=api_key,
-            base_url=settings.openai_base_url,
-            organization=settings.openai_organization,
-        )
+        kwargs: dict[str, Any] = {
+            "model": self._model_name,
+            "api_key": api_key,
+            "base_url": settings.openai_base_url,
+            "organization": settings.openai_organization,
+        }
+        add_temperature_if_supported(kwargs, model=self._model_name, temperature=0.15)
+        llm = ChatOpenAI(**kwargs)
         self._llm = llm
         self._structured_llm = llm.with_structured_output(ResearchReport)
 
@@ -340,6 +342,8 @@ class ResearchService:
     def _search(self, topic: str, connector: WebConnector):
         try:
             return connector.search(topic, num_results=self.search_results)
+        except ConfigurationError:
+            raise
         except Exception as exc:  # pragma: no cover - network failure
             logger.warning("Web search failed: %s", exc)
             return connector.search(topic)

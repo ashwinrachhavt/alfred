@@ -16,6 +16,7 @@ _dotenv_path = _PROJECT_ROOT / ".env"
 load_dotenv(_dotenv_path if _dotenv_path.exists() else None)
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "alfred.db"
+DEFAULT_OPENAI_MODEL = "gpt-5.5"
 
 
 class LLMProvider(str, Enum):
@@ -106,11 +107,23 @@ class Settings(BaseSettings):
     # Qdrant
     qdrant_url: str | None = Field(default=None, alias="QDRANT_URL")
     qdrant_api_key: SecretStr | None = Field(default=None, alias="QDRANT_API_KEY")
+    qdrant_local_url: str | None = Field(
+        default="http://localhost:6333",
+        alias="QDRANT_LOCAL_URL",
+    )
+    qdrant_prefer_local: bool = Field(
+        default=((os.getenv("APP_ENV") or "dev").strip().lower() in {"", "dev", "local"}),
+        alias="QDRANT_PREFER_LOCAL",
+    )
     qdrant_collection: str = Field(default="alfred_docs", alias="QDRANT_COLLECTION")
+    qdrant_zettels_collection: str = Field(
+        default="alfred_zettels",
+        alias="QDRANT_ZETTELS_COLLECTION",
+    )
 
     # OpenAI (also used by downstream libs)
     openai_api_key: SecretStr | None = Field(default=None, alias="OPENAI_API_KEY")
-    openai_model: str = Field(default="gpt-5.4", alias="OPENAI_MODEL")
+    openai_model: str = Field(default=DEFAULT_OPENAI_MODEL, alias="OPENAI_MODEL")
     openai_base_url: str | None = Field(default=None, alias="OPENAI_BASE_URL")
     openai_organization: str | None = Field(default=None, alias="OPENAI_ORG")
 
@@ -229,7 +242,7 @@ class Settings(BaseSettings):
     )
 
     # Firecrawl
-    firecrawl_base_url: str = Field(default="http://localhost:8010", alias="FIRECRAWL_BASE_URL")
+    firecrawl_base_url: str = Field(default="http://localhost:3002/v1", alias="FIRECRAWL_BASE_URL")
     firecrawl_timeout: int = Field(default=30, alias="FIRECRAWL_TIMEOUT")
 
     # Research
@@ -238,6 +251,7 @@ class Settings(BaseSettings):
         default="company_research_reports",
         alias="COMPANY_RESEARCH_COLLECTION",
     )
+    canvas_diagram_model: str = Field(default="gpt-4o", alias="CANVAS_DIAGRAM_MODEL")
     system_design_sessions_collection: str = Field(
         default="system_design_sessions",
         alias="SYSTEM_DESIGN_SESSIONS_COLLECTION",
@@ -342,16 +356,43 @@ class Settings(BaseSettings):
         default=6, alias="DOCUMENT_CONCEPT_EXTRACTION_MIN_AGE_HOURS", ge=0, le=168
     )
 
+    # Today Page nightly pipeline (digest + carry-over)
+    enable_today_pipeline_nightly: bool = Field(
+        default=False,
+        alias="ENABLE_TODAY_PIPELINE_NIGHTLY",
+        description="Enable the nightly Today page pipeline (digest + carry-over)",
+    )
+    today_pipeline_nightly_utc_hour: int = Field(
+        default=7,
+        alias="TODAY_PIPELINE_NIGHTLY_UTC_HOUR",
+        ge=0,
+        le=23,
+        description="UTC hour the Today pipeline runs (default: 7 UTC ~ midnight PST)",
+    )
+    today_pipeline_nightly_utc_minute: int = Field(
+        default=0,
+        alias="TODAY_PIPELINE_NIGHTLY_UTC_MINUTE",
+        ge=0,
+        le=59,
+        description="UTC minute the Today pipeline runs",
+    )
+    today_pipeline_default_tz: str = Field(
+        default="America/Los_Angeles",
+        alias="TODAY_PIPELINE_DEFAULT_TZ",
+        description="Default user timezone for the Today pipeline",
+    )
+
     # Admin API (visibility)
     enable_admin_api_schema: bool = Field(default=False, alias="ENABLE_ADMIN_API_SCHEMA")
 
     # --- LLM unified ---
     llm_provider: LLMProvider = Field(default=LLMProvider.openai, alias="ALFRED_LLM_PROVIDER")
-    llm_model: str = Field(default="gpt-5.4", alias="ALFRED_LLM_MODEL")
+    llm_model: str = Field(default=DEFAULT_OPENAI_MODEL, alias="ALFRED_LLM_MODEL")
     llm_temperature: float = Field(default=0.2, alias="ALFRED_LLM_TEMPERATURE")
+    zettel_analysis_model: str = Field(default="o4-mini", alias="ALFRED_ZETTEL_ANALYSIS_MODEL")
 
     # --- Writer (browser extension) ---
-    writer_model: str = Field(default="gpt-5.4", alias="ALFRED_WRITER_MODEL")
+    writer_model: str = Field(default=DEFAULT_OPENAI_MODEL, alias="ALFRED_WRITER_MODEL")
     writer_temperature: float = Field(
         default=0.4, alias="ALFRED_WRITER_TEMPERATURE", ge=0.0, le=2.0
     )

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, queryOptions, keepPreviousData } from "@tanstack/react-query";
 
 import {
   getResearchReportById,
@@ -13,11 +13,17 @@ export function researchReportQueryKey(reportId: string) {
   return ["research", "reports", "by-id", reportId] as const;
 }
 
-export function useRecentResearchReports(limit = 20) {
-  return useQuery({
+export function researchReportsQueryOptions(limit = 20) {
+  return queryOptions({
     queryKey: recentResearchReportsQueryKey(limit),
     queryFn: () => listRecentResearchReports(limit),
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
+}
+
+export function useRecentResearchReports(limit = 20) {
+  return useQuery(researchReportsQueryOptions(limit));
 }
 
 export function useResearchReport(reportId: string | null) {
@@ -27,5 +33,6 @@ export function useResearchReport(reportId: string | null) {
       ? researchReportQueryKey(reportId)
       : ["research", "reports", "disabled"],
     queryFn: () => getResearchReportById(reportId!),
+    staleTime: 60_000,
   });
 }

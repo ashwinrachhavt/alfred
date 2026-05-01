@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 
 import { AlertCircle, BookOpen, Layers, Link2, Loader2, Play, Plus, RefreshCw, Sparkles as SparklesIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { PaginationControls } from "@/components/ui/pagination-controls";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useZettelCards, useZettelTopics, useZettelTags } from "@/features/zettels/queries";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
 import { apiPostJson } from "@/lib/api/client";
@@ -16,28 +16,18 @@ import { FilterBar, type ZettelFilters } from "./filter-bar";
 import { ViewToolbar, type ViewMode } from "./view-toolbar";
 import { ZettelCard } from "./zettel-card";
 import { ZettelTable } from "./zettel-table";
-import { ZettelGraph } from "./zettel-graph";
 import { ZettelTimeline } from "./zettel-timeline";
 import { ZettelDetailPanel } from "./zettel-detail-panel";
 import { ReviewStation } from "./review-station";
 import { CreateZettelDialog } from "./create-zettel-dialog";
 import { AIGenerateDialog } from "./ai-generate-dialog";
 import { BulkCreateDialog } from "./bulk-create-dialog";
+import { KnowledgeSkeleton } from "./knowledge-skeleton";
 
-function CardSkeleton() {
- return (
- <div className="flex flex-col rounded-lg border p-4 space-y-3">
- <Skeleton className="h-5 w-3/4" />
- <Skeleton className="h-4 w-full" />
- <Skeleton className="h-4 w-2/3" />
- <div className="flex gap-2 pt-1">
- <Skeleton className="h-5 w-16 rounded-sm" />
- <Skeleton className="h-5 w-12 rounded-sm" />
- <Skeleton className="ml-auto h-5 w-8" />
- </div>
- </div>
- );
-}
+const ZettelGraph = dynamic(
+  () => import("./zettel-graph").then((m) => m.ZettelGraph),
+  { ssr: false }
+);
 
 function EmptyState({ onCreateClick, onAIClick }: { onCreateClick: () => void; onAIClick: () => void }) {
  return (
@@ -303,21 +293,16 @@ export function KnowledgeHub() {
  <div className="flex flex-1 overflow-hidden">
  {/* Main view */}
  <div className="flex-1 overflow-y-auto">
- <div className="p-4">
  {/* Loading state */}
- {isLoading && (
- <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
- {Array.from({ length: 6 }).map((_, i) => (
- <CardSkeleton key={i} />
- ))}
- </div>
- )}
+ {isLoading && <KnowledgeSkeleton />}
 
+ {!isLoading && (
+ <div className="p-4">
  {/* Error state */}
- {isError && !isLoading && <ErrorState onRetry={() => refetch()} />}
+ {isError && <ErrorState onRetry={() => refetch()} />}
 
  {/* Empty state */}
- {!isLoading && !isError && allZettels.length === 0 && (
+ {!isError && allZettels.length === 0 && (
  <EmptyState
  onCreateClick={() => setShowCreate(true)}
  onAIClick={() => setShowAIGenerate(true)}
@@ -325,7 +310,7 @@ export function KnowledgeHub() {
  )}
 
  {/* Content views */}
- {!isLoading && !isError && allZettels.length > 0 && (
+ {!isError && allZettels.length > 0 && (
  <>
  {activeView === "cards" && (
  <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
@@ -380,7 +365,7 @@ export function KnowledgeHub() {
  )}
 
  {/* Pagination controls */}
- {!isLoading && !isError && totalPages > 1 && (
+ {totalPages > 1 && (
  <PaginationControls
  currentPage={currentPage}
  totalPages={totalPages}
@@ -388,22 +373,34 @@ export function KnowledgeHub() {
  />
  )}
  </div>
+ )}
 
  {/* Review Station */}
  {allZettels.length > 0 && <ReviewStation zettels={allZettels} />}
  </div>
 
- {/* Detail panel */}
+ {/* Detail modal */}
  {selectedZettel && (
- <div className="animate-in slide-in-from-right-4 duration-200 ease-out">
+ <>
+ <div
+ className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+ onClick={() => setSelectedId(null)}
+ />
+ <div className="fixed inset-0 z-50 flex items-center justify-center p-8">
+ <div
+ className="animate-in zoom-in-95 fade-in duration-200 ease-out w-full max-w-lg"
+ onClick={(e) => e.stopPropagation()}
+ >
  <ZettelDetailPanel
- key={selectedZettel.id}
- zettel={selectedZettel}
- allZettels={allZettels}
- onClose={() => setSelectedId(null)}
- onSelectZettel={handleSelectZettel}
+  key={selectedZettel.id}
+  zettel={selectedZettel}
+  allZettels={allZettels}
+  onClose={() => setSelectedId(null)}
+  onSelectZettel={handleSelectZettel}
  />
  </div>
+ </div>
+ </>
  )}
  </div>
 

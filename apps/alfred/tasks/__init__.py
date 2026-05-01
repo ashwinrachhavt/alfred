@@ -6,6 +6,7 @@ task modules.
 """
 
 from . import batch_linking as batch_linking
+from . import canvas_tasks as canvas_tasks
 from . import daily_briefing as daily_briefing
 from . import deep_research as deep_research
 from . import document_concepts as document_concepts

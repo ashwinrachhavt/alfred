@@ -6,7 +6,9 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
 from alfred.core.dependencies import get_extraction_service
+from alfred.core.exceptions import ServiceUnavailableError
 from alfred.schemas.taxonomy import (
     CreateTaxonomyNodeRequest,
     DeleteTaxonomyNodeResponse,
@@ -74,12 +76,10 @@ def reclassify_all() -> dict[str, str]:
 
     Returns a task_id that can be polled via GET /api/tasks/{task_id}.
     """
-    from alfred.core.celery_client import get_celery_client
-
-    celery_client = get_celery_client()
-    async_result = celery_client.send_task(
-        "alfred.tasks.taxonomy_reclassify.reclassify_all",
-    )
+    try:
+        async_result = dispatch_task("alfred.tasks.taxonomy_reclassify.reclassify_all")
+    except BrokerUnavailableError as exc:
+        raise ServiceUnavailableError("Background worker unavailable") from exc
     logger.info("Dispatched reclassify-all task: %s", async_result.id)
     return {"task_id": async_result.id, "status": "started"}
 

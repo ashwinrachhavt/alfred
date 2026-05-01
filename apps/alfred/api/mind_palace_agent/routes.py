@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, Response, status
 from pydantic import BaseModel
 
-from alfred.core.celery_client import get_celery_client
+from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
 from alfred.core.dependencies import get_knowledge_agent_service
 from alfred.core.exceptions import ServiceUnavailableError
 from alfred.schemas import AgentQueryRequest, AgentResponse
@@ -37,16 +37,18 @@ async def query_agent(
     svc: KnowledgeAgentService = Depends(get_agent_service),
 ) -> AgentResponse | EnqueueMindPalaceTaskResponse:
     if background:
-        celery_client = get_celery_client()
-        async_result = celery_client.send_task(
-            "alfred.tasks.mind_palace_agent.query",
-            kwargs={
-                "question": payload.question,
-                "history": [m.model_dump() for m in payload.history],
-                "context": payload.context,
-            },
-            queue="agent",
-        )
+        try:
+            async_result = dispatch_task(
+                "alfred.tasks.mind_palace_agent.query",
+                kwargs={
+                    "question": payload.question,
+                    "history": [m.model_dump() for m in payload.history],
+                    "context": payload.context,
+                },
+                queue="agent",
+            )
+        except BrokerUnavailableError as exc:
+            raise ServiceUnavailableError("Background worker unavailable") from exc
         response.status_code = status.HTTP_202_ACCEPTED
         return EnqueueMindPalaceTaskResponse(
             task_id=async_result.id,

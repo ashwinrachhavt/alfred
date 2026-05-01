@@ -302,8 +302,16 @@ def list_threads(
     skip: int = 0,
     db: Session = Depends(get_db_session),
 ) -> list[ThreadSummary]:
+    from sqlalchemy import func as sa_func
+
+    count_sub = (
+        select(sa_func.count(AgentMessageRow.id))
+        .where(AgentMessageRow.thread_id == ThinkingSessionRow.id)
+        .correlate(ThinkingSessionRow)
+        .scalar_subquery()
+    )
     stmt = (
-        select(ThinkingSessionRow)
+        select(ThinkingSessionRow, count_sub.label("message_count"))
         .where(ThinkingSessionRow.session_type == "agent")
         .where(ThinkingSessionRow.status == status_filter)
         .order_by(ThinkingSessionRow.updated_at.desc())
@@ -312,12 +320,12 @@ def list_threads(
     )
     if note_id is not None:
         stmt = stmt.where(ThinkingSessionRow.note_id == note_id)
-    sessions = db.exec(stmt).all()
+
+    rows = db.exec(stmt).all()
     results = []
-    for s in sessions:
-        count = len(db.exec(select(AgentMessageRow).where(AgentMessageRow.thread_id == s.id)).all())
-        summary = _to_summary(s)
-        summary.message_count = count
+    for session_row, msg_count in rows:
+        summary = _to_summary(session_row)
+        summary.message_count = msg_count
         results.append(summary)
     return results
 

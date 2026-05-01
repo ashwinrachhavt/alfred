@@ -1,0 +1,11 @@
+use_default_settings: true
+
+server:
+  # Local-development only. This is required by SearxNG, but it is not an Alfred secret.
+  secret_key: "alfred-local-searxng"
+  limiter: false
+
+search:
+  formats:
+    - html
+    - json

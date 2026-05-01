@@ -3,11 +3,12 @@ from __future__ import annotations
 import base64
 import importlib.util
 from collections.abc import Iterable
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from openai import AsyncOpenAI, OpenAI
 from pydantic import BaseModel
 
+from alfred.core.openai_compat import add_temperature_if_supported
 from alfred.core.settings import LLMProvider, settings
 
 
@@ -71,6 +72,24 @@ class LLMService:
             self._openai_async_client = AsyncOpenAI(**kwargs)
         return self._openai_async_client
 
+    def _openai_chat_kwargs(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, str]],
+        temperature: float | None,
+        timeout: int = 30,
+        **extra: Any,
+    ) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "timeout": timeout,
+            **extra,
+        }
+        add_temperature_if_supported(kwargs, model=model, temperature=temperature)
+        return kwargs
+
     # ---------- Chat (simple text) ----------
 
     def chat(
@@ -91,10 +110,11 @@ class LLMService:
 
         if provider == LLMProvider.openai:
             resp = self.openai_client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                timeout=30,
+                **self._openai_chat_kwargs(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                )
             )
             return resp.choices[0].message.content or ""
 
@@ -126,10 +146,11 @@ class LLMService:
 
         if provider == LLMProvider.openai:
             resp = await self.openai_async_client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                timeout=30,
+                **self._openai_chat_kwargs(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                )
             )
             return resp.choices[0].message.content or ""
 
@@ -165,11 +186,12 @@ class LLMService:
 
         if provider == LLMProvider.openai:
             stream = self.openai_client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                stream=True,
-                timeout=30,
+                **self._openai_chat_kwargs(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                    stream=True,
+                )
             )
             for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content:
@@ -238,14 +260,16 @@ class LLMService:
         if provider != LLMProvider.openai:
             raise RuntimeError("Cover visual brief is only supported for OpenAI provider")
 
+        model_name = model or self.cfg.llm_model
         resp = self.openai_client.chat.completions.create(
-            model=model or self.cfg.llm_model,
-            messages=[
-                {"role": "system", "content": sys},
-                {"role": "user", "content": "\n".join(ctx_parts)},
-            ],
-            temperature=0.2,
-            timeout=30,
+            **self._openai_chat_kwargs(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": sys},
+                    {"role": "user", "content": "\n".join(ctx_parts)},
+                ],
+                temperature=0.2,
+            )
         )
         return (resp.choices[0].message.content or "").strip()
 

@@ -38,7 +38,9 @@ from typing import Any
 from openai import APIError, APITimeoutError, AsyncOpenAI, RateLimitError
 from sqlmodel import Session
 
-from alfred.core.settings import settings
+from alfred.core.llm_factory import get_async_openai_client
+from alfred.core.openai_compat import add_temperature_if_supported, uses_max_completion_tokens
+from alfred.core.settings import DEFAULT_OPENAI_MODEL, settings
 from alfred.services.agent.agent_types import AGENT_TYPES, AgentType
 from alfred.services.agent.tools import (
     CORE_TOOL_SCHEMAS,
@@ -51,11 +53,6 @@ logger = logging.getLogger(__name__)
 
 # HTML tag stripping for tool results
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
-
-# Reasoning model prefixes
-_REASONING_MODELS = {"o3", "o3-mini", "o4-mini"}
-_MAX_COMPLETION_TOKEN_PREFIXES = ("gpt-5",)
-
 
 def _get_tool_schemas_for_type(agent_type: AgentType) -> list[dict[str, Any]]:
     """Get OpenAI function-calling schemas for a specific agent type's tools."""
@@ -97,22 +94,13 @@ class SubAgentRunner:
 
     def __init__(self, db: Session, *, model: str | None = None) -> None:
         self.db = db
-        self.model = model or settings.llm_model or "gpt-5.4"
+        self.model = model or settings.llm_model or DEFAULT_OPENAI_MODEL
         self._client: AsyncOpenAI | None = None
 
     @property
     def client(self) -> AsyncOpenAI:
         if self._client is None:
-            kwargs: dict[str, object] = {}
-            if settings.openai_api_key:
-                val = settings.openai_api_key.get_secret_value()
-                if val:
-                    kwargs["api_key"] = val
-            if settings.openai_base_url:
-                kwargs["base_url"] = settings.openai_base_url
-            if settings.openai_organization:
-                kwargs["organization"] = settings.openai_organization
-            self._client = AsyncOpenAI(**kwargs)
+            self._client = get_async_openai_client()
         return self._client
 
     async def run(
@@ -245,15 +233,16 @@ class SubAgentRunner:
             "tools": tools,
         }
 
-        if any(self.model.startswith(p) for p in _MAX_COMPLETION_TOKEN_PREFIXES) or any(
-            self.model.startswith(p) for p in _REASONING_MODELS
-        ):
+        if uses_max_completion_tokens(self.model):
             kwargs["max_completion_tokens"] = 4096
         else:
             kwargs["max_tokens"] = 4096
 
-        if not any(self.model.startswith(p) for p in _REASONING_MODELS):
-            kwargs["temperature"] = settings.llm_temperature
+        add_temperature_if_supported(
+            kwargs,
+            model=self.model,
+            temperature=settings.llm_temperature,
+        )
 
         response = await self.client.chat.completions.create(**kwargs)
         choice = response.choices[0]

@@ -1,0 +1,310 @@
+# Alfred local development stack.
+#
+# Start everything:
+#   docker compose up --build
+#
+# Run in the background:
+#   docker compose up -d --build
+#
+# Stop without deleting data:
+#   docker compose down
+#
+# Stop and wipe local container data:
+#   docker compose down -v
+
+name: alfred
+
+x-api-build: &api-build
+  context: .
+  dockerfile: apps/alfred/Dockerfile
+
+x-alfred-env-files: &alfred-env-files
+  - path: .env
+    required: false
+  - path: .env.local
+    required: false
+  - path: apps/alfred/.env
+    required: false
+  - path: apps/alfred/.env.local
+    required: false
+
+x-api-env: &api-env
+  APP_ENV: dev
+  PYTHONDONTWRITEBYTECODE: "1"
+  DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/alfred
+  ALFRED_WRITER_CHECKPOINT_DSN: postgresql://postgres:postgres@postgres:5432/alfred
+  REDIS_URL: redis://redis:6379/0
+  QDRANT_URL: http://qdrant:6333
+  QDRANT_LOCAL_URL: http://qdrant:6333
+  QDRANT_PREFER_LOCAL: "true"
+  QDRANT_API_KEY: ""
+  FIRECRAWL_BASE_URL: http://firecrawl:3002/v1
+  SEARXNG_HOST: http://searxng:8080
+  SEARX_HOST: http://searxng:8080
+  TOKEN_STORE_DIR: /app/.alfred_data/tokens
+  CORS_ALLOW_ORIGINS: '["*"]'
+
+x-api-volumes: &api-volumes
+  - ./apps:/app/apps
+  - ./.alfred_data:/app/.alfred_data
+  - ./data:/app/data
+
+services:
+  # Core infrastructure
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: alfred
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${ALFRED_POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d alfred"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis/redis-stack-server:latest
+    volumes:
+      - redisdata:/data
+    ports:
+      - "${ALFRED_REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    volumes:
+      - qdrantdata:/qdrant/storage
+    ports:
+      - "${QDRANT_HTTP_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+
+  searxng:
+    image: searxng/searxng:latest
+    environment:
+      BASE_URL: "http://localhost:${SEARXNG_PORT:-8090}/"
+      INSTANCE_NAME: alfred
+    volumes:
+      - ./infra/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    ports:
+      - "${SEARXNG_PORT:-8090}:8080"
+
+  # Firecrawl self-hosted stack
+
+  firecrawl-playwright:
+    image: ${FIRECRAWL_PLAYWRIGHT_IMAGE:-ghcr.io/firecrawl/playwright-service:latest}
+    environment:
+      PORT: "3000"
+      PROXY_SERVER: ${PROXY_SERVER:-}
+      PROXY_USERNAME: ${PROXY_USERNAME:-}
+      PROXY_PASSWORD: ${PROXY_PASSWORD:-}
+      ALLOW_LOCAL_WEBHOOKS: ${ALLOW_LOCAL_WEBHOOKS:-true}
+      BLOCK_MEDIA: ${BLOCK_MEDIA:-false}
+      MAX_CONCURRENT_PAGES: ${FIRECRAWL_CRAWL_CONCURRENT_REQUESTS:-4}
+    shm_size: "2gb"
+
+  firecrawl-redis:
+    image: redis:7-alpine
+    volumes:
+      - firecrawl_redisdata:/data
+    command: redis-server --bind 0.0.0.0
+
+  firecrawl-rabbitmq:
+    image: rabbitmq:3-management-alpine
+    volumes:
+      - firecrawl_rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  firecrawl-postgres:
+    image: ${FIRECRAWL_POSTGRES_IMAGE:-ghcr.io/firecrawl/nuq-postgres:latest}
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - firecrawl_pgdata:/var/lib/postgresql/data
+
+  firecrawl:
+    image: ${FIRECRAWL_IMAGE:-ghcr.io/firecrawl/firecrawl:latest}
+    env_file: *alfred-env-files
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3002"
+      INTERNAL_PORT: "3002"
+      EXTRACT_WORKER_PORT: "3004"
+      WORKER_PORT: "3005"
+      ENV: local
+      USE_DB_AUTHENTICATION: "false"
+      REDIS_URL: redis://firecrawl-redis:6379
+      REDIS_RATE_LIMIT_URL: redis://firecrawl-redis:6379
+      PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright:3000/scrape
+      NUQ_RABBITMQ_URL: amqp://firecrawl-rabbitmq:5672
+      POSTGRES_HOST: firecrawl-postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      BULL_AUTH_KEY: ${FIRECRAWL_BULL_AUTH_KEY:-alfred-dev}
+      NUM_WORKERS_PER_QUEUE: ${FIRECRAWL_NUM_WORKERS_PER_QUEUE:-2}
+      CRAWL_CONCURRENT_REQUESTS: ${FIRECRAWL_CRAWL_CONCURRENT_REQUESTS:-4}
+      MAX_CONCURRENT_JOBS: ${FIRECRAWL_MAX_CONCURRENT_JOBS:-2}
+      BROWSER_POOL_SIZE: ${FIRECRAWL_BROWSER_POOL_SIZE:-2}
+      SEARXNG_ENDPOINT: http://searxng:8080
+    command: node dist/src/harness.js --start-docker
+    ports:
+      - "${FIRECRAWL_PORT:-3002}:3002"
+    depends_on:
+      firecrawl-playwright:
+        condition: service_started
+      firecrawl-redis:
+        condition: service_started
+      firecrawl-rabbitmq:
+        condition: service_healthy
+      firecrawl-postgres:
+        condition: service_started
+      searxng:
+        condition: service_started
+
+  # Alfred backend
+
+  migrate:
+    build: *api-build
+    env_file: *alfred-env-files
+    environment:
+      <<: *api-env
+    command: alembic -c alembic.ini upgrade head
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: *api-build
+    env_file: *alfred-env-files
+    environment:
+      <<: *api-env
+    command: >
+      uvicorn alfred.main:app
+        --host 0.0.0.0
+        --port 8000
+        --reload
+        --reload-dir /app/apps/alfred
+    volumes: *api-volumes
+    ports:
+      - "${ALFRED_API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      searxng:
+        condition: service_started
+      firecrawl:
+        condition: service_started
+
+  worker:
+    build: *api-build
+    env_file: *alfred-env-files
+    environment:
+      <<: *api-env
+    command: >
+      celery -A alfred.celery_app.app worker
+        -l INFO
+        --concurrency=2
+        -Q default,llm,agent
+    volumes: *api-volumes
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      searxng:
+        condition: service_started
+      firecrawl:
+        condition: service_started
+
+  beat:
+    build: *api-build
+    env_file: *alfred-env-files
+    environment:
+      <<: *api-env
+    command: celery -A alfred.celery_app.app beat -l INFO
+    volumes: *api-volumes
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  # Alfred frontend
+
+  frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    env_file:
+      - path: web/.env
+        required: false
+      - path: web/.env.local
+        required: false
+    environment:
+      ALFRED_API_BASE_URL: http://api:8000
+      NEXT_PUBLIC_API_BASE_URL: "http://localhost:${ALFRED_API_PORT:-8000}"
+      NEXT_PUBLIC_API_URL: "http://localhost:${ALFRED_API_PORT:-8000}"
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ./web:/app
+      - frontend_node_modules:/app/node_modules
+      - /app/.next
+    ports:
+      - "${ALFRED_WEB_PORT:-3010}:3000"
+    depends_on:
+      api:
+        condition: service_started
+
+  # Optional graph database. Start with:
+  #   docker compose --profile graph up --build
+
+  neo4j:
+    image: neo4j:5
+    profiles: ["graph"]
+    environment:
+      NEO4J_AUTH: neo4j/neo4j_password
+    volumes:
+      - neo4jdata:/data
+    ports:
+      - "${NEO4J_HTTP_PORT:-7474}:7474"
+      - "${NEO4J_BOLT_PORT:-7687}:7687"
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p neo4j_password 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  pgdata:
+  redisdata:
+  qdrantdata:
+  firecrawl_pgdata:
+  firecrawl_redisdata:
+  firecrawl_rabbitmqdata:
+  neo4jdata:
+  frontend_node_modules:

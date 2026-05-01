@@ -90,7 +90,7 @@ const ReportListItem = memo(function ReportListItem({
       )}
     >
       <div className="flex items-start justify-between gap-2">
-        <h3 className="text-sm font-medium leading-snug">{topic}</h3>
+        <h3 className="min-w-0 truncate text-sm font-medium leading-snug">{topic}</h3>
         <span className="text-muted-foreground mt-0.5 shrink-0 text-[11px]">
           {formatRelativeDate(report.generated_at ?? report.updated_at)}
         </span>

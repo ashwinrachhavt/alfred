@@ -77,7 +77,7 @@ export function AIDiscoveryPanel({ nodes }: Props) {
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="h-3.5 w-3.5 text-[#E8590C]" />
-            <span className="font-mono text-[10px] uppercase tracking-wider text-white/50">
+            <span className="font-mono text-base uppercase tracking-wider text-white/50">
               AI Discovery
             </span>
           </div>
@@ -94,7 +94,7 @@ export function AIDiscoveryPanel({ nodes }: Props) {
           {selectedNodes.map((node) => (
             <span
               key={node.id}
-              className="rounded-sm bg-white/5 px-2 py-0.5 font-mono text-[10px] text-white/60"
+              className="rounded-sm bg-white/5 px-2 py-0.5 font-mono text-base text-white/60"
             >
               {node.title}
             </span>
@@ -105,7 +105,7 @@ export function AIDiscoveryPanel({ nodes }: Props) {
         {!response && !loading && (
           <button
             onClick={handleDiscover}
-            className="w-full rounded-lg bg-[#E8590C]/10 px-4 py-2 font-sans text-xs font-medium text-[#E8590C] transition-colors hover:bg-[#E8590C]/20"
+            className="w-full rounded-lg bg-[#E8590C]/10 px-4 py-2 font-sans text-base font-medium text-[#E8590C] transition-colors hover:bg-[#E8590C]/20"
           >
             How are these connected?
           </button>
@@ -115,7 +115,7 @@ export function AIDiscoveryPanel({ nodes }: Props) {
         {loading && !response && (
           <div className="flex items-center gap-2 py-2">
             <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#E8590C]" />
-            <span className="font-mono text-[10px] text-white/40">
+            <span className="font-mono text-base text-white/40">
               Analyzing connections...
             </span>
           </div>
@@ -124,7 +124,7 @@ export function AIDiscoveryPanel({ nodes }: Props) {
         {/* AI Response */}
         {response && (
           <div className="mt-1 max-h-48 overflow-y-auto">
-            <p className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-white/70">
+            <p className="whitespace-pre-wrap font-sans text-base leading-relaxed text-white/70">
               {response}
             </p>
             {loading && (
@@ -135,7 +135,7 @@ export function AIDiscoveryPanel({ nodes }: Props) {
 
         {/* Error state */}
         {error && (
-          <p className="mt-2 font-mono text-[10px] text-red-400/80">
+          <p className="mt-2 font-mono text-base text-red-400/80">
             {error}
           </p>
         )}

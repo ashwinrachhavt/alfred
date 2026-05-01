@@ -10,7 +10,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from alfred.api.dependencies import get_db_session
-from alfred.core.celery_client import get_celery_client
+from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
+from alfred.core.exceptions import ServiceUnavailableError
 from alfred.core.settings import settings
 from alfred.models.learning import (
     LearningQuiz,
@@ -480,11 +481,13 @@ def extract_resource(resource_id: int, session: Session = Depends(get_db_session
 @router.post("/resources/{resource_id}/extract/async", response_model=EnqueueResponse)
 def enqueue_extract_resource(resource_id: int, force: bool = False) -> EnqueueResponse:
     """Enqueue asynchronous concept extraction for a learning resource."""
-    celery_client = get_celery_client()
-    async_result = celery_client.send_task(
-        "alfred.tasks.learning_concepts.extract_resource",
-        kwargs={"resource_id": int(resource_id), "force": bool(force)},
-    )
+    try:
+        async_result = dispatch_task(
+            "alfred.tasks.learning_concepts.extract_resource",
+            kwargs={"resource_id": int(resource_id), "force": bool(force)},
+        )
+    except BrokerUnavailableError as exc:
+        raise ServiceUnavailableError("Background worker unavailable") from exc
     return EnqueueResponse(
         status="queued",
         task_id=async_result.id,
@@ -504,17 +507,19 @@ class BatchExtractRequest(BaseModel):
 @router.post("/resources/extract/batch/async", response_model=EnqueueResponse)
 def enqueue_batch_extract(payload: BatchExtractRequest) -> EnqueueResponse:
     """Enqueue a batch job that selects and extracts concepts for resources."""
-    celery_client = get_celery_client()
-    async_result = celery_client.send_task(
-        "alfred.tasks.learning_concepts.batch_extract",
-        kwargs={
-            "limit": int(payload.limit),
-            "topic_id": int(payload.topic_id) if payload.topic_id is not None else None,
-            "min_age_hours": int(payload.min_age_hours),
-            "force": bool(payload.force),
-            "enqueue_only": True,
-        },
-    )
+    try:
+        async_result = dispatch_task(
+            "alfred.tasks.learning_concepts.batch_extract",
+            kwargs={
+                "limit": int(payload.limit),
+                "topic_id": int(payload.topic_id) if payload.topic_id is not None else None,
+                "min_age_hours": int(payload.min_age_hours),
+                "force": bool(payload.force),
+                "enqueue_only": True,
+            },
+        )
+    except BrokerUnavailableError as exc:
+        raise ServiceUnavailableError("Background worker unavailable") from exc
     return EnqueueResponse(
         status="queued", task_id=async_result.id, status_url=f"/tasks/{async_result.id}"
     )

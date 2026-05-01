@@ -114,6 +114,13 @@ export function KnowledgeUniverse({ data }: Props) {
   // Mesh cache: node id → THREE.Mesh (survives re-renders, only update materials)
   const meshCacheRef = useRef<Map<number, THREE.Mesh>>(new Map());
 
+  // Navigation state refs (survive re-renders, no React overhead)
+  const navKeysRef = useRef(new Set<string>());
+  const navVelocityRef = useRef({ theta: 0, phi: 0, zoom: 0 });
+  const cycleIndexRef = useRef(-1);
+  const hoveredIdRef = useRef<number | null>(null);
+  const flyToNodeRef = useRef<(node: PositionedGraphNode, distance?: number, duration?: number) => void>(() => {});
+
   /** Pause auto-rotate during interaction, resume after idle. */
   const autoRotateTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pauseAutoRotate = useCallback(() => {
@@ -288,9 +295,17 @@ export function KnowledgeUniverse({ data }: Props) {
       controls.maxDistance = 600;
     }
 
-    // Scene lighting — dark cosmos: emissive nodes are the stars,
-    // external lights only add subtle dimensionality
+    // Scene setup — force opaque dark background.
+    // three-forcegraph has a bug: parseFloat("ff", 16) returns NaN, making
+    // the WebGL clear alpha 0 (transparent).  The library re-applies this
+    // broken setClearColor on every frame, so one-time fixes get overridden.
+    // Nuclear fix: CSS background on the <canvas> element itself.  WebGL
+    // transparent pixels composite over this CSS background — un-overridable.
+    const renderer = fg.renderer();
+    renderer.domElement.style.background = "#0F0E0D";
+    renderer.setClearColor(0x0f0e0d, 1);
     const scene = fg.scene();
+    scene.background = new THREE.Color(0x0f0e0d);
 
     // Remove default lights
     const existingLights = scene.children.filter(
@@ -415,7 +430,7 @@ export function KnowledgeUniverse({ data }: Props) {
   }, [data.clusters, data.edges, data.nodes, isLargeGraph, timeLapseDate]);
 
   /* ---------------------------------------------------------------- */
-  /*  Keyboard shortcuts                                               */
+  /*  Keyboard shortcuts (non-navigation)                              */
   /* ---------------------------------------------------------------- */
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -444,7 +459,6 @@ export function KnowledgeUniverse({ data }: Props) {
         setShowCreateForm((prev) => !prev);
       }
 
-      // Space bar toggles time-lapse
       if (e.key === " ") {
         e.preventDefault();
         setTimeLapsePlaying(!isTimeLapsePlaying);
@@ -454,6 +468,164 @@ export function KnowledgeUniverse({ data }: Props) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [clearSelection, showCreateForm, isTimeLapsePlaying, setTimeLapsePlaying]);
+
+  /* ---------------------------------------------------------------- */
+  /*  Smooth keyboard navigation — orbit, zoom, node cycling           */
+  /*                                                                    */
+  /*  Uses a requestAnimationFrame loop with velocity + friction for    */
+  /*  silky momentum.  Arrow keys orbit the camera in spherical coords, */
+  /*  +/- zoom along the camera axis, [ ] cycle through nodes,          */
+  /*  Home resets the view via zoom-to-fit.                              */
+  /* ---------------------------------------------------------------- */
+  // Keep a ref to current graph nodes for the navigation loop
+  const graphNodesRef = useRef<PositionedGraphNode[]>([]);
+
+  useEffect(() => {
+    const NAV_KEYS = new Set([
+      "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown",
+      "+", "=", "-", "_",
+      "[", "]", "Home",
+    ]);
+    const ACCEL = 0.0012;
+    const MAX_SPEED = 0.035;
+    const FRICTION = 0.91;
+    const ZOOM_ACCEL = 0.8;
+    const ZOOM_MAX = 4;
+    const ZOOM_FRICTION = 0.88;
+
+    const keys = navKeysRef.current;
+    const vel = navVelocityRef.current;
+    let rafId = 0;
+    let hasActiveMotion = false;
+
+    function onKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (!NAV_KEYS.has(e.key)) return;
+
+      e.preventDefault();
+      keys.add(e.key);
+
+      // One-shot actions: node cycling and view reset
+      if (e.key === "]" || e.key === "[") {
+        const nodes = graphNodesRef.current;
+        if (nodes.length === 0) return;
+        const dir = e.key === "]" ? 1 : -1;
+        cycleIndexRef.current = ((cycleIndexRef.current + dir) % nodes.length + nodes.length) % nodes.length;
+        const node = nodes[cycleIndexRef.current];
+        clearSelection();
+        selectNode(node.id);
+        flyToNodeRef.current(node, 80, 500);
+        keys.delete(e.key);
+      }
+
+      if (e.key === "Home") {
+        fgRef.current?.zoomToFit(600, 50);
+        vel.theta = 0;
+        vel.phi = 0;
+        vel.zoom = 0;
+        keys.delete("Home");
+      }
+    }
+
+    function onKeyUp(e: KeyboardEvent) {
+      keys.delete(e.key);
+    }
+
+    function tick() {
+      const fg = fgRef.current;
+      const controls = fg?.controls() as any;
+
+      if (fg && controls?.target) {
+        // Accumulate velocity from held keys
+        if (keys.has("ArrowLeft"))  vel.theta += ACCEL;
+        if (keys.has("ArrowRight")) vel.theta -= ACCEL;
+        if (keys.has("ArrowUp"))    vel.phi -= ACCEL;
+        if (keys.has("ArrowDown"))  vel.phi += ACCEL;
+        if (keys.has("+") || keys.has("=")) vel.zoom += ZOOM_ACCEL;
+        if (keys.has("-") || keys.has("_")) vel.zoom -= ZOOM_ACCEL;
+
+        // Clamp
+        vel.theta = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, vel.theta));
+        vel.phi   = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, vel.phi));
+        vel.zoom  = Math.max(-ZOOM_MAX, Math.min(ZOOM_MAX, vel.zoom));
+
+        const moving = Math.abs(vel.theta) > 0.00005
+                    || Math.abs(vel.phi) > 0.00005
+                    || Math.abs(vel.zoom) > 0.01;
+
+        if (moving) {
+          // Pause auto-rotate during keyboard nav
+          if (!hasActiveMotion) {
+            hasActiveMotion = true;
+            if (controls) controls.autoRotate = false;
+            clearTimeout(autoRotateTimerRef.current);
+          }
+
+          // Orbit: modify camera in spherical coordinates around target
+          const camera = fg.camera();
+          const target = controls.target as THREE.Vector3;
+          const offset = new THREE.Vector3().subVectors(camera.position, target);
+          const spherical = new THREE.Spherical().setFromVector3(offset);
+
+          spherical.theta += vel.theta;
+          spherical.phi = THREE.MathUtils.clamp(
+            spherical.phi + vel.phi, 0.15, Math.PI - 0.15,
+          );
+
+          // Zoom: change radius
+          if (Math.abs(vel.zoom) > 0.01) {
+            const minDist = controls.minDistance || 20;
+            const maxDist = controls.maxDistance || 600;
+            spherical.radius = THREE.MathUtils.clamp(
+              spherical.radius - vel.zoom, minDist, maxDist,
+            );
+          }
+
+          offset.setFromSpherical(spherical);
+          camera.position.copy(target).add(offset);
+          camera.lookAt(target);
+        }
+
+        // Friction — decay velocity when keys aren't held
+        if (!keys.has("ArrowLeft") && !keys.has("ArrowRight")) vel.theta *= FRICTION;
+        if (!keys.has("ArrowUp") && !keys.has("ArrowDown"))    vel.phi *= FRICTION;
+        if (!keys.has("+") && !keys.has("=") && !keys.has("-") && !keys.has("_")) vel.zoom *= ZOOM_FRICTION;
+
+        // Resume auto-rotate after motion fully decays
+        if (hasActiveMotion && !moving) {
+          hasActiveMotion = false;
+          autoRotateTimerRef.current = setTimeout(() => {
+            const c = fgRef.current?.controls() as any;
+            if (c) c.autoRotate = true;
+          }, 5000);
+        }
+      }
+
+      rafId = requestAnimationFrame(tick);
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    rafId = requestAnimationFrame(tick);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      cancelAnimationFrame(rafId);
+    };
+  }, [clearSelection, selectNode, pauseAutoRotate]);
+
+  /* ---------------------------------------------------------------- */
+  /*  Zoom-to-fit on initial load (after simulation settles)           */
+  /* ---------------------------------------------------------------- */
+  useEffect(() => {
+    if (!fgRef.current) return;
+    const timer = setTimeout(() => {
+      fgRef.current?.zoomToFit(800, 60);
+    }, 3500);
+    return () => clearTimeout(timer);
+  }, []);
 
   /* ---------------------------------------------------------------- */
   /*  Time-Lapse Mode                                                  */
@@ -534,23 +706,75 @@ export function KnowledgeUniverse({ data }: Props) {
   /* ---------------------------------------------------------------- */
   const linkColor = useCallback((link: any) => {
     const edge = link as GraphEdge;
-    return edge.type === "ai-suggested" ? "#E8590C" : "#ffffff30";
+    if (edge.type === "auto_high") return "#FFAA33";
+    if (edge.type === "ai-suggested") return "#E8590C";
+    return "#ffffff20";
   }, []);
 
   const linkWidth = useCallback((link: any) => {
     const edge = link as GraphEdge;
-    return edge.type === "ai-suggested" ? 1.5 : 0.5;
+    if (edge.type === "auto_high") return 2;
+    if (edge.type === "ai-suggested") return 1.5;
+    return 0.4;
   }, []);
 
   const linkParticles = useCallback((link: any) => {
     const edge = link as GraphEdge;
-    return edge.type === "ai-suggested" ? 3 : 0;
+    if (edge.type === "auto_high") return 4;
+    if (edge.type === "ai-suggested") return 3;
+    return 0;
   }, []);
 
   const linkParticleWidth = useCallback((link: any) => {
     const edge = link as GraphEdge;
-    return edge.type === "ai-suggested" ? 1.5 : 0;
+    if (edge.type === "auto_high") return 2;
+    if (edge.type === "ai-suggested") return 1.5;
+    return 0;
   }, []);
+
+  /* ---------------------------------------------------------------- */
+  /*  Hover glow — brighten + scale on hover for instant feedback      */
+  /* ---------------------------------------------------------------- */
+  const handleNodeHover = useCallback(
+    (node: any) => {
+      const newId = node?.id ?? null;
+      const prevId = hoveredIdRef.current;
+      if (newId === prevId) return;
+
+      const cache = meshCacheRef.current;
+
+      // Restore previous hovered node
+      if (prevId !== null) {
+        const prevMesh = cache.get(prevId);
+        if (prevMesh) {
+          const mat = prevMesh.material as THREE.MeshPhongMaterial;
+          const prevNode = data.nodes.find((n) => n.id === prevId);
+          if (prevNode) {
+            const isSelected = selectedNodeIdsRef.current.includes(prevId);
+            const vis = computeNodeVisuals(prevNode, isSelected);
+            mat.emissiveIntensity = vis.emissiveIntensity;
+            mat.opacity = vis.opacity;
+          }
+          prevMesh.scale.setScalar(1.0);
+        }
+      }
+
+      // Highlight new hovered node
+      if (newId !== null) {
+        const mesh = cache.get(newId);
+        if (mesh) {
+          const mat = mesh.material as THREE.MeshPhongMaterial;
+          mat.emissiveIntensity = 0.6;
+          mat.opacity = 1.0;
+          mesh.scale.setScalar(1.2);
+        }
+      }
+
+      hoveredIdRef.current = newId;
+      setHoveredNode(newId);
+    },
+    [data.nodes, setHoveredNode],
+  );
 
   /** Smooth fly-to a positioned node. */
   const flyToNode = useCallback(
@@ -563,6 +787,10 @@ export function KnowledgeUniverse({ data }: Props) {
       )
         return;
       pauseAutoRotate();
+      // Kill any keyboard nav momentum so fly-to isn't fighting the orbit
+      navVelocityRef.current.theta = 0;
+      navVelocityRef.current.phi = 0;
+      navVelocityRef.current.zoom = 0;
       // Offset camera from the node along the current camera direction
       const cam = fgRef.current.camera();
       const dir = new THREE.Vector3()
@@ -580,6 +808,8 @@ export function KnowledgeUniverse({ data }: Props) {
     },
     [pauseAutoRotate],
   );
+  // Keep ref in sync so navigation loop can call flyToNode without a dep cycle
+  flyToNodeRef.current = flyToNode;
 
   // Double-click detection via timing
   const lastClickRef = useRef<{ id: number; time: number }>({ id: -1, time: 0 });
@@ -648,6 +878,9 @@ export function KnowledgeUniverse({ data }: Props) {
     };
   }, [data, timeLapseDate]);
 
+  // Keep graphNodesRef in sync for keyboard nav loop
+  graphNodesRef.current = graphData.nodes as PositionedGraphNode[];
+
   /* ---------------------------------------------------------------- */
   /*  Huge graph bail-out                                              */
   /* ---------------------------------------------------------------- */
@@ -659,7 +892,7 @@ export function KnowledgeUniverse({ data }: Props) {
         </p>
         <a
           href="/knowledge"
-          className="rounded-md bg-[#E8590C] px-4 py-2 font-sans text-xs text-white"
+          className="rounded-md bg-[#E8590C] px-4 py-2 font-sans text-sm text-white"
         >
           View in Knowledge Hub
         </a>
@@ -672,7 +905,7 @@ export function KnowledgeUniverse({ data }: Props) {
       {/* Large graph warning banner */}
       {isLargeGraph && (
         <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-full border border-white/10 bg-black/60 px-4 py-1.5 backdrop-blur-sm">
-          <span className="font-mono text-[10px] text-white/50">
+          <span className="font-mono text-sm text-white/50">
             Large graph — some visual effects reduced
           </span>
         </div>
@@ -681,7 +914,7 @@ export function KnowledgeUniverse({ data }: Props) {
       {/* Time-lapse date display */}
       {timeLapseDate && (
         <div className="absolute left-1/2 top-14 z-20 -translate-x-1/2 rounded-full border border-[#E8590C]/30 bg-black/60 px-4 py-1.5 backdrop-blur-sm">
-          <span className="font-mono text-[10px] text-[#E8590C]">
+          <span className="font-mono text-sm text-[#E8590C]">
             {timeLapseDate.toLocaleDateString("en-US", {
               year: "numeric",
               month: "short",
@@ -703,7 +936,8 @@ export function KnowledgeUniverse({ data }: Props) {
         nodeThreeObject={nodeThreeObject}
         nodeThreeObjectExtend={false}
         onNodeClick={handleNodeClick}
-        onNodeHover={(node: any) => setHoveredNode(node?.id ?? null)}
+        onNodeHover={handleNodeHover}
+        onBackgroundClick={clearSelection}
         nodeLabel={(node: any) =>
           `${node.title} (${node.degree} connections)`
         }
@@ -721,7 +955,6 @@ export function KnowledgeUniverse({ data }: Props) {
       {/* Overlay layer — pointer-events-none so clicks pass through to 3D */}
       <div className="pointer-events-none absolute inset-0 z-10">
         <UniverseControls nodes={graphData.nodes as PositionedGraphNode[]} flyToNode={flyToNode} />
-        <CardPreviewOverlay nodes={graphData.nodes as PositionedGraphNode[]} graphRef={fgRef} />
         <AIDiscoveryPanel nodes={data.nodes} />
         <CreateCardForm
           open={showCreateForm}
@@ -729,10 +962,13 @@ export function KnowledgeUniverse({ data }: Props) {
         />
       </div>
 
+      {/* Card modal — outside the pointer-events-none wrapper so fixed positioning works */}
+      <CardPreviewOverlay nodes={graphData.nodes} />
+
       {/* Accessibility: list view link */}
       <a
         href="/knowledge"
-        className="pointer-events-auto absolute bottom-4 right-4 z-10 font-sans text-[10px] text-white/30 underline decoration-white/10 hover:text-white/50"
+        className="pointer-events-auto absolute bottom-4 right-4 z-10 font-sans text-sm text-white/30 underline decoration-white/10 hover:text-white/50"
       >
         View as list
       </a>

@@ -1,7 +1,7 @@
 /**
  * Alfred Chrome Extension — Shared Extraction Module
  *
- * Single source of truth for all content extraction across content.js, tracker.js, and popup.js.
+ * Single source of truth for all content extraction across content.js and popup.js.
  * Uses Readability.js for article extraction and Turndown.js for HTML→Markdown conversion.
  *
  * Globals expected: Readability (from libs/readability.js), TurndownService (from libs/turndown.js)

@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, infiniteQueryOptions, keepPreviousData } from "@tanstack/react-query";
 
 import { getDocumentDetails, getSemanticMap, listExplorerDocuments } from "@/lib/api/documents";
 
@@ -28,18 +28,18 @@ export function useRecentDocuments(limit = 6) {
   return useQuery({
     queryKey: recentDocumentsQueryKey(cappedLimit),
     queryFn: () => listExplorerDocuments({ limit: cappedLimit }),
-    staleTime: 10_000,
+    staleTime: 30_000,
   });
 }
 
-export function useExplorerDocuments(
+export function explorerDocumentsQueryOptions(
   params: { limit?: number; filterTopic?: string; search?: string } = {},
 ) {
   const limit = Math.max(1, Math.min(200, params.limit ?? 24));
   const filterTopic = (params.filterTopic ?? "").trim();
   const search = (params.search ?? "").trim();
 
-  return useInfiniteQuery({
+  return infiniteQueryOptions({
     queryKey: explorerDocumentsQueryKey({ limit, filterTopic, search }),
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) =>
@@ -50,8 +50,15 @@ export function useExplorerDocuments(
         search: search || null,
       }),
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
-    staleTime: 10_000,
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
+}
+
+export function useExplorerDocuments(
+  params: { limit?: number; filterTopic?: string; search?: string } = {},
+) {
+  return useInfiniteQuery(explorerDocumentsQueryOptions(params));
 }
 
 export function useSemanticMap(params: { limit?: number; enabled?: boolean } = {}) {

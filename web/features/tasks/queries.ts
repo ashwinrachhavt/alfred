@@ -11,6 +11,10 @@ export function useTaskStatus(taskId: string | null) {
     enabled: Boolean(taskId),
     queryKey: taskId ? taskStatusQueryKey(taskId) : ["tasks", "status", "disabled"],
     queryFn: () => getTaskStatus(taskId!),
-    refetchInterval: (query) => (query.state.data?.ready ? false : 2000),
+    refetchInterval: (query) => {
+      if (query.state.data?.ready) return false;
+      const attempt = query.state.dataUpdateCount;
+      return Math.min(1000 * Math.pow(2, attempt), 10_000);
+    },
   });
 }

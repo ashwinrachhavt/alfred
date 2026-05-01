@@ -68,7 +68,7 @@ export function CreateCardForm({ open, onClose }: Props) {
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Plus className="h-3.5 w-3.5 text-[#E8590C]" />
-            <span className="font-mono text-[10px] uppercase tracking-wider text-white/50">
+            <span className="font-mono text-base uppercase tracking-wider text-white/50">
               New Card
             </span>
           </div>
@@ -88,7 +88,7 @@ export function CreateCardForm({ open, onClose }: Props) {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Card title..."
-          className="mb-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-serif text-sm text-white placeholder:text-white/30 focus:border-[#E8590C]/30 focus:outline-none"
+          className="mb-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-serif text-base text-white placeholder:text-white/30 focus:border-[#E8590C]/30 focus:outline-none"
         />
 
         {/* Content */}
@@ -97,19 +97,19 @@ export function CreateCardForm({ open, onClose }: Props) {
           onChange={(e) => setContent(e.target.value)}
           placeholder="Content (optional)..."
           rows={4}
-          className="mb-3 w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-sans text-xs leading-relaxed text-white/80 placeholder:text-white/30 focus:border-[#E8590C]/30 focus:outline-none"
+          className="mb-3 w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-sans text-base leading-relaxed text-white/80 placeholder:text-white/30 focus:border-[#E8590C]/30 focus:outline-none"
         />
 
         {/* Error */}
         {error && (
-          <p className="mb-2 font-mono text-[10px] text-red-400/80">{error}</p>
+          <p className="mb-2 font-mono text-base text-red-400/80">{error}</p>
         )}
 
         {/* Submit */}
         <button
           type="submit"
           disabled={submitting || !title.trim()}
-          className="w-full rounded-lg bg-[#E8590C]/10 px-4 py-2 font-sans text-xs font-medium text-[#E8590C] transition-colors hover:bg-[#E8590C]/20 disabled:opacity-40 disabled:hover:bg-[#E8590C]/10"
+          className="w-full rounded-lg bg-[#E8590C]/10 px-4 py-2 font-sans text-base font-medium text-[#E8590C] transition-colors hover:bg-[#E8590C]/20 disabled:opacity-40 disabled:hover:bg-[#E8590C]/10"
         >
           {submitting ? "Creating..." : "Create Card"}
         </button>

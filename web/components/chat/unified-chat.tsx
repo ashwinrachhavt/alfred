@@ -30,6 +30,7 @@ import {
 import { useShellStore, type ChatMode } from "@/lib/stores/shell-store";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import { useStickToBottom } from "@/lib/hooks/use-stick-to-bottom";
+import { DEFAULT_AI_MODEL } from "@/lib/constants/ai";
 import { cn } from "@/lib/utils";
 
 const EditorDrawer = dynamic(
@@ -489,7 +490,7 @@ function ExpandedHeader({
         {activeThread && (
           <>
             <span className="text-[var(--alfred-text-tertiary)]">/</span>
-            <span className="text-foreground max-w-xs truncate text-sm">{activeThread.title}</span>
+            <span className="text-foreground min-w-0 max-w-xs truncate text-sm">{activeThread.title}</span>
           </>
         )}
         <ChevronDown className="text-muted-foreground size-3" />
@@ -604,6 +605,7 @@ type InputProps = {
 };
 
 const MODEL_OPTIONS = [
+  { value: DEFAULT_AI_MODEL, label: "GPT-5.5" },
   { value: "gpt-5.4", label: "GPT-5.4" },
   { value: "gpt-5.4-mini", label: "GPT-5.4 mini" },
   { value: "gpt-5.4-pro", label: "GPT-5.4 Pro" },

@@ -1,12 +1,17 @@
 import json
 
+import pytest
+
 from alfred.connectors.web_connector import (
     SearchHit,
+    SearxClient,
     WebConnector,
     _dedupe_by_url,
     _env,
     _normalize_list_result,
 )
+from alfred.core.exceptions import ConfigurationError
+from alfred.core.settings import settings
 
 
 def test_env_helper(monkeypatch):
@@ -59,6 +64,8 @@ def test_dedupe_by_url():
 def test_webconnector_unconfigured_without_host(monkeypatch):
     monkeypatch.delenv("SEARXNG_HOST", raising=False)
     monkeypatch.delenv("SEARX_HOST", raising=False)
+    monkeypatch.setattr(settings, "searxng_host", None)
+    monkeypatch.setattr(settings, "searx_host", None)
     conn = WebConnector(searx_k=3)
     resp = conn.search("hello")
     assert resp.provider == "searx"
@@ -71,3 +78,21 @@ def test_webconnector_constructs_client_when_env_set(monkeypatch):
     monkeypatch.setenv("SEARXNG_HOST", "http://127.0.0.1:8080")
     conn = WebConnector(searx_k=3)
     assert conn._client is not None
+
+
+def test_searx_client_explains_json_api_forbidden(monkeypatch):
+    class ForbiddenWrapper:
+        def results(self, *args, **kwargs):
+            raise ValueError(
+                "Searx API returned an error: ",
+                "<title>403 Forbidden</title>",
+            )
+
+    client = object.__new__(SearxClient)
+    client._host = "http://searxng:8080"
+    client._k_default = 3
+    client._wrapper = ForbiddenWrapper()
+    monkeypatch.setattr("alfred.connectors.web_connector.web_rate_limiter.wait", lambda _: None)
+
+    with pytest.raises(ConfigurationError, match="JSON search API"):
+        client.search("hello", num_results=3)

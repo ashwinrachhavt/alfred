@@ -1,8 +1,9 @@
 "use client";
 
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+import { X } from "lucide-react";
 
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { ZettelFullView } from "./zettel-full-view";
 
 type Props = {
@@ -17,7 +18,8 @@ export function ZettelFullViewDialog({ cardId, open, onOpenChange }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="h-[min(88vh,920px)] max-w-[min(1180px,calc(100vw-2rem))] gap-0 overflow-hidden p-0"
+        showCloseButton={false}
+        className="h-[100dvh] max-h-[100dvh] w-[100dvw] max-w-none gap-0 overflow-hidden rounded-none border-0 bg-background p-0 shadow-2xl sm:h-[min(92dvh,940px)] sm:w-[calc(100vw-2rem)] sm:max-w-[min(1240px,calc(100vw-2rem))] sm:rounded-xl sm:border"
       >
         <VisuallyHidden>
           <DialogTitle>Expanded zettel view</DialogTitle>
@@ -25,6 +27,10 @@ export function ZettelFullViewDialog({ cardId, open, onOpenChange }: Props) {
             Review the full zettel content, metadata, and AI link suggestions without leaving the current page.
           </DialogDescription>
         </VisuallyHidden>
+        <DialogClose className="absolute top-3 right-3 z-20 inline-flex size-9 items-center justify-center rounded-md border bg-card/95 text-muted-foreground shadow-sm transition-colors hover:border-primary/40 hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none sm:top-4 sm:right-4">
+          <X className="size-4" />
+          <span className="sr-only">Close</span>
+        </DialogClose>
         <ZettelFullView zettelId={cardId} variant="dialog" />
       </DialogContent>
     </Dialog>

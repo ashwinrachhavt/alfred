@@ -10,13 +10,14 @@ import { TaskCenterSheet } from "@/components/task-center-sheet";
 import { Toaster } from "@/components/ui/sonner";
 import { TaskTrackerProvider } from "@/features/tasks/task-tracker-provider";
 
-function createQueryClient(): QueryClient {
+export function createQueryClient(): QueryClient {
  return new QueryClient({
  defaultOptions: {
  queries: {
  retry: 1,
  refetchOnWindowFocus: false,
  staleTime: 30_000,
+ gcTime: 10 * 60 * 1000, // keep unused data in cache for 10 minutes
  },
  },
  });

@@ -1,15 +1,26 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { AI_MODELS, OPENAI_API_URL } from "@/lib/constants/ai";
+import { AI_MODELS, OPENAI_API_URL, supportsCustomTemperature } from "@/lib/constants/ai";
+import { getAuth } from "@/lib/auth.server";
+
+type ChatCompletionRequestBody = {
+  model: string;
+  messages: unknown;
+  temperature?: number;
+};
 
 export async function POST(req: Request) {
   try {
-    const { userId } = await auth();
+    const { userId } = await getAuth();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { messages, temperature = 0.7 } = await req.json();
+    const model = AI_MODELS.PROXY;
+    const requestBody: ChatCompletionRequestBody = { model, messages };
+    if (supportsCustomTemperature(model)) {
+      requestBody.temperature = temperature;
+    }
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
@@ -22,11 +33,7 @@ export async function POST(req: Request) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: AI_MODELS.PROXY,
-        messages,
-        temperature,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {

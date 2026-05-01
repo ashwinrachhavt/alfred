@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+import { DEFAULT_AI_MODEL } from "@/lib/constants/ai";
+
 // Mock dependencies BEFORE importing the store
 vi.mock("@/lib/api/client", () => ({
   apiFetch: vi.fn().mockResolvedValue([]),
@@ -64,7 +66,7 @@ function resetStore() {
     activeThreadId: null,
     isStreaming: false,
     activeLens: null,
-    activeModel: "gpt-5.4",
+    activeModel: DEFAULT_AI_MODEL,
     activeToolCalls: [],
     abortController: null,
     noteContext: null,
@@ -88,7 +90,7 @@ describe("agent-store initial state", () => {
     expect(state.activeThreadId).toBeNull();
     expect(state.isStreaming).toBe(false);
     expect(state.activeLens).toBeNull();
-    expect(state.activeModel).toBe("gpt-5.4");
+    expect(state.activeModel).toBe(DEFAULT_AI_MODEL);
     expect(state.activeToolCalls).toEqual([]);
     expect(state.abortController).toBeNull();
     expect(state.noteContext).toBeNull();

@@ -1,4 +1,7 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+
+import { isClerkEnabled } from "@/lib/auth";
 
 /**
  * Public routes that do NOT require authentication.
@@ -16,11 +19,15 @@ const isPublicRoute = createRouteMatcher([
   "/api(.*)",
 ]);
 
-export default clerkMiddleware(async (auth, request) => {
-  if (!isPublicRoute(request)) {
-    await auth.protect();
-  }
-});
+export default isClerkEnabled()
+  ? clerkMiddleware(async (auth, request) => {
+      if (!isPublicRoute(request)) {
+        await auth.protect();
+      }
+    })
+  : function noopMiddleware() {
+      return NextResponse.next();
+    };
 
 export const config = {
   matcher: [

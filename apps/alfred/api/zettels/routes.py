@@ -2,17 +2,22 @@ from __future__ import annotations
 
 import json as _json
 import logging
+from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
 from alfred.api.dependencies import get_db_session
+from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
+from alfred.core.exceptions import ServiceUnavailableError
 from alfred.core.redis_client import get_redis_client
 from alfred.models.zettel import ZettelCard, ZettelReview
 
 _log = logging.getLogger(__name__)
 _TOPICS_CACHE_KEY = "zettel:topics"
 _TAGS_CACHE_KEY = "zettel:tags"
+_LINK_TYPES_CACHE_KEY = "zettel:link_types"
 _GRAPH_EXT_CACHE_KEY = "zettel:graph:extended"
 _CACHE_TTL_SECONDS = 300  # 5 minutes
 _GRAPH_EXT_CACHE_TTL = 3600  # 1 hour
@@ -31,8 +36,10 @@ from alfred.schemas.zettel import (
     ZettelCardUpdate,
     ZettelLinkCreate,
     ZettelLinkOut,
+    ZettelLinkPatch,
     ZettelReviewOut,
 )
+from alfred.services.zettel_creation_stream import ZettelCreationStream
 from alfred.services.zettelkasten_service import ZettelkastenService
 
 router = APIRouter(prefix="/api/zettels", tags=["zettels"])
@@ -50,6 +57,22 @@ def _review_out(review) -> ZettelReviewOut:
     return ZettelReviewOut.model_validate(review)
 
 
+def _enqueue_task_or_raise(
+    task_name: str,
+    *,
+    kwargs: dict[str, Any],
+    action: str,
+):
+    try:
+        return dispatch_task(task_name, kwargs=kwargs)
+    except BrokerUnavailableError as exc:  # pragma: no cover - external IO
+        _log.warning("%s: %s", action, exc)
+        raise ServiceUnavailableError("Background worker unavailable") from exc
+    except Exception as exc:  # pragma: no cover - external IO
+        _log.exception("%s: %s", action, exc)
+        raise ServiceUnavailableError("Background worker unavailable") from exc
+
+
 @router.post("/cards", response_model=ZettelCardOut, status_code=status.HTTP_201_CREATED)
 def create_card(
     payload: ZettelCardCreate,
@@ -60,6 +83,24 @@ def create_card(
     _invalidate_topic_tag_cache()
     _invalidate_graph_cache()
     return _card_out(card)
+
+
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
+
+
+@router.post("/cards/create-stream")
+async def create_card_stream(payload: ZettelCardCreate) -> StreamingResponse:
+    """Create a zettel with streaming enrichment via SSE."""
+    stream = ZettelCreationStream(payload)
+    return StreamingResponse(
+        stream.run(),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
 
 
 @router.post("/cards/stub", status_code=status.HTTP_201_CREATED)
@@ -88,7 +129,9 @@ def list_cards(
     limit: int = 50,
     skip: int = 0,
     session: Session = Depends(get_db_session),
+    response: Response = None,
 ) -> PaginatedZettelResponse:
+    _set_cache_headers(response)
     all_tags = list(tags or [])
     if tag and tag not in all_tags:
         all_tags.append(tag)
@@ -132,8 +175,11 @@ def count_cards(
 ) -> dict:
     svc = ZettelkastenService(session)
     total = svc.count_cards(
-        q=q, topic=topic, tags=tags or None,
-        importance_min=importance_min, status=card_status,
+        q=q,
+        topic=topic,
+        tags=tags or None,
+        importance_min=importance_min,
+        status=card_status,
     )
     return {"total": total}
 
@@ -185,15 +231,26 @@ def _cache_delete_prefix(prefix: str) -> None:
 
 
 def _invalidate_graph_cache() -> None:
-    """Bust extended graph cache + clustering cache on card mutations."""
+    """Bust extended graph, clustering, and link-type caches on mutation."""
     from alfred.services.clustering_service import ClusteringService
 
     _cache_delete_prefix(_GRAPH_EXT_CACHE_KEY)
+    redis = get_redis_client()
+    if redis:
+        try:
+            redis.delete(_LINK_TYPES_CACHE_KEY)
+        except Exception:
+            pass
     ClusteringService.invalidate_cache()
 
 
+def _set_cache_headers(response: Response, max_age: int = 30) -> None:
+    response.headers["Cache-Control"] = f"private, max-age={max_age}"
+
+
 @router.get("/topics", response_model=list[str])
-def get_topics(session: Session = Depends(get_db_session)) -> list[str]:
+def get_topics(session: Session = Depends(get_db_session), response: Response = None) -> list[str]:
+    _set_cache_headers(response)
     cached = _cache_get(_TOPICS_CACHE_KEY)
     if cached is not None:
         return cached
@@ -209,8 +266,38 @@ def get_topics(session: Session = Depends(get_db_session)) -> list[str]:
     return topics
 
 
+@router.get("/link-types")
+def get_link_types(
+    session: Session = Depends(get_db_session),
+    response: Response = None,
+) -> list[dict]:
+    """Distinct link types with usage counts (Redis-cached)."""
+    from sqlalchemy import func
+
+    from alfred.models.zettel import ZettelLink
+
+    _set_cache_headers(response)
+    cached = _cache_get(_LINK_TYPES_CACHE_KEY)
+    if cached is not None:
+        return cached
+    rows = session.exec(
+        select(ZettelLink.type, func.count(ZettelLink.id))
+        .group_by(ZettelLink.type)
+        .order_by(func.count(ZettelLink.id).desc())
+    ).all()
+    result = [{"type": r[0], "count": r[1]} for r in rows]
+    redis = get_redis_client()
+    if redis:
+        try:
+            redis.set(_LINK_TYPES_CACHE_KEY, _json.dumps(result), ex=_CACHE_TTL_SECONDS)
+        except Exception:
+            pass
+    return result
+
+
 @router.get("/tags", response_model=list[str])
-def get_tags(session: Session = Depends(get_db_session)) -> list[str]:
+def get_tags(session: Session = Depends(get_db_session), response: Response = None) -> list[str]:
+    _set_cache_headers(response)
     cached = _cache_get(_TAGS_CACHE_KEY)
     if cached is not None:
         return cached
@@ -367,6 +454,11 @@ def link_card(
     payload: ZettelLinkCreate,
     session: Session = Depends(get_db_session),
 ) -> list[ZettelLinkOut]:
+    if card_id == payload.to_card_id:
+        raise HTTPException(status_code=400, detail="Cannot link a card to itself")
+    normalized_type = (payload.type or "reference").strip().lower()
+    if not normalized_type:
+        raise HTTPException(status_code=400, detail="Link type cannot be empty")
     svc = ZettelkastenService(session)
     if not svc.get_card(card_id):
         raise HTTPException(status_code=404, detail="Card not found")
@@ -375,10 +467,11 @@ def link_card(
     links = svc.create_link(
         from_card_id=card_id,
         to_card_id=payload.to_card_id,
-        type=payload.type,
+        type=normalized_type,
         context=payload.context,
         bidirectional=payload.bidirectional,
     )
+    _invalidate_graph_cache()
     return [_link_out(link) for link in links]
 
 
@@ -400,7 +493,25 @@ def delete_link(
     deleted = svc.delete_link(link_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Link not found")
+    _invalidate_graph_cache()
     return {"status": "deleted", "id": link_id}
+
+
+@router.patch("/links/{link_id}", response_model=ZettelLinkOut)
+def update_link(
+    link_id: int,
+    payload: ZettelLinkPatch,
+    session: Session = Depends(get_db_session),
+) -> ZettelLinkOut:
+    svc = ZettelkastenService(session)
+    try:
+        updated = svc.update_link(link_id, **payload.model_dump(exclude_unset=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail="Link not found")
+    _invalidate_graph_cache()
+    return _link_out(updated)
 
 
 @router.post(
@@ -428,8 +539,13 @@ def suggest_links(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail="Failed to generate link suggestions") from exc
+    except Exception:
+        _log.warning(
+            "Link suggestions unavailable for card %s; returning empty result set",
+            card_id,
+            exc_info=True,
+        )
+        return []
     return suggestions
 
 
@@ -440,12 +556,14 @@ def batch_link(
     auto_link: bool = True,
 ) -> dict:
     """Queue batch link generation for cards with few connections."""
-    from alfred.tasks.batch_linking import batch_link_task
-
-    result = batch_link_task.delay(
-        limit=limit,
-        max_existing_links=max_existing_links,
-        auto_link=auto_link,
+    result = _enqueue_task_or_raise(
+        "alfred.tasks.batch_linking.batch_link",
+        kwargs={
+            "limit": limit,
+            "max_existing_links": max_existing_links,
+            "auto_link": auto_link,
+        },
+        action="Failed to enqueue batch link generation",
     )
     return {"task_id": result.id}
 
@@ -453,9 +571,11 @@ def batch_link(
 @router.post("/cards/{card_id}/generate-links", status_code=status.HTTP_202_ACCEPTED)
 def generate_links_for_card(card_id: int) -> dict:
     """Queue link generation for a single card via Celery."""
-    from alfred.tasks.batch_linking import link_card_task
-
-    result = link_card_task.delay(card_id=card_id, auto_link=True)
+    result = _enqueue_task_or_raise(
+        "alfred.tasks.batch_linking.link_card",
+        kwargs={"card_id": card_id, "auto_link": True},
+        action=f"Failed to enqueue link generation for card {card_id}",
+    )
     return {"task_id": result.id, "card_id": card_id}
 
 

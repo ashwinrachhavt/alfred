@@ -30,9 +30,9 @@ Three voices with clear roles: serif for authored content, sans for interface, m
 | H1 | Source Serif 4 | 42px / 2.625rem | 1.15 | 400 | Page titles |
 | H2 | Source Serif 4 | 28px / 1.75rem | 1.2 | 400 | Section headers |
 | H3 | DM Sans | 20px / 1.25rem | 1.3 | 500 | Subsection headers |
-| Body | DM Sans | 16px / 1rem | 1.6 | 400 | Default reading text |
-| Body Small | DM Sans | 14px / 0.875rem | 1.5 | 400 | Secondary text, helpers |
-| Label | DM Sans | 12px / 0.75rem | 1.5 | 500 | Nav items, badge text (uppercase, 0.1em tracking) |
+| Body | DM Sans | 17px / 1.0625rem | 1.6 | 400 | Default reading text |
+| Body Small | DM Sans | 15px / 0.9375rem | 1.5 | 400 | Secondary text, helpers |
+| Label | DM Sans | 13px / 0.8125rem | 1.5 | 500 | Nav items, badge text (uppercase, 0.1em tracking) |
 | Overline | DM Sans | 10px / 0.625rem | 1.5 | 500 | Section labels, categories (uppercase, 0.15em tracking) |
 | System | Berkeley Mono | 10px / 0.625rem | 1.5 | 500 | Timestamps, metadata, shortcuts (uppercase, 0.12em tracking) |
 | Data | Berkeley Mono | 14px / 0.875rem | 1.5 | 400 | Numeric data, tabular content (tabular-nums) |
@@ -218,6 +218,7 @@ Display domain-level metrics in a data table within the dashboard view:
 | 2026-03-29 | Inter (sans) for all UI, mono only for code | JetBrains Mono on every button/label/badge was too heavy and "terminal-like". Inter throughout with font-medium for labels creates hierarchy through weight, not font family. |
 | 2026-04-01 | Typography overhaul: Source Serif 4 + DM Sans + Berkeley Mono | Three-voice system: classical serif for authored content (display), geometric sans for interface (body/UI), warm mono for system data (timestamps/metrics). Competitive research + outside voices (Codex, Claude) all converged on serif display + mono data layer. Source Serif 4 chosen for Times New Roman-like authority. |
 | 2026-04-01 | Aesthetic shift: "Literary Terminal" to "Midnight Editorial" | Evolved from retro terminal energy to pure editorial. Less command-line, more independent journal. Warmth stays, terminal cosplay goes. |
+| 2026-04-27 | Increased app UI type scale | Raised body, small body, and label text one step for better readability while preserving the Midnight Editorial hierarchy. |
 | 2026-04-01 | Knowledge Dashboard as primary layout | Three-panel dashboard: sidebar nav + knowledge card list + connections panel + domain metrics table. Researched Linear, Notion, Capacities app shells. |
 | 2026-04-01 | Berkeley Mono for all system-layer text | Timestamps, metadata, shortcuts, section headers in mono. Creates distinct "system voice" separate from content. Both outside design voices independently recommended this. |
 | 2026-04-01 | Kept existing color palette (#E8590C, #0F0E0D) | Outside voices proposed tobacco amber (#C46A2B) but user preferred existing deep orange and warm charcoal. Proven distinctive in the space. |

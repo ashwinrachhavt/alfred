@@ -37,27 +37,39 @@ export async function streamSSE(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let eventType = "";
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
 
-    for (const line of lines) {
-      if (line.startsWith("event: ")) {
-        eventType = line.slice(7).trim();
-      } else if (line.startsWith("data: ") && eventType) {
+    // SSE events are separated by blank lines (\n\n).
+    // Only process complete event blocks; keep the trailing incomplete block in the buffer.
+    const blocks = buffer.split("\n\n");
+    buffer = blocks.pop() || "";
+
+    for (const block of blocks) {
+      if (!block.trim()) continue;
+
+      let eventType = "";
+      let dataPayload = "";
+
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event: ")) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith("data: ")) {
+          dataPayload = line.slice(6);
+        }
+      }
+
+      if (eventType && dataPayload) {
         try {
-          const data = JSON.parse(line.slice(6));
+          const data = JSON.parse(dataPayload);
           onEvent(eventType, data);
         } catch {
           // Skip malformed JSON
         }
-        eventType = "";
       }
     }
   }

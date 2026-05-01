@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Expand, Loader2, Save, X } from "lucide-react";
+import { Expand, Loader2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -20,6 +20,8 @@ type ZettelData = {
   tags: string[];
 };
 
+const AUTOSAVE_DELAY_MS = 800;
+
 export function EditorDrawer({
   zettelId,
   onClose,
@@ -29,10 +31,15 @@ export function EditorDrawer({
 }) {
   const [zettel, setZettel] = useState<ZettelData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [hasUnsaved, setHasUnsaved] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [editedContent, setEditedContent] = useState("");
   const [editedTitle, setEditedTitle] = useState("");
+
+  // Refs for autosave
+  const draftRef = useRef({ title: "", content: "" });
+  const lastSavedRef = useRef({ title: "", content: "" });
+  const debounceTimerRef = useRef<number | null>(null);
+  const savingRef = useRef(false);
+  const queuedSaveRef = useRef(false);
 
   useEffect(() => {
     if (!zettelId) {
@@ -44,53 +51,116 @@ export function EditorDrawer({
     apiFetch<ZettelData>(apiRoutes.zettels.cardById(zettelId))
       .then((data) => {
         setZettel(data);
-        setEditedContent(data.content || "");
         setEditedTitle(data.title);
-        setHasUnsaved(false);
+        draftRef.current = { title: data.title, content: data.content || "" };
+        lastSavedRef.current = { title: data.title, content: data.content || "" };
       })
       .catch(() => setZettel(null))
       .finally(() => setLoading(false));
   }, [zettelId]);
 
-  const handleContentChange = useCallback((content: string) => {
-    setEditedContent(content);
-    setHasUnsaved(true);
-  }, []);
-
-  const handleSave = async () => {
+  // Autosave function
+  const saveNow = useCallback(async () => {
     if (!zettel) return;
+    const current = draftRef.current;
+    const lastSaved = lastSavedRef.current;
+
+    // Nothing changed
+    if (current.title === lastSaved.title && current.content === lastSaved.content) {
+      setSaving(false);
+      return;
+    }
+
+    if (savingRef.current) {
+      queuedSaveRef.current = true;
+      return;
+    }
+
+    savingRef.current = true;
     setSaving(true);
     try {
       await apiFetch(apiRoutes.zettels.cardById(zettel.id), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: editedTitle, content: editedContent }),
+        body: JSON.stringify({ title: current.title, content: current.content }),
       });
-      setHasUnsaved(false);
+      lastSavedRef.current = { ...current };
     } catch {
-      // TODO: show error toast
+      // Silent fail — the user can see the saving indicator
     } finally {
+      savingRef.current = false;
       setSaving(false);
+      if (queuedSaveRef.current) {
+        queuedSaveRef.current = false;
+        void saveNow();
+      }
     }
-  };
+  }, [zettel]);
 
-  const handleClose = () => {
-    if (hasUnsaved) {
-      const confirmed = window.confirm("You have unsaved changes. Close anyway?");
-      if (!confirmed) return;
+  // Debounced save trigger
+  const queueSave = useCallback(() => {
+    if (debounceTimerRef.current) {
+      window.clearTimeout(debounceTimerRef.current);
     }
-    onClose();
-  };
+    debounceTimerRef.current = window.setTimeout(() => {
+      void saveNow();
+    }, AUTOSAVE_DELAY_MS);
+  }, [saveNow]);
+
+  // Save on tab/window close
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") void saveNow();
+    };
+    window.addEventListener("visibilitychange", onVisibilityChange);
+    return () => window.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [saveNow]);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) window.clearTimeout(debounceTimerRef.current);
+    };
+  }, []);
+
+  const handleContentChange = useCallback(
+    (content: string) => {
+      draftRef.current.content = content;
+      queueSave();
+    },
+    [queueSave],
+  );
+
+  const handleTitleChange = useCallback(
+    (title: string) => {
+      setEditedTitle(title);
+      draftRef.current.title = title;
+      queueSave();
+    },
+    [queueSave],
+  );
+
+  const handleClose = useCallback(() => {
+    // Flush any pending save before closing
+    if (debounceTimerRef.current) {
+      window.clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    void saveNow().then(onClose);
+  }, [saveNow, onClose]);
 
   const handleOpenFullView = useCallback(() => {
     if (!zettel) return;
-    if (hasUnsaved) {
-      const confirmed = window.confirm("You have unsaved changes. Open full view anyway?");
-      if (!confirmed) return;
+    // Flush save, then open full view
+    if (debounceTimerRef.current) {
+      window.clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
     }
-    useShellStore.getState().openZettelViewer(zettel.id);
-    onClose();
-  }, [hasUnsaved, onClose, zettel]);
+    void saveNow().then(() => {
+      useShellStore.getState().openZettelViewer(zettel.id);
+      onClose();
+    });
+  }, [onClose, zettel, saveNow]);
 
   return (
     <Sheet open={!!zettelId} onOpenChange={(open) => !open && handleClose()}>
@@ -104,17 +174,18 @@ export function EditorDrawer({
           </div>
         ) : zettel ? (
           <div className="flex h-full flex-col">
-            {/* Header */}
+            {/* Header — clean, minimal */}
             <div className="flex items-center justify-between border-b px-4 py-2.5">
               <div className="flex min-w-0 flex-1 items-center gap-2">
-                {hasUnsaved && <span className="bg-primary h-2 w-2 shrink-0 rounded-full" />}
+                {saving && (
+                  <Loader2 className="text-muted-foreground h-3 w-3 shrink-0 animate-spin" />
+                )}
                 <input
                   value={editedTitle}
-                  onChange={(e) => {
-                    setEditedTitle(e.target.value);
-                    setHasUnsaved(true);
-                  }}
+                  onChange={(e) => handleTitleChange(e.target.value)}
+                  onBlur={() => void saveNow()}
                   className="text-foreground flex-1 truncate border-none bg-transparent text-sm font-medium outline-none"
+                  placeholder="Untitled"
                 />
               </div>
               <div className="flex shrink-0 items-center gap-1">
@@ -149,25 +220,16 @@ export function EditorDrawer({
               ))}
             </div>
 
-            {/* Editor */}
+            {/* Editor — takes full remaining space, no footer */}
             <div className="flex-1 overflow-y-auto px-4 py-3">
               <MarkdownNotesEditor
                 markdown={zettel.content || ""}
                 onMarkdownChange={handleContentChange}
                 contextCardId={zettel.id}
+                onKeyboardCommand={async (command) => {
+                  if (command === "save") await saveNow();
+                }}
               />
-            </div>
-
-            {/* Footer */}
-            <div className="flex justify-end border-t px-4 py-2">
-              <Button size="sm" onClick={handleSave} disabled={!hasUnsaved || saving}>
-                {saving ? (
-                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Save className="mr-1 h-3.5 w-3.5" />
-                )}
-                Save
-              </Button>
             </div>
           </div>
         ) : (
