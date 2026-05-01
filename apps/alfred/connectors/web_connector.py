@@ -108,6 +108,16 @@ def _dedupe_by_url(hits: Sequence[SearchHit]) -> list[SearchHit]:
     return out
 
 
+def _format_searx_error(exc: ValueError) -> str:
+    message = " ".join(str(part) for part in exc.args if part is not None).strip()
+    if "Searx API returned an error" in message and ("403" in message or "Forbidden" in message):
+        return (
+            "SearxNG refused the JSON search API. Enable `json` in "
+            "`search.formats` and recreate the SearxNG container."
+        )
+    return f"SearxNG search failed: {message or exc!s}"
+
+
 class SearxClient:
     def __init__(self, *, host: str, k: int = 10):
         from langchain_community.utilities import SearxSearchWrapper  # type: ignore
@@ -125,12 +135,15 @@ class SearxClient:
         time_range: str | None = None,
     ) -> SearchResponse:
         web_rate_limiter.wait("searx")
-        res = self._wrapper.results(
-            query,
-            num_results=clamp_int(num_results, lo=1, hi=100),
-            categories=categories,
-            time_range=time_range,
-        )
+        try:
+            res = self._wrapper.results(
+                query,
+                num_results=clamp_int(num_results, lo=1, hi=100),
+                categories=categories,
+                time_range=time_range,
+            )
+        except ValueError as exc:
+            raise ConfigurationError(_format_searx_error(exc)) from exc
         hits = _normalize_list_result(res, "searx")
         meta = {"host": self._host, "k": clamp_int(num_results, lo=1, hi=100)}
         return SearchResponse(provider="searx", query=query, hits=_dedupe_by_url(hits), meta=meta)

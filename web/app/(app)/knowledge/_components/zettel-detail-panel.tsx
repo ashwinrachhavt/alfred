@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { formatDistanceToNow } from "date-fns";
-import { Check, Expand, Pencil, Trash2, X } from "lucide-react";
+import { Check, Expand, Pencil, Plus, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { ConnectionPill } from "@/components/zettels/connection-pill";
+import { LinkEditorDialog } from "@/components/zettels/link-editor-dialog";
 import { useShellStore } from "@/lib/stores/shell-store";
 import { ZettelReadContent } from "@/app/(app)/knowledge/_components/zettel-read-content";
 import { ZettelLinkSuggestions } from "@/app/(app)/knowledge/_components/zettel-link-suggestions";
@@ -15,6 +17,8 @@ import {
   useUpdateZettel,
   useDeleteZettel,
 } from "@/features/zettels/mutations";
+import { useZettelLinks } from "@/features/zettels/queries";
+import type { ApiZettelLink } from "@/lib/api/zettels";
 import { BloomProgressBar } from "./bloom-badge";
 import type { Zettel } from "./mock-data";
 
@@ -37,6 +41,27 @@ export function ZettelDetailPanel({ zettel, allZettels, onClose, onSelectZettel 
   const cardId = parseInt(zettel.id, 10);
   const updateMutation = useUpdateZettel(cardId);
   const deleteMutation = useDeleteZettel();
+  const { data: links = [] } = useZettelLinks(Number.isFinite(cardId) ? cardId : null);
+
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [editingLink, setEditingLink] = useState<ApiZettelLink | null>(null);
+
+  // Map: other-card-id -> a link row connecting `cardId` to that card.
+  // Outbound rows win (they represent the user's authored direction); inbound
+  // rows are used when no outbound exists so the pencil can still edit a pair
+  // that was originally authored from the other side.
+  const linkByNeighbor = useMemo(() => {
+    const map = new Map<number, ApiZettelLink>();
+    for (const link of links) {
+      if (link.from_card_id === cardId) map.set(link.to_card_id, link);
+    }
+    for (const link of links) {
+      if (link.to_card_id === cardId && !map.has(link.from_card_id)) {
+        map.set(link.from_card_id, link);
+      }
+    }
+    return map;
+  }, [links, cardId]);
 
   const connectedZettels = allZettels.filter((z) => zettel.connections.includes(z.id));
   const capturedAgo = formatDistanceToNow(new Date(zettel.source.capturedAt), { addSuffix: true });
@@ -133,36 +158,51 @@ export function ZettelDetailPanel({ zettel, allZettels, onClose, onSelectZettel 
         )}
 
         {/* Connections */}
-        {connectedZettels.length > 0 && (
+        {!isEditing && (
           <div>
-            <div className="mb-2 text-[9px] font-medium tracking-widest text-[var(--alfred-text-tertiary)] uppercase">
-              Connections ({connectedZettels.length})
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-[9px] font-medium tracking-widest text-[var(--alfred-text-tertiary)] uppercase">
+                Connections{connectedZettels.length > 0 && ` (${connectedZettels.length})`}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingLink(null);
+                  setLinkDialogOpen(true);
+                }}
+                className="text-muted-foreground hover:text-primary flex items-center gap-1 text-[10px] uppercase tracking-wider"
+              >
+                <Plus size={10} />
+                Add
+              </button>
             </div>
-            <div className="flex flex-wrap gap-1.5">
-              {connectedZettels.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => onSelectZettel(c.id)}
-                  className="text-muted-foreground hover:border-primary hover:text-foreground max-w-full truncate rounded-md border px-2.5 py-1 text-[12px] transition-colors"
-                >
-                  {c.title}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {connectedZettels.length === 0 && !isEditing && (
-          <div>
-            <div className="mb-2 text-[9px] font-medium tracking-widest text-[var(--alfred-text-tertiary)] uppercase">
-              Connections
-            </div>
-            <p className="text-[12px] text-[var(--alfred-text-tertiary)]">
-              No connections yet — link to this card from a note using{" "}
-              <code className="bg-muted rounded px-1 py-0.5 font-mono text-[11px]">
-                [[{zettel.title.slice(0, 20)}...
-              </code>
-            </p>
+            {connectedZettels.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {connectedZettels.map((c) => {
+                  const neighborId = parseInt(c.id, 10);
+                  const link = linkByNeighbor.get(neighborId);
+                  return (
+                    <ConnectionPill
+                      key={c.id}
+                      title={c.title}
+                      onNavigate={() => onSelectZettel(c.id)}
+                      onEdit={
+                        link
+                          ? () => {
+                              setEditingLink(link);
+                              setLinkDialogOpen(true);
+                            }
+                          : undefined
+                      }
+                    />
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-[12px] text-[var(--alfred-text-tertiary)]">
+                No connections yet — click Add to link to another zettel.
+              </p>
+            )}
           </div>
         )}
 
@@ -285,6 +325,19 @@ export function ZettelDetailPanel({ zettel, allZettels, onClose, onSelectZettel 
           </>
         )}
       </div>
+
+      {Number.isFinite(cardId) && (
+        <LinkEditorDialog
+          open={linkDialogOpen}
+          onOpenChange={(open) => {
+            setLinkDialogOpen(open);
+            if (!open) setEditingLink(null);
+          }}
+          mode={editingLink ? "edit" : "create"}
+          fromCardId={cardId}
+          initialLink={editingLink ?? undefined}
+        />
+      )}
     </aside>
   );
 }

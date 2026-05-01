@@ -77,10 +77,22 @@ cd web && pnpm install && pnpm dev   # Start Next.js on :3000
 make run-worker                 # Start Celery for async tasks
 ```
 
-### Docker (full stack)
+### Docker (full local stack)
 ```bash
-docker compose -f infra/docker-compose.yml up -d --build
+# 1. Configure secrets without baking them into images
+cp apps/alfred/.env.example apps/alfred/.env
+# Fill in at least OPENAI_API_KEY. Optional connector keys can live here too.
+
+# 2. Start Alfred, Postgres, Redis, Qdrant, SearXNG, Firecrawl, worker, and frontend
+docker compose up -d --build
+
+# 3. Open the app
+open http://localhost:3010
 ```
+
+Docker reads secrets from `.env`, `.env.local`, `apps/alfred/.env`, and
+`apps/alfred/.env.local` at runtime. These files are intentionally excluded
+from image builds by `.dockerignore`.
 
 ## Key Features
 
@@ -151,6 +163,7 @@ make alembic-autogen msg="description"  # Generate migration
 | [CLAUDE.md](CLAUDE.md) | AI assistant instructions, coding conventions, project structure |
 | [DESIGN.md](DESIGN.md) | Design system specification (fonts, colors, spacing, components) |
 | [AGENTS.md](AGENTS.md) | Coding guidelines and AI agent tool usage |
+| [DOCKER.md](DOCKER.md) | Local Docker stack and troubleshooting |
 | [PLANS.md](PLANS.md) | Planning framework for multi-step tasks |
 | [TODOS.md](TODOS.md) | Tracked tech debt and feature backlog |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |

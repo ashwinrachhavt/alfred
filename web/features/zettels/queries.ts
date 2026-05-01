@@ -5,6 +5,7 @@ import { apiRoutes } from "@/lib/api/routes";
 import {
   type ApiZettelCard,
   getZettelCard,
+  listLinkTypes,
   listZettelCards as apiListZettelCards,
   countZettelCards as apiCountZettelCards,
   listZettelLinks,
@@ -13,6 +14,7 @@ import {
   listZettelTags,
   searchCards as apiSearchCards,
   listBacklinks as apiListBacklinks,
+  type LinkTypeEntry,
   type ZettelFilterParams,
   type CardSearchResponse,
   type BacklinkResponse,
@@ -165,6 +167,14 @@ export function useZettelLinks(cardId: number | null) {
     queryFn: () => listZettelLinks(cardId!),
     enabled: cardId !== null,
     staleTime: 10_000,
+  });
+}
+
+export function useLinkTypes() {
+  return useQuery<LinkTypeEntry[]>({
+    queryKey: ["zettels", "link-types"],
+    queryFn: () => listLinkTypes(),
+    staleTime: 5 * 60 * 1000,
   });
 }
 

@@ -36,7 +36,8 @@ from openai import APIError, APITimeoutError, AsyncOpenAI, BadRequestError, Rate
 from sqlmodel import Session
 
 from alfred.core.llm_factory import get_async_openai_client
-from alfred.core.settings import settings
+from alfred.core.openai_compat import add_temperature_if_supported, uses_max_completion_tokens
+from alfred.core.settings import DEFAULT_OPENAI_MODEL, settings
 from alfred.services.agent.prompts import SystemPromptBuilder
 from alfred.services.agent.tools import execute_tool, get_all_tool_schemas
 
@@ -58,12 +59,6 @@ _TOOL_TIMEOUTS: dict[str, int] = {
     "firecrawl_scrape": 30,
 }
 
-# Models that use reasoning (o-series).
-_REASONING_MODELS = {"o3", "o3-mini", "o4-mini"}
-
-# Models that require max_completion_tokens instead of max_tokens.
-_MAX_COMPLETION_TOKEN_PREFIXES = ("gpt-5",)
-
 # Regex for stripping HTML tags from tool results (prompt injection mitigation).
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 
@@ -80,18 +75,6 @@ def _sanitize_tool_result(text: str) -> str:
 
 # Singleton prompt builder
 _prompt_builder = SystemPromptBuilder()
-
-
-def _is_reasoning_model(model: str) -> bool:
-    """Check if a model is an o-series reasoning model."""
-    return any(model.startswith(p) for p in _REASONING_MODELS)
-
-
-def _uses_max_completion_tokens(model: str) -> bool:
-    """Check if a model requires max_completion_tokens parameter."""
-    return any(model.startswith(p) for p in _MAX_COMPLETION_TOKEN_PREFIXES) or _is_reasoning_model(
-        model
-    )
 
 
 class AgentService:
@@ -127,7 +110,7 @@ class AgentService:
         - Forward sse_string to the client
         - Inspect data_dict to collect content for DB persistence
         """
-        model_name = model or settings.llm_model or "gpt-5.4"
+        model_name = model or settings.llm_model or DEFAULT_OPENAI_MODEL
         effective_max = max_iterations if max_iterations else MAX_TOOL_ROUNDS
 
         try:
@@ -371,15 +354,17 @@ class AgentService:
             "timeout": 60,
         }
 
-        # Token limit parameter depends on model
-        if _uses_max_completion_tokens(model):
+        # Token limit parameter depends on model.
+        if uses_max_completion_tokens(model):
             kwargs["max_completion_tokens"] = 4096
         else:
             kwargs["max_tokens"] = 4096
 
-        # Reasoning models don't support temperature
-        if not _is_reasoning_model(model):
-            kwargs["temperature"] = settings.llm_temperature
+        add_temperature_if_supported(
+            kwargs,
+            model=model,
+            temperature=settings.llm_temperature,
+        )
 
         return kwargs
 

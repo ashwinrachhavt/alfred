@@ -55,6 +55,8 @@ export const apiRoutes = {
     cardLinks: (id: number) => `/api/zettels/cards/${id}/links`,
     suggestLinks: (id: number) => `/api/zettels/cards/${id}/suggest-links`,
     deleteLink: (id: number) => `/api/zettels/links/${id}`,
+    updateLink: (id: number) => `/api/zettels/links/${id}`,
+    linkTypes: "/api/zettels/link-types",
     generate: "/api/zettels/cards/generate",
     createStream: "/api/zettels/cards/create-stream",
     suggestTags: "/api/zettels/suggest-tags",

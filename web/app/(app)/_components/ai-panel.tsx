@@ -34,6 +34,7 @@ import { RelatedCards } from "@/components/agent/related-cards";
 import { MarkdownMessage } from "@/components/agent/markdown-message";
 import { useShellStore } from "@/lib/stores/shell-store";
 import { apiFetch } from "@/lib/api/client";
+import { DEFAULT_AI_MODEL } from "@/lib/constants/ai";
 import { cn } from "@/lib/utils";
 
 const EditorDrawer = dynamic(() => import("@/components/agent/editor-drawer").then((mod) => ({ default: mod.EditorDrawer })), {
@@ -354,6 +355,7 @@ export function AiPanel() {
  onChange={(e) => setModel(e.target.value)}
  className="bg-transparent outline-none cursor-pointer text-[10px] text-muted-foreground"
  >
+ <option value={DEFAULT_AI_MODEL}>GPT-5.5</option>
  <option value="gpt-5.4">GPT-5.4</option>
  <option value="gpt-5.4-mini">GPT-5.4 mini</option>
  <option value="gpt-5.4-pro">GPT-5.4 Pro</option>

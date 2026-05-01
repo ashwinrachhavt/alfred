@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
+import { DEFAULT_AI_MODEL } from "@/lib/constants/ai";
+
 // jsdom doesn't implement scrollIntoView
 Element.prototype.scrollIntoView = vi.fn();
 
@@ -37,7 +39,7 @@ const defaultAgentState = {
   activeThreadId: null,
   isStreaming: false,
   activeLens: null,
-  activeModel: "gpt-5.4",
+  activeModel: DEFAULT_AI_MODEL,
   activeToolCalls: [],
   noteContext: null,
   sendMessage: vi.fn(),
@@ -270,7 +272,7 @@ describe("UnifiedChat — expanded mode", () => {
     render(<UnifiedChat mode="expanded" />);
 
     expect(screen.getByText("What would you like to explore?")).toBeInTheDocument();
-    expect(screen.getByText(/Alfred will search your knowledge base/)).toBeInTheDocument();
+    expect(screen.getByText(/Alfred can search your knowledge/)).toBeInTheDocument();
   });
 
   it("uses max-w-3xl centered layout for messages", () => {

@@ -17,6 +17,7 @@ from alfred.models.zettel import ZettelCard, ZettelReview
 _log = logging.getLogger(__name__)
 _TOPICS_CACHE_KEY = "zettel:topics"
 _TAGS_CACHE_KEY = "zettel:tags"
+_LINK_TYPES_CACHE_KEY = "zettel:link_types"
 _GRAPH_EXT_CACHE_KEY = "zettel:graph:extended"
 _CACHE_TTL_SECONDS = 300  # 5 minutes
 _GRAPH_EXT_CACHE_TTL = 3600  # 1 hour
@@ -35,6 +36,7 @@ from alfred.schemas.zettel import (
     ZettelCardUpdate,
     ZettelLinkCreate,
     ZettelLinkOut,
+    ZettelLinkPatch,
     ZettelReviewOut,
 )
 from alfred.services.zettel_creation_stream import ZettelCreationStream
@@ -229,10 +231,16 @@ def _cache_delete_prefix(prefix: str) -> None:
 
 
 def _invalidate_graph_cache() -> None:
-    """Bust extended graph cache + clustering cache on card mutations."""
+    """Bust extended graph, clustering, and link-type caches on mutation."""
     from alfred.services.clustering_service import ClusteringService
 
     _cache_delete_prefix(_GRAPH_EXT_CACHE_KEY)
+    redis = get_redis_client()
+    if redis:
+        try:
+            redis.delete(_LINK_TYPES_CACHE_KEY)
+        except Exception:
+            pass
     ClusteringService.invalidate_cache()
 
 
@@ -256,6 +264,35 @@ def get_topics(session: Session = Depends(get_db_session), response: Response = 
     topics = [t for t in results if t]
     _cache_set(_TOPICS_CACHE_KEY, topics)
     return topics
+
+
+@router.get("/link-types")
+def get_link_types(
+    session: Session = Depends(get_db_session),
+    response: Response = None,
+) -> list[dict]:
+    """Distinct link types with usage counts (Redis-cached)."""
+    from sqlalchemy import func
+
+    from alfred.models.zettel import ZettelLink
+
+    _set_cache_headers(response)
+    cached = _cache_get(_LINK_TYPES_CACHE_KEY)
+    if cached is not None:
+        return cached
+    rows = session.exec(
+        select(ZettelLink.type, func.count(ZettelLink.id))
+        .group_by(ZettelLink.type)
+        .order_by(func.count(ZettelLink.id).desc())
+    ).all()
+    result = [{"type": r[0], "count": r[1]} for r in rows]
+    redis = get_redis_client()
+    if redis:
+        try:
+            redis.set(_LINK_TYPES_CACHE_KEY, _json.dumps(result), ex=_CACHE_TTL_SECONDS)
+        except Exception:
+            pass
+    return result
 
 
 @router.get("/tags", response_model=list[str])
@@ -417,6 +454,11 @@ def link_card(
     payload: ZettelLinkCreate,
     session: Session = Depends(get_db_session),
 ) -> list[ZettelLinkOut]:
+    if card_id == payload.to_card_id:
+        raise HTTPException(status_code=400, detail="Cannot link a card to itself")
+    normalized_type = (payload.type or "reference").strip().lower()
+    if not normalized_type:
+        raise HTTPException(status_code=400, detail="Link type cannot be empty")
     svc = ZettelkastenService(session)
     if not svc.get_card(card_id):
         raise HTTPException(status_code=404, detail="Card not found")
@@ -425,10 +467,11 @@ def link_card(
     links = svc.create_link(
         from_card_id=card_id,
         to_card_id=payload.to_card_id,
-        type=payload.type,
+        type=normalized_type,
         context=payload.context,
         bidirectional=payload.bidirectional,
     )
+    _invalidate_graph_cache()
     return [_link_out(link) for link in links]
 
 
@@ -450,7 +493,25 @@ def delete_link(
     deleted = svc.delete_link(link_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Link not found")
+    _invalidate_graph_cache()
     return {"status": "deleted", "id": link_id}
+
+
+@router.patch("/links/{link_id}", response_model=ZettelLinkOut)
+def update_link(
+    link_id: int,
+    payload: ZettelLinkPatch,
+    session: Session = Depends(get_db_session),
+) -> ZettelLinkOut:
+    svc = ZettelkastenService(session)
+    try:
+        updated = svc.update_link(link_id, **payload.model_dump(exclude_unset=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail="Link not found")
+    _invalidate_graph_cache()
+    return _link_out(updated)
 
 
 @router.post(

@@ -165,6 +165,24 @@ def service(db_session):
 # ---------------------------------------------------------------------------
 
 
+def test_build_api_kwargs_omits_temperature_for_gpt5(service):
+    """GPT-5.x chat models only accept the default temperature."""
+    kwargs = service._build_api_kwargs("gpt-5.5", [{"role": "user", "content": "Hi"}])
+
+    assert kwargs["max_completion_tokens"] == 4096
+    assert "max_tokens" not in kwargs
+    assert "temperature" not in kwargs
+
+
+def test_build_api_kwargs_keeps_temperature_for_standard_chat_model(service):
+    """Older chat models still receive Alfred's configured temperature."""
+    kwargs = service._build_api_kwargs("gpt-4o", [{"role": "user", "content": "Hi"}])
+
+    assert kwargs["max_tokens"] == 4096
+    assert "max_completion_tokens" not in kwargs
+    assert "temperature" in kwargs
+
+
 @pytest.mark.asyncio
 async def test_happy_path_text_response(service):
     """Simple text response yields token events and done."""

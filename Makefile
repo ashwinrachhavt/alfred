@@ -1,4 +1,4 @@
-.PHONY: install test lint format run-api run-worker docker-up docker-down
+.PHONY: install test lint format run-api run-worker docker-up docker-down docker-reset
 
 # Auto-load env vars from apps/alfred/.env into every recipe.
 # Filters out comments, blank lines, lines with <placeholders>, and inline comments.
@@ -52,10 +52,13 @@ run-worker:
 	$(LOAD_ENV) $(RUN) celery -A alfred.celery_app.app worker -l INFO -Q default,llm,agent
 
 docker-up:
-	docker compose -f infra/docker-compose.yml up --build
+	docker compose up --build
 
 docker-down:
-	docker compose -f infra/docker-compose.yml down -v
+	docker compose down
+
+docker-reset:
+	docker compose down -v
 
 .PHONY: ingest-urls
 ingest-urls:

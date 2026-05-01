@@ -51,6 +51,17 @@ export type ZettelLinkCreatePayload = {
   bidirectional?: boolean;
 };
 
+export type ZettelLinkUpdatePayload = {
+  type?: string;
+  context?: string | null;
+  bidirectional?: boolean;
+};
+
+export type LinkTypeEntry = {
+  type: string;
+  count: number;
+};
+
 export type ApiZettelLink = {
   id: number;
   from_card_id: number;
@@ -209,6 +220,20 @@ export async function createZettelLink(cardId: number, payload: ZettelLinkCreate
 
 export async function deleteZettelLink(linkId: number): Promise<{ status: string; id: number }> {
   return apiFetch<{ status: string; id: number }>(apiRoutes.zettels.deleteLink(linkId), { method: "DELETE" });
+}
+
+export async function updateZettelLink(
+  linkId: number,
+  payload: ZettelLinkUpdatePayload,
+): Promise<ApiZettelLink> {
+  return apiPatchJson<ApiZettelLink, ZettelLinkUpdatePayload>(
+    apiRoutes.zettels.updateLink(linkId),
+    payload,
+  );
+}
+
+export async function listLinkTypes(): Promise<LinkTypeEntry[]> {
+  return apiFetch<LinkTypeEntry[]>(apiRoutes.zettels.linkTypes, { cache: "no-store" });
 }
 
 export async function suggestZettelLinks(

@@ -4,6 +4,7 @@ import { useShallow } from "zustand/react/shallow";
 import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
 import { streamSSE } from "@/lib/api/sse";
+import { DEFAULT_AI_MODEL } from "@/lib/constants/ai";
 
 // --- Types ---
 
@@ -186,7 +187,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   activeThreadId: null,
   isStreaming: false,
   activeLens: null,
-  activeModel: "gpt-5.4",
+  activeModel: DEFAULT_AI_MODEL,
   activeToolCalls: [],
   abortController: null,
   noteContext: null,
@@ -285,7 +286,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           intent: opts?.intent,
           intent_args: opts?.intentArgs,
         },
-        (event, data) => _handleSSEEvent(event, data, set, get),
+        (event, data) => _handleSSEEvent(event, data, set),
         composedSignal,
       );
 
@@ -444,7 +445,6 @@ function _handleSSEEvent(
   event: string,
   data: Record<string, unknown>,
   set: (fn: (s: AgentState) => Partial<AgentState>) => void,
-  _get: () => AgentState,
 ) {
   switch (event) {
     case "reasoning": {

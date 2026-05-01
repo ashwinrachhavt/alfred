@@ -43,6 +43,14 @@ class ZettelLinkCreate(BaseModel):
     bidirectional: bool = True
 
 
+class ZettelLinkPatch(BaseModel):
+    """Partial update payload for a ZettelLink row."""
+
+    type: str | None = Field(default=None, max_length=64)
+    context: str | None = None
+    bidirectional: bool | None = None
+
+
 class ZettelCardPatch(BaseModel):
     """Partial update payload for cards (bulk-friendly)."""
 

@@ -5,7 +5,9 @@ from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlmodel import Session, SQLModel
 
-from alfred.models.zettel import ZettelReview
+import pytest
+
+from alfred.models.zettel import ZettelLink, ZettelReview
 from alfred.services.zettelkasten_service import ZettelkastenService
 
 try:  # avoid ImportError when sqlmodel.select is unavailable in minimal envs
@@ -166,3 +168,176 @@ def test_extended_graph_summary_gaps() -> None:
     assert gap["id"] == stub.id
     assert gap["title"] == "Stub card"
     assert gap["inbound_link_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# update_link — reverse-row state machine
+# ---------------------------------------------------------------------------
+
+
+def _pair(svc: ZettelkastenService) -> tuple[int, int]:
+    a = svc.create_card(title="A")
+    b = svc.create_card(title="B")
+    return a.id or 0, b.id or 0
+
+
+def test_update_link_type_only_sync_reverse() -> None:
+    session = _session()
+    svc = ZettelkastenService(session)
+    a, b = _pair(svc)
+    links = svc.create_link(from_card_id=a, to_card_id=b, type="supports", bidirectional=True)
+    forward = next(link for link in links if link.from_card_id == a)
+
+    updated = svc.update_link(forward.id or 0, type="contradicts")
+    assert updated is not None
+    assert updated.type == "contradicts"
+
+    rows = session.exec(select(ZettelLink)).all()
+    assert len(rows) == 2
+    assert {row.type for row in rows} == {"contradicts"}
+
+
+def test_update_link_type_collision_deletes_existing() -> None:
+    session = _session()
+    svc = ZettelkastenService(session)
+    a, b = _pair(svc)
+    supports = svc.create_link(
+        from_card_id=a, to_card_id=b, type="supports", bidirectional=False
+    )[0]
+    related = svc.create_link(
+        from_card_id=a, to_card_id=b, type="related", bidirectional=False
+    )[0]
+
+    updated = svc.update_link(supports.id or 0, type="related")
+    assert updated is not None
+    assert updated.type == "related"
+    assert updated.id == supports.id
+
+    rows = session.exec(select(ZettelLink)).all()
+    assert len(rows) == 1
+    assert rows[0].id == supports.id
+    assert session.get(ZettelLink, related.id) is None
+
+
+def test_update_link_bidirectional_false_to_true_creates_reverse() -> None:
+    session = _session()
+    svc = ZettelkastenService(session)
+    a, b = _pair(svc)
+    forward = svc.create_link(
+        from_card_id=a, to_card_id=b, type="reference", bidirectional=False
+    )[0]
+
+    updated = svc.update_link(forward.id or 0, bidirectional=True)
+    assert updated is not None
+    assert updated.bidirectional is True
+
+    rows = session.exec(select(ZettelLink)).all()
+    assert len(rows) == 2
+    assert all(row.bidirectional for row in rows)
+
+
+def test_update_link_bidirectional_true_to_false_deletes_reverse() -> None:
+    session = _session()
+    svc = ZettelkastenService(session)
+    a, b = _pair(svc)
+    pair = svc.create_link(from_card_id=a, to_card_id=b, type="related", bidirectional=True)
+    forward = next(link for link in pair if link.from_card_id == a)
+
+    updated = svc.update_link(forward.id or 0, bidirectional=False)
+    assert updated is not None
+    assert updated.bidirectional is False
+
+    rows = session.exec(select(ZettelLink)).all()
+    assert len(rows) == 1
+    assert rows[0].from_card_id == a and rows[0].to_card_id == b
+
+
+def test_update_link_drift_missing_reverse_is_tolerated() -> None:
+    session = _session()
+    svc = ZettelkastenService(session)
+    a, b = _pair(svc)
+    pair = svc.create_link(from_card_id=a, to_card_id=b, type="related", bidirectional=True)
+    forward = next(link for link in pair if link.from_card_id == a)
+    reverse = next(link for link in pair if link.from_card_id == b)
+
+    session.delete(reverse)
+    session.commit()
+
+    updated = svc.update_link(forward.id or 0, bidirectional=False)
+    assert updated is not None
+    assert updated.bidirectional is False
+    rows = session.exec(select(ZettelLink)).all()
+    assert len(rows) == 1
+
+
+def test_update_link_context_change_syncs_reverse() -> None:
+    session = _session()
+    svc = ZettelkastenService(session)
+    a, b = _pair(svc)
+    pair = svc.create_link(from_card_id=a, to_card_id=b, type="related", bidirectional=True)
+    forward = next(link for link in pair if link.from_card_id == a)
+
+    updated = svc.update_link(forward.id or 0, context="because X")
+    assert updated is not None
+    assert updated.context == "because X"
+    rows = session.exec(select(ZettelLink)).all()
+    assert all(row.context == "because X" for row in rows)
+
+
+def test_update_link_context_none_clears_on_both_rows() -> None:
+    session = _session()
+    svc = ZettelkastenService(session)
+    a, b = _pair(svc)
+    pair = svc.create_link(
+        from_card_id=a,
+        to_card_id=b,
+        type="related",
+        context="initial",
+        bidirectional=True,
+    )
+    forward = next(link for link in pair if link.from_card_id == a)
+
+    updated = svc.update_link(forward.id or 0, context=None)
+    assert updated is not None
+    assert updated.context is None
+    rows = session.exec(select(ZettelLink)).all()
+    assert all(row.context is None for row in rows)
+
+
+def test_update_link_context_omitted_is_noop() -> None:
+    session = _session()
+    svc = ZettelkastenService(session)
+    a, b = _pair(svc)
+    pair = svc.create_link(
+        from_card_id=a,
+        to_card_id=b,
+        type="related",
+        context="keep me",
+        bidirectional=True,
+    )
+    forward = next(link for link in pair if link.from_card_id == a)
+
+    # No context kwarg at all — should leave context untouched.
+    updated = svc.update_link(forward.id or 0, type="supports")
+    assert updated is not None
+    assert updated.context == "keep me"
+    rows = session.exec(select(ZettelLink)).all()
+    assert all(row.context == "keep me" for row in rows)
+
+
+def test_update_link_empty_type_raises() -> None:
+    session = _session()
+    svc = ZettelkastenService(session)
+    a, b = _pair(svc)
+    forward = svc.create_link(
+        from_card_id=a, to_card_id=b, type="related", bidirectional=False
+    )[0]
+
+    with pytest.raises(ValueError):
+        svc.update_link(forward.id or 0, type="   ")
+
+
+def test_update_link_not_found_returns_none() -> None:
+    session = _session()
+    svc = ZettelkastenService(session)
+    assert svc.update_link(9999, type="related") is None

@@ -16,6 +16,7 @@ _dotenv_path = _PROJECT_ROOT / ".env"
 load_dotenv(_dotenv_path if _dotenv_path.exists() else None)
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "alfred.db"
+DEFAULT_OPENAI_MODEL = "gpt-5.5"
 
 
 class LLMProvider(str, Enum):
@@ -122,7 +123,7 @@ class Settings(BaseSettings):
 
     # OpenAI (also used by downstream libs)
     openai_api_key: SecretStr | None = Field(default=None, alias="OPENAI_API_KEY")
-    openai_model: str = Field(default="gpt-5.4", alias="OPENAI_MODEL")
+    openai_model: str = Field(default=DEFAULT_OPENAI_MODEL, alias="OPENAI_MODEL")
     openai_base_url: str | None = Field(default=None, alias="OPENAI_BASE_URL")
     openai_organization: str | None = Field(default=None, alias="OPENAI_ORG")
 
@@ -241,7 +242,7 @@ class Settings(BaseSettings):
     )
 
     # Firecrawl
-    firecrawl_base_url: str = Field(default="http://localhost:8010", alias="FIRECRAWL_BASE_URL")
+    firecrawl_base_url: str = Field(default="http://localhost:3002/v1", alias="FIRECRAWL_BASE_URL")
     firecrawl_timeout: int = Field(default=30, alias="FIRECRAWL_TIMEOUT")
 
     # Research
@@ -250,6 +251,7 @@ class Settings(BaseSettings):
         default="company_research_reports",
         alias="COMPANY_RESEARCH_COLLECTION",
     )
+    canvas_diagram_model: str = Field(default="gpt-4o", alias="CANVAS_DIAGRAM_MODEL")
     system_design_sessions_collection: str = Field(
         default="system_design_sessions",
         alias="SYSTEM_DESIGN_SESSIONS_COLLECTION",
@@ -385,12 +387,12 @@ class Settings(BaseSettings):
 
     # --- LLM unified ---
     llm_provider: LLMProvider = Field(default=LLMProvider.openai, alias="ALFRED_LLM_PROVIDER")
-    llm_model: str = Field(default="gpt-5.4", alias="ALFRED_LLM_MODEL")
+    llm_model: str = Field(default=DEFAULT_OPENAI_MODEL, alias="ALFRED_LLM_MODEL")
     llm_temperature: float = Field(default=0.2, alias="ALFRED_LLM_TEMPERATURE")
     zettel_analysis_model: str = Field(default="o4-mini", alias="ALFRED_ZETTEL_ANALYSIS_MODEL")
 
     # --- Writer (browser extension) ---
-    writer_model: str = Field(default="gpt-5.4", alias="ALFRED_WRITER_MODEL")
+    writer_model: str = Field(default=DEFAULT_OPENAI_MODEL, alias="ALFRED_WRITER_MODEL")
     writer_temperature: float = Field(
         default=0.4, alias="ALFRED_WRITER_TEMPERATURE", ge=0.0, le=2.0
     )

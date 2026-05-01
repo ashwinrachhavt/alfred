@@ -1,6 +1,7 @@
 // web/lib/api/ai-stream.ts
 import { apiRoutes } from "@/lib/api/routes";
 import { streamSSE } from "@/lib/api/sse";
+import { DEFAULT_AI_MODEL } from "@/lib/constants/ai";
 
 export type StreamAIOptions = {
   intent: "autocomplete" | "edit_text" | "summarize" | "generate";
@@ -22,7 +23,7 @@ export async function streamAIInline(opts: StreamAIOptions): Promise<void> {
         message: "",
         intent,
         intent_args: intentArgs,
-        model: model ?? "gpt-5.4",
+        model: model ?? DEFAULT_AI_MODEL,
       },
       (event, data) => {
         if (event === "token" && typeof data.content === "string") {

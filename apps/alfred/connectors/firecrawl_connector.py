@@ -19,7 +19,7 @@ class FirecrawlResponse(BaseModel):
 
 
 class FirecrawlClient:
-    def __init__(self, base_url: str = "http://localhost:8010", timeout: int = 30):
+    def __init__(self, base_url: str = "http://localhost:3002/v1", timeout: int = 30):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
@@ -33,7 +33,7 @@ class FirecrawlClient:
         return self.get("/health")
 
     def scrape(self, url: str, render_js: bool = False) -> FirecrawlResponse:
-        payload = {"url": url, "render_js": render_js}
+        payload = {"url": url, "formats": ["markdown"], "render_js": render_js}
         return self.post("/scrape", payload)
 
     def crawl(
@@ -45,6 +45,7 @@ class FirecrawlClient:
     ) -> FirecrawlResponse:
         payload = {
             "url": url,
+            "limit": max_pages,
             "max_pages": max_pages,
             "render_js": render_js,
             "include_sitemaps": include_sitemaps,
@@ -66,7 +67,7 @@ class FirecrawlClient:
         return self.post("/extract", payload)
 
     def search(self, query: str, max_results: int = 10) -> FirecrawlResponse:
-        payload = {"query": query, "max_results": max_results}
+        payload = {"query": query, "limit": max_results, "max_results": max_results}
         return self.post("/search", payload)
 
     def _request(

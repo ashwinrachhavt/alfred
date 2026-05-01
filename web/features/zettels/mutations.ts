@@ -10,6 +10,7 @@ import {
   deleteZettelLink,
   generateZettelCard,
   updateZettelCard,
+  updateZettelLink,
 } from "@/lib/api/zettels";
 import type {
   AIGeneratePayload,
@@ -17,6 +18,7 @@ import type {
   ZettelCardCreatePayload,
   ZettelCardUpdatePayload,
   ZettelLinkCreatePayload,
+  ZettelLinkUpdatePayload,
 } from "@/lib/api/zettels";
 import { useZettelCreationStore } from "@/lib/stores/zettel-creation-store";
 
@@ -105,6 +107,17 @@ export function useDeleteZettelLink() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (linkId: number) => deleteZettelLink(linkId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ZETTELS_KEY });
+    },
+  });
+}
+
+export function useUpdateZettelLink() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { linkId: number; payload: ZettelLinkUpdatePayload }) =>
+      updateZettelLink(args.linkId, args.payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ZETTELS_KEY });
     },

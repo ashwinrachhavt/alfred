@@ -7,6 +7,7 @@
 
 import { apiRoutes } from "@/lib/api/routes";
 import { streamSSE } from "@/lib/api/sse";
+import { DEFAULT_AI_MODEL } from "@/lib/constants/ai";
 
 export async function agentInvoke(opts: {
   intent: string;
@@ -21,7 +22,7 @@ export async function agentInvoke(opts: {
       message: "",
       intent: opts.intent,
       intent_args: opts.intentArgs,
-      model: opts.model ?? "gpt-5.4",
+      model: opts.model ?? DEFAULT_AI_MODEL,
     },
     (event, data) => {
       if (event === "token" && typeof data.content === "string") {

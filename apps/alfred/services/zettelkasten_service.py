@@ -24,6 +24,10 @@ from alfred.schemas.zettel import LinkQuality, LinkSuggestion
 from alfred.core.dependencies import get_qdrant_client
 from alfred.services.spaced_repetition import compute_next_review_schedule
 
+# Sentinel for "field not provided" on optional patch kwargs where the None
+# value itself carries meaning (e.g. "clear context" vs "don't touch context").
+_UNSET: object = object()
+
 
 def _cosine_similarity(a: Iterable[float], b: Iterable[float]) -> float:
     a_list = list(a)
@@ -268,6 +272,14 @@ class ZettelkastenService:
         context: str | None = None,
         bidirectional: bool = True,
     ) -> list[ZettelLink]:
+        # Normalize here (not just at the route layer) so callers outside the
+        # HTTP boundary (Celery batch-linking, AI accept, direct service use)
+        # can't introduce mixed-case types that break update_link's collision
+        # detection.
+        normalized = type.strip().lower()
+        if not normalized:
+            raise ValueError("Link type cannot be empty")
+        type = normalized
         links: list[ZettelLink] = []
         existing = self.session.exec(
             select(ZettelLink).where(
@@ -337,6 +349,110 @@ class ZettelkastenService:
         self.session.delete(link)
         self.session.commit()
         return True
+
+    def update_link(
+        self,
+        link_id: int,
+        *,
+        type: str | None = None,
+        context: str | None = _UNSET,
+        bidirectional: bool | None = None,
+    ) -> ZettelLink | None:
+        """Patch a link and synchronize the reverse row.
+
+        Context semantics (important — differs from type/bidirectional):
+        - context omitted (sentinel _UNSET): no change.
+        - context=None: clear the context to NULL on forward and reverse rows.
+        - context=str: set the context to that string.
+
+        Reverse-row sync rules:
+        - type change: reverse row (if exists) gets the same new type. Any
+          row at (from, to, new_type) or (to, from, new_type) that would
+          collide with the unique index `ix_zettel_links_unique` is deleted
+          first.
+        - bidirectional False -> True: create a reverse row.
+        - bidirectional True  -> False: delete the reverse row if it exists.
+
+        Returns the updated forward link, or None if not found. Raises
+        ValueError if `type` normalizes to the empty string.
+        """
+        link = self.session.get(ZettelLink, link_id)
+        if not link:
+            return None
+
+        normalized_type: str | None = None
+        if type is not None:
+            normalized_type = type.strip().lower()
+            if not normalized_type:
+                raise ValueError("Link type cannot be empty")
+
+        # The reverse-row lookup MUST run before the type UPDATE below — it
+        # keys on the CURRENT link.type so we can find the paired row before
+        # renaming either side.
+        reverse = self.session.exec(
+            select(ZettelLink).where(
+                (ZettelLink.from_card_id == link.to_card_id)
+                & (ZettelLink.to_card_id == link.from_card_id)
+                & (ZettelLink.type == link.type)
+            )
+        ).first()
+
+        if normalized_type is not None and normalized_type != link.type:
+            collision = self.session.exec(
+                select(ZettelLink).where(
+                    (ZettelLink.from_card_id == link.from_card_id)
+                    & (ZettelLink.to_card_id == link.to_card_id)
+                    & (ZettelLink.type == normalized_type)
+                    & (ZettelLink.id != link.id)
+                )
+            ).first()
+            if collision:
+                self.session.delete(collision)
+            reverse_collision = None
+            if reverse:
+                reverse_collision = self.session.exec(
+                    select(ZettelLink).where(
+                        (ZettelLink.from_card_id == reverse.from_card_id)
+                        & (ZettelLink.to_card_id == reverse.to_card_id)
+                        & (ZettelLink.type == normalized_type)
+                        & (ZettelLink.id != reverse.id)
+                    )
+                ).first()
+                if reverse_collision:
+                    self.session.delete(reverse_collision)
+            # Flush deletes before the type UPDATE so ix_zettel_links_unique
+            # does not fire on stale colliding rows.
+            if collision or reverse_collision:
+                self.session.flush()
+            link.type = normalized_type
+            if reverse:
+                reverse.type = normalized_type
+
+        if context is not _UNSET:
+            link.context = context
+            if reverse:
+                reverse.context = context
+
+        if bidirectional is not None and bidirectional != link.bidirectional:
+            link.bidirectional = bidirectional
+            if reverse:
+                reverse.bidirectional = bidirectional
+            if bidirectional and reverse is None:
+                self.session.add(
+                    ZettelLink(
+                        from_card_id=link.to_card_id,
+                        to_card_id=link.from_card_id,
+                        type=link.type,
+                        context=link.context,
+                        bidirectional=True,
+                    )
+                )
+            elif not bidirectional and reverse is not None:
+                self.session.delete(reverse)
+
+        self.session.commit()
+        self.session.refresh(link)
+        return link
 
     # ---------------
     # Reviews (spaced repetition)
@@ -430,15 +546,19 @@ class ZettelkastenService:
                     "title": card.title,
                     "topic": card.topic,
                     "tags": card.tags or [],
+                    "importance": card.importance,
+                    "status": card.status,
                     "degree": degree.get(card.id or 0, 0),
                 }
             )
         for link in links:
             edges.append(
                 {
+                    "id": link.id,
                     "from": link.from_card_id,
                     "to": link.to_card_id,
                     "type": link.type,
+                    "bidirectional": link.bidirectional,
                 }
             )
         return {"nodes": nodes, "edges": edges}
