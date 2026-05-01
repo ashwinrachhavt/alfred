@@ -24,6 +24,7 @@ from alfred.models.research import ResearchRun
 from alfred.models.system import SystemSetting
 from alfred.models.taxonomy import TaxonomyNodeRow
 from alfred.models.thinking import AgentMessageRow, ThinkingSessionRow
+from alfred.models.today import DailyEntryRow, DailyReflectionRow
 from alfred.models.user import User
 from alfred.models.whiteboard import Whiteboard, WhiteboardComment, WhiteboardRevision
 from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview
@@ -61,5 +62,7 @@ __all__ = [
     "TaxonomyNodeRow",
     "ThinkingSessionRow",
     "AgentMessageRow",
+    "DailyEntryRow",
+    "DailyReflectionRow",
     "DocumentAssetRow",
 ]
