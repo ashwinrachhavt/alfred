@@ -135,5 +135,7 @@ export const apiRoutes = {
   today: {
     briefing: "/api/today/briefing",
     calendar: "/api/today/calendar",
+    entries: "/api/today/entries",
+    entryById: (id: number) => `/api/today/entries/${id}`,
   },
 } as const;

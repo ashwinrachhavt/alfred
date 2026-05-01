@@ -1,5 +1,12 @@
-import { apiFetch } from "@/lib/api/client";
+import { apiFetch, apiPatchJson, apiPostJson } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
+import type {
+  DailyEntriesResponse,
+  DailyEntryCreate,
+  DailyEntryItem,
+  DailyEntryUpdate,
+  ListTodayEntriesParams,
+} from "@/features/today/types";
 
 export type TodayCaptureItem = {
   id: string;
@@ -122,4 +129,65 @@ export async function getTodayCalendar(
   const query = buildQuery(params);
   const url = query ? `${apiRoutes.today.calendar}?${query}` : apiRoutes.today.calendar;
   return apiFetch<TodayCalendarResponse>(url, { cache: "no-store" });
+}
+
+// ---------------------------------------------------------------------------
+// DailyEntry CRUD — ``/api/today/entries`` (T3/T4)
+// ---------------------------------------------------------------------------
+
+function appendRepeated(
+  query: URLSearchParams,
+  key: string,
+  values: readonly string[] | undefined,
+): void {
+  if (!values || values.length === 0) return;
+  for (const value of values) {
+    if (value === undefined || value === null) continue;
+    query.append(key, String(value));
+  }
+}
+
+function buildListEntriesQuery(params: ListTodayEntriesParams): string {
+  const query = new URLSearchParams();
+  query.set("start", params.start);
+  query.set("end", params.end);
+  if (params.tz) query.set("tz", params.tz);
+  if (params.q) query.set("q", params.q);
+  if (typeof params.include_artifacts === "boolean") {
+    query.set("include_artifacts", params.include_artifacts ? "true" : "false");
+  }
+  if (typeof params.limit === "number") query.set("limit", String(params.limit));
+  if (params.cursor) query.set("cursor", params.cursor);
+
+  appendRepeated(query, "kind", params.kind);
+  appendRepeated(query, "status", params.status);
+  appendRepeated(query, "tag", params.tag);
+
+  return query.toString();
+}
+
+export async function listTodayEntries(
+  params: ListTodayEntriesParams,
+): Promise<DailyEntriesResponse> {
+  const query = buildListEntriesQuery(params);
+  const url = query ? `${apiRoutes.today.entries}?${query}` : apiRoutes.today.entries;
+  return apiFetch<DailyEntriesResponse>(url, { cache: "no-store" });
+}
+
+export async function createTodayEntry(body: DailyEntryCreate): Promise<DailyEntryItem> {
+  return apiPostJson<DailyEntryItem, DailyEntryCreate>(apiRoutes.today.entries, body);
+}
+
+export async function updateTodayEntry(
+  entryId: number,
+  patch: DailyEntryUpdate,
+): Promise<DailyEntryItem> {
+  return apiPatchJson<DailyEntryItem, DailyEntryUpdate>(
+    apiRoutes.today.entryById(entryId),
+    patch,
+  );
+}
+
+export async function deleteTodayEntry(entryId: number): Promise<void> {
+  await apiFetch<unknown>(apiRoutes.today.entryById(entryId), { method: "DELETE" });
 }
