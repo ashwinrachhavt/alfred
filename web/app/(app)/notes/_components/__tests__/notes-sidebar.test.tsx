@@ -5,11 +5,7 @@ import type { NoteSummary, NoteTreeResponse } from "@/lib/api/types/notes";
 
 import { NotesSidebar } from "../notes-sidebar";
 
-function makeNote(
-  id: string,
-  title: string,
-  overrides: Partial<NoteSummary> = {},
-): NoteSummary {
+function makeNote(id: string, title: string, overrides: Partial<NoteSummary> = {}): NoteSummary {
   return {
     id,
     title,
@@ -50,6 +46,8 @@ function renderSidebar(selectedNoteId: string | null = null) {
       onSearchChange={vi.fn()}
       onSelectNoteId={vi.fn()}
       onCreateNote={vi.fn()}
+      onImportMarkdown={vi.fn()}
+      onCollapse={vi.fn()}
     />,
   );
 }
@@ -82,6 +80,8 @@ describe("NotesSidebar", () => {
         onSearchChange={vi.fn()}
         onSelectNoteId={vi.fn()}
         onCreateNote={vi.fn()}
+        onImportMarkdown={vi.fn()}
+        onCollapse={vi.fn()}
       />,
     );
 

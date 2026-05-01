@@ -57,6 +57,10 @@ def _review_out(review) -> ZettelReviewOut:
     return ZettelReviewOut.model_validate(review)
 
 
+def _sse_json(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {_json.dumps(data, default=str)}\n\n"
+
+
 def _enqueue_task_or_raise(
     task_name: str,
     *,
@@ -442,6 +446,64 @@ def generate_card(
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"AI generation failed: {exc}") from exc
     return _card_out(card)
+
+
+@router.post("/cards/generate/preview", response_model=ZettelCardCreate)
+def generate_card_preview(
+    payload: AIZettelGenerateRequest,
+    session: Session = Depends(get_db_session),
+) -> ZettelCardCreate:
+    if not payload.prompt and not payload.content:
+        raise HTTPException(status_code=400, detail="Either prompt or content is required")
+    svc = ZettelkastenService(session)
+    try:
+        draft = svc.generate_card_payload_from_ai(
+            prompt=payload.prompt,
+            content=payload.content,
+            topic=payload.topic,
+            tags=payload.tags,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"AI generation failed: {exc}") from exc
+    return ZettelCardCreate.model_validate(draft)
+
+
+@router.post("/cards/generate/preview-stream")
+def generate_card_preview_stream(
+    payload: AIZettelGenerateRequest,
+    session: Session = Depends(get_db_session),
+) -> StreamingResponse:
+    if not payload.prompt and not payload.content:
+        raise HTTPException(status_code=400, detail="Either prompt or content is required")
+
+    svc = ZettelkastenService(session)
+
+    def gen():
+        try:
+            for item in svc.stream_card_payload_text_from_ai(
+                prompt=payload.prompt,
+                content=payload.content,
+                topic=payload.topic,
+                tags=payload.tags,
+            ):
+                if item["type"] == "token":
+                    yield _sse_json("token", {"content": item["content"]})
+                elif item["type"] == "done":
+                    yield _sse_json(
+                        "done",
+                        {
+                            "draft": ZettelCardCreate.model_validate(item["draft"]).model_dump(),
+                            "raw": item["raw"],
+                        },
+                    )
+        except Exception as exc:
+            yield _sse_json("error", {"message": f"AI generation failed: {exc}"})
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
 
 
 @router.post(

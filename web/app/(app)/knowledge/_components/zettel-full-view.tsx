@@ -4,7 +4,15 @@ import Link from "next/link";
 
 import { useQueries } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
-import { ArrowLeft, ExternalLink } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  BookOpen,
+  CalendarDays,
+  ExternalLink,
+  Link2,
+  Tags,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useZettelCard } from "@/features/zettels/queries";
@@ -30,6 +38,9 @@ type ZettelMetadataProps = {
   sectionClassName?: string;
 };
 
+const sectionLabelClassName =
+  "font-data text-[10px] font-medium tracking-[0.14em] text-[var(--alfred-text-tertiary)] uppercase";
+
 function ZettelMetadata({
   zettel,
   connectedCards,
@@ -38,23 +49,27 @@ function ZettelMetadata({
   className,
   sectionClassName,
 }: ZettelMetadataProps) {
-  const panelClassName = cn("bg-card rounded-xl border p-5", sectionClassName);
+  const panelClassName = cn("rounded-lg border bg-card/90 p-4 shadow-sm", sectionClassName);
 
   return (
     <div className={cn("space-y-4", className)}>
       <section className={panelClassName}>
-        <div className="space-y-2">
-          <div className="text-[10px] font-medium tracking-widest text-[var(--alfred-text-tertiary)] uppercase">
-            Tags
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-primary flex size-7 items-center justify-center rounded-md bg-[var(--alfred-accent-subtle)]">
+              <Tags className="size-3.5" />
+            </span>
+            <div className={sectionLabelClassName}>Tags</div>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {zettel.tags.length > 0 ? (
               zettel.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="text-primary rounded-sm bg-[var(--alfred-accent-subtle)] px-2 py-0.5 text-[10px] font-medium tracking-wider uppercase"
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-sm bg-[var(--alfred-accent-muted)] px-2 py-1 text-[10px] font-medium tracking-[0.05em] uppercase"
                 >
-                  {tag}
+                  <span className="bg-primary size-1 shrink-0 rounded-full" />
+                  <span className="truncate">{tag}</span>
                 </span>
               ))
             ) : (
@@ -65,41 +80,50 @@ function ZettelMetadata({
       </section>
 
       <section className={panelClassName}>
-        <div className="space-y-2">
-          <div className="text-[10px] font-medium tracking-widest text-[var(--alfred-text-tertiary)] uppercase">
-            Source
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="bg-secondary text-muted-foreground flex size-7 items-center justify-center rounded-md">
+              <BookOpen className="size-3.5" />
+            </span>
+            <div className={sectionLabelClassName}>Source</div>
           </div>
           {zettel.source.url ? (
             <a
               href={zettel.source.url}
               target="_blank"
               rel="noreferrer"
-              className="text-primary inline-flex items-center gap-1 text-sm hover:underline"
+              className="group bg-background/70 hover:border-primary/40 flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-[var(--alfred-accent-subtle)]"
             >
-              Open source
-              <ExternalLink className="size-3.5" />
+              <span className="min-w-0 truncate">{zettel.source.title || "Open source"}</span>
+              <ExternalLink className="text-primary size-3.5 shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
             </a>
           ) : (
-            <p className="text-sm text-[var(--alfred-text-tertiary)]">No source link attached.</p>
+            <p className="text-sm leading-relaxed text-[var(--alfred-text-tertiary)]">
+              No source link attached.
+            </p>
           )}
         </div>
       </section>
 
       <section className={panelClassName}>
-        <div className="space-y-2">
-          <div className="text-[10px] font-medium tracking-widest text-[var(--alfred-text-tertiary)] uppercase">
-            Connections
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="bg-secondary text-muted-foreground flex size-7 items-center justify-center rounded-md">
+              <Link2 className="size-3.5" />
+            </span>
+            <div className={sectionLabelClassName}>Connections</div>
           </div>
           {connectedCards.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="space-y-1.5">
               {connectedCards.map((card) => (
                 <button
                   key={card.id}
                   type="button"
                   onClick={() => onOpenConnection(card.id)}
-                  className="text-muted-foreground hover:border-primary hover:text-foreground max-w-full truncate rounded-md border px-2.5 py-1 text-[12px] transition-colors"
+                  className="group bg-background/70 hover:border-primary/40 flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-[12px] transition-colors hover:bg-[var(--alfred-accent-subtle)]"
                 >
-                  {card.title}
+                  <span className="min-w-0 truncate">{card.title}</span>
+                  <ArrowUpRight className="text-muted-foreground group-hover:text-primary size-3 shrink-0 transition-colors" />
                 </button>
               ))}
             </div>
@@ -138,10 +162,18 @@ export function ZettelFullView({ zettelId, variant = "page" }: Props) {
 
   if (isLoading) {
     return (
-      <div className={cn("space-y-4", isDialog && "p-6")}>
-        <div className="bg-secondary h-4 w-28 animate-pulse rounded" />
-        <div className="bg-secondary h-9 w-2/3 animate-pulse rounded" />
-        <div className="bg-secondary h-40 w-full animate-pulse rounded-xl" />
+      <div className={cn("space-y-5", isDialog && "p-5 sm:p-8")}>
+        <div className="space-y-3">
+          <div className="bg-secondary h-3 w-36 animate-pulse rounded" />
+          <div className="bg-secondary h-10 w-4/5 max-w-2xl animate-pulse rounded" />
+        </div>
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="bg-card h-80 animate-pulse rounded-lg border" />
+          <div className="space-y-4">
+            <div className="bg-card h-28 animate-pulse rounded-lg border" />
+            <div className="bg-card h-40 animate-pulse rounded-lg border" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -171,47 +203,63 @@ export function ZettelFullView({ zettelId, variant = "page" }: Props) {
     zettel.connections.length > 0 &&
     connectionQueries.some((query) => query.isLoading && !query.data);
 
+  const articleContent = (
+    <article className="bg-card rounded-lg border p-4 shadow-sm sm:p-6 lg:p-7">
+      <ZettelReadContent
+        title={zettel.title}
+        summary={zettel.summary}
+        content={zettel.content}
+        labelClassName={cn(sectionLabelClassName, "mb-3")}
+        summarySectionClassName="border-l-2 border-primary bg-[var(--alfred-accent-subtle)] px-4 py-3 sm:px-5 sm:py-4"
+        contentSectionClassName={
+          zettel.summary.trim() && zettel.summary.trim() !== zettel.content.trim()
+            ? "mt-6 border-t border-[var(--alfred-ruled-line)] pt-6"
+            : undefined
+        }
+        summaryProseClassName="prose-p:my-0 prose-p:text-[15px] sm:prose-p:text-[16px] prose-p:leading-8 prose-li:text-[15px] prose-li:leading-7 prose-strong:text-[16px]"
+        contentProseClassName="prose-headings:my-4 prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg prose-p:my-3 prose-p:text-[15px] sm:prose-p:text-[16px] prose-p:leading-7 prose-ul:my-3 prose-ol:my-3 prose-pre:my-4 prose-blockquote:my-4 prose-code:text-[12px]"
+        emptyStateClassName="text-sm text-[var(--alfred-text-tertiary)]"
+      />
+    </article>
+  );
+
+  const bloomPanel = (
+    <section className="bg-card/90 rounded-lg border p-4 shadow-sm sm:p-5">
+      <BloomProgressBar level={zettel.bloomLevel} />
+    </section>
+  );
+
+  const suggestionsPanel = (
+    <section className="bg-card/90 rounded-lg border p-4 shadow-sm sm:p-5">
+      <ZettelLinkSuggestions
+        cardId={Number(zettel.id)}
+        autoLoad
+        className="space-y-3"
+        labelClassName={sectionLabelClassName}
+        emptyStateClassName="text-sm text-[var(--alfred-text-tertiary)]"
+      />
+    </section>
+  );
+
   const readingContent = (
     <>
-      <article className="bg-card rounded-xl border p-6 md:p-7">
-        <ZettelReadContent
-          title={zettel.title}
-          summary={zettel.summary}
-          content={zettel.content}
-          labelClassName="mb-3 text-[10px] font-medium tracking-widest text-[var(--alfred-text-tertiary)] uppercase"
-          summarySectionClassName="rounded-2xl border bg-[var(--alfred-accent-subtle)] px-5 py-4"
-          contentSectionClassName={
-            zettel.summary.trim() && zettel.summary.trim() !== zettel.content.trim()
-              ? "mt-6"
-              : undefined
-          }
-          summaryProseClassName="prose-p:my-0 prose-p:text-[16px] prose-p:leading-8 prose-li:text-[15px] prose-li:leading-7 prose-strong:text-[16px]"
-          contentProseClassName="prose-headings:my-4 prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg prose-p:my-3 prose-p:text-[15px] prose-p:leading-7 prose-ul:my-3 prose-ol:my-3 prose-pre:my-4 prose-blockquote:my-4 prose-code:text-[12px]"
-          emptyStateClassName="text-sm text-[var(--alfred-text-tertiary)]"
-        />
-      </article>
-
-      <section className="bg-card rounded-xl border p-5">
-        <BloomProgressBar level={zettel.bloomLevel} />
-      </section>
-
-      <section className="bg-card rounded-xl border p-5">
-        <ZettelLinkSuggestions
-          cardId={Number(zettel.id)}
-          autoLoad
-          className="space-y-3"
-          labelClassName="text-[10px] font-medium tracking-widest text-[var(--alfred-text-tertiary)] uppercase"
-          emptyStateClassName="text-sm text-[var(--alfred-text-tertiary)]"
-        />
-      </section>
+      {articleContent}
+      {bloomPanel}
+      {suggestionsPanel}
     </>
   );
 
   return (
     <div className={cn("flex h-full min-h-0 flex-col", !isDialog && "space-y-8")}>
-      <div className={cn("space-y-4", isDialog ? "border-b px-6 py-5 pr-14" : "")}>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-3">
+      <div
+        className={cn(
+          "relative space-y-4",
+          isDialog ? "bg-card/80 border-b px-4 py-4 pr-14 sm:px-6 sm:py-5 lg:px-8" : "",
+        )}
+      >
+        {isDialog ? <div className="bg-primary/20 absolute inset-x-0 bottom-0 h-px" /> : null}
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 space-y-3">
             {variant === "page" ? (
               <Button asChild variant="ghost" size="sm" className="w-fit px-0">
                 <Link href="/knowledge">
@@ -222,41 +270,63 @@ export function ZettelFullView({ zettelId, variant = "page" }: Props) {
             ) : null}
 
             <div className="space-y-2">
-              <h1 className="max-w-4xl text-3xl leading-tight tracking-tight">{zettel.title}</h1>
-              <p className="text-[11px] tracking-wider text-[var(--alfred-text-tertiary)] uppercase">
-                Created {createdLabel} - Updated {updatedLabel}
+              <h1 className="max-w-4xl font-serif text-2xl leading-tight text-pretty sm:text-3xl lg:text-[2.625rem]">
+                {zettel.title}
+              </h1>
+              <p className="font-data flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-medium tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+                <span className="inline-flex items-center gap-1.5">
+                  <CalendarDays className="size-3" />
+                  Created {createdLabel}
+                </span>
+                <span>Updated {updatedLabel}</span>
               </p>
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex sm:items-center">
+            <div className="bg-background/70 rounded-md border px-3 py-2">
+              <div className="font-data text-[9px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+                Connections
+              </div>
+              <div className="font-data text-sm tabular-nums">{zettel.connections.length}</div>
+            </div>
+            <div className="bg-background/70 rounded-md border px-3 py-2">
+              <div className="font-data text-[9px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+                Bloom
+              </div>
+              <div className="font-data text-sm tabular-nums">Level {zettel.bloomLevel}/6</div>
+            </div>
             {isDialog ? (
-              <Button asChild variant="ghost" size="sm" className="text-xs">
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="bg-card col-span-2 h-full min-h-10 justify-center rounded-md px-3 text-xs sm:col-span-1"
+              >
                 <Link href={`/knowledge/${zettel.id}`} onClick={() => closeZettelViewer()}>
                   Open Page
+                  <ArrowUpRight className="size-3.5" />
                 </Link>
               </Button>
             ) : null}
-
-            <div className="text-[10px] tracking-widest text-[var(--alfred-text-tertiary)] uppercase">
-              {zettel.connections.length} connection{zettel.connections.length === 1 ? "" : "s"}
-            </div>
           </div>
         </div>
       </div>
 
       {isDialog ? (
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-          <div className="mx-auto w-full max-w-5xl space-y-6">
-            {readingContent}
-            <ZettelMetadata
-              zettel={zettel}
-              connectedCards={connectedCards}
-              isConnectionsLoading={isConnectionsLoading}
-              onOpenConnection={openZettelViewer}
-              className="grid gap-4 md:grid-cols-3"
-              sectionClassName="h-full"
-            />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto grid w-full max-w-6xl gap-5 px-4 py-4 sm:px-6 sm:py-6 lg:px-8 xl:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
+            <div className="min-w-0">{articleContent}</div>
+            <aside className="min-w-0 space-y-4 xl:sticky xl:top-6 xl:self-start">
+              {bloomPanel}
+              <ZettelMetadata
+                zettel={zettel}
+                connectedCards={connectedCards}
+                isConnectionsLoading={isConnectionsLoading}
+                onOpenConnection={openZettelViewer}
+              />
+              {suggestionsPanel}
+            </aside>
           </div>
         </div>
       ) : (

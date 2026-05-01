@@ -123,7 +123,9 @@ export type ZettelSearchResult = {
 
 export async function searchZettelCards(q: string, limit = 10): Promise<ZettelSearchResult[]> {
   const query = new URLSearchParams({ q: q.trim(), limit: String(limit) });
-  return apiFetch<ZettelSearchResult[]>(`${apiRoutes.zettels.cards}/search?${query}`, { cache: "no-store" });
+  return apiFetch<ZettelSearchResult[]>(`${apiRoutes.zettels.cards}/search?${query}`, {
+    cache: "no-store",
+  });
 }
 
 export type PaginatedZettelResponse = {
@@ -154,7 +156,8 @@ export async function listZettelCards(
   }
   if (filters?.sort_by) query.set("sort_by", filters.sort_by);
   if (filters?.sort_dir) query.set("sort_dir", filters.sort_dir);
-  if (filters?.importance_min !== undefined) query.set("importance_min", String(filters.importance_min));
+  if (filters?.importance_min !== undefined)
+    query.set("importance_min", String(filters.importance_min));
   if (filters?.status) {
     query.set("status", filters.status);
   } else {
@@ -175,7 +178,8 @@ export async function countZettelCards(filters?: ZettelFilterParams): Promise<nu
   if (filters?.tags && filters.tags.length > 0) {
     for (const tag of filters.tags) query.append("tags", tag);
   }
-  if (filters?.importance_min !== undefined) query.set("importance_min", String(filters.importance_min));
+  if (filters?.importance_min !== undefined)
+    query.set("importance_min", String(filters.importance_min));
   if (filters?.status) {
     query.set("status", filters.status);
   } else {
@@ -200,12 +204,20 @@ export async function createZettelCard(payload: ZettelCardCreatePayload): Promis
   return apiPostJson<ApiZettelCard, ZettelCardCreatePayload>(apiRoutes.zettels.cards, payload);
 }
 
-export async function updateZettelCard(id: number, payload: ZettelCardUpdatePayload): Promise<ApiZettelCard> {
-  return apiPatchJson<ApiZettelCard, ZettelCardUpdatePayload>(apiRoutes.zettels.cardById(id), payload);
+export async function updateZettelCard(
+  id: number,
+  payload: ZettelCardUpdatePayload,
+): Promise<ApiZettelCard> {
+  return apiPatchJson<ApiZettelCard, ZettelCardUpdatePayload>(
+    apiRoutes.zettels.cardById(id),
+    payload,
+  );
 }
 
 export async function deleteZettelCard(id: number): Promise<{ status: string; id: number }> {
-  return apiFetch<{ status: string; id: number }>(apiRoutes.zettels.cardById(id), { method: "DELETE" });
+  return apiFetch<{ status: string; id: number }>(apiRoutes.zettels.cardById(id), {
+    method: "DELETE",
+  });
 }
 
 // --------------- Links ---------------
@@ -214,12 +226,20 @@ export async function listZettelLinks(cardId: number): Promise<ApiZettelLink[]> 
   return apiFetch<ApiZettelLink[]>(apiRoutes.zettels.cardLinks(cardId));
 }
 
-export async function createZettelLink(cardId: number, payload: ZettelLinkCreatePayload): Promise<ApiZettelLink[]> {
-  return apiPostJson<ApiZettelLink[], ZettelLinkCreatePayload>(apiRoutes.zettels.cardLinks(cardId), payload);
+export async function createZettelLink(
+  cardId: number,
+  payload: ZettelLinkCreatePayload,
+): Promise<ApiZettelLink[]> {
+  return apiPostJson<ApiZettelLink[], ZettelLinkCreatePayload>(
+    apiRoutes.zettels.cardLinks(cardId),
+    payload,
+  );
 }
 
 export async function deleteZettelLink(linkId: number): Promise<{ status: string; id: number }> {
-  return apiFetch<{ status: string; id: number }>(apiRoutes.zettels.deleteLink(linkId), { method: "DELETE" });
+  return apiFetch<{ status: string; id: number }>(apiRoutes.zettels.deleteLink(linkId), {
+    method: "DELETE",
+  });
 }
 
 export async function updateZettelLink(
@@ -241,20 +261,24 @@ export async function suggestZettelLinks(
   params?: { min_confidence?: number; limit?: number },
 ): Promise<LinkSuggestion[]> {
   const query = new URLSearchParams();
-  if (params?.min_confidence !== undefined) query.set("min_confidence", String(params.min_confidence));
+  if (params?.min_confidence !== undefined)
+    query.set("min_confidence", String(params.min_confidence));
   if (params?.limit !== undefined) query.set("limit", String(params.limit));
   const qs = query.toString();
-  const url = qs ? `${apiRoutes.zettels.suggestLinks(cardId)}?${qs}` : apiRoutes.zettels.suggestLinks(cardId);
+  const url = qs
+    ? `${apiRoutes.zettels.suggestLinks(cardId)}?${qs}`
+    : apiRoutes.zettels.suggestLinks(cardId);
   return apiPostJson<LinkSuggestion[], Record<string, never>>(url, {});
 }
 
 // --------------- Bulk Create ---------------
 
 export async function bulkCreateZettelCards(
-  payload: ZettelCardCreatePayload[]
+  payload: ZettelCardCreatePayload[],
 ): Promise<ApiZettelCard[]> {
   return apiPostJson<ApiZettelCard[], ZettelCardCreatePayload[]>(
-    `${apiRoutes.zettels.cards}/bulk`, payload
+    `${apiRoutes.zettels.cards}/bulk`,
+    payload,
   );
 }
 
@@ -262,6 +286,45 @@ export async function bulkCreateZettelCards(
 
 export async function generateZettelCard(payload: AIGeneratePayload): Promise<ApiZettelCard> {
   return apiPostJson<ApiZettelCard, AIGeneratePayload>(apiRoutes.zettels.generate, payload);
+}
+
+export async function previewGeneratedZettelCard(
+  payload: AIGeneratePayload,
+): Promise<ZettelCardCreatePayload> {
+  return apiPostJson<ZettelCardCreatePayload, AIGeneratePayload>(
+    apiRoutes.zettels.generatePreview,
+    payload,
+  );
+}
+
+export async function streamGeneratedZettelPreview(
+  payload: AIGeneratePayload,
+  handlers: {
+    onToken: (token: string) => void;
+    onDone: (draft: ZettelCardCreatePayload, raw: string) => void;
+    onError: (error: Error) => void;
+  },
+  signal?: AbortSignal,
+): Promise<void> {
+  await streamSSE(
+    apiRoutes.zettels.generatePreviewStream,
+    payload,
+    (event, data) => {
+      if (event === "token") {
+        const content = data.content;
+        if (typeof content === "string") handlers.onToken(content);
+        return;
+      }
+      if (event === "done") {
+        handlers.onDone(data.draft as ZettelCardCreatePayload, String(data.raw ?? ""));
+        return;
+      }
+      if (event === "error") {
+        handlers.onError(new Error(String(data.message ?? "Generation failed.")));
+      }
+    },
+    signal,
+  );
 }
 
 // --------------- Wiki-link search & backlinks ---------------

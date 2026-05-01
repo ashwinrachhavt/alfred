@@ -16,7 +16,7 @@ import {
   useUpdateCanvas,
 } from "@/features/canvas/mutations";
 import { useCanvas, useCanvasList } from "@/features/canvas/queries";
-import { safeGetItem } from "@/lib/storage";
+import { useLocalStorageNumber } from "@/lib/hooks/use-local-storage-value";
 
 import { CanvasSidebar } from "./canvas-sidebar";
 import { ExcalidrawWhiteboard } from "./excalidraw-whiteboard";
@@ -31,17 +31,6 @@ type SceneElementLike = {
   type?: string;
   text?: string;
 };
-
-function readStoredNumber(key: string, fallback: number): number {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = safeGetItem(key);
-    const parsed = raw ? Number(raw) : Number.NaN;
-    return Number.isFinite(parsed) ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
-}
 
 function isSceneElementLike(value: unknown): value is SceneElementLike {
   if (!value || typeof value !== "object") return false;
@@ -103,9 +92,7 @@ export function CanvasWorkbenchClient({ initialCanvasId }: { initialCanvasId: nu
   const searchParams = useSearchParams();
 
   const [sidebarSearch, setSidebarSearch] = useState("");
-  const [leftWidthPx, setLeftWidthPx] = useState(() =>
-    readStoredNumber("alfred:canvas:left-width:v1", 280),
-  );
+  const [leftWidthPx, setLeftWidthPx] = useLocalStorageNumber("alfred:canvas:left-width:v1", 280);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const excalidrawApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
 
@@ -290,7 +277,6 @@ export function CanvasWorkbenchClient({ initialCanvasId }: { initialCanvasId: nu
   return (
     <div className="relative h-full w-full">
       <ResizableColumns
-        storageKey="alfred:canvas:left-width:v1"
         leftWidthPx={leftWidthPx}
         onLeftWidthPxChange={setLeftWidthPx}
         minLeftPx={220}

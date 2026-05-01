@@ -1,6 +1,6 @@
 "use client";
 
-import { type Editor, EditorContent, useEditor } from "@tiptap/react";
+import { type Editor, EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import StarterKit from "@tiptap/starter-kit";
@@ -19,11 +19,28 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import { Bold, Italic, Sparkles } from "lucide-react";
+import {
+  Bold,
+  Code2,
+  Heading1,
+  Heading2,
+  Heading3,
+  ImageIcon,
+  Italic,
+  List,
+  ListOrdered,
+  ListTodo,
+  MessageSquare,
+  Minus,
+  Quote,
+  Sparkles,
+  type LucideIcon,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { normalizePastedEditorText } from "@/lib/utils/editor-paste";
 import { Button } from "@/components/ui/button";
+import { ALFRED_AI_STREAM_META } from "@/components/editor/editor-transaction-meta";
 import { InlineAIPrompt, type AIPromptMode } from "@/components/editor/inline-ai-prompt";
 import {
   AiStreamingController,
@@ -32,8 +49,10 @@ import {
 import { WikiLink, extractWikiLinkCardIds } from "@/components/editor/extensions/wiki-link";
 import {
   WikiLinkAutocomplete,
+  type WikiLinkAutocompleteItem,
   type WikiLinkSelection,
 } from "@/components/editor/wiki-link-autocomplete";
+import { BlockId } from "@/components/editor/extensions/block-id";
 import { createZettelCard } from "@/lib/api/zettels";
 
 function readEditorMarkdown(editor: Editor): string {
@@ -48,22 +67,31 @@ function readEditorMarkdown(editor: Editor): string {
 
 export type MarkdownNotesEditorHandle = {
   appendMarkdown: (markdown: string) => void;
+  flushPendingChanges: () => EditorDraft | null;
   getMarkdown: () => string;
   setMarkdown: (markdown: string) => void;
   getTiptapJson: () => Record<string, unknown> | null;
 };
 
+export type EditorDraft = {
+  markdown: string;
+  tiptapJson: Record<string, unknown> | null;
+};
+
 export type MarkdownNotesEditorProps = {
   markdown: string;
+  tiptapJson?: Record<string, unknown> | null;
   documentTitle?: string;
   documentId?: string | null;
   onMarkdownChange?: (markdown: string) => void;
-  onDraftChange?: (draft: { markdown: string; tiptapJson: Record<string, unknown> }) => void;
+  onDraftChange?: (draft: EditorDraft) => void;
   onKeyboardCommand?: (command: "save") => void | Promise<void>;
   uploadImage?: (file: File) => Promise<string>;
   readOnly?: boolean;
   placeholder?: string;
   className?: string;
+  autoFocus?: boolean;
+  draftFlushDelayMs?: number;
   /** Card ID for AI suggestion context (first linked card). */
   contextCardId?: number;
   /** Called when wiki-links change so the parent can sync to backend. */
@@ -76,14 +104,61 @@ type SlashCommand = {
   title: string;
   description: string;
   keywords: string[];
+  group: "Text" | "Lists" | "Media" | "AI";
+  icon: LucideIcon;
   run: (editor: Editor) => void;
 };
 
 const EMPTY_PARAGRAPH_AI_DOUBLE_SPACE_MS = 400;
+const DEFAULT_DRAFT_FLUSH_DELAY_MS = 320;
+const FLOATING_VIEWPORT_PADDING = 12;
 
 function asEditorJson(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") return null;
   return value as Record<string, unknown>;
+}
+
+function jsonSignature(value: Record<string, unknown> | null): string {
+  if (!value) return "null";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "";
+  }
+}
+
+function setEditorContent(editor: Editor, draft: EditorDraft): void {
+  if (draft.tiptapJson) {
+    editor.commands.setContent(draft.tiptapJson);
+    return;
+  }
+  editor.commands.setContent(draft.markdown, { contentType: "markdown" });
+}
+
+function constrainFloatingPosition(
+  position: { top: number; left: number },
+  size: { width: number; height: number },
+): { top: number; left: number } {
+  if (typeof window === "undefined") return position;
+  return {
+    top: Math.max(
+      FLOATING_VIEWPORT_PADDING,
+      Math.min(position.top, window.innerHeight - size.height - FLOATING_VIEWPORT_PADDING),
+    ),
+    left: Math.max(
+      FLOATING_VIEWPORT_PADDING,
+      Math.min(position.left, window.innerWidth - size.width - FLOATING_VIEWPORT_PADDING),
+    ),
+  };
+}
+
+function constrainCenteredLeft(left: number, width: number): number {
+  if (typeof window === "undefined") return left;
+  const halfWidth = width / 2;
+  return Math.max(
+    FLOATING_VIEWPORT_PADDING + halfWidth,
+    Math.min(left, window.innerWidth - FLOATING_VIEWPORT_PADDING - halfWidth),
+  );
 }
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -104,6 +179,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
   function MarkdownNotesEditorImpl(
     {
       markdown,
+      tiptapJson,
       documentTitle,
       documentId,
       onMarkdownChange,
@@ -113,6 +189,8 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
       readOnly,
       placeholder,
       className,
+      autoFocus = true,
+      draftFlushDelayMs = DEFAULT_DRAFT_FLUSH_DELAY_MS,
       contextCardId,
       onWikiLinksChange,
       onWikiLinkClick,
@@ -158,10 +236,21 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
 
     const uploadImageRef = useRef(uploadImage);
     const onKeyboardCommandRef = useRef(onKeyboardCommand);
+    const onMarkdownChangeRef = useRef(onMarkdownChange);
+    const onDraftChangeRef = useRef(onDraftChange);
+    const onWikiLinksChangeRef = useRef(onWikiLinksChange);
     const slashQueryRef = useRef<string | null>(null);
     const slashCommandsRef = useRef<SlashCommand[]>([]);
     const slashActiveIndexRef = useRef(0);
     const emptyParagraphSpaceAtRef = useRef<number | null>(null);
+    const draftFlushTimerRef = useRef<number | null>(null);
+    const lastNotifiedMarkdownRef = useRef(markdown);
+    const lastNotifiedJsonSignatureRef = useRef(jsonSignature(tiptapJson ?? null));
+    const activeDocumentIdRef = useRef(documentId ?? null);
+    const streamingStatusRef = useRef<StreamingState["status"]>("idle");
+    const wikiSelectableItemsRef = useRef<WikiLinkSelection[]>([]);
+    const wikiCreateTitleRef = useRef<string | null>(null);
+    const lastNotifiedWikiLinksRef = useRef("");
 
     const extensions = useMemo(
       () => [
@@ -174,6 +263,22 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           heading: {
             levels: [1, 2, 3],
           },
+        }),
+        BlockId.configure({
+          types: [
+            "paragraph",
+            "heading",
+            "blockquote",
+            "codeBlock",
+            "horizontalRule",
+            "bulletList",
+            "orderedList",
+            "listItem",
+            "taskList",
+            "taskItem",
+            "image",
+          ],
+          disabled: Boolean(readOnly),
         }),
         Link.configure({
           openOnClick: false,
@@ -208,7 +313,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           emptyEditorClass: "is-editor-empty",
         }),
       ],
-      [placeholder, onWikiLinkClick],
+      [placeholder, onWikiLinkClick, readOnly],
     );
 
     const updateMenuPosition = useCallback((editor: Editor) => {
@@ -222,8 +327,8 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
       const end = editor.view.coordsAtPos(to);
 
       setMenuPosition({
-        top: start.top - 48,
-        left: (start.left + end.left) / 2,
+        top: Math.max(FLOATING_VIEWPORT_PADDING, start.top - 48),
+        left: constrainCenteredLeft((start.left + end.left) / 2, 220),
       });
     }, []);
 
@@ -262,7 +367,12 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
       setAiPromptMode(mode);
       setAiTargetText(targetText);
       setAiTargetRange(targetRange);
-      setAiPromptPosition({ top: coords.bottom + 8, left: coords.left });
+      setAiPromptPosition(
+        constrainFloatingPosition(
+          { top: coords.bottom + 8, left: coords.left },
+          { width: 420, height: 260 },
+        ),
+      );
       setAiPromptOpen(true);
     }, []);
 
@@ -272,60 +382,80 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           title: "Heading 1",
           description: "Large section heading",
           keywords: ["h1", "heading", "title"],
+          group: "Text",
+          icon: Heading1,
           run: (editor) => editor.chain().focus().toggleHeading({ level: 1 }).run(),
         },
         {
           title: "Heading 2",
           description: "Medium section heading",
           keywords: ["h2", "heading", "subtitle"],
+          group: "Text",
+          icon: Heading2,
           run: (editor) => editor.chain().focus().toggleHeading({ level: 2 }).run(),
         },
         {
           title: "Heading 3",
           description: "Small section heading",
           keywords: ["h3", "heading"],
+          group: "Text",
+          icon: Heading3,
           run: (editor) => editor.chain().focus().toggleHeading({ level: 3 }).run(),
         },
         {
           title: "Bulleted list",
           description: "Unordered list of items",
           keywords: ["bullet", "list", "ul"],
+          group: "Lists",
+          icon: List,
           run: (editor) => editor.chain().focus().toggleBulletList().run(),
         },
         {
           title: "Numbered list",
           description: "Ordered list of items",
           keywords: ["number", "list", "ol"],
+          group: "Lists",
+          icon: ListOrdered,
           run: (editor) => editor.chain().focus().toggleOrderedList().run(),
         },
         {
           title: "Todo list",
           description: "Task list with checkboxes",
           keywords: ["todo", "task", "checkbox", "check"],
+          group: "Lists",
+          icon: ListTodo,
           run: (editor) => editor.chain().focus().toggleTaskList().run(),
         },
         {
           title: "Quote",
           description: "Blockquote for emphasis",
           keywords: ["quote", "blockquote"],
+          group: "Text",
+          icon: Quote,
           run: (editor) => editor.chain().focus().toggleBlockquote().run(),
         },
         {
           title: "Code block",
           description: "Code with syntax highlighting",
           keywords: ["code", "block", "snippet"],
+          group: "Text",
+          icon: Code2,
           run: (editor) => editor.chain().focus().toggleCodeBlock().run(),
         },
         {
           title: "Divider",
           description: "Horizontal ruled line",
           keywords: ["divider", "hr", "separator"],
+          group: "Media",
+          icon: Minus,
           run: (editor) => editor.chain().focus().setHorizontalRule().run(),
         },
         {
           title: "Image",
           description: "Upload or paste an image",
           keywords: ["image", "photo", "picture", "img"],
+          group: "Media",
+          icon: ImageIcon,
           run: (editor) => {
             const input = document.createElement("input");
             input.type = "file";
@@ -350,6 +480,8 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           title: "Callout",
           description: "Highlighted blockquote for emphasis",
           keywords: ["callout", "note", "info", "warning", "tip"],
+          group: "Text",
+          icon: MessageSquare,
           run: (editor) => editor.chain().focus().toggleBlockquote().run(),
         },
         // --- AI Slash Commands ---
@@ -357,6 +489,8 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           title: "AI Edit",
           description: "Ask AI to write, edit, or transform text",
           keywords: ["ai", "edit", "write", "generate", "ask", "alfred"],
+          group: "AI",
+          icon: Sparkles,
           run: (ed) => {
             openAI(ed);
           },
@@ -415,7 +549,12 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
 
       setSlashQuery(text.slice(1));
       const coords = editor.view.coordsAtPos(state.selection.from);
-      setSlashMenuPosition({ top: coords.bottom + 10, left: coords.left });
+      setSlashMenuPosition(
+        constrainFloatingPosition(
+          { top: coords.bottom + 10, left: coords.left },
+          { width: 320, height: 360 },
+        ),
+      );
     }, []);
 
     const updateWikiLinkState = useCallback((ed: Editor) => {
@@ -461,7 +600,12 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
 
       wikiQueryRef.current = query;
       setWikiQuery(query);
-      setWikiPosition({ top: coords.bottom + 8, left: coords.left });
+      setWikiPosition(
+        constrainFloatingPosition(
+          { top: coords.bottom + 8, left: coords.left },
+          { width: 320, height: 360 },
+        ),
+      );
       setWikiTriggerPos(triggerAbsPos);
       wikiActiveIndexRef.current = 0;
       setWikiActiveIndex(0);
@@ -488,11 +632,12 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           if (!ed.isDestroyed) {
             const json = ed.getJSON() as Record<string, unknown>;
             const cardIds = extractWikiLinkCardIds(json);
-            onWikiLinksChange?.(cardIds);
+            lastNotifiedWikiLinksRef.current = cardIds.join(",");
+            onWikiLinksChangeRef.current?.(cardIds);
           }
         }, 0);
       },
-      [wikiTriggerPos, onWikiLinksChange],
+      [wikiTriggerPos],
     );
 
     const handleWikiLinkCreateStub = useCallback(
@@ -509,18 +654,95 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
       [wikiTriggerPos, handleWikiLinkSelect],
     );
 
+    const handleWikiItemsChange = useCallback(
+      (items: WikiLinkAutocompleteItem[], createTitle: string | null) => {
+        wikiSelectableItemsRef.current = items.map((item) => ({
+          cardId: item.cardId,
+          title: item.title,
+        }));
+        wikiCreateTitleRef.current = createTitle;
+        const selectableCount = items.length || (createTitle ? 1 : 0);
+        if (selectableCount > 0 && wikiActiveIndexRef.current >= selectableCount) {
+          wikiActiveIndexRef.current = selectableCount - 1;
+          setWikiActiveIndex(selectableCount - 1);
+        }
+      },
+      [],
+    );
+
+    const flushEditorDraft = useCallback(
+      (ed: Editor, options: { force?: boolean } = {}): EditorDraft | null => {
+        if (ed.isDestroyed) return null;
+
+        const nextMarkdown = readEditorMarkdown(ed);
+        const tiptapJson = asEditorJson(ed.getJSON());
+        const nextJsonSignature = jsonSignature(tiptapJson);
+        const markdownChanged = nextMarkdown !== lastNotifiedMarkdownRef.current;
+        const jsonChanged = nextJsonSignature !== lastNotifiedJsonSignatureRef.current;
+
+        if (options.force || markdownChanged) {
+          lastNotifiedMarkdownRef.current = nextMarkdown;
+          onMarkdownChangeRef.current?.(nextMarkdown);
+        }
+
+        if (options.force || markdownChanged || jsonChanged) {
+          lastNotifiedJsonSignatureRef.current = nextJsonSignature;
+          onDraftChangeRef.current?.({ markdown: nextMarkdown, tiptapJson });
+        }
+
+        if (tiptapJson && onWikiLinksChangeRef.current) {
+          const wikiIds = extractWikiLinkCardIds(tiptapJson);
+          const wikiKey = wikiIds.join(",");
+          if (options.force || wikiKey !== lastNotifiedWikiLinksRef.current) {
+            lastNotifiedWikiLinksRef.current = wikiKey;
+            onWikiLinksChangeRef.current(wikiIds);
+          }
+        }
+
+        return { markdown: nextMarkdown, tiptapJson };
+      },
+      [],
+    );
+
+    const clearDraftFlushTimer = useCallback(() => {
+      if (draftFlushTimerRef.current === null) return;
+      window.clearTimeout(draftFlushTimerRef.current);
+      draftFlushTimerRef.current = null;
+    }, []);
+
+    const flushPendingEditorDraft = useCallback(
+      (ed: Editor | null = editorRef.current, options: { force?: boolean } = {}) => {
+        clearDraftFlushTimer();
+        if (!ed || ed.isDestroyed) return null;
+        return flushEditorDraft(ed, options);
+      },
+      [clearDraftFlushTimer, flushEditorDraft],
+    );
+
+    const scheduleDraftFlush = useCallback(
+      (ed: Editor) => {
+        clearDraftFlushTimer();
+        draftFlushTimerRef.current = window.setTimeout(() => {
+          draftFlushTimerRef.current = null;
+          flushEditorDraft(ed);
+        }, draftFlushDelayMs);
+      },
+      [clearDraftFlushTimer, draftFlushDelayMs, flushEditorDraft],
+    );
+
     const editor = useEditor({
       extensions,
-      content: markdown,
-      contentType: "markdown",
+      content: tiptapJson ?? markdown,
+      ...(tiptapJson ? {} : { contentType: "markdown" as const }),
       editable: !readOnly,
       immediatelyRender: false,
+      shouldRerenderOnTransaction: false,
       editorProps: {
         attributes: {
           class: cn(
-            "prose prose-sm dark:prose-invert max-w-none min-h-[220px] px-2 py-1 text-[15px] leading-[1.72] tracking-[-0.01em] text-foreground focus:outline-none [text-wrap:pretty]",
+            "prose prose-sm dark:prose-invert max-w-none min-h-[220px] px-2 py-1 text-[15px] leading-[1.72] text-foreground focus:outline-none [text-wrap:pretty]",
             // Headings: Inter (sans)
-            "prose-headings:mt-6 prose-headings:mb-2 prose-headings:font-sans prose-headings:tracking-tight prose-headings:font-semibold",
+            "prose-headings:mt-6 prose-headings:mb-2 prose-headings:font-sans prose-headings:font-semibold",
             "prose-h1:text-[2rem] prose-h2:text-[1.65rem] prose-h3:text-[1.4rem]",
             // Body: DM Sans (inherits from font-sans)
             "prose-p:my-2 prose-p:leading-[1.78] prose-p:text-left",
@@ -550,12 +772,9 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
         },
         transformPastedText: (text) => normalizePastedEditorText(text),
       },
-      onUpdate: ({ editor }) => {
-        const nextMarkdown = readEditorMarkdown(editor);
-        onMarkdownChange?.(nextMarkdown);
-        const tiptapJson = asEditorJson(editor.getJSON());
-        if (tiptapJson) {
-          onDraftChange?.({ markdown: nextMarkdown, tiptapJson });
+      onUpdate: ({ editor, transaction }) => {
+        if (!transaction.getMeta(ALFRED_AI_STREAM_META) && streamingStatusRef.current === "idle") {
+          scheduleDraftFlush(editor);
         }
         updateMenuPosition(editor);
         updateSlashState(editor);
@@ -567,7 +786,8 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
         updateWikiLinkState(editor);
       },
       onFocus: () => setIsFocused(true),
-      onBlur: () => {
+      onBlur: ({ editor }) => {
+        flushPendingEditorDraft(editor);
         setIsFocused(false);
         setSlashQuery(null);
         setSlashMenuPosition(null);
@@ -583,9 +803,21 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
       editorRef.current = editor ?? null;
     }, [editor]);
 
+    const formattingState = useEditorState({
+      editor,
+      selector: ({ editor: selectedEditor }) => ({
+        isBold: selectedEditor?.isActive("bold") ?? false,
+        isItalic: selectedEditor?.isActive("italic") ?? false,
+      }),
+    }) ?? { isBold: false, isItalic: false };
+
+    useEffect(() => {
+      streamingStatusRef.current = streamingState.status;
+    }, [streamingState.status]);
+
     // Auto-focus: place cursor at end when editor mounts (Notion-like)
     useEffect(() => {
-      if (!editor || readOnly) return;
+      if (!editor || readOnly || !autoFocus) return;
       // Small delay so the editor is fully mounted before focusing
       const timer = window.setTimeout(() => {
         if (editor.isDestroyed) return;
@@ -594,7 +826,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
       return () => window.clearTimeout(timer);
       // Only run once when editor is first created
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [editor]);
+    }, [editor, autoFocus]);
 
     const runSlashCommand = useCallback(
       (command: SlashCommand) => {
@@ -615,6 +847,15 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
     useEffect(() => {
       onKeyboardCommandRef.current = onKeyboardCommand;
     }, [onKeyboardCommand]);
+    useEffect(() => {
+      onMarkdownChangeRef.current = onMarkdownChange;
+    }, [onMarkdownChange]);
+    useEffect(() => {
+      onDraftChangeRef.current = onDraftChange;
+    }, [onDraftChange]);
+    useEffect(() => {
+      onWikiLinksChangeRef.current = onWikiLinksChange;
+    }, [onWikiLinksChange]);
     useEffect(() => {
       slashQueryRef.current = slashQuery;
     }, [slashQuery]);
@@ -675,13 +916,14 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
     const handleStreamFinish = useCallback(
       (action: "accept" | "discard") => {
         if (action === "accept") {
+          flushPendingEditorDraft(editor, { force: true });
           void Promise.resolve(onKeyboardCommandRef.current?.("save"));
         }
         setStreamingState({ status: "idle" });
         setStreamOriginalRange(null);
         editor?.commands.focus();
       },
-      [editor],
+      [editor, flushPendingEditorDraft],
     );
 
     const handleStreamRetry = useCallback(() => {
@@ -711,6 +953,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
         }
         if (isMod && key === "s") {
           event.preventDefault();
+          flushPendingEditorDraft(editor, { force: true });
           void Promise.resolve(onKeyboardCommandRef.current?.("save"));
           return;
         }
@@ -741,10 +984,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
             event.preventDefault();
             const now = Date.now();
             const lastSpaceAt = emptyParagraphSpaceAtRef.current;
-            if (
-              lastSpaceAt !== null &&
-              now - lastSpaceAt <= EMPTY_PARAGRAPH_AI_DOUBLE_SPACE_MS
-            ) {
+            if (lastSpaceAt !== null && now - lastSpaceAt <= EMPTY_PARAGRAPH_AI_DOUBLE_SPACE_MS) {
               emptyParagraphSpaceAtRef.current = null;
               openAI(editor, "generate");
             } else {
@@ -757,6 +997,9 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
 
         // Wiki-link keyboard navigation
         if (wikiQueryRef.current !== null) {
+          const wikiItems = wikiSelectableItemsRef.current;
+          const createTitle = wikiCreateTitleRef.current;
+          const wikiOptionCount = wikiItems.length || (createTitle ? 1 : 0);
           if (event.key === "Escape") {
             event.preventDefault();
             wikiQueryRef.current = null;
@@ -768,19 +1011,40 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           }
           if (event.key === "ArrowDown") {
             event.preventDefault();
-            const next = wikiActiveIndexRef.current + 1;
+            const next =
+              wikiOptionCount > 0
+                ? (wikiActiveIndexRef.current + 1) % wikiOptionCount
+                : wikiActiveIndexRef.current + 1;
             wikiActiveIndexRef.current = next;
             setWikiActiveIndex(next);
             return;
           }
           if (event.key === "ArrowUp") {
             event.preventDefault();
-            const next = Math.max(0, wikiActiveIndexRef.current - 1);
+            const next =
+              wikiOptionCount > 0
+                ? (wikiActiveIndexRef.current - 1 + wikiOptionCount) % wikiOptionCount
+                : Math.max(0, wikiActiveIndexRef.current - 1);
             wikiActiveIndexRef.current = next;
             setWikiActiveIndex(next);
             return;
           }
-          // Enter/Tab handled by the autocomplete component via onSelect/onCreateStub
+          if (event.key === "Enter" || event.key === "Tab") {
+            event.preventDefault();
+            const index = Math.max(
+              0,
+              Math.min(Math.max(wikiOptionCount - 1, 0), wikiActiveIndexRef.current),
+            );
+            const selected = wikiItems[index];
+            if (selected) {
+              handleWikiLinkSelect(selected);
+              return;
+            }
+            if (createTitle) {
+              void handleWikiLinkCreateStub(createTitle);
+            }
+            return;
+          }
         }
 
         if (slashQueryRef.current === null) return;
@@ -878,7 +1142,14 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
         dom.removeEventListener("paste", onPaste, true);
         dom.removeEventListener("drop", onDrop, true);
       };
-    }, [editor, readOnly, openAI]);
+    }, [
+      editor,
+      readOnly,
+      openAI,
+      flushPendingEditorDraft,
+      handleWikiLinkCreateStub,
+      handleWikiLinkSelect,
+    ]);
 
     useEffect(() => {
       if (editor && editor.isEditable !== !readOnly) {
@@ -892,14 +1163,42 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
         isFirstRender.current = false;
         return;
       }
-      const currentContent = readEditorMarkdown(editor);
-      if (markdown !== currentContent) {
-        if (!isFocused || isFirstRender.current) {
-          editor.commands.setContent(markdown, { contentType: "markdown" });
+      const nextDraft = { markdown, tiptapJson: tiptapJson ?? null };
+      const documentChanged = activeDocumentIdRef.current !== (documentId ?? null);
+      const nextJsonSignature = jsonSignature(nextDraft.tiptapJson);
+      const shouldReplaceContent =
+        documentChanged ||
+        isFirstRender.current ||
+        (!isFocused &&
+          (markdown !== lastNotifiedMarkdownRef.current ||
+            nextJsonSignature !== lastNotifiedJsonSignatureRef.current));
+
+      if (shouldReplaceContent) {
+        clearDraftFlushTimer();
+        setEditorContent(editor, nextDraft);
+        activeDocumentIdRef.current = documentId ?? null;
+        lastNotifiedMarkdownRef.current = markdown;
+        lastNotifiedJsonSignatureRef.current = nextJsonSignature;
+        if (nextDraft.tiptapJson) {
+          lastNotifiedWikiLinksRef.current = extractWikiLinkCardIds(nextDraft.tiptapJson).join(",");
+        } else {
+          lastNotifiedWikiLinksRef.current = "";
         }
       }
       isFirstRender.current = false;
-    }, [editor, markdown, isFocused, streamingState.status]);
+    }, [
+      clearDraftFlushTimer,
+      documentId,
+      editor,
+      isFocused,
+      markdown,
+      streamingState.status,
+      tiptapJson,
+    ]);
+
+    useEffect(() => {
+      return () => clearDraftFlushTimer();
+    }, [clearDraftFlushTimer]);
 
     useImperativeHandle(
       ref,
@@ -910,13 +1209,17 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           const combined = current ? `${current}\n\n${nextMarkdown}` : nextMarkdown;
           editor.commands.setContent(combined, { contentType: "markdown" });
           editor.commands.scrollIntoView();
+          flushPendingEditorDraft(editor, { force: true });
         },
+        flushPendingChanges: () => flushPendingEditorDraft(editor, { force: true }),
         getMarkdown: () => (editor ? readEditorMarkdown(editor) : ""),
-        setMarkdown: (nextMarkdown: string) =>
-          editor?.commands.setContent(nextMarkdown, { contentType: "markdown" }),
+        setMarkdown: (nextMarkdown: string) => {
+          editor?.commands.setContent(nextMarkdown, { contentType: "markdown" });
+          if (editor) flushPendingEditorDraft(editor, { force: true });
+        },
         getTiptapJson: () => (editor ? asEditorJson(editor.getJSON()) : null),
       }),
-      [editor],
+      [editor, flushPendingEditorDraft],
     );
 
     if (!editor) return null;
@@ -939,7 +1242,9 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
             activeIndex={wikiActiveIndex}
             onSelect={handleWikiLinkSelect}
             onCreateStub={handleWikiLinkCreateStub}
+            onItemsChange={handleWikiItemsChange}
             onClose={() => {
+              wikiQueryRef.current = null;
               setWikiQuery(null);
               setWikiPosition(null);
               setWikiTriggerPos(null);
@@ -951,32 +1256,43 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
         {/* Slash command menu */}
         {slashMenuPosition && slashQuery !== null && !readOnly ? (
           <div
-            className="bg-card animate-in fade-in zoom-in-95 fixed z-50 w-64 overflow-hidden rounded-md border shadow-lg duration-100"
+            className="bg-card animate-in fade-in zoom-in-95 fixed z-50 w-80 overflow-hidden rounded-md border shadow-lg duration-100"
             style={{ top: `${slashMenuPosition.top}px`, left: `${slashMenuPosition.left}px` }}
           >
             {filteredSlashCommands.length ? (
-              <div className="max-h-64 overflow-y-auto p-1">
-                {filteredSlashCommands.map((cmd, idx) => (
-                  <button
-                    key={cmd.title}
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      runSlashCommand(cmd);
-                    }}
-                    className={cn(
-                      "flex w-full flex-col gap-0.5 rounded-md px-3 py-2 text-left transition-colors",
-                      idx === slashActiveIndex
-                        ? "text-foreground bg-[var(--alfred-accent-subtle)]"
-                        : "text-muted-foreground hover:text-foreground hover:bg-[var(--alfred-accent-subtle)]",
-                    )}
-                  >
-                    <span className="text-sm font-medium">{cmd.title}</span>
-                    <span className="text-[10px] text-[var(--alfred-text-tertiary)]">
-                      {cmd.description}
-                    </span>
-                  </button>
-                ))}
+              <div className="max-h-80 overflow-y-auto p-1.5">
+                {filteredSlashCommands.map((cmd, idx) => {
+                  const Icon = cmd.icon;
+                  return (
+                    <button
+                      key={cmd.title}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        runSlashCommand(cmd);
+                      }}
+                      className={cn(
+                        "grid w-full grid-cols-[28px_1fr_auto] items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors",
+                        idx === slashActiveIndex
+                          ? "text-foreground bg-[var(--alfred-accent-subtle)]"
+                          : "text-muted-foreground hover:text-foreground hover:bg-[var(--alfred-accent-subtle)]",
+                      )}
+                    >
+                      <span className="bg-secondary/70 flex size-7 items-center justify-center rounded-sm">
+                        <Icon className="h-3.5 w-3.5" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">{cmd.title}</span>
+                        <span className="block truncate text-[10px] text-[var(--alfred-text-tertiary)]">
+                          {cmd.description}
+                        </span>
+                      </span>
+                      <span className="font-mono text-[9px] text-[var(--alfred-text-tertiary)] uppercase">
+                        {cmd.group}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <div className="px-3 py-2 text-[11px] text-[var(--alfred-text-tertiary)]">
@@ -1000,9 +1316,11 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
               variant="ghost"
               size="sm"
               onClick={() => editor.chain().focus().toggleBold().run()}
+              aria-label="Bold"
+              title="Bold"
               className={cn(
                 "h-7 w-7 p-0",
-                editor.isActive("bold") && "text-primary bg-[var(--alfred-accent-subtle)]",
+                formattingState.isBold && "text-primary bg-[var(--alfred-accent-subtle)]",
               )}
             >
               <Bold className="h-3.5 w-3.5" />
@@ -1011,9 +1329,11 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
               variant="ghost"
               size="sm"
               onClick={() => editor.chain().focus().toggleItalic().run()}
+              aria-label="Italic"
+              title="Italic"
               className={cn(
                 "h-7 w-7 p-0",
-                editor.isActive("italic") && "text-primary bg-[var(--alfred-accent-subtle)]",
+                formattingState.isItalic && "text-primary bg-[var(--alfred-accent-subtle)]",
               )}
             >
               <Italic className="h-3.5 w-3.5" />
@@ -1024,7 +1344,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
             <Button
               variant="ghost"
               size="sm"
-              className="text-primary h-7 gap-1.5 px-2 text-[10px] font-medium tracking-wider uppercase hover:bg-[var(--alfred-accent-subtle)]"
+              className="text-primary h-7 gap-1.5 px-2 text-[10px] font-medium uppercase hover:bg-[var(--alfred-accent-subtle)]"
               onClick={() => openAI(editor, "transform")}
             >
               <Sparkles className="h-3 w-3" />

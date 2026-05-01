@@ -9,6 +9,7 @@ import {
   deleteZettelCard,
   deleteZettelLink,
   generateZettelCard,
+  previewGeneratedZettelCard,
   updateZettelCard,
   updateZettelLink,
 } from "@/lib/api/zettels";
@@ -131,6 +132,12 @@ export function useGenerateZettel() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ZETTELS_KEY });
     },
+  });
+}
+
+export function usePreviewGeneratedZettel() {
+  return useMutation({
+    mutationFn: (payload: AIGeneratePayload) => previewGeneratedZettelCard(payload),
   });
 }
 

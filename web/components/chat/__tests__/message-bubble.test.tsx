@@ -214,6 +214,15 @@ describe("MessageBubble", () => {
     expect(screen.getByText("Zettel")).toBeInTheDocument();
   });
 
+  it("shows a note action for assistant messages in expanded chat", () => {
+    const message = makeMessage({ content: "This is copied text." });
+
+    render(<MessageBubble message={message} mode="expanded" onArtifactClick={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "Save as note" })).toBeInTheDocument();
+    expect(screen.getByText("Note")).toBeInTheDocument();
+  });
+
   it("copies the assistant message text when copy is clicked", async () => {
     const user = userEvent.setup();
     const message = makeMessage({ content: "This is copied text." });
@@ -299,6 +308,120 @@ describe("MessageBubble", () => {
     expect(onViewZettel).toHaveBeenCalledWith(654);
   });
 
+  it("saves a note from an assistant response and opens it once saved", async () => {
+    const user = userEvent.setup();
+    const onViewNote = vi.fn();
+    const message = makeMessage({
+      content: "## Meeting follow-up\n\nShip the reviewed implementation notes.",
+    });
+
+    vi.mocked(apiFetch).mockResolvedValue({ id: "note-123" });
+
+    render(
+      <MessageBubble
+        message={message}
+        mode="sidebar"
+        onArtifactClick={vi.fn()}
+        onViewNote={onViewNote}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Save as note" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "View note" })).toBeInTheDocument();
+    });
+
+    expect(vi.mocked(apiFetch)).toHaveBeenCalledWith(
+      "/api/v1/notes",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+
+    const [, requestInit] = vi.mocked(apiFetch).mock.calls[0] ?? [];
+    expect(JSON.parse(String(requestInit?.body))).toMatchObject({
+      title: "Meeting follow-up Ship the reviewed implementation notes.",
+      content_markdown: "## Meeting follow-up\n\nShip the reviewed implementation notes.",
+      content_json: null,
+    });
+
+    await user.click(screen.getByRole("button", { name: "View note" }));
+
+    expect(onViewNote).toHaveBeenCalledWith("note-123");
+  });
+
+  it("lets users add review comments to an assistant response", async () => {
+    const user = userEvent.setup();
+    const onAddResponseComment = vi.fn();
+    const message = makeMessage({ content: "Draft answer that needs review." });
+
+    render(
+      <MessageBubble
+        message={message}
+        mode="sidebar"
+        onArtifactClick={vi.fn()}
+        onAddResponseComment={onAddResponseComment}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Comment on block" }));
+    await user.type(
+      screen.getByPlaceholderText("Write a comment on this response..."),
+      "Clarify the concrete next step.",
+    );
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    expect(onAddResponseComment).toHaveBeenCalledWith(
+      "test-1",
+      "Clarify the concrete next step.",
+      expect.objectContaining({
+        blockId: expect.stringMatching(/^block-0-/),
+        blockPreview: "Draft answer that needs review.",
+      }),
+    );
+  });
+
+  it("exposes comment controls on each markdown block", () => {
+    const message = makeMessage({
+      content: "# Heading\n\nFirst paragraph.\n\n- One\n- Two",
+    });
+
+    render(<MessageBubble message={message} mode="sidebar" onArtifactClick={vi.fn()} />);
+
+    expect(screen.getAllByRole("button", { name: "Comment on block" })).toHaveLength(3);
+  });
+
+  it("tags commented responses and can ask Alfred to reply to the comments", async () => {
+    const user = userEvent.setup();
+    const onReplyToResponseComments = vi.fn();
+    const message = makeMessage({ content: "Reviewed answer." });
+
+    render(
+      <MessageBubble
+        message={message}
+        mode="sidebar"
+        responseComments={[
+          {
+            id: "comment-1",
+            body: "This needs a stronger action list.",
+            blockId: "block-0-review",
+            blockPreview: "Reviewed answer.",
+            createdAt: Date.now(),
+          },
+        ]}
+        onArtifactClick={vi.fn()}
+        onReplyToResponseComments={onReplyToResponseComments}
+      />,
+    );
+
+    expect(screen.getByText("Commented · 1")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Reply to comments" }));
+
+    expect(onReplyToResponseComments).toHaveBeenCalledWith(message);
+  });
+
   describe("mode differences", () => {
     it("sidebar mode uses compact user bubble (max-w-[85%])", () => {
       const message = makeMessage({ role: "user", content: "Test" });
@@ -344,7 +467,9 @@ describe("MessageBubble", () => {
       render(<MessageBubble message={message} mode="expanded" onArtifactClick={vi.fn()} />);
 
       expect(screen.getByRole("button", { name: "Copy response" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Create zettel from response" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Create zettel from response" }),
+      ).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Like response" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Dislike response" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Regenerate response" })).toBeInTheDocument();

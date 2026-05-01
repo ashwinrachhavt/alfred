@@ -99,10 +99,10 @@ export function NotesFilesystemImportDialog({
     >
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Import Local Folder</DialogTitle>
+          <DialogTitle>Import Markdown</DialogTitle>
           <DialogDescription>
-            Browse your local filesystem, then import `.claude`, `.gstack`, or any UTF-8 text folder
-            directly into Notes.
+            Paste a server-visible path, or browse the import root, then import one Markdown file or
+            a folder of Markdown files into Notes.
           </DialogDescription>
         </DialogHeader>
 
@@ -119,7 +119,7 @@ export function NotesFilesystemImportDialog({
               disabled={browseQuery.isFetching}
             >
               <Home className="h-4 w-4" />
-              <span className="sr-only">Go to home</span>
+              <span className="sr-only">Go to import root</span>
             </Button>
             <Button
               type="button"
@@ -148,7 +148,7 @@ export function NotesFilesystemImportDialog({
             <Input
               value={pathInput}
               onChange={(event) => setPathInput(event.target.value)}
-              placeholder="~/.claude or .gstack"
+              placeholder="/app/data/notes or ~/notes/draft.md"
               className="min-w-[280px] flex-1"
             />
             <Button type="submit" variant="outline" disabled={browseQuery.isFetching}>
@@ -157,16 +157,30 @@ export function NotesFilesystemImportDialog({
               ) : (
                 <FolderOpen className="mr-2 h-4 w-4" />
               )}
-              Browse
+              Browse folder
+            </Button>
+            <Button
+              type="button"
+              disabled={!pathInput.trim() || importMutation.isPending || !workspaceId}
+              onClick={() => void handleImport(pathInput.trim())}
+            >
+              {importMutation.isPending && importMutation.variables?.path === pathInput.trim() ? (
+                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="mr-2 h-4 w-4" />
+              )}
+              Import path
             </Button>
           </div>
 
-          <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2">
+          <div className="bg-muted/30 flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
             <div className="min-w-0">
-              <p className="text-xs uppercase tracking-[0.2em] text-[var(--alfred-text-tertiary)]">
+              <p className="text-xs tracking-[0.2em] text-[var(--alfred-text-tertiary)] uppercase">
                 Current path
               </p>
-              <p className="truncate text-sm">{browseQuery.data?.path ?? "Loading home directory..."}</p>
+              <p className="truncate text-sm">
+                {browseQuery.data?.path ?? "Loading import root..."}
+              </p>
             </div>
             <Button
               type="button"
@@ -179,13 +193,13 @@ export function NotesFilesystemImportDialog({
               ) : (
                 <Download className="mr-2 h-4 w-4" />
               )}
-              Import current folder
+              Import current path
             </Button>
           </div>
 
-          <div className="max-h-[420px] overflow-y-auto rounded-xl border bg-card">
+          <div className="bg-card max-h-[420px] overflow-y-auto rounded-xl border">
             {browseQuery.isPending ? (
-              <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+              <div className="text-muted-foreground flex items-center justify-center py-12 text-sm">
                 <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
                 Loading directory…
               </div>
@@ -198,7 +212,11 @@ export function NotesFilesystemImportDialog({
                     : "The selected path could not be loaded."
                 }
                 action={
-                  <Button type="button" variant="outline" onClick={() => void browseQuery.refetch()}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void browseQuery.refetch()}
+                  >
                     Try again
                   </Button>
                 }
@@ -208,7 +226,8 @@ export function NotesFilesystemImportDialog({
               <ul className="divide-y">
                 {currentEntries.map((entry) => {
                   const isDirectory = entry.kind === "directory";
-                  const isImportingPath = importMutation.isPending && importMutation.variables?.path === entry.path;
+                  const isImportingPath =
+                    importMutation.isPending && importMutation.variables?.path === entry.path;
 
                   return (
                     <li key={entry.path} className="flex items-center gap-3 px-3 py-2.5">
@@ -225,7 +244,7 @@ export function NotesFilesystemImportDialog({
                         }}
                         disabled={!isDirectory}
                       >
-                        <span className="rounded-md bg-muted p-1.5 text-muted-foreground">
+                        <span className="bg-muted text-muted-foreground rounded-md p-1.5">
                           {isDirectory ? (
                             <Folder className="h-4 w-4" />
                           ) : (
@@ -234,14 +253,14 @@ export function NotesFilesystemImportDialog({
                         </span>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm">{entry.name}</p>
-                          <p className="truncate text-xs text-muted-foreground">
+                          <p className="text-muted-foreground truncate text-xs">
                             {entry.reason
                               ? entry.reason
                               : entry.size_bytes
                                 ? `${Math.max(1, Math.round(entry.size_bytes / 1024))} KB`
                                 : isDirectory
                                   ? "Folder"
-                                  : "Text file"}
+                                  : "Markdown file"}
                           </p>
                         </div>
                       </button>
@@ -271,7 +290,7 @@ export function NotesFilesystemImportDialog({
             ) : (
               <EmptyState
                 title="This folder is empty"
-                description="Choose another path or import the current folder as a container note."
+                description="Choose another path with Markdown files."
                 className="py-12"
               />
             )}

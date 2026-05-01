@@ -58,6 +58,8 @@ export const apiRoutes = {
     updateLink: (id: number) => `/api/zettels/links/${id}`,
     linkTypes: "/api/zettels/link-types",
     generate: "/api/zettels/cards/generate",
+    generatePreview: "/api/zettels/cards/generate/preview",
+    generatePreviewStream: "/api/zettels/cards/generate/preview-stream",
     createStream: "/api/zettels/cards/create-stream",
     suggestTags: "/api/zettels/suggest-tags",
     graph: "/api/zettels/graph",

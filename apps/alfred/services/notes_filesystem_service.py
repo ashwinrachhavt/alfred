@@ -10,11 +10,13 @@ from pathlib import Path
 from sqlmodel import Session
 
 from alfred.core.exceptions import AlfredException, NotFoundError
+from alfred.core.settings import settings
 from alfred.services.notes_service import NotesService
 
 MAX_IMPORT_FILE_BYTES = 512_000
 DEFAULT_MAX_IMPORT_NOTES = 200
 MAX_IMPORT_NOTES = 500
+MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdx"}
 SKIPPED_RECURSIVE_DIRS = {
     ".git",
     ".hg",
@@ -44,11 +46,17 @@ class FilesystemPathNotFoundError(NotFoundError):
 def _allowed_roots() -> tuple[Path, ...]:
     """Return roots that the notes importer/browser can access."""
 
-    roots = [Path.home().expanduser().resolve()]
-    temp_root = Path(tempfile.gettempdir()).resolve()
-    if temp_root not in roots:
-        roots.append(temp_root)
-    return tuple(roots)
+    roots = [
+        Path.home().expanduser().resolve(),
+        Path.cwd().resolve(),
+        Path(settings.mcp_filesystem_path).expanduser().resolve(),
+        Path(tempfile.gettempdir()).resolve(),
+    ]
+    unique_roots: list[Path] = []
+    for root in roots:
+        if root not in unique_roots:
+            unique_roots.append(root)
+    return tuple(unique_roots)
 
 
 def _is_within_allowed_roots(path: Path) -> bool:
@@ -142,6 +150,8 @@ class NotesFilesystemService:
         state = _ImportState()
 
         if target.is_dir():
+            if not self._has_importable_markdown_descendant(target):
+                raise ValueError("No Markdown files found in the selected folder")
             root_note = self._import_directory(
                 target,
                 notes=notes,
@@ -183,7 +193,7 @@ class NotesFilesystemService:
             if not candidate.is_absolute():
                 candidate = Path.home() / candidate
         else:
-            candidate = Path.home()
+            candidate = Path(settings.mcp_filesystem_path).expanduser()
 
         try:
             resolved = candidate.resolve(strict=False)
@@ -241,7 +251,7 @@ class NotesFilesystemService:
             )
 
         if entry.is_file():
-            is_importable, reason = self._is_text_file_importable(entry)
+            is_importable, reason = self._is_markdown_file_importable(entry)
             return FilesystemEntry(
                 name=entry.name,
                 path=str(entry),
@@ -261,7 +271,10 @@ class NotesFilesystemService:
             reason="Unsupported filesystem entry",
         )
 
-    def _is_text_file_importable(self, path: Path) -> tuple[bool, str | None]:
+    def _is_markdown_file_importable(self, path: Path) -> tuple[bool, str | None]:
+        if path.suffix.lower() not in MARKDOWN_EXTENSIONS:
+            return False, "Only Markdown files are imported"
+
         try:
             size_bytes = path.stat().st_size
         except OSError:
@@ -285,6 +298,22 @@ class NotesFilesystemService:
             return False, "Non UTF-8 text"
 
         return True, None
+
+    def _has_importable_markdown_descendant(self, path: Path) -> bool:
+        try:
+            children = self._iter_entries(path)
+        except OSError:
+            return False
+
+        for child in children:
+            if child.is_symlink():
+                continue
+            if child.is_file() and self._is_markdown_file_importable(child)[0]:
+                return True
+            if child.is_dir() and child.name not in SKIPPED_RECURSIVE_DIRS:
+                if self._has_importable_markdown_descendant(child):
+                    return True
+        return False
 
     def _can_import_more(self, state: _ImportState, *, max_notes: int) -> bool:
         return state.imported_count < max_notes
@@ -344,6 +373,9 @@ class NotesFilesystemService:
                 if child.name in SKIPPED_RECURSIVE_DIRS:
                     self._record_skip(state, child)
                     continue
+                if not self._has_importable_markdown_descendant(child):
+                    self._record_skip(state, child)
+                    continue
                 self._import_directory(
                     child,
                     notes=notes,
@@ -386,7 +418,7 @@ class NotesFilesystemService:
             self._record_skip(state, path)
             return None
 
-        is_importable, _reason = self._is_text_file_importable(path)
+        is_importable, _reason = self._is_markdown_file_importable(path)
         if not is_importable:
             self._record_skip(state, path)
             return None
@@ -405,8 +437,8 @@ class NotesFilesystemService:
         row = notes.create_note(
             workspace_id=workspace_id,
             parent_id=parent_id,
-            title=path.name,
-            icon="📄",
+            title=path.stem or path.name,
+            icon="📝",
             content_markdown=content,
             content_json={
                 "source": {

@@ -4,11 +4,21 @@ import {
   createNote,
   createWorkspace,
   deleteNote,
+  importNoteFilesystem,
   updateNote,
   uploadNoteAsset,
 } from "@/lib/api/notes";
-import type { NoteCreateRequest, NoteUpdateRequest, WorkspaceCreateRequest } from "@/lib/api/types/notes";
-import { noteDetailsQueryKey, noteTreeQueryKey, workspacesQueryKey } from "@/features/notes/queries";
+import type {
+  NoteFilesystemImportRequest,
+  NoteCreateRequest,
+  NoteUpdateRequest,
+  WorkspaceCreateRequest,
+} from "@/lib/api/types/notes";
+import {
+  noteDetailsQueryKey,
+  noteTreeQueryKey,
+  workspacesQueryKey,
+} from "@/features/notes/queries";
 
 export function useCreateWorkspace(params: { userId?: number | null } = {}) {
   const queryClient = useQueryClient();
@@ -43,16 +53,23 @@ export function useUpdateNote(noteId: string, params: { workspaceId?: string | n
 
   return useMutation({
     mutationFn: (payload: NoteUpdateRequest) => updateNote(noteId, payload),
-    onSuccess: async (updated) => {
+    onSuccess: async (updated, payload) => {
       queryClient.setQueryData(noteDetailsQueryKey(noteId), updated);
-      if (workspaceId) {
+      const changesTree =
+        "title" in payload ||
+        "icon" in payload ||
+        "cover_image" in payload ||
+        "is_archived" in payload;
+      if (workspaceId && changesTree) {
         await queryClient.invalidateQueries({ queryKey: noteTreeQueryKey(workspaceId) });
       }
     },
   });
 }
 
-export function useDeleteNote(params: { workspaceId?: string | null; onSuccess?: () => void } = {}) {
+export function useDeleteNote(
+  params: { workspaceId?: string | null; onSuccess?: () => void } = {},
+) {
   const queryClient = useQueryClient();
   const workspaceId = params.workspaceId ?? null;
 
@@ -63,6 +80,20 @@ export function useDeleteNote(params: { workspaceId?: string | null; onSuccess?:
         await queryClient.invalidateQueries({ queryKey: noteTreeQueryKey(workspaceId) });
       }
       params.onSuccess?.();
+    },
+  });
+}
+
+export function useImportNoteFilesystem(params: { workspaceId?: string | null } = {}) {
+  const queryClient = useQueryClient();
+  const workspaceId = params.workspaceId ?? null;
+
+  return useMutation({
+    mutationFn: (payload: NoteFilesystemImportRequest) => importNoteFilesystem(payload),
+    onSuccess: async () => {
+      if (workspaceId) {
+        await queryClient.invalidateQueries({ queryKey: noteTreeQueryKey(workspaceId) });
+      }
     },
   });
 }

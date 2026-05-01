@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Check, Pencil, RotateCcw, Sparkles, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { ALFRED_AI_STREAM_META } from "@/components/editor/editor-transaction-meta";
 import { streamWritingCompose } from "@/lib/api/writing-stream";
 import {
   normalizeTiptapRange,
@@ -53,6 +54,8 @@ export function AiStreamingController({
   onEditInstruction,
 }: AiStreamingControllerProps) {
   const abortRef = useRef<AbortController | null>(null);
+  const tokenBufferRef = useRef("");
+  const tokenFrameRef = useRef<number | null>(null);
   const insertRangeRef = useRef<TiptapRange>({
     from: insertAt,
     to: insertAt,
@@ -139,15 +142,53 @@ export function AiStreamingController({
 
   const discardInserted = useCallback(() => {
     if (!editor || editor.isDestroyed) return;
-    const { from, to } = normalizeTiptapRange(insertRangeRef.current, editor.state.doc.content.size);
+    const { from, to } = normalizeTiptapRange(
+      insertRangeRef.current,
+      editor.state.doc.content.size,
+    );
     if (from < to) {
-      const tr = editor.state.tr.delete(from, to);
+      const tr = editor.state.tr.delete(from, to).setMeta(ALFRED_AI_STREAM_META, true);
       editor.view.dispatch(tr);
     }
     insertRangeRef.current = { from, to: from };
     setPillPos(null);
     setActionBarPos(null);
   }, [editor]);
+
+  const flushTokenBuffer = useCallback(() => {
+    if (tokenFrameRef.current !== null) {
+      window.cancelAnimationFrame(tokenFrameRef.current);
+      tokenFrameRef.current = null;
+    }
+
+    const text = tokenBufferRef.current;
+    tokenBufferRef.current = "";
+    if (!text || !editor || editor.isDestroyed) return;
+
+    const currentRange = normalizeTiptapRange(
+      insertRangeRef.current,
+      editor.state.doc.content.size,
+    );
+    insertRangeRef.current = currentRange;
+
+    const transaction = editor.state.tr
+      .insertText(text, currentRange.to)
+      .setMeta(ALFRED_AI_STREAM_META, true);
+    editor.view.dispatch(transaction);
+    updatePillPosition();
+  }, [editor, updatePillPosition]);
+
+  const queueToken = useCallback(
+    (token: string) => {
+      tokenBufferRef.current += token;
+      if (tokenFrameRef.current !== null) return;
+      tokenFrameRef.current = window.requestAnimationFrame(() => {
+        tokenFrameRef.current = null;
+        flushTokenBuffer();
+      });
+    },
+    [flushTokenBuffer],
+  );
 
   /* ---- action handlers ------------------------------------------ */
 
@@ -158,7 +199,10 @@ export function AiStreamingController({
       // Edit mode: delete the original text range. The AI text is already
       // inserted AFTER the original, so deleting the original leaves only
       // the accepted AI text. The insert range is remapped automatically.
-      const { from, to } = normalizeTiptapRange(currentOriginalRange, editor.state.doc.content.size);
+      const { from, to } = normalizeTiptapRange(
+        currentOriginalRange,
+        editor.state.doc.content.size,
+      );
       if (from < to) {
         const tr = editor.state.tr.delete(from, to);
         editor.view.dispatch(tr);
@@ -192,10 +236,7 @@ export function AiStreamingController({
     insertRangeRef.current = normalizeTiptapRange({ from: insertAt, to: insertAt }, docSize);
     originalRangeRef.current = originalRange
       ? {
-          ...normalizeTiptapRange(
-            { from: originalRange.from, to: originalRange.to },
-            docSize,
-          ),
+          ...normalizeTiptapRange({ from: originalRange.from, to: originalRange.to }, docSize),
           text: originalRange.text,
         }
       : null;
@@ -208,7 +249,11 @@ export function AiStreamingController({
       if (!transaction.docChanged) return;
 
       const docSize = transaction.doc.content.size;
-      insertRangeRef.current = remapTiptapRange(insertRangeRef.current, transaction.mapping, docSize);
+      insertRangeRef.current = remapTiptapRange(
+        insertRangeRef.current,
+        transaction.mapping,
+        docSize,
+      );
 
       if (originalRangeRef.current) {
         const mappedOriginalRange = remapTiptapRange(
@@ -262,16 +307,8 @@ export function AiStreamingController({
           signal: ac.signal,
           onToken: (token: string) => {
             if (!token || editor.isDestroyed) return;
-            const currentRange = normalizeTiptapRange(
-              insertRangeRef.current,
-              editor.state.doc.content.size,
-            );
-            insertRangeRef.current = currentRange;
-
             try {
-              const tr = editor.state.tr.insertText(token, currentRange.to);
-              editor.view.dispatch(tr);
-              updatePillPosition();
+              queueToken(token);
             } catch (error) {
               ac.abort();
               const message = error instanceof Error ? error.message : "AI insert failed";
@@ -281,6 +318,7 @@ export function AiStreamingController({
             }
           },
           onComplete: () => {
+            flushTokenBuffer();
             updateActionBarPosition();
             onStreamComplete();
           },
@@ -298,6 +336,11 @@ export function AiStreamingController({
     run();
 
     return () => {
+      if (tokenFrameRef.current !== null) {
+        window.cancelAnimationFrame(tokenFrameRef.current);
+        tokenFrameRef.current = null;
+      }
+      tokenBufferRef.current = "";
       ac.abort();
       abortRef.current = null;
     };
@@ -312,6 +355,8 @@ export function AiStreamingController({
     onStreamComplete,
     updateActionBarPosition,
     updatePillPosition,
+    flushTokenBuffer,
+    queueToken,
     discardInserted,
     buildWritingContext,
     resolveInstruction,

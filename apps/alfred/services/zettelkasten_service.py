@@ -1060,19 +1060,14 @@ class ZettelkastenService:
     # ---------------
     # AI generation
     # ---------------
-    def generate_card_from_ai(
+    def _build_ai_card_messages(
         self,
         *,
         prompt: str | None = None,
         content: str | None = None,
         topic: str | None = None,
         tags: list[str] | None = None,
-    ) -> ZettelCard:
-        """Use an LLM to generate a structured zettel card from a prompt or content."""
-        import json
-
-        from alfred.core.llm_factory import get_chat_model
-
+    ) -> list[dict[str, str]]:
         if not prompt and not content:
             raise ValueError("Either prompt or content must be provided")
 
@@ -1101,32 +1096,117 @@ class ZettelkastenService:
         if tags:
             user_msg += f"Suggested tags: {', '.join(tags)}\n"
 
+        return [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": user_msg},
+        ]
+
+    def _parse_ai_card_payload(
+        self,
+        raw: str,
+        *,
+        topic: str | None = None,
+        tags: list[str] | None = None,
+    ) -> dict:
+        import json
+
+        text = raw.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+
+        data = json.loads(text)
+
+        return {
+            "title": data.get("title", "Untitled"),
+            "content": data.get("content"),
+            "summary": data.get("summary"),
+            "tags": data.get("tags") or tags or [],
+            "topic": data.get("topic") or topic,
+            "importance": data.get("importance", 5),
+            "confidence": data.get("confidence", 0.7),
+            "status": "active",
+        }
+
+    def generate_card_from_ai(
+        self,
+        *,
+        prompt: str | None = None,
+        content: str | None = None,
+        topic: str | None = None,
+        tags: list[str] | None = None,
+    ) -> ZettelCard:
+        """Use an LLM to generate a structured zettel card from a prompt or content."""
+        data = self.generate_card_payload_from_ai(
+            prompt=prompt,
+            content=content,
+            topic=topic,
+            tags=tags,
+        )
+
+        return self.create_card(**data)
+
+    def generate_card_payload_from_ai(
+        self,
+        *,
+        prompt: str | None = None,
+        content: str | None = None,
+        topic: str | None = None,
+        tags: list[str] | None = None,
+    ) -> dict:
+        """Use an LLM to generate a structured zettel payload without persisting it."""
+        from alfred.core.llm_factory import get_chat_model
+
         llm = get_chat_model()
         response = llm.invoke(
-            [
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": user_msg},
-            ]
+            self._build_ai_card_messages(
+                prompt=prompt,
+                content=content,
+                topic=topic,
+                tags=tags,
+            )
         )
 
         raw = response.content if hasattr(response, "content") else str(response)
-        raw = raw.strip()
-        # Strip markdown code fences if present
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
-            if raw.endswith("```"):
-                raw = raw[:-3]
-            raw = raw.strip()
+        return self._parse_ai_card_payload(str(raw), topic=topic, tags=tags)
 
-        data = json.loads(raw)
+    def stream_card_payload_text_from_ai(
+        self,
+        *,
+        prompt: str | None = None,
+        content: str | None = None,
+        topic: str | None = None,
+        tags: list[str] | None = None,
+    ):
+        """Yield raw generation tokens, then the parsed zettel payload."""
+        from alfred.core.llm_factory import get_chat_model
 
-        return self.create_card(
-            title=data.get("title", "Untitled"),
-            content=data.get("content"),
-            summary=data.get("summary"),
-            tags=data.get("tags") or tags or [],
-            topic=data.get("topic") or topic,
-            importance=data.get("importance", 5),
-            confidence=data.get("confidence", 0.7),
-            status="active",
-        )
+        llm = get_chat_model()
+        chunks: list[str] = []
+        for part in llm.stream(
+            self._build_ai_card_messages(
+                prompt=prompt,
+                content=content,
+                topic=topic,
+                tags=tags,
+            )
+        ):
+            raw_content = getattr(part, "content", "")
+            if isinstance(raw_content, str):
+                text = raw_content
+            elif isinstance(raw_content, list):
+                text = "".join(str(item) for item in raw_content)
+            else:
+                text = str(raw_content)
+            if text:
+                chunks.append(text)
+                yield {"type": "token", "content": text}
+
+        raw = "".join(chunks)
+        yield {
+            "type": "done",
+            "draft": self._parse_ai_card_payload(raw, topic=topic, tags=tags),
+            "raw": raw,
+        }

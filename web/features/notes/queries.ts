@@ -1,6 +1,6 @@
 import { useQuery, queryOptions, keepPreviousData } from "@tanstack/react-query";
 
-import { getNote, getNoteTree, listWorkspaces } from "@/lib/api/notes";
+import { browseNoteFilesystem, getNote, getNoteTree, listWorkspaces } from "@/lib/api/notes";
 
 export function workspacesQueryKey(userId: number | null) {
   return ["notes", "workspaces", userId] as const;
@@ -12,6 +12,10 @@ export function noteTreeQueryKey(workspaceId: string) {
 
 export function noteDetailsQueryKey(noteId: string) {
   return ["notes", "details", noteId] as const;
+}
+
+export function noteFilesystemBrowseQueryKey(path: string | null) {
+  return ["notes", "filesystem", "browse", path ?? "__root__"] as const;
 }
 
 export function workspacesQueryOptions(params: { userId?: number | null } = {}) {
@@ -46,3 +50,12 @@ export function useNote(noteId: string | null) {
   });
 }
 
+export function useNoteFilesystemBrowse(path: string | null, enabled: boolean) {
+  return useQuery({
+    enabled,
+    queryKey: noteFilesystemBrowseQueryKey(path),
+    queryFn: () => browseNoteFilesystem(path),
+    staleTime: 5_000,
+    placeholderData: keepPreviousData,
+  });
+}

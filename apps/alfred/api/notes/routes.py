@@ -10,6 +10,10 @@ from alfred.api.dependencies import get_db_session
 from alfred.schemas.notes import (
     NoteAssetResponse,
     NoteCreateRequest,
+    NoteFilesystemBrowseResponse,
+    NoteFilesystemEntryResponse,
+    NoteFilesystemImportRequest,
+    NoteFilesystemImportResponse,
     NoteMoveRequest,
     NoteResponse,
     NotesListResponse,
@@ -29,6 +33,11 @@ from alfred.services.notes_service import (
     NoteNotFoundError,
     NotesService,
     WorkspaceNotFoundError,
+)
+from alfred.services.notes_filesystem_service import (
+    FilesystemPathNotAllowedError,
+    FilesystemPathNotFoundError,
+    NotesFilesystemService,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["notes"])
@@ -65,6 +74,18 @@ def _note_response(row) -> NoteResponse:
         content_json=row.content_json,
         created_by=row.created_by,
         last_edited_by=row.last_edited_by,
+    )
+
+
+def _filesystem_entry_response(row) -> NoteFilesystemEntryResponse:
+    return NoteFilesystemEntryResponse(
+        name=row.name,
+        path=row.path,
+        kind=row.kind,
+        hidden=row.hidden,
+        importable=row.importable,
+        size_bytes=row.size_bytes,
+        reason=row.reason,
     )
 
 
@@ -182,6 +203,67 @@ def tree(
         _sort_children(n)
 
     return NoteTreeResponse(workspace_id=workspace_id, items=root)
+
+
+@router.get("/notes/filesystem/browse", response_model=NoteFilesystemBrowseResponse)
+def browse_note_filesystem(
+    path: str | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+) -> NoteFilesystemBrowseResponse:
+    svc = NotesFilesystemService(session)
+    try:
+        result = svc.browse(path=path)
+    except FilesystemPathNotAllowedError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except FilesystemPathNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return NoteFilesystemBrowseResponse(
+        path=result.path,
+        name=result.name,
+        parent_path=result.parent_path,
+        root_path=result.root_path,
+        items=[_filesystem_entry_response(item) for item in result.items],
+    )
+
+
+@router.post("/notes/filesystem/import", response_model=NoteFilesystemImportResponse)
+def import_note_filesystem(
+    payload: NoteFilesystemImportRequest,
+    user_id: int | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+) -> NoteFilesystemImportResponse:
+    svc = NotesFilesystemService(session)
+    try:
+        result = svc.import_path(
+            workspace_id=payload.workspace_id,
+            path=payload.path,
+            parent_id=payload.parent_id,
+            user_id=user_id,
+            max_files=payload.max_files,
+        )
+    except FilesystemPathNotAllowedError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except FilesystemPathNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except WorkspaceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except NoteNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except NoteMoveConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return NoteFilesystemImportResponse(
+        source_path=result.source_path,
+        root_note_id=result.root_note_id,
+        imported_count=result.imported_count,
+        skipped_count=result.skipped_count,
+        skipped_paths=result.skipped_paths,
+    )
 
 
 @router.get("/notes/{note_id}", response_model=NoteResponse)

@@ -20,15 +20,21 @@ import {
 import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "@/components/ui/button";
+import { useLocalStorageString } from "@/lib/hooks/use-local-storage-value";
 import {
   useAgentStore,
   useToolCallStore,
   selectOrderedMessages,
   PHILOSOPHICAL_LENSES,
+  type AgentMessage,
   type ArtifactCard,
 } from "@/lib/stores/agent-store";
 import { useShellStore, type ChatMode } from "@/lib/stores/shell-store";
-import { MessageBubble } from "@/components/chat/message-bubble";
+import {
+  MessageBubble,
+  type ResponseComment,
+  type ResponseCommentTarget,
+} from "@/components/chat/message-bubble";
 import { useStickToBottom } from "@/lib/hooks/use-stick-to-bottom";
 import { DEFAULT_AI_MODEL } from "@/lib/constants/ai";
 import { cn } from "@/lib/utils";
@@ -64,6 +70,50 @@ const SUGGESTIONS: Record<string, string[]> = {
     "What happened in tech news today?",
   ],
 };
+
+type ResponseCommentsByMessageId = Record<string, ResponseComment[]>;
+
+function buildResponseCommentsStorageKey(threadId: number | null): string {
+  return `alfred:chat:response-comments:${threadId ?? "draft"}`;
+}
+
+function parseResponseComments(raw: string): ResponseCommentsByMessageId {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed as ResponseCommentsByMessageId;
+  } catch {
+    return {};
+  }
+}
+
+function buildResponseCommentsPrompt(
+  message: { content: string },
+  comments: ResponseComment[],
+): string {
+  const formattedComments = comments
+    .map((comment, index) => {
+      const blockContext = comment.blockPreview
+        ? [`On markdown block:`, `> ${comment.blockPreview}`, ""].join("\n")
+        : "";
+
+      return [`Comment ${index + 1}:`, blockContext, comment.body].filter(Boolean).join("\n");
+    })
+    .join("\n");
+
+  return [
+    "Reply to the review comments on your previous response.",
+    "Treat these like GitHub PR or Notion comments: answer each comment, revise your position if needed, and call out any concrete actions you would take.",
+    "",
+    "Original AI response being reviewed:",
+    "```markdown",
+    message.content,
+    "```",
+    "",
+    "Comments:",
+    formattedComments,
+  ].join("\n");
+}
 
 // --- UnifiedChat ---
 
@@ -131,6 +181,19 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
   } = useStickToBottom();
 
   const isSidebar = mode === "sidebar";
+  const commentsStorageKey = useMemo(
+    () => buildResponseCommentsStorageKey(activeThreadId),
+    [activeThreadId],
+  );
+  const [responseCommentsRaw, setResponseCommentsRaw] = useLocalStorageString(
+    commentsStorageKey,
+    "{}",
+  );
+
+  const commentsByMessageId = useMemo(
+    () => parseResponseComments(responseCommentsRaw),
+    [responseCommentsRaw],
+  );
 
   // Load threads on mount/open
   useEffect(() => {
@@ -168,6 +231,47 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
     await sendMessage(text);
   }, [input, activeThreadId, createThread, scrollToBottom, sendMessage]);
 
+  const handleAddResponseComment = useCallback(
+    (messageId: string, body: string, target: ResponseCommentTarget) => {
+      const trimmed = body.trim();
+      if (!trimmed) return;
+
+      const comment: ResponseComment = {
+        id: `${messageId}-${Date.now()}`,
+        body: trimmed,
+        createdAt: Date.now(),
+        blockId: target.blockId,
+        blockPreview: target.blockPreview,
+      };
+
+      setResponseCommentsRaw((currentRaw) => {
+        const currentThreadComments = parseResponseComments(currentRaw);
+
+        return JSON.stringify({
+          ...currentThreadComments,
+          [messageId]: [...(currentThreadComments[messageId] ?? []), comment],
+        });
+      });
+    },
+    [setResponseCommentsRaw],
+  );
+
+  const handleReplyToResponseComments = useCallback(
+    async (message: AgentMessage) => {
+      const comments = commentsByMessageId[message.id] ?? [];
+      if (comments.length === 0) return;
+
+      const text = buildResponseCommentsPrompt(message, comments);
+      scrollToBottom("smooth");
+
+      if (!activeThreadId) {
+        await createThread("Response comments");
+      }
+      await sendMessage(text);
+    },
+    [activeThreadId, commentsByMessageId, createThread, scrollToBottom, sendMessage],
+  );
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -175,15 +279,12 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
     }
   };
 
-  const handleViewZettel = useCallback(
-    (zettelId: number) => {
-      const shell = useShellStore.getState();
-      shell.setChatMode("sidebar");
-      shell.openZettelViewer(zettelId);
-      setEditingZettelId(null);
-    },
-    [],
-  );
+  const handleViewZettel = useCallback((zettelId: number) => {
+    const shell = useShellStore.getState();
+    shell.setChatMode("sidebar");
+    shell.openZettelViewer(zettelId);
+    setEditingZettelId(null);
+  }, []);
 
   const handleArtifactClick = useCallback(
     (artifact: ArtifactCard) => {
@@ -309,6 +410,9 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
                 message={msg}
                 mode={mode}
                 isOnNotes={!!isOnNotes}
+                responseComments={commentsByMessageId[msg.id] ?? []}
+                onAddResponseComment={handleAddResponseComment}
+                onReplyToResponseComments={handleReplyToResponseComments}
                 onArtifactClick={handleArtifactClick}
                 onViewZettel={handleViewZettel}
               />
@@ -490,7 +594,9 @@ function ExpandedHeader({
         {activeThread && (
           <>
             <span className="text-[var(--alfred-text-tertiary)]">/</span>
-            <span className="text-foreground min-w-0 max-w-xs truncate text-sm">{activeThread.title}</span>
+            <span className="text-foreground max-w-xs min-w-0 truncate text-sm">
+              {activeThread.title}
+            </span>
           </>
         )}
         <ChevronDown className="text-muted-foreground size-3" />

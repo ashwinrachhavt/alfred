@@ -88,9 +88,46 @@ class NoteTreeResponse(BaseModel):
     items: list[NoteTreeNode]
 
 
+class NoteFilesystemEntryResponse(BaseModel):
+    name: str
+    path: str
+    kind: str
+    hidden: bool
+    importable: bool
+    size_bytes: int | None = None
+    reason: str | None = None
+
+
+class NoteFilesystemBrowseResponse(BaseModel):
+    path: str
+    name: str
+    parent_path: str | None = None
+    root_path: str
+    items: list[NoteFilesystemEntryResponse]
+
+
+class NoteFilesystemImportRequest(BaseModel):
+    workspace_id: str
+    path: str
+    parent_id: str | None = None
+    max_files: int = Field(default=200, ge=1, le=500)
+
+
+class NoteFilesystemImportResponse(BaseModel):
+    source_path: str
+    root_note_id: str
+    imported_count: int
+    skipped_count: int
+    skipped_paths: list[str]
+
+
 __all__ = [
     "NoteCreateRequest",
     "NoteAssetResponse",
+    "NoteFilesystemBrowseResponse",
+    "NoteFilesystemEntryResponse",
+    "NoteFilesystemImportRequest",
+    "NoteFilesystemImportResponse",
     "NoteMoveRequest",
     "NoteResponse",
     "NotesListResponse",

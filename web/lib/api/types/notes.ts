@@ -83,3 +83,35 @@ export type NoteAssetResponse = {
   created_by: number | null;
 };
 
+export type NoteFilesystemEntry = {
+  name: string;
+  path: string;
+  kind: "directory" | "file" | "symlink" | "other";
+  hidden: boolean;
+  importable: boolean;
+  size_bytes: number | null;
+  reason: string | null;
+};
+
+export type NoteFilesystemBrowseResponse = {
+  path: string;
+  name: string;
+  parent_path: string | null;
+  root_path: string;
+  items: NoteFilesystemEntry[];
+};
+
+export type NoteFilesystemImportRequest = {
+  workspace_id: string;
+  path: string;
+  parent_id?: string | null;
+  max_files?: number;
+};
+
+export type NoteFilesystemImportResponse = {
+  source_path: string;
+  root_note_id: string;
+  imported_count: number;
+  skipped_count: number;
+  skipped_paths: string[];
+};

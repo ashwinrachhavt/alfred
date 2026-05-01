@@ -3,6 +3,9 @@ import { apiRoutes } from "@/lib/api/routes";
 import type {
   NoteAssetResponse,
   NoteCreateRequest,
+  NoteFilesystemBrowseResponse,
+  NoteFilesystemImportRequest,
+  NoteFilesystemImportResponse,
   NoteResponse,
   NoteTreeResponse,
   NoteUpdateRequest,
@@ -19,7 +22,9 @@ function buildQuery(params: Record<string, string | number | null | undefined>):
   return query.toString();
 }
 
-export async function listWorkspaces(params: { userId?: number | null } = {}): Promise<Workspace[]> {
+export async function listWorkspaces(
+  params: { userId?: number | null } = {},
+): Promise<Workspace[]> {
   const query = buildQuery({ user_id: params.userId });
   const url = query ? `${apiRoutes.notes.workspaces}?${query}` : apiRoutes.notes.workspaces;
   return apiFetch<Workspace[]>(url);
@@ -30,17 +35,35 @@ export async function createWorkspace(
   params: { userId?: number | null } = {},
 ): Promise<Workspace> {
   const query = buildQuery({ user_id: params.userId });
-  const url = query ? `${apiRoutes.notes.createWorkspace}?${query}` : apiRoutes.notes.createWorkspace;
-  return apiPostJson<Workspace, WorkspaceCreateRequest>(
-    url,
-    payload,
-  );
+  const url = query
+    ? `${apiRoutes.notes.createWorkspace}?${query}`
+    : apiRoutes.notes.createWorkspace;
+  return apiPostJson<Workspace, WorkspaceCreateRequest>(url, payload);
 }
 
 export async function getNoteTree(workspaceId: string): Promise<NoteTreeResponse> {
   const query = buildQuery({ workspace_id: workspaceId });
   const url = query ? `${apiRoutes.notes.tree}?${query}` : apiRoutes.notes.tree;
   return apiFetch<NoteTreeResponse>(url);
+}
+
+export async function browseNoteFilesystem(
+  path: string | null,
+): Promise<NoteFilesystemBrowseResponse> {
+  const query = buildQuery({ path });
+  const url = query
+    ? `${apiRoutes.notes.filesystemBrowse}?${query}`
+    : apiRoutes.notes.filesystemBrowse;
+  return apiFetch<NoteFilesystemBrowseResponse>(url);
+}
+
+export async function importNoteFilesystem(
+  payload: NoteFilesystemImportRequest,
+): Promise<NoteFilesystemImportResponse> {
+  return apiPostJson<NoteFilesystemImportResponse, NoteFilesystemImportRequest>(
+    apiRoutes.notes.filesystemImport,
+    payload,
+  );
 }
 
 export async function createNote(payload: NoteCreateRequest): Promise<NoteResponse> {
@@ -51,7 +74,10 @@ export async function getNote(noteId: string): Promise<NoteResponse> {
   return apiFetch<NoteResponse>(apiRoutes.notes.noteById(noteId));
 }
 
-export async function updateNote(noteId: string, payload: NoteUpdateRequest): Promise<NoteResponse> {
+export async function updateNote(
+  noteId: string,
+  payload: NoteUpdateRequest,
+): Promise<NoteResponse> {
   return apiPatchJson<NoteResponse, NoteUpdateRequest>(apiRoutes.notes.noteById(noteId), payload);
 }
 

@@ -93,15 +93,16 @@ export const WikiLink = Node.create<WikiLinkOptions>({
       span.setAttribute("data-card-id", (node.attrs.cardId as string) ?? "");
       span.textContent = (node.attrs.title as string) ?? "";
 
-      // Handle clicks
-      span.addEventListener("click", (e) => {
+      const handleClick = (e: MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
         const cardId = node.attrs.cardId as string;
         if (cardId && this.options.onClickLink) {
           this.options.onClickLink(cardId);
         }
-      });
+      };
+
+      span.addEventListener("click", handleClick);
 
       Object.entries(HTMLAttributes).forEach(([key, value]) => {
         if (typeof value === "string") {
@@ -109,14 +110,22 @@ export const WikiLink = Node.create<WikiLinkOptions>({
         }
       });
 
-      return { dom: span };
+      return {
+        dom: span,
+        destroy: () => {
+          span.removeEventListener("click", handleClick);
+        },
+      };
     };
   },
 
   addStorage() {
     return {
       markdown: {
-        serialize(state: { write: (text: string) => void }, node: { attrs: Record<string, unknown> }) {
+        serialize(
+          state: { write: (text: string) => void },
+          node: { attrs: Record<string, unknown> },
+        ) {
           const title = (node.attrs.title as string) || "";
           const cardId = (node.attrs.cardId as string) || "";
           state.write(`[[${title}|${cardId}]]`);
@@ -160,7 +169,9 @@ export const WikiLink = Node.create<WikiLinkOptions>({
               return true;
             });
           },
-          updateDOM() { /* no-op */ },
+          updateDOM() {
+            /* no-op */
+          },
         },
       },
     };
@@ -171,9 +182,7 @@ export const WikiLink = Node.create<WikiLinkOptions>({
  * Extract all wiki-link card IDs from a TipTap JSON document.
  * Used for sync_wiki_links on save.
  */
-export function extractWikiLinkCardIds(
-  doc: Record<string, unknown> | null | undefined,
-): number[] {
+export function extractWikiLinkCardIds(doc: Record<string, unknown> | null | undefined): number[] {
   if (!doc) return [];
   const ids: number[] = [];
 

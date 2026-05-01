@@ -8,6 +8,7 @@ import type { NoteResponse } from "@/lib/api/types/notes";
 
 import {
   MarkdownNotesEditor,
+  type EditorDraft,
   type MarkdownNotesEditorHandle,
 } from "@/components/editor/markdown-notes-editor";
 import { Button } from "@/components/ui/button";
@@ -16,17 +17,32 @@ import { Skeleton } from "@/components/ui/skeleton";
 // Tooltip import removed — save button removed for seamless autosave
 import { useUpdateNote, useUploadNoteAsset } from "@/features/notes/mutations";
 import { useNote } from "@/features/notes/queries";
+import { syncWikiLinks } from "@/lib/api/zettels";
 
 type AutosaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 
 // Autosave is seamless — no visible status label (Notion-style).
 // Error state shown inline only when save fails.
 
-function normalizeNote(note: NoteResponse | null): { title: string; markdown: string } {
-  if (!note) return { title: "", markdown: "" };
+type NoteDraft = EditorDraft & {
+  title: string;
+};
+
+function jsonSignature(value: Record<string, unknown> | null): string {
+  if (!value) return "null";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "";
+  }
+}
+
+function normalizeNote(note: NoteResponse | null): NoteDraft {
+  if (!note) return { title: "", markdown: "", tiptapJson: null };
   return {
     title: note.title || "Untitled",
     markdown: note.content_markdown ?? "",
+    tiptapJson: note.content_json ?? null,
   };
 }
 
@@ -50,47 +66,58 @@ export function NoteEditorPanel({
 
   const editorRef = useRef<MarkdownNotesEditorHandle | null>(null);
   const hydratedNoteIdRef = useRef<string | null>(null);
-  const lastSavedRef = useRef<{ title: string; markdown: string }>({ title: "", markdown: "" });
-  const draftRef = useRef<{
-    title: string;
-    markdown: string;
-    tiptapJson: Record<string, unknown> | null;
-  }>({ title: "", markdown: "", tiptapJson: null });
+  const lastSavedRef = useRef<NoteDraft>({ title: "", markdown: "", tiptapJson: null });
+  const draftRef = useRef<NoteDraft>({ title: "", markdown: "", tiptapJson: null });
   const debounceTimerRef = useRef<number | null>(null);
   const queuedSaveRef = useRef(false);
+  const saveInFlightRef = useRef(false);
+  const lastSyncedWikiLinksRef = useRef("");
 
   const loaded = useMemo(() => normalizeNote(noteQuery.data ?? null), [noteQuery.data]);
 
   const saveNow = useCallback(async () => {
     if (!noteId) return;
+    const flushed = editorRef.current?.flushPendingChanges();
+    if (flushed) {
+      draftRef.current.markdown = flushed.markdown;
+      draftRef.current.tiptapJson = flushed.tiptapJson;
+    }
+
     const current = draftRef.current;
     const lastSaved = lastSavedRef.current;
-    if (current.title === lastSaved.title && current.markdown === lastSaved.markdown) {
+    const nextTitle = current.title.trim() || "Untitled";
+    const lastJsonSignature = jsonSignature(lastSaved.tiptapJson);
+    const currentJsonSignature = jsonSignature(current.tiptapJson);
+    const titleChanged = nextTitle !== lastSaved.title;
+    const markdownChanged = current.markdown !== lastSaved.markdown;
+    const jsonChanged = currentJsonSignature !== lastJsonSignature;
+
+    if (!titleChanged && !markdownChanged && !jsonChanged) {
       setAutosaveState("idle");
       return;
     }
 
-    if (updateNoteMutation.isPending) {
+    if (saveInFlightRef.current) {
       queuedSaveRef.current = true;
       return;
     }
 
     setAutosaveState("saving");
+    saveInFlightRef.current = true;
     try {
       const payload = {
-        title: current.title.trim() || "Untitled",
-        markdown: current.markdown,
-        tiptapJson: current.tiptapJson,
+        ...(titleChanged ? { title: nextTitle } : {}),
+        ...(markdownChanged ? { content_markdown: current.markdown } : {}),
+        ...(jsonChanged ? { content_json: current.tiptapJson } : {}),
       };
-      const updated = await updateNoteMutation.mutateAsync({
-        title: payload.title,
-        content_markdown: payload.markdown,
-        content_json: payload.tiptapJson,
-      });
+      const updated = await updateNoteMutation.mutateAsync(payload);
       lastSavedRef.current = normalizeNote(updated);
       const latestDraft = draftRef.current;
+      const latestTitle = latestDraft.title.trim() || "Untitled";
       const hasNewerLocalChanges =
-        latestDraft.title !== payload.title || latestDraft.markdown !== payload.markdown;
+        latestTitle !== lastSavedRef.current.title ||
+        latestDraft.markdown !== lastSavedRef.current.markdown ||
+        jsonSignature(latestDraft.tiptapJson) !== jsonSignature(lastSavedRef.current.tiptapJson);
       setAutosaveState(hasNewerLocalChanges ? "dirty" : "saved");
       if (hasNewerLocalChanges) {
         queuedSaveRef.current = true;
@@ -99,6 +126,7 @@ export function NoteEditorPanel({
       setAutosaveState("error");
       toast.error(err instanceof Error ? err.message : "Failed to save note.");
     } finally {
+      saveInFlightRef.current = false;
       if (queuedSaveRef.current) {
         queuedSaveRef.current = false;
         void saveNow();
@@ -128,13 +156,10 @@ export function NoteEditorPanel({
     setTitle(loaded.title);
     setMarkdown(loaded.markdown);
     lastSavedRef.current = loaded;
-    draftRef.current = {
-      title: loaded.title,
-      markdown: loaded.markdown,
-      tiptapJson: noteQuery.data.content_json ?? null,
-    };
+    draftRef.current = loaded;
     hydratedNoteIdRef.current = noteId;
     setAutosaveState("idle");
+    lastSyncedWikiLinksRef.current = "";
   }, [loaded, noteId, noteQuery.data]);
 
   useEffect(() => {
@@ -249,15 +274,17 @@ export function NoteEditorPanel({
           <MarkdownNotesEditor
             ref={editorRef}
             markdown={markdown}
+            tiptapJson={draftRef.current.tiptapJson}
             documentTitle={title}
             documentId={noteId}
             onMarkdownChange={(nextMarkdown) => {
               setMarkdown(nextMarkdown);
               draftRef.current.markdown = nextMarkdown;
-              queueSave();
             }}
-            onDraftChange={({ tiptapJson }) => {
+            onDraftChange={({ markdown: nextMarkdown, tiptapJson }) => {
+              draftRef.current.markdown = nextMarkdown;
               draftRef.current.tiptapJson = tiptapJson;
+              queueSave();
             }}
             className="h-full border-none bg-transparent shadow-none focus-within:ring-0 focus-within:ring-offset-0"
             placeholder="Start writing... (Type / for blocks, select text for AI)"
@@ -270,6 +297,16 @@ export function NoteEditorPanel({
               if (command === "save") {
                 await saveNow();
               }
+            }}
+            onWikiLinksChange={(cardIds) => {
+              if (!noteId) return;
+              const key = cardIds.join(",");
+              if (key === lastSyncedWikiLinksRef.current) return;
+              lastSyncedWikiLinksRef.current = key;
+              void syncWikiLinks("note", noteId, cardIds).catch((error) => {
+                lastSyncedWikiLinksRef.current = "";
+                toast.error(error instanceof Error ? error.message : "Failed to sync note links.");
+              });
             }}
           />
         </div>

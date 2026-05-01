@@ -126,15 +126,15 @@ function StatCard({
   meta?: string;
 }) {
   return (
-    <div className="rounded-xl border bg-card p-4">
-      <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-[var(--alfred-text-tertiary)]">
+    <div className="bg-card min-w-0 rounded-xl border p-4">
+      <div className="flex min-w-0 items-center gap-2 text-[10px] tracking-[0.16em] text-[var(--alfred-text-tertiary)] uppercase">
         <Icon className="size-3.5" />
-        <span className="font-mono">{label}</span>
+        <span className="truncate font-mono">{label}</span>
       </div>
-      <div className="mt-3 flex items-end justify-between gap-3">
-        <p className="font-serif text-3xl leading-none tabular-nums">{value}</p>
+      <div className="mt-3 space-y-1">
+        <p className="font-serif text-4xl leading-none tabular-nums">{value}</p>
         {meta ? (
-          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--alfred-text-tertiary)]">
+          <span className="block truncate font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
             {meta}
           </span>
         ) : null}
@@ -155,13 +155,13 @@ function PanelHeader({
   return (
     <div className="flex items-start justify-between gap-4">
       <div>
-        <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--alfred-text-tertiary)]">
+        <div className="font-mono text-[10px] tracking-[0.16em] text-[var(--alfred-text-tertiary)] uppercase">
           {title}
         </div>
-        {subtitle ? <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p> : null}
+        {subtitle ? <p className="text-muted-foreground mt-2 text-sm">{subtitle}</p> : null}
       </div>
       {count !== undefined ? (
-        <span className="rounded-sm border bg-[var(--alfred-accent-subtle)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-primary">
+        <span className="text-primary rounded-sm border bg-[var(--alfred-accent-subtle)] px-2 py-1 font-mono text-[10px] tracking-[0.12em] uppercase">
           {count}
         </span>
       ) : null}
@@ -181,7 +181,7 @@ function SectionCard({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-xl border bg-card p-5">
+    <section className="bg-card rounded-xl border p-5">
       <PanelHeader title={title} subtitle={subtitle} count={count} />
       <div className="mt-4">{children}</div>
     </section>
@@ -201,26 +201,26 @@ const TimelineItem = memo(function TimelineItem({ event }: { event: TodayAuditEv
 
   return (
     <div className="grid gap-3 rounded-lg border px-4 py-3 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center">
-      <div className="flex size-9 items-center justify-center rounded-full bg-[var(--alfred-accent-subtle)] text-primary">
+      <div className="text-primary flex size-9 items-center justify-center rounded-full bg-[var(--alfred-accent-subtle)]">
         <meta.icon className="size-4" />
       </div>
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--alfred-text-tertiary)]">
+          <span className="font-mono text-[10px] tracking-[0.16em] text-[var(--alfred-text-tertiary)] uppercase">
             {meta.label}
           </span>
           {event.status ? (
-            <span className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--alfred-text-tertiary)]">
+            <span className="bg-muted rounded-sm px-1.5 py-0.5 font-mono text-[10px] tracking-[0.1em] text-[var(--alfred-text-tertiary)] uppercase">
               {event.status}
             </span>
           ) : null}
         </div>
-        <Link href={event.href} className="mt-1 block truncate text-sm hover:text-primary">
+        <Link href={event.href} className="hover:text-primary mt-1 block truncate text-sm">
           {event.title}
         </Link>
-        <p className="mt-1 text-xs text-muted-foreground">{event.meta}</p>
+        <p className="text-muted-foreground mt-1 text-xs">{event.meta}</p>
       </div>
-      <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--alfred-text-tertiary)]">
+      <div className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
         {formatTimestamp(event.timestamp)}
       </div>
     </div>
@@ -252,18 +252,22 @@ const CollapsedAuditRow = memo(function CollapsedAuditRow({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-medium">{format(parseISO(day.date), "EEE, MMM d")}</span>
+            <span className="truncate text-sm font-medium">
+              {format(parseISO(day.date), "EEE, MMM d")}
+            </span>
             {isSelected ? (
-              <span className="rounded-sm border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--alfred-text-tertiary)]">
+              <span className="rounded-sm border px-1.5 py-0.5 font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
                 selected day
               </span>
             ) : null}
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">{describeCollapsedDay(day, selectedKinds)}</p>
+          <p className="text-muted-foreground mt-2 text-xs">
+            {describeCollapsedDay(day, selectedKinds)}
+          </p>
         </div>
         <div className="text-right">
           <div className="font-serif text-2xl leading-none tabular-nums">{filteredTotal}</div>
-          <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--alfred-text-tertiary)]">
+          <div className="mt-1 font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
             {formatCountLabel(filteredTotal, "filtered event")}
           </div>
         </div>
@@ -272,17 +276,11 @@ const CollapsedAuditRow = memo(function CollapsedAuditRow({
   );
 });
 
-function EmptyPanel({
-  title,
-  body,
-}: {
-  title: string;
-  body: string;
-}) {
+function EmptyPanel({ title, body }: { title: string; body: string }) {
   return (
     <div className="rounded-xl border border-dashed p-6 text-center">
       <p className="font-serif text-xl">{title}</p>
-      <p className="mt-2 text-sm text-muted-foreground">{body}</p>
+      <p className="text-muted-foreground mt-2 text-sm">{body}</p>
     </div>
   );
 }
@@ -526,7 +524,7 @@ export function TodayDashboard() {
     return (
       <div className="flex flex-col items-center py-20 text-center">
         <p className="font-serif text-3xl tracking-tight">Could not load your calendar audit</p>
-        <p className="mt-3 max-w-xl text-sm text-muted-foreground">
+        <p className="text-muted-foreground mt-3 max-w-xl text-sm">
           The daily activity summary endpoint is unavailable. Check that the backend is running.
         </p>
         <Button variant="outline" className="mt-5" onClick={() => void calendarQuery.refetch()}>
@@ -548,24 +546,23 @@ export function TodayDashboard() {
       <header className="border-b pb-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-3">
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--alfred-text-tertiary)]">
+            <div className="font-mono text-[10px] tracking-[0.18em] text-[var(--alfred-text-tertiary)] uppercase">
               Daily Audit
             </div>
             <div>
-              <h1 className="font-serif text-4xl tracking-tight">{formatSelectedDateLabel(selectedDate)}</h1>
-              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+              <h1 className="font-serif text-4xl tracking-tight">
+                {formatSelectedDateLabel(selectedDate)}
+              </h1>
+              <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
                 Explore what you captured, distilled, connected, and still owe yourself on{" "}
-                {format(selectedDate, "MMMM d, yyyy")}. Alfred keeps the ledger by day so your learning stays inspectable.
+                {format(selectedDate, "MMMM d, yyyy")}. Alfred keeps the ledger by day so your
+                learning stays inspectable.
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={goToPreviousDay}
-            >
+            <Button variant="outline" size="sm" onClick={goToPreviousDay}>
               <ChevronLeft className="size-4" />
               Previous day
             </Button>
@@ -578,24 +575,26 @@ export function TodayDashboard() {
               Next day
               <ChevronRight className="size-4" />
             </Button>
-            <Button size="sm" onClick={goToToday}>Jump to today</Button>
+            <Button size="sm" onClick={goToToday}>
+              Jump to today
+            </Button>
           </div>
         </div>
       </header>
 
       <div className="grid gap-8 xl:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-          <section className="rounded-xl border bg-card p-4">
+          <section className="bg-card rounded-xl border p-4">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--alfred-text-tertiary)]">
+                <div className="font-mono text-[10px] tracking-[0.16em] text-[var(--alfred-text-tertiary)] uppercase">
                   Calendar
                 </div>
-                <p className="mt-2 text-sm text-muted-foreground">
+                <p className="text-muted-foreground mt-2 text-sm">
                   Select any day to audit what landed in Alfred.
                 </p>
               </div>
-              <div className="rounded-sm border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--alfred-text-tertiary)]">
+              <div className="rounded-sm border px-2 py-1 font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
                 {timeZone}
               </div>
             </div>
@@ -628,53 +627,57 @@ export function TodayDashboard() {
                 high: "border border-primary/30 bg-primary/15 text-primary",
                 reviewHeavy: "ring-1 ring-[var(--warning)]/30",
               }}
-              className="w-full rounded-lg border bg-background p-2"
+              className="bg-background w-full rounded-lg border p-2"
             />
 
-            <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+            <div className="text-muted-foreground mt-4 grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-lg border px-3 py-2">
-                <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--alfred-text-tertiary)]">
+                <div className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
                   Active days
                 </div>
-                <div className="mt-2 font-serif text-2xl leading-none">{monthTotals.active_days}</div>
+                <div className="mt-2 font-serif text-2xl leading-none">
+                  {monthTotals.active_days}
+                </div>
               </div>
               <div className="rounded-lg border px-3 py-2">
-                <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--alfred-text-tertiary)]">
+                <div className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
                   Month events
                 </div>
-                <div className="mt-2 font-serif text-2xl leading-none">{monthTotals.total_events}</div>
+                <div className="mt-2 font-serif text-2xl leading-none">
+                  {monthTotals.total_events}
+                </div>
               </div>
             </div>
 
             <div className="mt-4 border-t pt-4">
-              <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--alfred-text-tertiary)]">
+              <div className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
                 Heatmap legend
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+              <div className="text-muted-foreground mt-3 grid grid-cols-2 gap-2 text-xs">
                 <div className="flex items-center gap-2">
-                  <span className="size-3 rounded-sm border bg-background" />
+                  <span className="bg-background size-3 rounded-sm border" />
                   Quiet
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="size-3 rounded-sm bg-primary/5" />
+                  <span className="bg-primary/5 size-3 rounded-sm" />
                   1-2 events
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="size-3 rounded-sm border border-primary/20 bg-primary/10" />
+                  <span className="border-primary/20 bg-primary/10 size-3 rounded-sm border" />
                   3-5 events
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="size-3 rounded-sm border border-primary/30 bg-primary/15" />
+                  <span className="border-primary/30 bg-primary/15 size-3 rounded-sm border" />
                   6+ events
                 </div>
               </div>
-              <p className="mt-3 text-xs text-muted-foreground">
+              <p className="text-muted-foreground mt-3 text-xs">
                 Amber rings mark days with reviews due.
               </p>
             </div>
           </section>
 
-          <section className="rounded-xl border bg-card p-4">
+          <section className="bg-card rounded-xl border p-4">
             <PanelHeader
               title="Month At A Glance"
               subtitle={format(visibleMonth, "MMMM yyyy")}
@@ -689,22 +692,26 @@ export function TodayDashboard() {
                     onClick={() => selectDate(parseISO(day.date))}
                     className={cn(
                       "w-full rounded-lg border px-3 py-3 text-left transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--alfred-accent-subtle)]",
-                      selectedDayKey === day.date && "border-[var(--border-strong)] bg-[var(--alfred-accent-subtle)]",
+                      selectedDayKey === day.date &&
+                        "border-[var(--border-strong)] bg-[var(--alfred-accent-subtle)]",
                     )}
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium">{format(parseISO(day.date), "EEE, MMM d")}</span>
-                      <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--alfred-text-tertiary)]">
+                      <span className="font-medium">
+                        {format(parseISO(day.date), "EEE, MMM d")}
+                      </span>
+                      <span className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
                         {day.total_events} events
                       </span>
                     </div>
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {day.captures} captures · {day.stored_cards} cards · {day.connections} links · {day.reviews_due} reviews
+                    <p className="text-muted-foreground mt-2 text-xs">
+                      {day.captures} captures · {day.stored_cards} cards · {day.connections} links ·{" "}
+                      {day.reviews_due} reviews
                     </p>
                   </button>
                 ))
               ) : (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-muted-foreground text-sm">
                   No recorded learning activity in this month yet.
                 </p>
               )}
@@ -715,7 +722,7 @@ export function TodayDashboard() {
         <main className="space-y-6">
           {isBriefingLoading ? (
             <div className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3">
                 {Array.from({ length: 5 }).map((_, index) => (
                   <Skeleton key={index} className="h-28 w-full rounded-xl" />
                 ))}
@@ -723,18 +730,22 @@ export function TodayDashboard() {
               <Skeleton className="h-[18rem] w-full rounded-xl" />
             </div>
           ) : briefingQuery.isError || !briefing ? (
-            <div className="rounded-xl border bg-card p-6">
+            <div className="bg-card rounded-xl border p-6">
               <p className="font-serif text-2xl">Could not load this day</p>
-              <p className="mt-2 text-sm text-muted-foreground">
+              <p className="text-muted-foreground mt-2 text-sm">
                 Alfred could not build the audit for {format(selectedDate, "MMMM d, yyyy")}.
               </p>
-              <Button variant="outline" className="mt-4" onClick={() => void briefingQuery.refetch()}>
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => void briefingQuery.refetch()}
+              >
                 Retry
               </Button>
             </div>
           ) : (
             <>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3">
                 <StatCard
                   icon={FileText}
                   label="Captured"
@@ -767,14 +778,14 @@ export function TodayDashboard() {
                 />
               </div>
 
-              <section className="rounded-xl border bg-card p-5">
+              <section className="bg-card rounded-xl border p-5">
                 <PanelHeader
                   title="Audit Controls"
                   subtitle="Switch between a day ledger and collapsed range summaries, then focus the record on the kinds of learning you want to inspect."
                 />
-                <div className="mt-4 grid gap-4 xl:grid-cols-[auto_minmax(0,1fr)]">
+                <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
                   <div>
-                    <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--alfred-text-tertiary)]">
+                    <div className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
                       Scope
                     </div>
                     <ToggleGroup
@@ -784,17 +795,23 @@ export function TodayDashboard() {
                       variant="outline"
                       size="sm"
                       spacing={1}
-                      className="mt-2 flex-wrap"
+                      className="mt-2 w-full flex-wrap"
                     >
-                      <ToggleGroupItem value="day">Day</ToggleGroupItem>
-                      <ToggleGroupItem value="week">Week</ToggleGroupItem>
-                      <ToggleGroupItem value="month">Month</ToggleGroupItem>
+                      <ToggleGroupItem value="day" className="min-w-20 justify-center">
+                        Day
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="week" className="min-w-20 justify-center">
+                        Week
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="month" className="min-w-20 justify-center">
+                        Month
+                      </ToggleGroupItem>
                     </ToggleGroup>
                   </div>
 
                   <div>
                     <div className="flex items-center justify-between gap-3">
-                      <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--alfred-text-tertiary)]">
+                      <div className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
                         Event filters
                       </div>
                       {!isShowingAllKinds ? (
@@ -810,12 +827,16 @@ export function TodayDashboard() {
                       variant="outline"
                       size="sm"
                       spacing={1}
-                      className="mt-2 flex-wrap"
+                      className="mt-2 w-full flex-wrap"
                     >
                       {TODAY_AUDIT_KINDS.map((kind) => (
-                        <ToggleGroupItem key={kind} value={kind}>
+                        <ToggleGroupItem
+                          key={kind}
+                          value={kind}
+                          className="min-w-[8.75rem] justify-between gap-3"
+                        >
                           <span>{AUDIT_KIND_LABELS[kind]}</span>
-                          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--alfred-text-tertiary)]">
+                          <span className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
                             {scopeKindCounts[kind]}
                           </span>
                         </ToggleGroupItem>
@@ -826,7 +847,7 @@ export function TodayDashboard() {
               </section>
 
               <section className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
-                <div className="rounded-xl border bg-card p-5">
+                <div className="bg-card rounded-xl border p-5">
                   <PanelHeader
                     title="Audit Trail"
                     subtitle={
@@ -843,7 +864,9 @@ export function TodayDashboard() {
                   <div className="mt-4 space-y-3">
                     {auditScope === "day" ? (
                       filteredTimeline.length > 0 ? (
-                        filteredTimeline.map((event) => <TimelineItem key={event.id} event={event} />)
+                        filteredTimeline.map((event) => (
+                          <TimelineItem key={event.id} event={event} />
+                        ))
                       ) : (
                         <EmptyPanel
                           title={hasDayActivity ? "Nothing matched these filters" : "Quiet day"}
@@ -866,14 +889,17 @@ export function TodayDashboard() {
                           />
                         ))}
                         {hiddenQuietMonthDays > 0 ? (
-                          <p className="text-xs text-muted-foreground">
-                            {formatCountLabel(hiddenQuietMonthDays, "quiet day")} stay visible in the heatmap above.
+                          <p className="text-muted-foreground text-xs">
+                            {formatCountLabel(hiddenQuietMonthDays, "quiet day")} stay visible in
+                            the heatmap above.
                           </p>
                         ) : null}
                       </>
                     ) : (
                       <EmptyPanel
-                        title={scopeTotals.total_events > 0 ? "No matching days" : "No recorded activity"}
+                        title={
+                          scopeTotals.total_events > 0 ? "No matching days" : "No recorded activity"
+                        }
                         body={
                           scopeTotals.total_events > 0
                             ? "This range has activity in Alfred, but none of it matches the selected filters."
@@ -885,12 +911,12 @@ export function TodayDashboard() {
                 </div>
 
                 <div className="space-y-4">
-                  <section className="rounded-xl border bg-card p-5">
+                  <section className="bg-card rounded-xl border p-5">
                     <PanelHeader
                       title={auditScope === "day" ? "Day Snapshot" : "Range Snapshot"}
                       subtitle={`${briefing.stats.total_cards} cards in the library · ${briefing.stats.total_links} total links`}
                     />
-                    <div className="mt-4 space-y-3 text-sm text-muted-foreground">
+                    <div className="text-muted-foreground mt-4 space-y-3 text-sm">
                       {auditScope === "day" ? (
                         <>
                           <p>
@@ -917,17 +943,20 @@ export function TodayDashboard() {
                               : "No review debt was scheduled in this range."}
                           </p>
                           <p>
-                            Detailed artifact lists below stay pinned to {format(selectedDate, "MMMM d, yyyy")}. Click any collapsed row to inspect another day.
+                            Detailed artifact lists below stay pinned to{" "}
+                            {format(selectedDate, "MMMM d, yyyy")}. Click any collapsed row to
+                            inspect another day.
                           </p>
                         </>
                       )}
-                      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--alfred-text-tertiary)]">
-                        Generated {format(parseISO(briefing.generated_at), "MMM d, yyyy 'at' h:mm a")}
+                      <p className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+                        Generated{" "}
+                        {format(parseISO(briefing.generated_at), "MMM d, yyyy 'at' h:mm a")}
                       </p>
                     </div>
                   </section>
 
-                  <section className="rounded-xl border bg-card p-5">
+                  <section className="bg-card rounded-xl border p-5">
                     <PanelHeader
                       title="Explore Next"
                       subtitle="Jump directly into the artifacts behind the day."
@@ -948,9 +977,10 @@ export function TodayDashboard() {
               </section>
 
               {auditScope !== "day" ? (
-                <section className="rounded-xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
-                  The detailed sections below remain scoped to {format(selectedDate, "MMMM d, yyyy")}. Use the
-                  collapsed audit trail above to drill into another day.
+                <section className="text-muted-foreground rounded-xl border border-dashed px-4 py-3 text-sm">
+                  The detailed sections below remain scoped to{" "}
+                  {format(selectedDate, "MMMM d, yyyy")}. Use the collapsed audit trail above to
+                  drill into another day.
                 </section>
               ) : null}
 
@@ -972,11 +1002,12 @@ export function TodayDashboard() {
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <p className="truncate text-sm">{capture.title}</p>
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                  {capture.content_type ?? "capture"} · {formatTimestamp(capture.created_at)}
+                                <p className="text-muted-foreground mt-1 text-xs">
+                                  {capture.content_type ?? "capture"} ·{" "}
+                                  {formatTimestamp(capture.created_at)}
                                 </p>
                               </div>
-                              <span className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--alfred-text-tertiary)]">
+                              <span className="bg-muted rounded-sm px-1.5 py-0.5 font-mono text-[10px] tracking-[0.1em] text-[var(--alfred-text-tertiary)] uppercase">
                                 {capture.pipeline_status}
                               </span>
                             </div>
@@ -984,7 +1015,9 @@ export function TodayDashboard() {
                         ))}
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground">No documents were captured on this date.</p>
+                      <p className="text-muted-foreground text-sm">
+                        No documents were captured on this date.
+                      </p>
                     )}
                   </SectionCard>
                 ) : null}
@@ -1004,15 +1037,18 @@ export function TodayDashboard() {
                             className="block rounded-lg border px-4 py-3 transition-colors hover:bg-[var(--alfred-accent-subtle)]"
                           >
                             <p className="truncate text-sm">{card.title}</p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {card.topic ?? "Untopiced"} · {card.tags.length > 0 ? card.tags.join(" · ") : "No tags"} ·{" "}
+                            <p className="text-muted-foreground mt-1 text-xs">
+                              {card.topic ?? "Untopiced"} ·{" "}
+                              {card.tags.length > 0 ? card.tags.join(" · ") : "No tags"} ·{" "}
                               {formatTimestamp(card.created_at)}
                             </p>
                           </Link>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground">No new knowledge cards were stored on this date.</p>
+                      <p className="text-muted-foreground text-sm">
+                        No new knowledge cards were stored on this date.
+                      </p>
                     )}
                   </SectionCard>
                 ) : null}
@@ -1028,22 +1064,30 @@ export function TodayDashboard() {
                         {briefing.connections.map((connection) => (
                           <div key={connection.link_id} className="rounded-lg border px-4 py-3">
                             <div className="flex items-center gap-2 text-sm">
-                              <Link href={`/knowledge/${connection.from_card_id}`} className="truncate hover:text-primary">
+                              <Link
+                                href={`/knowledge/${connection.from_card_id}`}
+                                className="hover:text-primary truncate"
+                              >
                                 {connection.from_title}
                               </Link>
                               <span className="text-[var(--alfred-text-tertiary)]">→</span>
-                              <Link href={`/knowledge/${connection.to_card_id}`} className="truncate hover:text-primary">
+                              <Link
+                                href={`/knowledge/${connection.to_card_id}`}
+                                className="hover:text-primary truncate"
+                              >
                                 {connection.to_title}
                               </Link>
                             </div>
-                            <p className="mt-1 text-xs text-muted-foreground">
+                            <p className="text-muted-foreground mt-1 text-xs">
                               {connection.type} · {formatTimestamp(connection.created_at)}
                             </p>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground">No new links were created on this date.</p>
+                      <p className="text-muted-foreground text-sm">
+                        No new links were created on this date.
+                      </p>
                     )}
                   </SectionCard>
                 ) : null}
@@ -1065,11 +1109,11 @@ export function TodayDashboard() {
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <p className="truncate text-sm">{review.card_title}</p>
-                                <p className="mt-1 text-xs text-muted-foreground">
+                                <p className="text-muted-foreground mt-1 text-xs">
                                   Stage {review.stage} · due {formatTimestamp(review.due_at)}
                                 </p>
                               </div>
-                              <span className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--alfred-text-tertiary)]">
+                              <span className="bg-muted rounded-sm px-1.5 py-0.5 font-mono text-[10px] tracking-[0.1em] text-[var(--alfred-text-tertiary)] uppercase">
                                 {review.status}
                               </span>
                             </div>
@@ -1077,7 +1121,9 @@ export function TodayDashboard() {
                         ))}
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground">No review queue was scheduled for this date.</p>
+                      <p className="text-muted-foreground text-sm">
+                        No review queue was scheduled for this date.
+                      </p>
                     )}
                   </SectionCard>
                 ) : null}
@@ -1097,14 +1143,16 @@ export function TodayDashboard() {
                             className="block rounded-lg border border-dashed px-4 py-3 transition-colors hover:bg-[var(--alfred-accent-subtle)]"
                           >
                             <p className="truncate text-sm">{gap.title}</p>
-                            <p className="mt-1 text-xs text-muted-foreground">
+                            <p className="text-muted-foreground mt-1 text-xs">
                               Stub card · {formatTimestamp(gap.created_at)}
                             </p>
                           </Link>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground">No new gaps were surfaced on this date.</p>
+                      <p className="text-muted-foreground text-sm">
+                        No new gaps were surfaced on this date.
+                      </p>
                     )}
                   </SectionCard>
                 ) : null}

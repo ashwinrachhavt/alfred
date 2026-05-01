@@ -13,9 +13,8 @@ const { mockCloseZettelViewer, mockOpenZettelViewer } = vi.hoisted(() => ({
 }));
 
 vi.mock("@tanstack/react-query", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
-    "@tanstack/react-query",
-  );
+  const actual =
+    await vi.importActual<typeof import("@tanstack/react-query")>("@tanstack/react-query");
 
   return {
     ...actual,
@@ -41,11 +40,7 @@ vi.mock("@/lib/stores/shell-store", () => ({
 }));
 
 vi.mock("../zettel-link-suggestions", () => ({
-  ZettelLinkSuggestions: ({
-    labelClassName,
-  }: {
-    labelClassName?: string;
-  }) => (
+  ZettelLinkSuggestions: ({ labelClassName }: { labelClassName?: string }) => (
     <section>
       <div className={labelClassName}>AI Suggestions</div>
       <p>Mock suggestions</p>
@@ -102,7 +97,7 @@ describe("ZettelFullView", () => {
       },
       isLoading: false,
       isError: false,
-    });
+    } as unknown as ReturnType<typeof useZettelCard>);
   });
 
   it("renders reading flow before bloom and AI suggestions", () => {
@@ -114,9 +109,13 @@ describe("ZettelFullView", () => {
     const suggestions = screen.getByText("AI Suggestions");
 
     expect(screen.getAllByText("Trigger of World War II")).toHaveLength(1);
-    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
-    expect(summary.compareDocumentPosition(content) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("complementary")).toBeInTheDocument();
+    expect(
+      summary.compareDocumentPosition(content) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(content.compareDocumentPosition(bloom) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(bloom.compareDocumentPosition(suggestions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      bloom.compareDocumentPosition(suggestions) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });
