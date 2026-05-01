@@ -1,5 +1,19 @@
 "use client";
 
+/**
+ * COLOR BUDGET — Today Page (Midnight Editorial)
+ *
+ * Accent color #E8590C (via bg-primary / text-primary / border-primary) is
+ * limited to these surfaces only:
+ *   1. Active view toggle in TodayHeader
+ *   2. Priority=3 row indicator
+ *   3. Save / Create CTA in EntryDrawer
+ *   4. Selected-row left border when drawer is open for that id
+ *
+ * Everywhere else: warm monochrome via --alfred-* vars. Status expressed via
+ * typography (strikethrough, opacity, italic), NOT semantic colors.
+ */
+
 import {
   useCallback,
   useEffect,
@@ -684,13 +698,15 @@ function StatusToggle({
       onClick={(e) => onToggle(entry, e)}
       className={cn(
         "inline-flex size-4 items-center justify-center rounded-sm border transition-colors",
+        // Status is expressed via typography + warm monochrome, NOT accent.
+        // Accent (primary) is reserved for the 4 budgeted surfaces above.
         status === "done"
-          ? "border-primary bg-primary text-primary-foreground"
+          ? "border-[var(--alfred-text-tertiary)] bg-[var(--alfred-text-tertiary)] text-background"
           : status === "doing"
-            ? "border-primary text-primary"
+            ? "border-foreground text-foreground"
             : status === "skipped"
               ? "border-[var(--alfred-ruled-line)] text-[var(--alfred-text-tertiary)]"
-              : "border-[var(--alfred-ruled-line)] text-transparent hover:border-primary/60",
+              : "border-[var(--alfred-ruled-line)] text-transparent hover:border-[var(--alfred-text-tertiary)]",
       )}
       aria-label={`Status: ${label}. Click to cycle.`}
       title={`Status: ${label}`}

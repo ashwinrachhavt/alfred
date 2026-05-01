@@ -1,5 +1,19 @@
 "use client";
 
+/**
+ * COLOR BUDGET — Today Page (Midnight Editorial)
+ *
+ * Accent color #E8590C (via bg-primary / text-primary / border-primary) is
+ * limited to these surfaces only:
+ *   1. Active view toggle in TodayHeader
+ *   2. Priority=3 row indicator
+ *   3. Save / Create CTA in EntryDrawer
+ *   4. Selected-row left border when drawer is open for that id
+ *
+ * Everywhere else: warm monochrome via --alfred-* vars. Status expressed via
+ * typography (strikethrough, opacity, italic), NOT semantic colors.
+ */
+
 import {
   useCallback,
   useEffect,
@@ -421,7 +435,7 @@ export function EntryDrawer({
                 type="date"
                 value={draft.entry_date}
                 onChange={(e) => updateDraft({ entry_date: e.target.value })}
-                className="rounded-sm border border-[var(--alfred-ruled-line)] bg-transparent px-2 py-1 font-mono text-sm text-foreground focus-visible:border-primary/60 focus-visible:outline-none"
+                className="rounded-sm border border-[var(--alfred-ruled-line)] bg-transparent px-2 py-1 font-mono text-sm text-foreground focus-visible:border-ring focus-visible:outline-none"
               />
             </div>
 
@@ -493,7 +507,7 @@ export function EntryDrawer({
                       type="button"
                       onClick={() => onRemoveTag(t)}
                       aria-label={`Remove tag ${t}`}
-                      className="hover:text-primary"
+                      className="text-[var(--alfred-text-tertiary)] hover:text-foreground"
                     >
                       <X className="size-3" aria-hidden="true" />
                     </button>
@@ -513,7 +527,7 @@ export function EntryDrawer({
                   }}
                   onBlur={onAddTag}
                   placeholder="add tag…"
-                  className="h-6 w-24 rounded-sm border border-[var(--alfred-ruled-line)] bg-transparent px-2 font-mono text-[11px] text-foreground placeholder:text-[var(--alfred-text-tertiary)] focus-visible:border-primary/60 focus-visible:outline-none"
+                  className="h-6 w-24 rounded-sm border border-[var(--alfred-ruled-line)] bg-transparent px-2 font-mono text-[11px] text-foreground placeholder:text-[var(--alfred-text-tertiary)] focus-visible:border-ring focus-visible:outline-none"
                 />
               </div>
             </div>
@@ -527,7 +541,7 @@ export function EntryDrawer({
                 onBlur={() => scheduleAutoSave(draft)}
                 placeholder="Write markdown…"
                 rows={10}
-                className="w-full resize-y rounded-sm border border-[var(--alfred-ruled-line)] bg-transparent p-3 font-mono text-sm text-foreground placeholder:text-[var(--alfred-text-tertiary)] focus-visible:border-primary/60 focus-visible:outline-none"
+                className="w-full resize-y rounded-sm border border-[var(--alfred-ruled-line)] bg-transparent p-3 font-mono text-sm text-foreground placeholder:text-[var(--alfred-text-tertiary)] focus-visible:border-ring focus-visible:outline-none"
               />
             </div>
           </div>

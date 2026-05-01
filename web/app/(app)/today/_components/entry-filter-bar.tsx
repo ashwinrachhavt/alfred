@@ -187,7 +187,7 @@ export function EntryFilterBar() {
             }
           }}
           placeholder="add tag…"
-          className="h-7 w-24 rounded-sm border border-[var(--alfred-ruled-line)] bg-transparent px-2 font-mono text-[11px] text-foreground placeholder:text-[var(--alfred-text-tertiary)] focus-visible:border-primary/60 focus-visible:outline-none"
+          className="h-7 w-24 rounded-sm border border-[var(--alfred-ruled-line)] bg-transparent px-2 font-mono text-[11px] text-foreground placeholder:text-[var(--alfred-text-tertiary)] focus-visible:border-ring focus-visible:outline-none"
         />
         {filters.tag.map((t) => (
           <span
@@ -198,7 +198,7 @@ export function EntryFilterBar() {
             <button
               type="button"
               onClick={() => onRemoveTag(t)}
-              className="inline-flex items-center justify-center rounded-sm hover:text-primary"
+              className="inline-flex items-center justify-center rounded-sm text-[var(--alfred-text-tertiary)] hover:text-foreground"
               aria-label={`Remove tag ${t}`}
             >
               <X className="size-3" aria-hidden="true" />
@@ -236,7 +236,9 @@ export function EntryFilterBar() {
         <span
           className={cn(
             "inline-flex h-4 w-7 items-center rounded-full border border-[var(--alfred-ruled-line)] px-0.5 transition-colors",
-            filters.todosOnly ? "bg-primary/80 border-primary/60" : "bg-transparent",
+            filters.todosOnly
+              ? "bg-[var(--alfred-text-tertiary)] border-[var(--alfred-text-tertiary)]"
+              : "bg-transparent",
           )}
           aria-hidden="true"
         >
