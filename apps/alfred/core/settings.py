@@ -354,6 +354,32 @@ class Settings(BaseSettings):
         default=6, alias="DOCUMENT_CONCEPT_EXTRACTION_MIN_AGE_HOURS", ge=0, le=168
     )
 
+    # Today Page nightly pipeline (digest + carry-over)
+    enable_today_pipeline_nightly: bool = Field(
+        default=False,
+        alias="ENABLE_TODAY_PIPELINE_NIGHTLY",
+        description="Enable the nightly Today page pipeline (digest + carry-over)",
+    )
+    today_pipeline_nightly_utc_hour: int = Field(
+        default=7,
+        alias="TODAY_PIPELINE_NIGHTLY_UTC_HOUR",
+        ge=0,
+        le=23,
+        description="UTC hour the Today pipeline runs (default: 7 UTC ~ midnight PST)",
+    )
+    today_pipeline_nightly_utc_minute: int = Field(
+        default=0,
+        alias="TODAY_PIPELINE_NIGHTLY_UTC_MINUTE",
+        ge=0,
+        le=59,
+        description="UTC minute the Today pipeline runs",
+    )
+    today_pipeline_default_tz: str = Field(
+        default="America/Los_Angeles",
+        alias="TODAY_PIPELINE_DEFAULT_TZ",
+        description="Default user timezone for the Today pipeline",
+    )
+
     # Admin API (visibility)
     enable_admin_api_schema: bool = Field(default=False, alias="ENABLE_ADMIN_API_SCHEMA")
 

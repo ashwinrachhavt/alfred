@@ -30,6 +30,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             "alfred.tasks.batch_linking",
             "alfred.tasks.daily_briefing",
             "alfred.tasks.canvas_tasks",
+            "alfred.tasks.today_pipeline",
         ]
         if include_tasks
         else []
@@ -109,6 +110,19 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             }
         }
 
+    if settings.enable_today_pipeline_nightly:
+        beat_schedule |= {
+            "today-pipeline-nightly": {
+                "task": "alfred.tasks.today_pipeline.run_for_yesterday",
+                "schedule": crontab(
+                    hour=int(settings.today_pipeline_nightly_utc_hour),
+                    minute=int(settings.today_pipeline_nightly_utc_minute),
+                ),
+                "kwargs": {"tz_name": settings.today_pipeline_default_tz},
+                "options": {"queue": "default"},
+            }
+        }
+
     if beat_schedule:
         celery_app.conf.beat_schedule = beat_schedule
 
@@ -127,6 +141,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
         import alfred.tasks.mind_palace_agent
         import alfred.tasks.notion_import
         import alfred.tasks.planning
-        import alfred.tasks.taxonomy_reclassify  # noqa: F401
+        import alfred.tasks.taxonomy_reclassify
+        import alfred.tasks.today_pipeline  # noqa: F401
 
     return celery_app
