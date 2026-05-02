@@ -73,6 +73,24 @@ def session() -> Iterator[Session]:
             conn.execute(sqlalchemy.text("DROP TABLE IF EXISTS agent_run_events"))
             conn.execute(sqlalchemy.text("ALTER TABLE agent_run_events_new RENAME TO agent_run_events"))
 
+            # Manually fix agent_run_snapshots to use INTEGER PRIMARY KEY for autoincrement
+            conn.execute(sqlalchemy.text("""
+                CREATE TABLE IF NOT EXISTS agent_run_snapshots_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id CHAR(36) NOT NULL,
+                    up_to_seq INTEGER NOT NULL,
+                    state JSON NOT NULL,
+                    message_text TEXT NOT NULL DEFAULT '',
+                    thinking_text TEXT NOT NULL DEFAULT '',
+                    tokens_so_far INTEGER NOT NULL DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    CONSTRAINT uq_run_snapshots_run_seq UNIQUE (run_id, up_to_seq),
+                    FOREIGN KEY(run_id) REFERENCES agent_runs (id) ON DELETE CASCADE
+                )
+            """))
+            conn.execute(sqlalchemy.text("DROP TABLE IF EXISTS agent_run_snapshots"))
+            conn.execute(sqlalchemy.text("ALTER TABLE agent_run_snapshots_new RENAME TO agent_run_snapshots"))
+
         with Session(engine) as s:
             yield s
     finally:
