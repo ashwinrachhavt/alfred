@@ -109,6 +109,10 @@ export function WorkspaceShell({ sessionId, initialHydration }: Props) {
   const setSession = useZettelWorkspaceStore((s) => s.setSession);
   const addSavedCard = useZettelWorkspaceStore((s) => s.addSavedCard);
   const startDraft = useZettelWorkspaceStore((s) => s.startDraft);
+  const updateDraftContent = useZettelWorkspaceStore(
+    (s) => s.updateDraftContent,
+  );
+  const updateDraftTitle = useZettelWorkspaceStore((s) => s.updateDraftTitle);
   const reset = useZettelWorkspaceStore((s) => s.reset);
 
   // Seed the store from initial hydration once per session.
@@ -125,6 +129,26 @@ export function WorkspaceShell({ sessionId, initialHydration }: Props) {
     // Ensure an active draft exists after seeding.
     const { activeDraft } = useZettelWorkspaceStore.getState();
     if (!activeDraft) startDraft();
+
+    // One-shot seed hand-off (e.g. from the inbox "Create More" flow).
+    // Consume the key once so a refresh doesn't re-seed.
+    if (typeof window !== "undefined") {
+      const seedKey = `workspace.seedForSession:${sessionId}`;
+      const raw = window.sessionStorage.getItem(seedKey);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as {
+            title?: string;
+            content?: string;
+          };
+          if (parsed.title) updateDraftTitle(parsed.title);
+          if (parsed.content) updateDraftContent(parsed.content);
+        } catch {
+          // malformed seed — ignore
+        }
+        window.sessionStorage.removeItem(seedKey);
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
