@@ -166,7 +166,7 @@ class RunRecorder:
         return evt
 
     async def emit_tool_started(
-        self, *, tool_call_id: UUID, tool_name: str,
+        self, *, tool_call_id: str, tool_name: str,
         args_preview: dict[str, Any] | None = None,
         parent_message_id: UUID | None = None,
     ) -> ToolStarted:

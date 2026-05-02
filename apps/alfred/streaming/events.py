@@ -12,7 +12,7 @@ Invariants:
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -101,7 +101,7 @@ class ThinkingFinished(_EventBase):
 
 class ToolStarted(_EventBase):
     event_type: Literal["tool.started"] = "tool.started"
-    tool_call_id: UUID
+    tool_call_id: str
     tool_name: str
     parent_message_id: UUID | None = None
     args_preview: dict[str, Any] = Field(default_factory=dict)
@@ -109,13 +109,13 @@ class ToolStarted(_EventBase):
 
 class ToolArgsDelta(_EventBase):
     event_type: Literal["tool.args.delta"] = "tool.args.delta"
-    tool_call_id: UUID
+    tool_call_id: str
     delta_json: str
 
 
 class ToolArgsFinished(_EventBase):
     event_type: Literal["tool.args.finished"] = "tool.args.finished"
-    tool_call_id: UUID
+    tool_call_id: str
     full_args: dict[str, Any]
 
 
@@ -124,7 +124,7 @@ ToolResultStatus = Literal["ok", "error", "timeout"]
 
 class ToolResult(_EventBase):
     event_type: Literal["tool.result"] = "tool.result"
-    tool_call_id: UUID
+    tool_call_id: str
     result_json: dict[str, Any]
     duration_ms: int
     status: ToolResultStatus
@@ -168,14 +168,7 @@ class ApprovalResolved(_EventBase):
 
 
 AnyRunEvent = Annotated[
-    Union[
-        RunStarted, RunFinished, RunErrored, RunCancelled,
-        MessageStarted, MessageDelta, MessageFinished,
-        ThinkingDelta, ThinkingFinished,
-        ToolStarted, ToolArgsDelta, ToolArgsFinished, ToolResult,
-        StateDelta, StateSnapshot,
-        ProgressUpdate, ApprovalRequired, ApprovalResolved,
-    ],
+    RunStarted | RunFinished | RunErrored | RunCancelled | MessageStarted | MessageDelta | MessageFinished | ThinkingDelta | ThinkingFinished | ToolStarted | ToolArgsDelta | ToolArgsFinished | ToolResult | StateDelta | StateSnapshot | ProgressUpdate | ApprovalRequired | ApprovalResolved,
     Field(discriminator="event_type"),
 ]
 

@@ -113,7 +113,7 @@ async def test_recorder_terminal_on_error(session: Session) -> None:
 async def test_significant_event_forces_flush(session: Session) -> None:
     """Non-delta events must be durable immediately."""
     recorder = RunRecorder.start(session, run_type="chat_turn")
-    tool_id = uuid4()
+    tool_id = "test-c1"
     await recorder.emit_tool_started(tool_call_id=tool_id, tool_name="search_kb", args_preview={"q": "x"})
     rows = session.exec(
         select(AgentRunEventRow).where(AgentRunEventRow.run_id == recorder.run_id)
@@ -129,7 +129,7 @@ async def test_parent_run_id_for_nested(session: Session) -> None:
     child = RunRecorder.start(session, run_type="tool_call", parent=parent)
     async with parent:
         async with child:
-            tool_id = uuid4()
+            tool_id = "test-c2"
             await child.emit_tool_started(tool_call_id=tool_id, tool_name="search_kb", args_preview={})
     child_row = session.exec(select(AgentRunRow).where(AgentRunRow.id == child.run_id)).one()
     assert child_row.parent_run_id == parent.run_id

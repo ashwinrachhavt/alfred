@@ -74,13 +74,7 @@ class AgentProducer:
         self.intent = intent
         self.intent_args = intent_args
         self.max_iterations = max_iterations
-        self._tool_uuid_by_call_id: dict[str, UUID] = {}
         self._message_id: UUID | None = None
-
-    def _tool_uuid(self, call_id: str) -> UUID:
-        if call_id not in self._tool_uuid_by_call_id:
-            self._tool_uuid_by_call_id[call_id] = uuid4()
-        return self._tool_uuid_by_call_id[call_id]
 
     def _ensure_message_id(self) -> UUID:
         if self._message_id is None:
@@ -136,7 +130,7 @@ class AgentProducer:
                 call_id = str(data.get("call_id", ""))
                 yield ToolStarted(
                     run_id=_PLACEHOLDER_RUN_ID, seq=0, emitted_at=_utcnow(),
-                    tool_call_id=self._tool_uuid(call_id),
+                    tool_call_id=call_id,
                     tool_name=str(data.get("tool", "unknown")),
                     args_preview=dict(data.get("args") or {}),
                 )
@@ -147,7 +141,7 @@ class AgentProducer:
                     status = "ok"
                 yield ToolResult(
                     run_id=_PLACEHOLDER_RUN_ID, seq=0, emitted_at=_utcnow(),
-                    tool_call_id=self._tool_uuid(call_id),
+                    tool_call_id=call_id,
                     result_json=dict(data.get("result") or {}),
                     duration_ms=int(data.get("duration_ms") or 0),
                     status=status,  # type: ignore[arg-type]

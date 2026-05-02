@@ -123,7 +123,7 @@ async def test_message_projector_captures_tool_calls_and_artifacts(session: Sess
     recorder = RunRecorder.start(session, run_type="chat_turn", thread_id=thread.id)
     projector = MessageProjector(session=session)
     recorder.attach(projector)
-    tool_id = uuid4()
+    tool_id = "test-tool-call-1"
     async with recorder:
         await recorder.emit_tool_started(
             tool_call_id=tool_id, tool_name="search_kb",
