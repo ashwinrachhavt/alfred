@@ -8,6 +8,7 @@ document storage services without hard coupling.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -17,12 +18,14 @@ from sqlalchemy import func
 from sqlalchemy import text as sa_text
 from sqlmodel import Session, select
 
+from alfred.core.dependencies import get_qdrant_client
 from alfred.core.utils import STAGE_TO_DELTA, clamp_int
 from alfred.core.utils import utcnow_naive as _utcnow
 from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview
 from alfred.schemas.zettel import LinkQuality, LinkSuggestion
-from alfred.core.dependencies import get_qdrant_client
 from alfred.services.spaced_repetition import compute_next_review_schedule
+
+log = logging.getLogger(__name__)
 
 # Sentinel for "field not provided" on optional patch kwargs where the None
 # value itself carries meaning (e.g. "clear context" vs "don't touch context").
@@ -83,6 +86,7 @@ class ZettelkastenService:
         importance: int = 0,
         confidence: float = 0.0,
         status: str = "active",
+        session_id: int | None = None,
     ) -> ZettelCard:
         card = ZettelCard(
             title=title.strip(),
@@ -95,11 +99,25 @@ class ZettelkastenService:
             importance=clamp_int(int(importance), lo=0, hi=10),
             confidence=max(0.0, min(1.0, float(confidence))),
             status=status,
+            session_id=session_id,
         )
         self.session.add(card)
         self.session.commit()
         self.session.refresh(card)
         self._ensure_open_review(card_id=card.id or 0)
+        # Close the crud-vector-sync-gap: push the new card into Qdrant so
+        # semantic search / similarity features see it immediately. Sync
+        # failures must NOT fail card creation — the card is already saved
+        # in Postgres; the embedding can be backfilled later.
+        try:
+            self.ensure_embedding(card)
+        except Exception as exc:
+            log.warning(
+                "ensure_embedding failed for card %s: %s",
+                card.id,
+                exc,
+                exc_info=True,
+            )
         return card
 
     def create_stub_card(self, title: str) -> ZettelCard:
@@ -125,6 +143,7 @@ class ZettelkastenService:
                 importance=clamp_int(int(data.get("importance", 0)), lo=0, hi=10),
                 confidence=max(0.0, min(1.0, float(data.get("confidence", 0.0)))),
                 status=data.get("status", "active"),
+                session_id=data.get("session_id"),
             )
             cards.append(card)
         self.session.add_all(cards)
@@ -132,6 +151,18 @@ class ZettelkastenService:
         for card in cards:
             self.session.refresh(card)
             self._ensure_open_review(card_id=card.id or 0)
+            # Close the crud-vector-sync-gap per-card. Isolating the try
+            # inside the loop means one embedding failure can't block
+            # Qdrant sync for the remaining cards in the batch.
+            try:
+                self.ensure_embedding(card)
+            except Exception as exc:
+                log.warning(
+                    "ensure_embedding failed for card %s: %s",
+                    card.id,
+                    exc,
+                    exc_info=True,
+                )
         return cards
 
     def _apply_card_filters(self, stmt, *, q=None, topic=None, tags=None, document_id=None, status="active", importance_min=None):

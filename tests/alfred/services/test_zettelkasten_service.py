@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock
 
+import pytest
 from sqlalchemy import create_engine
 from sqlmodel import Session, SQLModel
 
-import pytest
-
-from alfred.models.zettel import ZettelLink, ZettelReview
+from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview
 from alfred.services.zettelkasten_service import ZettelkastenService
 
 try:  # avoid ImportError when sqlmodel.select is unavailable in minimal envs
@@ -341,3 +342,94 @@ def test_update_link_not_found_returns_none() -> None:
     session = _session()
     svc = ZettelkastenService(session)
     assert svc.update_link(9999, type="related") is None
+
+
+# ---------------------------------------------------------------------------
+# T2: create_card / create_cards_batch vector sync + session_id kwarg
+# ---------------------------------------------------------------------------
+
+
+def test_create_card_syncs_to_qdrant(monkeypatch: pytest.MonkeyPatch) -> None:
+    """create_card must push the new card through ensure_embedding so Qdrant
+    sees it immediately (closes crud-vector-sync-gap)."""
+    session = _session()
+    svc = ZettelkastenService(session)
+
+    mock_ensure = MagicMock(side_effect=lambda card: card)
+    monkeypatch.setattr(svc, "ensure_embedding", mock_ensure)
+
+    card = svc.create_card(title="sync me", content="body")
+
+    assert card.id is not None
+    mock_ensure.assert_called_once()
+    # Called with the freshly-saved card.
+    called_with = mock_ensure.call_args.args[0]
+    assert isinstance(called_with, ZettelCard)
+    assert called_with.id == card.id
+
+
+def test_create_cards_batch_syncs_all_to_qdrant(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each card in a batch must be pushed to Qdrant individually."""
+    session = _session()
+    svc = ZettelkastenService(session)
+
+    mock_ensure = MagicMock(side_effect=lambda card: card)
+    monkeypatch.setattr(svc, "ensure_embedding", mock_ensure)
+
+    cards = svc.create_cards_batch(
+        [{"title": "A"}, {"title": "B"}, {"title": "C"}]
+    )
+
+    assert len(cards) == 3
+    assert mock_ensure.call_count == 3
+    synced_ids = {call.args[0].id for call in mock_ensure.call_args_list}
+    assert synced_ids == {c.id for c in cards}
+
+
+def test_create_card_accepts_session_id_kwarg(monkeypatch: pytest.MonkeyPatch) -> None:
+    """session_id kwarg must be plumbed through to the ZettelCard row.
+
+    We don't need a real zettel_sessions row — the FK is only enforced
+    at the DB level, and sqlite doesn't enforce by default. This exercises
+    the kwarg wiring.
+    """
+    session = _session()
+    svc = ZettelkastenService(session)
+
+    monkeypatch.setattr(svc, "ensure_embedding", MagicMock(side_effect=lambda card: card))
+
+    card = svc.create_card(title="scoped", session_id=42)
+
+    assert card.session_id == 42
+
+
+def test_create_card_survives_ensure_embedding_failure(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """If ensure_embedding raises (e.g. Qdrant/OpenAI down), create_card
+    must still return a saved card and log a warning — the card in
+    Postgres is higher-priority than the embedding backfill."""
+    session = _session()
+    svc = ZettelkastenService(session)
+
+    def boom(_card: ZettelCard) -> ZettelCard:
+        raise RuntimeError("qdrant offline")
+
+    monkeypatch.setattr(svc, "ensure_embedding", boom)
+
+    with caplog.at_level(logging.WARNING, logger="alfred.services.zettelkasten_service"):
+        card = svc.create_card(title="resilient", content="body")
+
+    # Card is saved in Postgres despite the sync failure.
+    assert isinstance(card, ZettelCard)
+    assert card.id is not None
+    persisted = session.get(ZettelCard, card.id)
+    assert persisted is not None
+    assert persisted.title == "resilient"
+
+    # Warning logged with card id + error message.
+    warnings = [rec for rec in caplog.records if rec.levelno == logging.WARNING]
+    assert any(
+        "ensure_embedding failed" in rec.getMessage() and "qdrant offline" in rec.getMessage()
+        for rec in warnings
+    )
