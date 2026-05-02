@@ -74,6 +74,34 @@ class SessionService:
     def get(self, session_id: int) -> ZettelSession | None:
         return self.session.get(ZettelSession, session_id)
 
+    def touch(self, session_id: int) -> None:
+        """Bump ``updated_at`` on the session row (activity signal).
+
+        T8 relies on ``updated_at`` as the staleness signal for the
+        abandon-stale-sessions Celery beat. Creating a card with
+        ``session_id=X`` moves the *card's* updated_at but not the
+        session's, so we need an explicit "a thing happened here" poke
+        whenever the user acts inside a session.
+
+        Unlike the Bloom inference write, ``updated_at`` IS the column
+        we intend to change here — this is the opposite of the
+        ``updated-at-corruption`` pattern. We use a Core UPDATE with
+        ``synchronize_session=False`` to avoid ORM identity-map side
+        effects, and explicitly set ``updated_at`` in the SET clause.
+        No-op (does not raise) when ``session_id`` does not exist; the
+        orchestrator path should not fail closed on a stale touch.
+        """
+        from sqlalchemy import update as sa_update
+
+        stmt = (
+            sa_update(ZettelSession)
+            .where(ZettelSession.id == session_id)
+            .values(updated_at=_utcnow())
+            .execution_options(synchronize_session=False)
+        )
+        self.session.exec(stmt)
+        self.session.commit()
+
     def end(self, session_id: int) -> ZettelSession:
         """End the session.
 

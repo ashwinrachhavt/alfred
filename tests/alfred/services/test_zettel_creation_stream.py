@@ -952,3 +952,46 @@ def test_sse_function_reexport_preserved():
     # _sse was imported at the top of the file; re-invoke to confirm behavior.
     result = _sse("my_event", {"a": 1})
     assert result == 'event: my_event\ndata: {"a": 1}\n\n'
+
+
+@pytest.mark.asyncio
+async def test_zettel_creation_stream_touches_session_on_card_save(db_session):
+    """Phase 0 must bump ZettelSession.updated_at when payload.session_id is set.
+
+    Without this, the T8 abandon-stale-sessions beat would mark newly
+    created sessions as abandoned 24h after creation even if the user
+    is actively writing cards into them.
+    """
+    from datetime import timedelta
+
+    from alfred.core.utils import utcnow_naive
+
+    sess = ZettelSession(title="Live session")
+    db_session.add(sess)
+    db_session.commit()
+    db_session.refresh(sess)
+    assert sess.id is not None
+
+    # Backdate updated_at so the touch is detectable at coarse timestamp
+    # resolutions (e.g., SQLite's second precision under certain adapters).
+    backdated = utcnow_naive() - timedelta(minutes=5)
+    sess.updated_at = backdated
+    db_session.add(sess)
+    db_session.commit()
+
+    payload = ZettelCardCreate(
+        title="Touch me",
+        content="content",
+        session_id=sess.id,
+    )
+    stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
+
+    events = []
+    async for sse in stream.run_phase0():
+        events.append(sse)
+
+    db_session.expire_all()
+    refetched = db_session.get(ZettelSession, sess.id)
+    assert refetched is not None
+    assert refetched.updated_at is not None
+    assert refetched.updated_at > backdated

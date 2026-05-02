@@ -57,6 +57,13 @@ class ZettelCreationStream(SSEStreamOrchestrator):
         Cache invalidation happens here (not Phase 2) so the card is visible
         in the UI immediately, even if the stream dies during enrichment.
 
+        If the card is being written into a session, we also bump the
+        session's ``updated_at`` so the T8 abandon-stale-sessions beat
+        treats this as activity. Without this call the session's
+        ``updated_at`` only reflects creation time and any newly-created
+        session would be marked abandoned 24h later even if the user is
+        actively writing into it.
+
         Sessions created from the default factory are properly closed via
         finally. Injected sessions (e.g., in tests) are managed by the caller.
         """
@@ -66,6 +73,20 @@ class ZettelCreationStream(SSEStreamOrchestrator):
             card = svc.create_card(**self.payload.model_dump())
             self.card_id = card.id
             self._card_title = card.title
+
+            # Bump session.updated_at if this card belongs to a session so
+            # the abandon-stale-sessions beat treats it as live activity.
+            if self.payload.session_id is not None:
+                try:
+                    from alfred.services.session_service import SessionService
+
+                    SessionService(session).touch(self.payload.session_id)
+                except Exception:  # pragma: no cover - defensive
+                    logger.warning(
+                        "Failed to touch session %s after card save",
+                        self.payload.session_id,
+                        exc_info=True,
+                    )
 
             # Invalidate caches immediately so card appears in UI
             self._invalidate_caches()

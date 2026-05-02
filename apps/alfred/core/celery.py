@@ -31,6 +31,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             "alfred.tasks.daily_briefing",
             "alfred.tasks.canvas_tasks",
             "alfred.tasks.today_pipeline",
+            "alfred.tasks.session_cleanup",
         ]
         if include_tasks
         else []
@@ -123,6 +124,18 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             }
         }
 
+    if settings.enable_zettel_session_cleanup:
+        beat_schedule |= {
+            "abandon-stale-zettel-sessions": {
+                "task": "alfred.tasks.session_cleanup.abandon_stale_sessions",
+                "schedule": crontab(
+                    hour=int(settings.zettel_session_cleanup_hour),
+                    minute=int(settings.zettel_session_cleanup_minute),
+                ),
+                "options": {"queue": "default"},
+            }
+        }
+
     if beat_schedule:
         celery_app.conf.beat_schedule = beat_schedule
 
@@ -141,6 +154,7 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
         import alfred.tasks.mind_palace_agent
         import alfred.tasks.notion_import
         import alfred.tasks.planning
+        import alfred.tasks.session_cleanup
         import alfred.tasks.taxonomy_reclassify
         import alfred.tasks.today_pipeline  # noqa: F401
 

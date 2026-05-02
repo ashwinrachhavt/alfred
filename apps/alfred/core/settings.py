@@ -382,6 +382,30 @@ class Settings(BaseSettings):
         description="Default user timezone for the Today pipeline",
     )
 
+    # Zettel session cleanup (T8, Celery beat)
+    enable_zettel_session_cleanup: bool = Field(
+        default=True,
+        alias="ENABLE_ZETTEL_SESSION_CLEANUP",
+        description=(
+            "Enable the Celery beat that marks ZettelSessions idle >24h as abandoned. "
+            "Default ON: leaving sessions active forever is strictly worse UX."
+        ),
+    )
+    zettel_session_cleanup_hour: int = Field(
+        default=4,
+        alias="ZETTEL_SESSION_CLEANUP_HOUR",
+        ge=0,
+        le=23,
+        description="UTC hour the abandon-stale-sessions beat runs (default: 4 UTC, off-peak)",
+    )
+    zettel_session_cleanup_minute: int = Field(
+        default=0,
+        alias="ZETTEL_SESSION_CLEANUP_MINUTE",
+        ge=0,
+        le=59,
+        description="UTC minute the abandon-stale-sessions beat runs",
+    )
+
     # Admin API (visibility)
     enable_admin_api_schema: bool = Field(default=False, alias="ENABLE_ADMIN_API_SCHEMA")
 

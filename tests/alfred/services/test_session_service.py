@@ -264,3 +264,40 @@ def test_hydrate_raises_on_missing_session() -> None:
     svc = SessionService(session)
     with pytest.raises(SessionNotFound):
         svc.hydrate(9999)
+
+
+# ---------------------------------------------------------------------------
+# touch()
+# ---------------------------------------------------------------------------
+
+
+def test_session_service_touch_bumps_updated_at() -> None:
+    """touch() must advance updated_at so the T8 beat sees activity."""
+    session = _session()
+    svc = SessionService(session)
+    row = svc.create(ZettelSessionCreateRequest(title="active"))
+    assert row.id is not None
+    original_updated = row.updated_at
+    assert original_updated is not None
+
+    # Backdate updated_at so the bump is unambiguously detectable even
+    # on systems where monotonic resolution is coarse.
+    row.updated_at = original_updated - timedelta(minutes=5)
+    session.add(row)
+    session.commit()
+    backdated = row.updated_at
+
+    svc.touch(row.id)
+    session.expire_all()
+    refetched = session.get(ZettelSession, row.id)
+    assert refetched is not None
+    assert refetched.updated_at is not None
+    assert refetched.updated_at > backdated
+
+
+def test_session_service_touch_missing_session_is_noop() -> None:
+    """touch() on a non-existent session must not raise."""
+    session = _session()
+    svc = SessionService(session)
+    # No row exists with id 9999 -- should silently do nothing.
+    svc.touch(9999)

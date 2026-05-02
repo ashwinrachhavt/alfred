@@ -891,6 +891,18 @@ def bulk_from_decomposition(
             )
             link_count += 1
 
+    # Bump session.updated_at so the T8 abandon-stale-sessions beat
+    # treats this bulk write as live activity (prevents a user who
+    # imports a decomposition and walks away for 24h from having the
+    # session abandoned mid-sitting).
+    if payload.session_id is not None:
+        try:
+            from alfred.services.session_service import SessionService
+
+            SessionService(session).touch(payload.session_id)
+        except Exception:  # pragma: no cover - defensive
+            pass
+
     _invalidate_topic_tag_cache()
     _invalidate_graph_cache()
 
