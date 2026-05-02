@@ -17,12 +17,18 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from alfred.api.dependencies import get_db_session
+from alfred.core.settings import settings
 from alfred.models.thinking import AgentMessageRow, ThinkingSessionRow
 from alfred.services.agent.service import AgentService
 from alfred.services.knowledge_notifications import (
     get_notification_count,
     get_pending_notifications,
 )
+from alfred.streaming.producers.agent_producer import AgentProducer
+from alfred.streaming.projectors.message_row import MessageProjector
+from alfred.streaming.projectors.snapshot import SnapshotProjector
+from alfred.streaming.projectors.wire_agui import AGUIProjector
+from alfred.streaming.recorder import RunRecorder
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 logger = logging.getLogger(__name__)
@@ -277,6 +283,116 @@ async def agent_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/stream/v2")
+async def agent_stream_v2(
+    body: AgentStreamRequest,
+    request: Request,
+    db: Session = Depends(get_db_session),
+):
+    """AG-UI streaming endpoint — Phase 1 of streaming revamp.
+
+    Feature-flagged: returns 404 when ``settings.streaming_v2_enabled`` is False.
+
+    Dual-writes ``AgentMessageRow`` via ``MessageProjector`` (same schema shape
+    as the legacy ``/stream`` route) plus the full typed event log to
+    ``agent_run_events``.
+    """
+    if not settings.streaming_v2_enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="streaming v2 disabled")
+
+    if not (body.message and body.message.strip()) and not body.intent:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Either message or intent is required.",
+        )
+
+    message_text = body.message or f"[intent: {body.intent}]"
+
+    thread_id = _get_or_create_thread(
+        db, body.thread_id, body.note_context, message_text,
+        lens=body.lens, model=body.model,
+    )
+
+    # Load history from DB if the client didn't provide one — mirrors v1.
+    history = body.history
+    if not history:
+        stmt = (
+            select(AgentMessageRow)
+            .where(AgentMessageRow.thread_id == thread_id)
+            .order_by(AgentMessageRow.created_at.desc())
+            .limit(20)
+        )
+        db_messages = db.exec(stmt).all()
+        history = [{"role": m.role, "content": m.content} for m in reversed(db_messages)]
+
+    # Persist user message immediately — same contract as v1.
+    _persist_message(db, thread_id, "user", message_text, lens=body.lens, model=body.model)
+
+    service = AgentService(db)
+    producer = AgentProducer(
+        service=service,
+        message=message_text,
+        thread_id=thread_id,
+        model=body.model,
+        lens=body.lens,
+        history=history,
+        note_context=body.note_context,
+        intent=body.intent,
+        intent_args=body.intent_args,
+        max_iterations=body.max_iterations,
+    )
+    recorder = RunRecorder.start(
+        db, run_type="chat_turn",
+        thread_id=thread_id,
+        model_id=body.model,
+        active_lens=body.lens,
+        input_summary=message_text[:400] if message_text else None,
+    )
+    message_projector = MessageProjector(session=db)
+    snapshot_projector = SnapshotProjector(session=db)
+    wire = AGUIProjector()
+    recorder.attach(message_projector)
+    recorder.attach(snapshot_projector)
+
+    async def event_stream():
+        try:
+            async with recorder:
+                async for evt in producer.stream():
+                    recorded = await recorder.emit_raw(evt)
+                    for frame in wire.frames_for(recorded):
+                        yield _format_agui_sse(frame, recorded.seq)
+                    if await request.is_disconnected():
+                        break
+        except Exception:
+            logger.exception("v2 stream failed")
+
+        # Update thread timestamp — same tail as v1.
+        try:
+            session_row = db.get(ThinkingSessionRow, thread_id)
+            if session_row:
+                session_row.updated_at = datetime.utcnow()
+                db.add(session_row)
+                db.commit()
+        except Exception:
+            logger.exception("Failed to update thread timestamp for %s", thread_id)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+def _format_agui_sse(frame: dict, seq: int) -> str:
+    """Format an AG-UI frame as an SSE event line per spec section 7.1."""
+    payload = json.dumps(frame.get("data", {}), separators=(",", ":"), default=str)
+    return f"event: {frame['event']}\nid: {seq}\ndata: {payload}\n\n"
 
 
 @router.post("/threads", status_code=status.HTTP_201_CREATED)

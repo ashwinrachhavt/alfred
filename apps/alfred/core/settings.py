@@ -385,6 +385,12 @@ class Settings(BaseSettings):
     # Admin API (visibility)
     enable_admin_api_schema: bool = Field(default=False, alias="ENABLE_ADMIN_API_SCHEMA")
 
+    # Streaming v2 (AG-UI dual-write)
+    streaming_v2_enabled: bool = Field(
+        default=False,
+        description="If True, enable the /api/agent/stream/v2 route (AG-UI dual-write path). Phase 1 of streaming revamp.",
+    )
+
     # --- LLM unified ---
     llm_provider: LLMProvider = Field(default=LLMProvider.openai, alias="ALFRED_LLM_PROVIDER")
     llm_model: str = Field(default=DEFAULT_OPENAI_MODEL, alias="ALFRED_LLM_MODEL")
