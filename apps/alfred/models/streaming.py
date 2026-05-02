@@ -6,6 +6,10 @@ Three tables:
   - agent_run_snapshots   periodic + terminal compaction for cheap replay
 
 Spec: docs/superpowers/specs/2026-05-01-streaming-revamp-design.md section 5
+
+Dialect portability: Postgres gets JSONB/UUID/BIGSERIAL natively; other dialects
+(SQLite in tests) get JSON/String(36)/Integer fallbacks via `.with_variant()`.
+Follows the existing Alfred idiom in notes.py, company.py, datastore.py.
 """
 
 from __future__ import annotations
@@ -14,8 +18,8 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
+import sqlalchemy as sa
 from sqlalchemy import (
-    BigInteger,
     Column,
     DateTime,
     ForeignKey,
@@ -29,7 +33,53 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, SQLModel
+
+
+class _PortableUUID(TypeDecorator):
+    """Portable UUID type: native UUID on Postgres, CHAR(36) with string conversion elsewhere."""
+
+    impl = sa.String(36)
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PG_UUID(as_uuid=True))
+        return dialect.type_descriptor(sa.String(36))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        if dialect.name == "postgresql":
+            return value
+        # For other dialects (SQLite), convert UUID to string
+        return str(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        if dialect.name == "postgresql":
+            return value
+        # For other dialects (SQLite), convert string back to UUID
+        if isinstance(value, str):
+            return UUID(value)
+        return value
+
+
+def _uuid_column() -> sa.types.TypeEngine:
+    """Portable UUID column type: native UUID on Postgres, CHAR(36) elsewhere."""
+    return _PortableUUID()
+
+
+def _jsonb_column() -> sa.types.TypeEngine:
+    """Portable JSONB column type: native JSONB on Postgres, JSON elsewhere."""
+    return sa.JSON().with_variant(JSONB(), "postgresql")
+
+
+def _bigint_pk_column() -> sa.types.TypeEngine:
+    """Portable BIGSERIAL-like PK: BigInteger on Postgres, Integer on SQLite."""
+    return sa.BigInteger().with_variant(sa.Integer(), "sqlite")
 
 
 class AgentRunRow(SQLModel, table=True):
@@ -44,11 +94,11 @@ class AgentRunRow(SQLModel, table=True):
 
     id: UUID = Field(
         default_factory=uuid4,
-        sa_column=Column(PG_UUID(as_uuid=True), primary_key=True),
+        sa_column=Column(_uuid_column(), primary_key=True),
     )
     parent_run_id: UUID | None = Field(
         default=None,
-        sa_column=Column(PG_UUID(as_uuid=True),
+        sa_column=Column(_uuid_column(),
                          ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=True),
     )
     thread_id: int | None = Field(
@@ -79,7 +129,7 @@ class AgentRunRow(SQLModel, table=True):
 
     metadata_: dict = Field(
         default_factory=dict,
-        sa_column=Column("metadata", JSONB, nullable=False, server_default="{}"),
+        sa_column=Column("metadata", _jsonb_column(), nullable=False, server_default="{}"),
     )
 
     created_at: datetime = Field(
@@ -101,16 +151,16 @@ class AgentRunEventRow(SQLModel, table=True):
     )
 
     id: int | None = Field(
-        default=None, sa_column=Column(BigInteger, primary_key=True, autoincrement=True),
+        default=None, sa_column=Column(_bigint_pk_column(), primary_key=True, autoincrement=True),
     )
     run_id: UUID = Field(
-        sa_column=Column(PG_UUID(as_uuid=True),
+        sa_column=Column(_uuid_column(),
                          ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False),
     )
     seq: int = Field(sa_column=Column(Integer, nullable=False))
     event_type: str = Field(sa_column=Column(String(48), nullable=False))
     payload: dict = Field(
-        sa_column=Column(JSONB, nullable=False),
+        sa_column=Column(_jsonb_column(), nullable=False),
     )
     emitted_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), nullable=False,
@@ -126,14 +176,14 @@ class AgentRunSnapshotRow(SQLModel, table=True):
     )
 
     id: int | None = Field(
-        default=None, sa_column=Column(BigInteger, primary_key=True, autoincrement=True),
+        default=None, sa_column=Column(_bigint_pk_column(), primary_key=True, autoincrement=True),
     )
     run_id: UUID = Field(
-        sa_column=Column(PG_UUID(as_uuid=True),
+        sa_column=Column(_uuid_column(),
                          ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False),
     )
     up_to_seq: int = Field(sa_column=Column(Integer, nullable=False))
-    state: dict = Field(sa_column=Column(JSONB, nullable=False))
+    state: dict = Field(sa_column=Column(_jsonb_column(), nullable=False))
     message_text: str = Field(
         default="", sa_column=Column(Text, nullable=False, server_default=""),
     )
