@@ -18,6 +18,7 @@ import {
   Network,
   NotebookPen,
   Orbit,
+  PenLine,
   Plug,
   Search,
   Settings,
@@ -58,6 +59,7 @@ const navSections: NavSection[] = [
     items: [
       { label: "Research", href: "/research", icon: Search },
       { label: "Knowledge", href: "/knowledge", icon: BookOpen },
+      { label: "Sitting", href: "/knowledge/session/new", icon: PenLine, shortcut: "5" },
       { label: "Review", href: "/knowledge?view=review", icon: Brain },
       { label: "Universe", href: "/universe", icon: Orbit },
       { label: "Dictionary", href: "/dictionary", icon: BookA },
