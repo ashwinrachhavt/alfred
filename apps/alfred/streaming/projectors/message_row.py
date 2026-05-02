@@ -1,7 +1,12 @@
-"""MessageProjector — maintains a projection of the assistant message state.
+"""MessageProjector — accumulates agent state and dual-writes AgentMessageRow.
 
-Phase 0: skeleton accumulator. Phase 1 will insert AgentMessageRow in
-on_run_finished (dual-write).
+Reads the typed RunEvent stream and produces an AgentMessageRow matching the
+v1 persistence contract (see apps/alfred/api/agent/routes.py:_persist_message
+and the frontend ToolCall TS type at web/lib/stores/agent-store.ts).
+
+Phase 1 role: schema translator. The projector accumulates state internally
+using v1 JSON key shape (``call_id``, ``tool``) so ``on_run_finished`` can
+INSERT a row the existing frontend understands without further transformation.
 
 Spec: docs/superpowers/specs/2026-05-01-streaming-revamp-design.md section 6.3
 """
@@ -9,6 +14,7 @@ Spec: docs/superpowers/specs/2026-05-01-streaming-revamp-design.md section 6.3
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 from sqlmodel import Session
 
@@ -16,6 +22,8 @@ from alfred.streaming.events import (
     AnyRunEvent,
     MessageDelta,
     MessageStarted,
+    RunFinished,
+    RunStarted,
     StateDelta,
     ThinkingDelta,
     ToolResult,
@@ -24,42 +32,86 @@ from alfred.streaming.events import (
 
 
 class MessageProjector:
+    """Accumulate run state; dual-write an AgentMessageRow on terminal."""
+
     def __init__(self, session: Session | None) -> None:
         self.session = session
         self.content_parts: list[str] = []
         self.thinking_parts: list[str] = []
+        # tool_calls[] entries use v1 legacy JSON key shape so the existing
+        # frontend ToolCall TS type keeps working unmodified.
         self.tool_calls: list[dict[str, Any]] = []
         self.artifacts: list[dict[str, Any]] = []
         self.related_cards: list[dict[str, Any]] = []
         self.gaps: list[dict[str, Any]] = []
-        self._message_id = None
+        self._message_id: UUID | None = None
+        self._thread_id: int | None = None
+        self._active_lens: str | None = None
+        self._model_id: str | None = None
+        self._run_id: UUID | None = None
 
     def on_event(self, event: AnyRunEvent) -> None:
-        if isinstance(event, MessageStarted):
+        if isinstance(event, RunStarted):
+            self._thread_id = event.thread_id
+            self._active_lens = event.active_lens
+            self._model_id = event.model_id
+            self._run_id = event.run_id
+        elif isinstance(event, MessageStarted):
             self._message_id = event.message_id
         elif isinstance(event, MessageDelta):
             self.content_parts.append(event.delta_text)
         elif isinstance(event, ThinkingDelta):
             self.thinking_parts.append(event.delta_text)
         elif isinstance(event, ToolStarted):
+            # v1 legacy key shape: call_id / tool / args / status
             self.tool_calls.append({
-                "tool_call_id": str(event.tool_call_id),
-                "tool_name": event.tool_name, "status": "pending",
-                "args": event.args_preview,
+                "call_id": str(event.tool_call_id),
+                "tool": event.tool_name,
+                "args": dict(event.args_preview),
+                "status": "pending",
             })
         elif isinstance(event, ToolResult):
+            target_id = str(event.tool_call_id)
             for tc in self.tool_calls:
-                if tc["tool_call_id"] == str(event.tool_call_id):
+                if tc.get("call_id") == target_id:
                     tc["status"] = event.status
                     tc["result"] = event.result_json
-                    tc["duration_ms"] = event.duration_ms
                     break
         elif isinstance(event, StateDelta):
             self._apply_state(event)
 
     def on_run_finished(self, terminal: AnyRunEvent) -> None:
-        # Phase 1 will INSERT an AgentMessageRow here. Phase 0 is a no-op.
-        return None
+        """Dual-write — INSERT an AgentMessageRow if we have content to persist."""
+        if self.session is None or self._thread_id is None:
+            return
+        content_text = self.content
+        # Match v1 skip predicate: write only if content OR tools OR artifacts present.
+        if not content_text and not self.tool_calls and not self.artifacts:
+            return
+        # Late import keeps projector importable without the models package loaded.
+        from alfred.models.thinking import AgentMessageRow
+
+        token_count = None
+        if isinstance(terminal, RunFinished):
+            token_count = terminal.tokens_out
+
+        row = AgentMessageRow(
+            thread_id=self._thread_id,
+            role="assistant",
+            content=content_text,
+            reasoning_traces=self.thinking or None,
+            tool_calls=self.tool_calls or None,
+            artifacts=self.artifacts or None,
+            related_cards=self.related_cards or None,
+            gaps=self.gaps or None,
+            active_lens=self._active_lens,
+            model_used=self._model_id,
+            token_count=token_count,
+            run_id=self._run_id,
+            projected_from_events=True,
+        )
+        self.session.add(row)
+        self.session.commit()
 
     @property
     def content(self) -> str:

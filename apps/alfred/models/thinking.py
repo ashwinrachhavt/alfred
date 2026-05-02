@@ -9,7 +9,10 @@ AgentMessageRow stores individual messages for agent chat threads.
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from sqlalchemy import JSON, Boolean, Column, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlmodel import Field
 
 from alfred.models.base import Model
@@ -85,6 +88,13 @@ class AgentMessageRow(Model, table=True):
     active_lens: str | None = Field(default=None, sa_column=Column(String(64), nullable=True))
     model_used: str | None = Field(default=None, sa_column=Column(String(128), nullable=True))
     token_count: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
+    run_id: UUID | None = Field(
+        default=None,
+        sa_column=Column(PGUUID(as_uuid=True), ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True),
+    )
+    projected_from_events: bool = Field(
+        default=False, sa_column=Column(Boolean, nullable=False, server_default="false")
+    )
 
 
 __all__ = ["ThinkingSessionRow", "AgentMessageRow"]
