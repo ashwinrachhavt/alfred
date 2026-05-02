@@ -695,6 +695,7 @@ function CommentableMarkdownBlock({
   onToggle,
   onAddComment,
   onReplyToComments,
+  onViewZettel,
 }: {
   block: MarkdownBlock;
   comments: ResponseComment[];
@@ -704,10 +705,23 @@ function CommentableMarkdownBlock({
   onToggle: () => void;
   onAddComment: () => void;
   onReplyToComments: () => void;
+  onViewZettel?: (zettelId: number) => void;
 }) {
   return (
     <div className="group/comment hover:bg-secondary/25 relative -mx-2 rounded-md px-2 py-1 transition-colors">
-      <div className="absolute top-1 right-1 z-10 opacity-0 transition-opacity group-hover/comment:opacity-100 focus-within:opacity-100">
+      <div className="absolute top-1 right-1 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover/comment:opacity-100 focus-within:opacity-100">
+        <ZettelMessageButton
+          content={block.content}
+          createdZettelId={null}
+          onViewZettel={onViewZettel}
+          idleLabel="Zettel"
+          savedLabel="View"
+          createAriaLabel="Save block as zettel"
+          viewAriaLabel="View block zettel"
+          createTitle="Save Block as Zettel"
+          viewTitle="View Block Zettel"
+          className="bg-background/90 rounded-sm border px-1.5 py-1 text-[10px] shadow-sm backdrop-blur"
+        />
         <button
           type="button"
           onClick={onToggle}
@@ -871,6 +885,7 @@ export const MessageBubble = memo(function MessageBubble({
               }
               onAddComment={() => handleAddComment(block)}
               onReplyToComments={handleReplyToComments}
+              onViewZettel={onViewZettel}
             />
           ))}
         </div>

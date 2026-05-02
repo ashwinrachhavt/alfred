@@ -211,7 +211,6 @@ describe("MessageBubble", () => {
     render(<MessageBubble message={message} mode="expanded" onArtifactClick={vi.fn()} />);
 
     expect(screen.getByRole("button", { name: "Create zettel from response" })).toBeInTheDocument();
-    expect(screen.getByText("Zettel")).toBeInTheDocument();
   });
 
   it("shows a note action for assistant messages in expanded chat", () => {
@@ -390,6 +389,60 @@ describe("MessageBubble", () => {
     render(<MessageBubble message={message} mode="sidebar" onArtifactClick={vi.fn()} />);
 
     expect(screen.getAllByRole("button", { name: "Comment on block" })).toHaveLength(3);
+  });
+
+  it("exposes zettelize controls on each markdown block", () => {
+    const message = makeMessage({
+      content: "# Heading\n\nFirst paragraph.\n\n- One\n- Two",
+    });
+
+    render(<MessageBubble message={message} mode="sidebar" onArtifactClick={vi.fn()} />);
+
+    expect(screen.getAllByRole("button", { name: "Save block as zettel" })).toHaveLength(3);
+  });
+
+  it("zettelizes only the selected markdown block", async () => {
+    const user = userEvent.setup();
+    const onViewZettel = vi.fn();
+    const message = makeMessage({
+      content: "# Heading\n\nFirst paragraph.\n\nSecond paragraph.",
+    });
+
+    vi.mocked(apiFetch).mockResolvedValue({ id: 777 });
+
+    render(
+      <MessageBubble
+        message={message}
+        mode="sidebar"
+        onArtifactClick={vi.fn()}
+        onViewZettel={onViewZettel}
+      />,
+    );
+
+    await user.click(screen.getAllByRole("button", { name: "Save block as zettel" })[1]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "View block zettel" })).toBeInTheDocument();
+    });
+
+    expect(vi.mocked(apiFetch)).toHaveBeenCalledWith(
+      "/api/zettels/cards",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+
+    const [, requestInit] = vi.mocked(apiFetch).mock.calls[0] ?? [];
+    expect(JSON.parse(String(requestInit?.body))).toMatchObject({
+      title: "First paragraph.",
+      content: "First paragraph.",
+      tags: [],
+      topic: "",
+    });
+
+    await user.click(screen.getByRole("button", { name: "View block zettel" }));
+
+    expect(onViewZettel).toHaveBeenCalledWith(777);
   });
 
   it("tags commented responses and can ask Alfred to reply to the comments", async () => {

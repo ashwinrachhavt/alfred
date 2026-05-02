@@ -1,7 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { Sparkles } from "lucide-react";
+
+import { apiRoutes } from "@/lib/api/routes";
+import { apiPostJson } from "@/lib/api/client";
 
 import { cn } from "@/lib/utils";
 import {
@@ -27,6 +31,9 @@ type Props = {
 };
 
 const PAUSE_MS = 800;
+const MIN_STREAM_CHARS = 10;
+
+type StreamPhase = "idle" | "pending" | "streaming" | "saved" | "error";
 
 // Rough approximation: count whitespace-separated tokens.
 function countWords(text: string): number {
@@ -98,10 +105,13 @@ export function WritingSurface({ className }: Props) {
 
   // --- Streaming creation on typing pause -----------------------------
   const pauseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [streamPhase, setStreamPhase] = useState<StreamPhase>("idle");
+  const [streamError, setStreamError] = useState<string | null>(null);
+  const [savedCardId, setSavedCardId] = useState<number | null>(null);
 
   const kickCreationStream = useCallback(async () => {
     if (!activeDraft) return;
-    if (activeDraft.content.trim().length < 20) return; // skip noise
+    if (activeDraft.content.trim().length < MIN_STREAM_CHARS) return; // skip noise
 
     const clientId = activeDraft.clientId;
     const abortKeyForDraft = `draft:${clientId}`;
@@ -112,6 +122,9 @@ export function WritingSurface({ className }: Props) {
       activeDraft.title.trim() ||
       activeDraft.content.trim().split("\n")[0]?.slice(0, 80) ||
       "Untitled card";
+
+    setStreamPhase("streaming");
+    setStreamError(null);
 
     try {
       const gen = streamCreationEvents(
@@ -154,11 +167,15 @@ export function WritingSurface({ className }: Props) {
             }
           }
         } else if (evt.event === "error") {
-          // non-fatal: surfaced via the Ambient panel as needed.
+          const msg = String(evt.data.message ?? evt.data.error ?? "stream error");
+          setStreamError(msg);
+          setStreamPhase("error");
         }
       }
 
       if (finalCardId && finalCardId > 0) {
+        setSavedCardId(finalCardId);
+        setStreamPhase("saved");
         const nowIso = new Date().toISOString();
         const saved: SavedCardState = {
           id: finalCardId,
@@ -185,8 +202,9 @@ export function WritingSurface({ className }: Props) {
       }
     } catch (err) {
       if ((err as Error)?.name === "AbortError") return;
-      // Surface only when meaningful — a transient failure while the user
-      // is still typing shouldn't interrupt their flow.
+      const msg = err instanceof Error ? err.message : String(err);
+      setStreamError(msg);
+      setStreamPhase("error");
       // eslint-disable-next-line no-console
       console.warn("creation stream failed", err);
     }
@@ -205,6 +223,10 @@ export function WritingSurface({ className }: Props) {
   useEffect(() => {
     if (!isEditingDraft || !activeDraft) return;
     if (pauseTimer.current) clearTimeout(pauseTimer.current);
+    // Signal that we're queued for the AI stream — visible in the status chip.
+    if ((activeDraft.content.trim().length ?? 0) >= MIN_STREAM_CHARS) {
+      setStreamPhase("pending");
+    }
     pauseTimer.current = setTimeout(async () => {
       await persistActiveDraft();
       await kickCreationStream();
@@ -306,13 +328,62 @@ export function WritingSurface({ className }: Props) {
   );
 
   const phaseLabel =
-    isEditingDraft && activeDraft
-      ? activeDraft.content.trim().length < 10
-        ? "DRAFT"
-        : "SAVED"
-      : focusedSaved
-        ? focusedSaved.phase.toUpperCase()
-        : "IDLE";
+    streamPhase === "streaming"
+      ? "AI DRAFTING..."
+      : streamPhase === "pending"
+        ? "AI PAUSED"
+        : streamPhase === "saved"
+          ? `SAVED ${savedCardId ? `· #${savedCardId}` : ""}`
+          : streamPhase === "error"
+            ? `ERROR · ${streamError?.slice(0, 40) ?? ""}`
+            : isEditingDraft && activeDraft
+              ? activeDraft.content.trim().length < MIN_STREAM_CHARS
+                ? "DRAFT"
+                : "READY"
+              : focusedSaved
+                ? focusedSaved.phase.toUpperCase()
+                : "IDLE";
+
+  // --- AI one-shot drafter state ---
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const showAiDrafter =
+    isEditingDraft &&
+    activeDraft !== null &&
+    activeDraft.content.trim().length === 0 &&
+    activeDraft.title.trim().length === 0;
+
+  const handleAiDraft = useCallback(async () => {
+    if (!aiPrompt.trim() || !activeDraft) return;
+    setAiGenerating(true);
+    try {
+      const draft = await apiPostJson<
+        { title: string; content: string; summary?: string; tags?: string[]; topic?: string },
+        { prompt: string; topic?: string; tags?: string[] }
+      >(`${apiRoutes.zettels.generate}/preview`, {
+        prompt: aiPrompt.trim(),
+        topic: sharedContext.topic,
+        tags: sharedContext.tags.length ? sharedContext.tags : undefined,
+      });
+      if (draft.title) updateDraftTitle(draft.title);
+      if (draft.content) updateDraftContent(draft.content);
+      setAiPrompt("");
+      // The pause-save effect will auto-kick on the new content.
+    } catch (err) {
+      toast.error("AI draft failed", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setAiGenerating(false);
+    }
+  }, [
+    aiPrompt,
+    activeDraft,
+    sharedContext.topic,
+    sharedContext.tags,
+    updateDraftTitle,
+    updateDraftContent,
+  ]);
 
   return (
     <div
@@ -332,6 +403,43 @@ export function WritingSurface({ className }: Props) {
         <h1 className="font-serif text-[42px] leading-[1.15] text-foreground">
           {title || "Untitled card"}
         </h1>
+      )}
+
+      {/* AI draft affordance — only on empty drafts */}
+      {showAiDrafter && (
+        <div className="rounded-md border border-dashed border-[var(--alfred-ruled-line)] bg-[var(--alfred-accent-subtle)]/40 p-4">
+          <div className="flex items-center gap-2 mb-2 font-mono text-[10px] uppercase tracking-wider text-primary">
+            <Sparkles className="size-3" />
+            <span>Draft with AI</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <input
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && aiPrompt.trim()) {
+                  e.preventDefault();
+                  void handleAiDraft();
+                }
+              }}
+              placeholder="Idea, question, or paste a concept — press Enter"
+              disabled={aiGenerating}
+              className="flex-1 border-none bg-transparent font-sans text-[14px] text-foreground placeholder:text-muted-foreground focus:outline-none"
+              aria-label="AI draft prompt"
+            />
+            <button
+              type="button"
+              onClick={() => void handleAiDraft()}
+              disabled={!aiPrompt.trim() || aiGenerating}
+              className="rounded border border-primary/30 bg-primary/10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {aiGenerating ? "Drafting..." : "Draft"}
+            </button>
+          </div>
+          <div className="mt-1.5 font-mono text-[9px] uppercase tracking-wider text-[var(--alfred-text-tertiary)]">
+            Or just start writing below — AI connections stream in as you pause.
+          </div>
+        </div>
       )}
 
       {/* Body */}
