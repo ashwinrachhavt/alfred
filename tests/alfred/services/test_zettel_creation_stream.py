@@ -14,6 +14,7 @@ from alfred.models.zettel import (  # noqa: F401 — ensure tables exist
     ZettelCard,
     ZettelLink,
     ZettelReview,
+    ZettelSession,
 )
 from alfred.schemas.zettel import LinkQuality, LinkSuggestion, ZettelCardCreate
 from alfred.services.zettel_creation_stream import ZettelCreationStream, _sse
@@ -551,56 +552,42 @@ async def test_track_b_no_card_id():
     assert "Phase 0" in data["message"]
 
 
-def test_parse_analysis_response_valid_json():
-    """_parse_analysis_response should return enrichment, decomposition, gaps events."""
+def test_parse_structured_json_valid_json():
+    """Base-class _parse_structured_json returns a dict for valid JSON."""
     payload = ZettelCardCreate(title="Test", content="Test")
     stream = ZettelCreationStream(payload, db_session_factory=lambda: MagicMock())
 
-    events = stream._parse_analysis_response(VALID_ANALYSIS_JSON)
-
-    parsed = _parse_sse_events(events)
-    event_names = [e[0] for e in parsed]
-
-    assert len(parsed) == 3
-    assert "enrichment" in event_names
-    assert "decomposition" in event_names
-    assert "gaps" in event_names
+    data = stream._parse_structured_json(VALID_ANALYSIS_JSON)
+    assert data is not None
+    assert "enrichment" in data
+    assert "decomposition" in data
+    assert "gaps" in data
 
 
-def test_parse_analysis_response_markdown_fences():
-    """JSON wrapped in markdown fences should still parse."""
+def test_parse_structured_json_markdown_fences():
+    """JSON wrapped in markdown fences should still parse via the base class."""
     payload = ZettelCardCreate(title="Test", content="Test")
     stream = ZettelCreationStream(payload, db_session_factory=lambda: MagicMock())
 
     fenced = f"```json\n{VALID_ANALYSIS_JSON}\n```"
-    events = stream._parse_analysis_response(fenced)
-
-    parsed = _parse_sse_events(events)
-    event_names = [e[0] for e in parsed]
-
-    assert len(parsed) == 3
-    assert "enrichment" in event_names
-    assert "decomposition" in event_names
-    assert "gaps" in event_names
+    data = stream._parse_structured_json(fenced)
+    assert data is not None
+    assert "enrichment" in data
+    assert "decomposition" in data
+    assert "gaps" in data
 
 
-def test_parse_analysis_response_garbage():
-    """Non-JSON input should return an error event."""
+def test_parse_structured_json_garbage_returns_none():
+    """Non-JSON input should return None; track_b will emit an error event."""
     payload = ZettelCardCreate(title="Test", content="Test")
     stream = ZettelCreationStream(payload, db_session_factory=lambda: MagicMock())
 
-    events = stream._parse_analysis_response("this is not json at all {{{")
-
-    parsed = _parse_sse_events(events)
-    assert len(parsed) == 1
-    event_name, data = parsed[0]
-    assert event_name == "error"
-    assert data["step"] == "track_b_parse"
-    assert "Failed to parse" in data["message"]
+    data = stream._parse_structured_json("this is not json at all {{{")
+    assert data is None
 
 
-def test_parse_analysis_response_partial_keys():
-    """JSON missing 'gaps' key should return events for present keys only."""
+def test_parse_structured_json_partial_keys():
+    """JSON missing a key is still valid; track_b emits only present events."""
     payload = ZettelCardCreate(title="Test", content="Test")
     stream = ZettelCreationStream(payload, db_session_factory=lambda: MagicMock())
 
@@ -620,15 +607,11 @@ def test_parse_analysis_response_partial_keys():
             # Note: no "gaps" key
         }
     )
-    events = stream._parse_analysis_response(partial)
-
-    parsed = _parse_sse_events(events)
-    event_names = [e[0] for e in parsed]
-
-    assert len(parsed) == 2
-    assert "enrichment" in event_names
-    assert "decomposition" in event_names
-    assert "gaps" not in event_names
+    data = stream._parse_structured_json(partial)
+    assert data is not None
+    assert "enrichment" in data
+    assert "decomposition" in data
+    assert "gaps" not in data
 
 
 # ---------------------------------------------------------------------------
@@ -741,3 +724,231 @@ async def test_full_pipeline_both_tracks_error(db_session):
     done_data = parsed[-1][1]
     assert done_data["card"]["id"] is not None
     assert done_data["card"]["title"] == "Error Pipeline Card"
+
+
+# ---------------------------------------------------------------------------
+# T4 additions: Bloom inference + session-context + _sse re-export
+# ---------------------------------------------------------------------------
+
+
+VALID_ANALYSIS_JSON_WITH_BLOOM = json.dumps(
+    {
+        "enrichment": {
+            "suggested_title": None,
+            "summary": "A concise summary.",
+            "suggested_tags": ["ai"],
+            "suggested_topic": None,
+        },
+        "decomposition": {
+            "is_atomic": True,
+            "reason": "Single concept.",
+            "suggested_cards": [],
+        },
+        "gaps": {"missing_topics": [], "weak_areas": []},
+        "bloom_assessment": {
+            "inferred_level": 4,
+            "rationale": "The card compares and decomposes ideas into parts.",
+            "evidence_phrases": ["parts", "compare"],
+        },
+    }
+)
+
+
+@pytest.mark.asyncio
+async def test_track_b_emits_bloom_inferred_event(db_session):
+    """Track B should emit a bloom_inferred event when bloom_assessment is present."""
+    payload = ZettelCardCreate(title="Bloom Card", content="Comparing ideas into parts")
+    stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
+
+    async for _ in stream.run_phase0():
+        pass
+    assert stream.card_id is not None
+
+    chunks = [
+        MockStreamChunk(reasoning="Thinking about Bloom..."),
+        MockStreamChunk(content=VALID_ANALYSIS_JSON_WITH_BLOOM),
+    ]
+    mock_client = _mock_openai_client(chunks)
+
+    with (
+        patch("alfred.core.redis_client.get_redis_client", return_value=None),
+        patch(
+            "alfred.core.llm_factory.get_async_openai_client",
+            return_value=mock_client,
+        ),
+    ):
+        events = []
+        async for sse in stream.run_track_b():
+            events.append(sse)
+
+    parsed = _parse_sse_events(events)
+    event_names = [e[0] for e in parsed]
+
+    assert "bloom_inferred" in event_names
+    bloom_event = next(d for n, d in parsed if n == "bloom_inferred")
+    assert bloom_event["level"] == 4
+    assert bloom_event["source"] == "ai_inferred"
+    assert bloom_event["card_id"] == stream.card_id
+    assert "parts" in bloom_event["evidence_phrases"]
+
+
+@pytest.mark.asyncio
+async def test_bloom_inference_does_not_mutate_updated_at(db_session):
+    """Iron-rule regression: persisting Bloom must NOT bump updated_at."""
+    payload = ZettelCardCreate(title="Update At Card", content="Initial content")
+    stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
+
+    async for _ in stream.run_phase0():
+        pass
+    assert stream.card_id is not None
+
+    # Capture the original updated_at *before* any Bloom write.
+    original = db_session.get(ZettelCard, stream.card_id)
+    assert original is not None
+    original_ts = original.updated_at
+    assert original_ts is not None
+
+    chunks = [
+        MockStreamChunk(content=VALID_ANALYSIS_JSON_WITH_BLOOM),
+    ]
+    mock_client = _mock_openai_client(chunks)
+
+    with (
+        patch("alfred.core.redis_client.get_redis_client", return_value=None),
+        patch(
+            "alfred.core.llm_factory.get_async_openai_client",
+            return_value=mock_client,
+        ),
+    ):
+        async for _ in stream.run_track_b():
+            pass
+
+    # Force a read straight from the DB (not the cached identity-map object).
+    db_session.expire_all()
+    refetched = db_session.get(ZettelCard, stream.card_id)
+    assert refetched is not None
+    assert refetched.bloom_level == 4
+    assert refetched.bloom_source == "ai_inferred"
+    # The iron rule: updated_at is unchanged.
+    assert refetched.updated_at == original_ts
+    # And the history got the new entry.
+    assert refetched.bloom_history is not None
+    assert any(entry.get("level") == 4 for entry in refetched.bloom_history)
+
+
+@pytest.mark.asyncio
+async def test_track_b_parses_without_bloom_assessment_gracefully(db_session):
+    """No bloom_assessment in the response must NOT crash, and must NOT emit bloom_inferred."""
+    payload = ZettelCardCreate(title="No Bloom Card", content="Content")
+    stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
+
+    async for _ in stream.run_phase0():
+        pass
+    assert stream.card_id is not None
+
+    # Use the existing VALID_ANALYSIS_JSON which has no bloom_assessment.
+    chunks = [MockStreamChunk(content=VALID_ANALYSIS_JSON)]
+    mock_client = _mock_openai_client(chunks)
+
+    with (
+        patch("alfred.core.redis_client.get_redis_client", return_value=None),
+        patch(
+            "alfred.core.llm_factory.get_async_openai_client",
+            return_value=mock_client,
+        ),
+    ):
+        events = []
+        async for sse in stream.run_track_b():
+            events.append(sse)
+
+    parsed = _parse_sse_events(events)
+    event_names = [e[0] for e in parsed]
+
+    assert "enrichment" in event_names
+    assert "decomposition" in event_names
+    assert "gaps" in event_names
+    assert "bloom_inferred" not in event_names
+
+
+@pytest.mark.asyncio
+async def test_track_b_parse_error_emits_error_event(db_session):
+    """Garbage OpenAI output should emit an error SSE event with step=track_b_parse."""
+    payload = ZettelCardCreate(title="Garbage Card", content="Content")
+    stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
+
+    async for _ in stream.run_phase0():
+        pass
+    assert stream.card_id is not None
+
+    chunks = [MockStreamChunk(content="this is not json at all {{{")]
+    mock_client = _mock_openai_client(chunks)
+
+    with (
+        patch("alfred.core.redis_client.get_redis_client", return_value=None),
+        patch(
+            "alfred.core.llm_factory.get_async_openai_client",
+            return_value=mock_client,
+        ),
+    ):
+        events = []
+        async for sse in stream.run_track_b():
+            events.append(sse)
+
+    parsed = _parse_sse_events(events)
+    error_events = [(n, d) for n, d in parsed if n == "error"]
+    assert len(error_events) == 1
+    _, err = error_events[0]
+    assert err["step"] == "track_b_parse"
+
+
+@pytest.mark.asyncio
+async def test_session_context_injection_when_session_id_present(db_session):
+    """If payload has session_id, sibling titles appear in the Track B prompt."""
+    # Seed two pre-existing cards in session 7 via the ORM (bypass the service
+    # to avoid embedding sync noise in tests).
+    sess = ZettelSession(title="Working Session")
+    db_session.add(sess)
+    db_session.commit()
+    db_session.refresh(sess)
+
+    for title in ("Sibling One", "Sibling Two"):
+        db_session.add(ZettelCard(title=title, session_id=sess.id))
+    db_session.commit()
+
+    payload = ZettelCardCreate(
+        title="New Card With Session",
+        content="Content",
+        session_id=sess.id,
+    )
+    stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
+
+    # _fetch_session_sibling_titles reads from the DB directly.
+    titles = stream._fetch_session_sibling_titles()
+    assert set(titles) == {"Sibling One", "Sibling Two"}
+
+    # Build the prompt with those siblings — user message must mention them.
+    messages = stream._build_analysis_prompt({"total_cards": 0, "topics": []}, titles)
+    user_msg = messages[1]["content"]
+    assert "sibling cards" in user_msg
+    assert "Sibling One" in user_msg
+    assert "Sibling Two" in user_msg
+
+
+def test_session_context_omitted_when_session_id_none(db_session):
+    """Without a session_id the prompt gets no sibling-card hint."""
+    payload = ZettelCardCreate(title="Solo Card", content="Content")
+    stream = ZettelCreationStream(payload, db_session_factory=lambda: db_session)
+
+    assert stream._fetch_session_sibling_titles() == []
+
+    messages = stream._build_analysis_prompt({"total_cards": 0, "topics": []}, [])
+    user_msg = messages[1]["content"]
+    assert "sibling cards" not in user_msg
+    assert "alongside" not in user_msg
+
+
+def test_sse_function_reexport_preserved():
+    """`from alfred.services.zettel_creation_stream import _sse` must still work."""
+    # _sse was imported at the top of the file; re-invoke to confirm behavior.
+    result = _sse("my_event", {"a": 1})
+    assert result == 'event: my_event\ndata: {"a": 1}\n\n'
