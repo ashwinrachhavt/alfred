@@ -274,6 +274,38 @@ class ZettelDecomposeRequest(BaseModel):
     source_url: str | None = None
 
 
+# --- Bulk from decomposition (T7) -----------------------------------------
+
+
+class DecomposeCandidateInput(BaseModel):
+    """A single candidate card from the decomposition review UI."""
+
+    title: str = Field(min_length=1, max_length=255)
+    content: str
+    bloom_level: int = Field(default=1, ge=1, le=6)
+    tags: list[str] | None = None
+    # Indexes within THIS request's candidates array. Invalid indexes are
+    # silently dropped server-side (we're tolerant of LLM noise that got
+    # through the frontend).
+    links_to_siblings: list[int] | None = None
+
+
+class BulkFromDecompositionRequest(BaseModel):
+    """Commit reviewed decomposition candidates to the knowledge base (T7)."""
+
+    session_id: int | None = None
+    shared_topic: str | None = None
+    source_url: str | None = None
+    candidates: list[DecomposeCandidateInput]
+
+
+class BulkFromDecompositionResponse(BaseModel):
+    """Result of a bulk-from-decomposition commit."""
+
+    created_card_ids: list[int]
+    link_count: int
+
+
 # --- Sessions (T6) ---------------------------------------------------------
 
 

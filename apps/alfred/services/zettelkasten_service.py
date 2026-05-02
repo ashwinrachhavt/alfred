@@ -133,9 +133,18 @@ class ZettelkastenService:
         return card
 
     def create_cards_batch(self, cards_data: list[dict]) -> list[ZettelCard]:
-        """Create multiple zettel cards in a single transaction."""
+        """Create multiple zettel cards in a single transaction.
+
+        Per-card dict keys supported:
+            title (required), content, summary, tags, topic, source_url,
+            document_id, importance, confidence, status, session_id,
+            bloom_level, bloom_source
+        """
         cards = []
         for data in cards_data:
+            bloom_level = clamp_int(int(data.get("bloom_level", 1)), lo=1, hi=6)
+            bloom_source_raw = data.get("bloom_source") or "backfill"
+            bloom_source = str(bloom_source_raw).strip() or "backfill"
             card = ZettelCard(
                 title=str(data["title"]).strip(),
                 content=data.get("content"),
@@ -148,6 +157,8 @@ class ZettelkastenService:
                 confidence=max(0.0, min(1.0, float(data.get("confidence", 0.0)))),
                 status=data.get("status", "active"),
                 session_id=data.get("session_id"),
+                bloom_level=bloom_level,
+                bloom_source=bloom_source,
             )
             cards.append(card)
         self.session.add_all(cards)

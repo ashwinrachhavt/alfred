@@ -24,6 +24,8 @@ _GRAPH_EXT_CACHE_TTL = 3600  # 1 hour
 from alfred.schemas.zettel import (
     AIZettelGenerateRequest,
     BacklinkResponse,
+    BulkFromDecompositionRequest,
+    BulkFromDecompositionResponse,
     BulkUpdateResult,
     CardSearchResponse,
     CompleteReviewRequest,
@@ -43,6 +45,7 @@ from alfred.schemas.zettel import (
     ZettelSessionHydrateResponse,
     ZettelSessionOut,
 )
+from alfred.services.enrichment_service import EnrichmentService
 from alfred.services.session_service import (
     SessionAlreadyEnded,
     SessionNotFound,
@@ -780,3 +783,118 @@ def hydrate_session(
         return svc.hydrate(session_id)
     except SessionNotFound as exc:
         raise HTTPException(status_code=404, detail="Session not found") from exc
+
+
+# ---------------------------------------------------------------------------
+# T7: Resume enrichment + bulk from decomposition
+# ---------------------------------------------------------------------------
+
+
+@router.post("/cards/{card_id}/resume-enrichment")
+def resume_enrichment(
+    card_id: int,
+    session: Session = Depends(get_db_session),
+) -> dict:
+    """Idempotent re-run of Track B enrichment for a single card (T7).
+
+    Safe to call repeatedly:
+      * already-successful cards return ``already_complete`` (no-op).
+      * cards with prior failures (or never attempted) re-run the LLM.
+      * LLM errors are recorded (``enrichment_last_error``) and surfaced
+        as ``{"status": "failed", "error": "..."}`` so the UI can show
+        the retry badge again.
+
+    The success path does NOT mutate ``updated_at`` — Bloom/enrichment
+    metadata is infrastructure, not a user edit. See the
+    ``updated-at-corruption`` learning.
+    """
+    svc = EnrichmentService(session)
+    result = svc.run_sync(card_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Card not found")
+    return result
+
+
+@router.post(
+    "/bulk-from-decomposition",
+    response_model=BulkFromDecompositionResponse,
+)
+def bulk_from_decomposition(
+    payload: BulkFromDecompositionRequest,
+    session: Session = Depends(get_db_session),
+) -> BulkFromDecompositionResponse:
+    """Commit reviewed decomposition candidates + create sibling links (T7).
+
+    Replaces the legacy title-only ``bulk_create`` flow used by the
+    decomposition dialog. Each candidate is persisted with
+    ``bloom_source='ai_inferred'`` and the user-adjusted Bloom level;
+    sibling links are ``type='decomposition_sibling'`` and bidirectional.
+    """
+    _MAX_BATCH = 50
+    if len(payload.candidates) == 0:
+        raise HTTPException(status_code=400, detail="No candidates provided")
+    if len(payload.candidates) > _MAX_BATCH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maximum {_MAX_BATCH} candidates per commit",
+        )
+
+    # Session validation: only refuse to write into an *ended* session.
+    if payload.session_id is not None:
+        from alfred.models.zettel import ZettelSession
+
+        sess = session.get(ZettelSession, payload.session_id)
+        if sess is None:
+            raise HTTPException(status_code=400, detail="Session not found")
+        if sess.ended_at is not None:
+            raise HTTPException(status_code=400, detail="Session has already ended")
+
+    svc = ZettelkastenService(session)
+    cards_data: list[dict] = []
+    for c in payload.candidates:
+        cards_data.append(
+            {
+                "title": c.title,
+                "content": c.content,
+                "bloom_level": c.bloom_level,
+                "bloom_source": "ai_inferred",
+                "tags": c.tags or [],
+                "topic": payload.shared_topic,
+                "source_url": payload.source_url,
+                "session_id": payload.session_id,
+            }
+        )
+
+    cards = svc.create_cards_batch(cards_data)
+    card_ids = [int(c.id) for c in cards if c.id is not None]
+
+    # Sibling links. Tolerant of invalid indexes (LLM noise that
+    # slipped through the frontend) — silently drop instead of 400.
+    n = len(payload.candidates)
+    link_count = 0
+    for i, c in enumerate(payload.candidates):
+        raw_targets = c.links_to_siblings or []
+        seen: set[int] = set()
+        for j in raw_targets:
+            if not isinstance(j, int):
+                continue
+            if j < 0 or j >= n or j == i:
+                continue
+            if j in seen:
+                continue
+            seen.add(j)
+            svc.create_link(
+                from_card_id=card_ids[i],
+                to_card_id=card_ids[j],
+                type="decomposition_sibling",
+                bidirectional=True,
+            )
+            link_count += 1
+
+    _invalidate_topic_tag_cache()
+    _invalidate_graph_cache()
+
+    return BulkFromDecompositionResponse(
+        created_card_ids=card_ids,
+        link_count=link_count,
+    )
