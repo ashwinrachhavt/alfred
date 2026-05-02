@@ -4,7 +4,7 @@ import json as _json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
@@ -34,12 +34,14 @@ from alfred.schemas.zettel import (
     ZettelCardOut,
     ZettelCardPatch,
     ZettelCardUpdate,
+    ZettelDecomposeRequest,
     ZettelLinkCreate,
     ZettelLinkOut,
     ZettelLinkPatch,
     ZettelReviewOut,
 )
 from alfred.services.zettel_creation_stream import ZettelCreationStream
+from alfred.services.zettel_decompose_stream import ZettelDecomposeStream
 from alfred.services.zettelkasten_service import ZettelkastenService
 
 router = APIRouter(prefix="/api/zettels", tags=["zettels"])
@@ -98,6 +100,29 @@ async def create_card_stream(payload: ZettelCardCreate) -> StreamingResponse:
     stream = ZettelCreationStream(payload)
     return StreamingResponse(
         stream.run(),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
+
+
+@router.post("/decompose-stream")
+async def decompose_stream(
+    payload: ZettelDecomposeRequest,
+    request: Request,
+) -> StreamingResponse:
+    """Stream atomic-card candidates from raw text via SSE (T5)."""
+    stream = ZettelDecomposeStream(payload, request=request)
+
+    async def event_stream():
+        try:
+            async for event in stream.run():
+                yield event
+        except Exception as exc:
+            _log.exception("decompose-stream failed")
+            yield stream._sse("error", {"step": "stream_fatal", "message": str(exc)})
+
+    return StreamingResponse(
+        event_stream(),
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )

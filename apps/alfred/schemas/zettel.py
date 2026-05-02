@@ -263,3 +263,12 @@ class SyncWikiLinksRequest(BaseModel):
     source_type: str = Field(max_length=16)  # "note" | "zettel"
     source_id: str = Field(max_length=64)
     target_card_ids: list[int]
+
+
+class ZettelDecomposeRequest(BaseModel):
+    """Request to stream atomic-card candidates from a raw paragraph (T5)."""
+
+    raw_text: str = Field(..., min_length=1)
+    session_id: int | None = None
+    shared_topic: str | None = None
+    source_url: str | None = None
