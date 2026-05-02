@@ -21,6 +21,11 @@ from alfred.models.learning import (
 )
 from alfred.models.notes import NoteAssetRow, NoteRow, WorkspaceRow
 from alfred.models.research import ResearchRun
+from alfred.models.streaming import (
+    AgentRunRow,
+    AgentRunEventRow,
+    AgentRunSnapshotRow,
+)
 from alfred.models.system import SystemSetting
 from alfred.models.taxonomy import TaxonomyNodeRow
 from alfred.models.thinking import AgentMessageRow, ThinkingSessionRow
@@ -62,6 +67,9 @@ __all__ = [
     "TaxonomyNodeRow",
     "ThinkingSessionRow",
     "AgentMessageRow",
+    "AgentRunRow",
+    "AgentRunEventRow",
+    "AgentRunSnapshotRow",
     "DailyEntryRow",
     "DailyReflectionRow",
     "DocumentAssetRow",
