@@ -87,6 +87,8 @@ class ZettelkastenService:
         confidence: float = 0.0,
         status: str = "active",
         session_id: int | None = None,
+        bloom_level: int = 1,
+        bloom_source: str = "backfill",
     ) -> ZettelCard:
         card = ZettelCard(
             title=title.strip(),
@@ -100,6 +102,8 @@ class ZettelkastenService:
             confidence=max(0.0, min(1.0, float(confidence))),
             status=status,
             session_id=session_id,
+            bloom_level=clamp_int(int(bloom_level), lo=1, hi=6),
+            bloom_source=(bloom_source or "backfill").strip() or "backfill",
         )
         self.session.add(card)
         self.session.commit()
@@ -165,7 +169,17 @@ class ZettelkastenService:
                 )
         return cards
 
-    def _apply_card_filters(self, stmt, *, q=None, topic=None, tags=None, document_id=None, status="active", importance_min=None):
+    def _apply_card_filters(
+        self,
+        stmt,
+        *,
+        q=None,
+        topic=None,
+        tags=None,
+        document_id=None,
+        status="active",
+        importance_min=None,
+    ):
         """Apply common card filters to a SELECT statement."""
         if q:
             like = f"%{q.strip()}%"
@@ -187,9 +201,7 @@ class ZettelkastenService:
         if tags:
             # Single containment check instead of per-tag loop
             stmt = stmt.where(
-                sa_text("tags::jsonb @> :all_tags::jsonb").bindparams(
-                    all_tags=json.dumps(tags)
-                )
+                sa_text("tags::jsonb @> :all_tags::jsonb").bindparams(all_tags=json.dumps(tags))
             )
         return stmt
 
@@ -209,8 +221,13 @@ class ZettelkastenService:
     ) -> list[ZettelCard]:
         stmt = select(ZettelCard)
         stmt = self._apply_card_filters(
-            stmt, q=q, topic=topic, tags=tags, document_id=document_id,
-            status=status, importance_min=importance_min,
+            stmt,
+            q=q,
+            topic=topic,
+            tags=tags,
+            document_id=document_id,
+            status=status,
+            importance_min=importance_min,
         )
 
         sort_col = _ALLOWED_SORT_COLUMNS.get(sort_by or "", ZettelCard.updated_at)
@@ -235,8 +252,13 @@ class ZettelkastenService:
         """Count cards matching filters (for pagination)."""
         stmt = select(func.count()).select_from(ZettelCard)
         stmt = self._apply_card_filters(
-            stmt, q=q, topic=topic, tags=tags, document_id=document_id,
-            status=status, importance_min=importance_min,
+            stmt,
+            q=q,
+            topic=topic,
+            tags=tags,
+            document_id=document_id,
+            status=status,
+            importance_min=importance_min,
         )
         result = self.session.exec(stmt).one()
         return int(result)
@@ -981,12 +1003,20 @@ class ZettelkastenService:
         qdrant = get_qdrant_client()
         if qdrant is not None:
             return self._find_similar_via_qdrant(
-                card, base_embedding, existing_links, qdrant,
-                threshold=threshold, limit=limit,
+                card,
+                base_embedding,
+                existing_links,
+                qdrant,
+                threshold=threshold,
+                limit=limit,
             )
         return self._find_similar_via_scan(
-            card, card_id, base_embedding, existing_links,
-            threshold=threshold, limit=limit,
+            card,
+            card_id,
+            base_embedding,
+            existing_links,
+            threshold=threshold,
+            limit=limit,
         )
 
     def _find_similar_via_qdrant(
@@ -1010,8 +1040,12 @@ class ZettelkastenService:
             )
         except Exception:
             return self._find_similar_via_scan(
-                card, card.id, base_embedding, existing_links,
-                threshold=threshold, limit=limit,
+                card,
+                card.id,
+                base_embedding,
+                existing_links,
+                threshold=threshold,
+                limit=limit,
             )
 
         scored: list[tuple[ZettelCard, LinkQuality]] = []

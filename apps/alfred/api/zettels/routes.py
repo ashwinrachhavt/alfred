@@ -39,6 +39,15 @@ from alfred.schemas.zettel import (
     ZettelLinkOut,
     ZettelLinkPatch,
     ZettelReviewOut,
+    ZettelSessionCreateRequest,
+    ZettelSessionHydrateResponse,
+    ZettelSessionOut,
+)
+from alfred.services.session_service import (
+    SessionAlreadyEnded,
+    SessionNotFound,
+    SessionService,
+    to_session_out,
 )
 from alfred.services.zettel_creation_stream import ZettelCreationStream
 from alfred.services.zettel_decompose_stream import ZettelDecomposeStream
@@ -708,3 +717,66 @@ def complete_review(
         raise HTTPException(status_code=404, detail="Review not found")
     updated = svc.complete_review(review=review, score=payload.score)
     return _review_out(updated)
+
+
+# ---------------------------------------------------------------------------
+# Sessions (T6)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/sessions",
+    response_model=ZettelSessionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_session(
+    payload: ZettelSessionCreateRequest,
+    session: Session = Depends(get_db_session),
+) -> ZettelSessionOut:
+    """Create a new ZettelSession."""
+    svc = SessionService(session)
+    row = svc.create(payload)
+    return to_session_out(row)
+
+
+@router.post("/sessions/{session_id}/end", response_model=ZettelSessionOut)
+def end_session(
+    session_id: int,
+    session: Session = Depends(get_db_session),
+) -> ZettelSessionOut:
+    """End a session; generate Bloom-6 summary card if any cards exist.
+
+    Returns 409 Conflict if the session is already ended (with the
+    existing session body so the client can reconcile state).
+    """
+    svc = SessionService(session)
+    try:
+        row = svc.end(session_id)
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="Session not found") from exc
+    except SessionAlreadyEnded as exc:
+        existing = to_session_out(exc.session)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Session already ended",
+                "session": existing.model_dump(mode="json"),
+            },
+        ) from exc
+    return to_session_out(row)
+
+
+@router.get(
+    "/sessions/{session_id}/hydrate",
+    response_model=ZettelSessionHydrateResponse,
+)
+def hydrate_session(
+    session_id: int,
+    session: Session = Depends(get_db_session),
+) -> ZettelSessionHydrateResponse:
+    """Top-3 full + stub rehydration for fast first paint (D13)."""
+    svc = SessionService(session)
+    try:
+        return svc.hydrate(session_id)
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="Session not found") from exc

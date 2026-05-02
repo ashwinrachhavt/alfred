@@ -272,3 +272,53 @@ class ZettelDecomposeRequest(BaseModel):
     session_id: int | None = None
     shared_topic: str | None = None
     source_url: str | None = None
+
+
+# --- Sessions (T6) ---------------------------------------------------------
+
+
+class ZettelSessionCreateRequest(BaseModel):
+    """Request body for creating a new ZettelSession."""
+
+    title: str | None = Field(default=None, max_length=255)
+    shared_topic: str | None = Field(default=None, max_length=128)
+    shared_tags: list[str] | None = None
+    source_context: str | None = None
+
+
+class ZettelSessionOut(BaseModel):
+    """Session response shape. ``status`` is a derived field (D4)."""
+
+    id: int
+    title: str | None = None
+    shared_topic: str | None = None
+    shared_tags: list[str] | None = None
+    source_context: str | None = None
+    ended_at: datetime | None = None
+    summary: str | None = None
+    card_count: int
+    summary_card_id: int | None = None
+    status: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ZettelCardStub(BaseModel):
+    """Lightweight card projection for session hydration (~100 bytes)."""
+
+    id: int
+    title: str
+    bloom_level: int
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    is_archived: bool
+
+
+class ZettelSessionHydrateResponse(BaseModel):
+    """Top-3 full cards + older stubs for fast first-paint (D13)."""
+
+    session: ZettelSessionOut
+    full_cards: list[ZettelCardOut]
+    stub_cards: list[ZettelCardStub]
