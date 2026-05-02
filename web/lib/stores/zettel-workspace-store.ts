@@ -101,12 +101,19 @@ export type ZettelWorkspaceState = {
   activeDraft: DraftState | null;
   stackOrder: StackEntry[];
 
+  // Which entry is currently focused in the WritingSurface.
+  // Keeps SessionRail ↔ WritingSurface in sync without duplicating the draft.
+  focusedEntry: StackEntry | null;
+
   // Cancellation registry (key = `card:<id>` or `draft:<clientId>`)
   abortControllers: Map<string, AbortController>;
 
   // Actions
   setSession: (id: number, shared: SharedContext) => void;
   clearSession: () => void;
+
+  // Focus
+  focusEntry: (entry: StackEntry | null) => void;
 
   // Draft lifecycle
   startDraft: () => string; // returns clientId
@@ -168,6 +175,7 @@ export const useZettelWorkspaceStore = create<ZettelWorkspaceState>(
     savedCards: new Map(),
     activeDraft: null,
     stackOrder: [],
+    focusedEntry: null,
     abortControllers: new Map(),
 
     setSession: (id, shared) =>
@@ -184,9 +192,12 @@ export const useZettelWorkspaceStore = create<ZettelWorkspaceState>(
         savedCards: new Map(),
         activeDraft: null,
         stackOrder: [],
+        focusedEntry: null,
         abortControllers: new Map(),
       });
     },
+
+    focusEntry: (entry) => set({ focusedEntry: entry }),
 
     startDraft: () => {
       const clientId = uuid();
@@ -201,6 +212,7 @@ export const useZettelWorkspaceStore = create<ZettelWorkspaceState>(
       set((state) => ({
         activeDraft: draft,
         stackOrder: [{ type: "draft", clientId }, ...state.stackOrder],
+        focusedEntry: { type: "draft", clientId },
       }));
       return clientId;
     },
@@ -239,10 +251,18 @@ export const useZettelWorkspaceStore = create<ZettelWorkspaceState>(
             ? { type: "saved" as const, id: saved.id }
             : entry,
         );
+        // If the focused entry was this draft, migrate the focus to the new saved id.
+        const focusedEntry =
+          state.focusedEntry &&
+          state.focusedEntry.type === "draft" &&
+          state.focusedEntry.clientId === clientId
+            ? { type: "saved" as const, id: saved.id }
+            : state.focusedEntry;
         return {
           savedCards: newSaved,
           activeDraft: null,
           stackOrder: newStack,
+          focusedEntry,
         };
       }),
 
@@ -251,12 +271,19 @@ export const useZettelWorkspaceStore = create<ZettelWorkspaceState>(
         if (!state.activeDraft || state.activeDraft.clientId !== clientId) {
           return state;
         }
+        const focusedEntry =
+          state.focusedEntry &&
+          state.focusedEntry.type === "draft" &&
+          state.focusedEntry.clientId === clientId
+            ? null
+            : state.focusedEntry;
         return {
           activeDraft: null,
           stackOrder: state.stackOrder.filter(
             (entry) =>
               !(entry.type === "draft" && entry.clientId === clientId),
           ),
+          focusedEntry,
         };
       }),
 
@@ -399,6 +426,7 @@ export const useZettelWorkspaceStore = create<ZettelWorkspaceState>(
         savedCards: new Map(),
         activeDraft: null,
         stackOrder: [],
+        focusedEntry: null,
         abortControllers: new Map(),
       });
     },
