@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import { BookOpen, ExternalLink, Loader2, Plus, Sparkles, X } from "lucide-react";
 
@@ -10,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useDocumentDetails } from "@/features/documents/queries";
 import { useEnrichDocument, useFetchAndOrganize } from "@/features/documents/mutations";
 import { useZettelsByDocument } from "@/features/zettels/queries";
-import { CreateZettelDialog } from "@/app/(app)/knowledge/_components/create-zettel-dialog";
+import { useCreateSession } from "@/features/workspace/mutations";
 import { ReaderMode } from "./reader-mode";
 
 type Props = {
@@ -274,18 +276,41 @@ export function InboxDetail({ docId, onClose }: Props) {
 
 function ZettelBridge({ docId, data }: { docId: string; data: Record<string, unknown> }) {
  const { data: zettels = [], isLoading: zettelsLoading } = useZettelsByDocument(docId);
- const [dialogOpen, setDialogOpen] = useState(false);
+ const router = useRouter();
+ const createSession = useCreateSession();
 
  const topics = data?.topics as { primary?: string; secondary?: string[] } | null;
  const summary = data?.summary as { short?: string } | null;
  const hasEnrichment = Boolean(summary?.short || data?.enrichment);
 
- // Prepare default values for the dialog
- const defaultTitle = String(data?.title || "");
- const defaultContent = summary?.short || String(data?.cleaned_text || "").slice(0, 500);
- const defaultSummary = summary?.short || "";
- const defaultTags = topics?.secondary?.slice(0, 5).map((t) => String(t).toLowerCase().replace(/_/g, "-")) || [];
- const defaultTopic = topics?.primary?.replace(/_/g, "-") || "";
+ const seedTitle = String(data?.title || "");
+ const seedContent = summary?.short || String(data?.cleaned_text || "").slice(0, 500);
+ const seedTags = topics?.secondary?.slice(0, 5).map((t) => String(t).toLowerCase().replace(/_/g, "-")) || [];
+ const seedTopic = topics?.primary?.replace(/_/g, "-") || "";
+
+ const handleCreateFromDoc = async () => {
+ try {
+ const session = await createSession.mutateAsync({
+ title: seedTitle || undefined,
+ shared_topic: seedTopic || undefined,
+ shared_tags: seedTags.length ? seedTags : undefined,
+ source_context: docId,
+ });
+ // Hand off the seed draft content via sessionStorage so the workspace
+ // can hydrate its first draft without polluting the URL.
+ if (typeof window !== "undefined") {
+ window.sessionStorage.setItem(
+ `workspace.seedForSession:${session.id}`,
+ JSON.stringify({ title: seedTitle, content: seedContent }),
+ );
+ }
+ router.push(`/knowledge/session/${session.id}`);
+ } catch (err) {
+ toast.error("Could not start sitting", {
+ description: err instanceof Error ? err.message : String(err),
+ });
+ }
+ };
 
  return (
  <>
@@ -307,9 +332,14 @@ function ZettelBridge({ docId, data }: { docId: string; data: Record<string, unk
  size="sm"
  variant="outline"
  className="h-7 gap-1.5 text-xs font-medium tracking-wide"
- onClick={() => setDialogOpen(true)}
+ onClick={handleCreateFromDoc}
+ disabled={createSession.isPending}
  >
+ {createSession.isPending ? (
+ <Loader2 className="size-3 animate-spin" />
+ ) : (
  <Plus className="size-3" />
+ )}
  Create More
  </Button>
  )}
@@ -348,16 +378,6 @@ function ZettelBridge({ docId, data }: { docId: string; data: Record<string, unk
  </p>
  )}
  </div>
-
- <CreateZettelDialog
- open={dialogOpen}
- onOpenChange={setDialogOpen}
- defaultTitle={defaultTitle}
- defaultContent={defaultContent}
- defaultSummary={defaultSummary}
- defaultTags={defaultTags}
- defaultTopic={defaultTopic}
- />
  </>
  );
 }

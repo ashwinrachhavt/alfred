@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 
 import { AlertCircle, BookOpen, Layers, Link2, Loader2, Play, Plus, RefreshCw, Sparkles as SparklesIcon } from "lucide-react";
 
@@ -19,9 +20,7 @@ import { ZettelTable } from "./zettel-table";
 import { ZettelTimeline } from "./zettel-timeline";
 import { ZettelDetailPanel } from "./zettel-detail-panel";
 import { ReviewStation } from "./review-station";
-import { CreateZettelDialog } from "./create-zettel-dialog";
 import { AIGenerateDialog } from "./ai-generate-dialog";
-import { BulkCreateDialog } from "./bulk-create-dialog";
 import { KnowledgeSkeleton } from "./knowledge-skeleton";
 
 const ZettelGraph = dynamic(
@@ -78,10 +77,20 @@ export function KnowledgeHub() {
  const [currentPage, setCurrentPage] = useState(1);
  const [selectedId, setSelectedId] = useState<string | null>(null);
  const [pulsingId, setPulsingId] = useState<string | null>(null);
- const [showCreate, setShowCreate] = useState(false);
  const [showAIGenerate, setShowAIGenerate] = useState(false);
- const [showBulkCreate, setShowBulkCreate] = useState(false);
  const [workflowLoading, setWorkflowLoading] = useState<string | null>(null);
+ const router = useRouter();
+
+ // The workspace owns both the single-card and multi-card paths now.
+ // Bulk is reached by pasting into the workspace; we still keep a direct
+ // "paste=true" affordance for users coming from the Bulk Create button.
+ const goToNewSession = useCallback(
+ (opts?: { paste?: boolean }) => {
+ const qs = opts?.paste ? "?paste=true" : "";
+ router.push(`/knowledge/session/new${qs}`);
+ },
+ [router],
+ );
 
  const { trackTask } = useTaskTracker();
  const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
@@ -247,7 +256,7 @@ export function KnowledgeHub() {
  size="sm"
  variant="outline"
  className="gap-1.5 text-xs"
- onClick={() => setShowBulkCreate(true)}
+ onClick={() => goToNewSession({ paste: true })}
  >
  <Layers className="size-3.5" />
  Bulk Create
@@ -264,7 +273,7 @@ export function KnowledgeHub() {
  <Button
  size="sm"
  className="gap-1.5 text-xs"
- onClick={() => setShowCreate(true)}
+ onClick={() => goToNewSession()}
  >
  <Plus className="size-3.5" />
  New Zettel
@@ -304,7 +313,7 @@ export function KnowledgeHub() {
  {/* Empty state */}
  {!isError && allZettels.length === 0 && (
  <EmptyState
- onCreateClick={() => setShowCreate(true)}
+ onCreateClick={() => goToNewSession()}
  onAIClick={() => setShowAIGenerate(true)}
  />
  )}
@@ -405,9 +414,7 @@ export function KnowledgeHub() {
  </div>
 
  {/* Dialogs */}
- <CreateZettelDialog open={showCreate} onOpenChange={setShowCreate} />
  <AIGenerateDialog open={showAIGenerate} onOpenChange={setShowAIGenerate} />
- <BulkCreateDialog open={showBulkCreate} onOpenChange={setShowBulkCreate} />
  </div>
  );
 }

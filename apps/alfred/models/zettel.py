@@ -21,6 +21,7 @@ from sqlalchemy import (
     String,
     Text,
 )
+from sqlalchemy import text as sa_text
 from sqlmodel import Field
 
 from alfred.models.base import Model
@@ -33,6 +34,17 @@ class ZettelCard(Model, table=True):
     references back to source material (document_id/source_url). The
     ``importance`` and ``confidence`` fields allow lightweight readiness
     tracking without forcing a full rubric.
+
+    Bloom/session augmentation (T1):
+        * ``session_id`` links the card to a ZettelSession (a sitting in
+          which the user creates multiple related cards).
+        * ``bloom_level`` (1..6) tracks Bloom's Taxonomy depth for the
+          card. Always set — existing rows are backfilled to ``1``.
+        * ``bloom_source`` records *how* the level was arrived at
+          (``backfill``/``ai_inferred``/``user_set``/``review_updated``).
+        * ``bloom_history`` keeps an audit trail of level transitions.
+        * ``enrichment_attempted_at``/``enrichment_last_error`` let the
+          workspace derive enrichment state without a dedicated enum.
     """
 
     __tablename__ = "zettel_cards"
@@ -42,6 +54,11 @@ class ZettelCard(Model, table=True):
         Index("ix_zettel_cards_status", "status"),
         Index("ix_zettel_cards_document_id", "document_id"),
         Index("ix_zettel_cards_updated_at", "updated_at"),
+        Index(
+            "ix_zettel_cards_session_id",
+            "session_id",
+            postgresql_where=sa_text("session_id IS NOT NULL"),
+        ),
     )
 
     title: str = Field(sa_column=Column(String(255), nullable=False))
@@ -55,6 +72,58 @@ class ZettelCard(Model, table=True):
     importance: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     confidence: float = Field(default=0.0, sa_column=Column(Float, nullable=False))
     embedding: list[float] | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    # --- T1: session + Bloom + enrichment columns ---------------------------------
+    session_id: int | None = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("zettel_sessions.id"), nullable=True),
+    )
+    bloom_level: int = Field(default=1, sa_column=Column(Integer, nullable=False))
+    bloom_source: str = Field(default="backfill", sa_column=Column(String(32), nullable=False))
+    bloom_history: list[dict] | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+    enrichment_attempted_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+    enrichment_last_error: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+
+
+class ZettelSession(Model, table=True):
+    """A sitting in which the user creates multiple zettels with shared context.
+
+    Status is derived, not stored (D4), to prevent desync between redundant fields:
+        * ``active``    — ``ended_at IS NULL``
+        * ``ended``     — ``ended_at IS NOT NULL`` AND ``summary_card_id IS NOT NULL``
+        * ``abandoned`` — ``ended_at IS NOT NULL`` AND ``summary_card_id IS NULL``
+    """
+
+    __tablename__ = "zettel_sessions"
+    __table_args__ = (
+        Index(
+            "ix_zettel_sessions_active",
+            "ended_at",
+            postgresql_where=sa_text("ended_at IS NULL"),
+        ),
+    )
+
+    title: str | None = Field(default=None, sa_column=Column(String(255), nullable=True))
+    shared_topic: str | None = Field(default=None, sa_column=Column(String(128), nullable=True))
+    shared_tags: list[str] | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+    source_context: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    ended_at: datetime | None = Field(default=None, sa_column=Column(DateTime, nullable=True))
+    summary: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    card_count: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    summary_card_id: int | None = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("zettel_cards.id"), nullable=True),
+    )
+
+    @property
+    def status(self) -> str:
+        """Derived: ``active`` | ``ended`` | ``abandoned``. See D4 in the plan."""
+
+        if self.ended_at is None:
+            return "active"
+        return "ended" if self.summary_card_id is not None else "abandoned"
 
 
 class ZettelLink(Model, table=True):

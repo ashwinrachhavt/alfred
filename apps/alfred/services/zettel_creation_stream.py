@@ -2,7 +2,7 @@
 
 Saves a card immediately, then runs two concurrent async tracks:
   Track A: embedding + Qdrant sync + vector search + auto-link
-  Track B: o4-mini reasoning + enrichment + decomposition + gaps
+  Track B: o4-mini reasoning + enrichment + decomposition + gaps + Bloom inference
 
 Yields SSE-formatted strings for each event.
 """
@@ -15,53 +15,54 @@ import logging
 from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
-from sqlmodel import Session
+from fastapi import Request
+from sqlmodel import Session, select
 
-from alfred.api.dependencies import get_db_session
 from alfred.schemas.zettel import ZettelCardCreate
+from alfred.services.sse_base import SSEStreamOrchestrator
 from alfred.services.zettelkasten_service import ZettelkastenService
 
 logger = logging.getLogger(__name__)
 
 
-def _sse(event: str, data: dict[str, Any]) -> str:
-    """Format a single SSE event."""
-    return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
+# Re-export the base class's static _sse at module level for backwards
+# compatibility with callers that do:
+#     from alfred.services.zettel_creation_stream import _sse
+# (see tests/alfred/api/zettels/test_stream_routes.py and the existing
+# service tests). Keeping this bound name stable lets T3's refactor stay
+# invisible to external consumers.
+_sse = SSEStreamOrchestrator._sse
 
 
 AUTO_LINK_THRESHOLD = 0.75
 
 
-class ZettelCreationStream:
-    """Orchestrates streaming zettel creation with concurrent enrichment."""
+class ZettelCreationStream(SSEStreamOrchestrator):
+    """Streaming zettel creation: card save + embedding + links + Bloom + enrichment."""
 
     def __init__(
         self,
         payload: ZettelCardCreate,
+        request: Request | None = None,
         db_session_factory: Callable[[], Session] | None = None,
     ) -> None:
+        super().__init__(request=request, db_session_factory=db_session_factory)
         self.payload = payload
-        self._uses_default_factory = db_session_factory is None
-        if self._uses_default_factory:
-            self._db_factory = self._default_session_factory
-        else:
-            self._db_factory = db_session_factory
         self.card_id: int | None = None
         self._card_title: str = ""
-
-    @staticmethod
-    def _default_session_factory() -> Session:
-        """Create and return a fresh DB session.
-
-        Caller is responsible for closing the session.
-        """
-        return next(get_db_session())
 
     def _save_card_and_invalidate(self) -> dict[str, Any]:
         """Synchronous card save + cache invalidation. Runs in executor.
 
         Cache invalidation happens here (not Phase 2) so the card is visible
         in the UI immediately, even if the stream dies during enrichment.
+
+        If the card is being written into a session, we also bump the
+        session's ``updated_at`` so the T8 abandon-stale-sessions beat
+        treats this as activity. Without this call the session's
+        ``updated_at`` only reflects creation time and any newly-created
+        session would be marked abandoned 24h later even if the user is
+        actively writing into it.
 
         Sessions created from the default factory are properly closed via
         finally. Injected sessions (e.g., in tests) are managed by the caller.
@@ -72,6 +73,20 @@ class ZettelCreationStream:
             card = svc.create_card(**self.payload.model_dump())
             self.card_id = card.id
             self._card_title = card.title
+
+            # Bump session.updated_at if this card belongs to a session so
+            # the abandon-stale-sessions beat treats it as live activity.
+            if self.payload.session_id is not None:
+                try:
+                    from alfred.services.session_service import SessionService
+
+                    SessionService(session).touch(self.payload.session_id)
+                except Exception:  # pragma: no cover - defensive
+                    logger.warning(
+                        "Failed to touch session %s after card save",
+                        self.payload.session_id,
+                        exc_info=True,
+                    )
 
             # Invalidate caches immediately so card appears in UI
             self._invalidate_caches()
@@ -100,15 +115,15 @@ class ZettelCreationStream:
         """Phase 0: save the card to DB, invalidate caches, emit card_saved."""
         try:
             result = await asyncio.to_thread(self._save_card_and_invalidate)
-            yield _sse("card_saved", result)
+            yield self._sse("card_saved", result)
         except Exception as exc:
             logger.error("Phase 0 failed: %s", exc, exc_info=True)
-            yield _sse("error", {"step": "card_save", "message": str(exc)})
+            yield self._sse("error", {"step": "card_save", "message": str(exc)})
 
     async def run_track_a(self) -> AsyncGenerator[str, None]:
         """Track A: ensure embedding -> suggest links -> auto-create links."""
         if self.card_id is None:
-            yield _sse(
+            yield self._sse(
                 "error", {"step": "track_a", "message": "No card_id — Phase 0 must run first"}
             )
             return
@@ -121,17 +136,18 @@ class ZettelCreationStream:
 
                 card = session.get(ZettelCard, self.card_id)
                 if not card:
-                    yield _sse(
-                        "error", {"step": "track_a", "message": f"Card {self.card_id} not found"}
+                    yield self._sse(
+                        "error",
+                        {"step": "track_a", "message": f"Card {self.card_id} not found"},
                     )
                     return
 
                 # Step 1: Ensure embedding (generates + syncs to Qdrant)
                 card = await asyncio.to_thread(svc.ensure_embedding, card)
-                yield _sse("embedding_done", {"card_id": self.card_id})
+                yield self._sse("embedding_done", {"card_id": self.card_id})
 
                 # Step 2: Find similar cards
-                yield _sse("tool_start", {"step": "searching_kb"})
+                yield self._sse("tool_start", {"step": "searching_kb"})
                 suggestions = await asyncio.to_thread(
                     svc.suggest_links, self.card_id, min_confidence=0.6, limit=10
                 )
@@ -145,7 +161,7 @@ class ZettelCreationStream:
                     }
                     for s in suggestions
                 ]
-                yield _sse("links_found", {"suggestions": suggestion_data})
+                yield self._sse("links_found", {"suggestions": suggestion_data})
 
                 # Step 3: Auto-create links above threshold
                 auto_linked: list[dict[str, Any]] = []
@@ -169,7 +185,7 @@ class ZettelCreationStream:
                                 }
                             )
                 if auto_linked:
-                    yield _sse("links_created", {"links": auto_linked})
+                    yield self._sse("links_created", {"links": auto_linked})
 
             finally:
                 if self._uses_default_factory:
@@ -177,12 +193,12 @@ class ZettelCreationStream:
 
         except Exception as exc:
             logger.warning("Track A failed for card %s: %s", self.card_id, exc, exc_info=True)
-            yield _sse("error", {"step": "track_a", "message": str(exc)})
+            yield self._sse("error", {"step": "track_a", "message": str(exc)})
 
     async def run_track_b(self) -> AsyncGenerator[str, None]:
-        """Track B: o4-mini reasoning + enrichment + decomposition + gaps."""
+        """Track B: o4-mini reasoning + enrichment + decomposition + gaps + Bloom."""
         if self.card_id is None:
-            yield _sse(
+            yield self._sse(
                 "error", {"step": "track_b", "message": "No card_id — Phase 0 must run first"}
             )
             return
@@ -191,48 +207,174 @@ class ZettelCreationStream:
             # Fetch lightweight KB context (prefer Redis cache)
             context = await asyncio.to_thread(self._fetch_kb_context)
 
-            # Build prompt
-            messages = self._build_analysis_prompt(context)
+            # Fetch sibling card titles if this card belongs to a session
+            sibling_titles = await asyncio.to_thread(self._fetch_session_sibling_titles)
 
-            # Stream from reasoning model
-            from alfred.core.llm_factory import get_async_openai_client
+            # Build prompt (with session context if sibling_titles is non-empty)
+            messages = self._build_analysis_prompt(context, sibling_titles)
+
+            # Stream from reasoning model via the base-class helper (handles
+            # reasoning-token pass-through and disconnect detection).
             from alfred.core.settings import settings
 
-            client = get_async_openai_client()
             model = settings.zettel_analysis_model
 
             completion_buffer = ""
-            stream = await client.chat.completions.create(
-                model=model,
+            async for kind, content in self._run_openai_stream_with_reasoning(
                 messages=messages,
-                stream=True,
+                model=model,
                 max_completion_tokens=4096,
-            )
+            ):
+                if kind == "thinking":
+                    yield self._sse("thinking", {"content": content})
+                elif kind == "completion":
+                    completion_buffer += content
 
-            async for chunk in stream:
-                if not chunk.choices:
-                    continue
-                delta = chunk.choices[0].delta
-
-                # Reasoning tokens (o3/o4 models)
-                reasoning = getattr(delta, "reasoning", None) or getattr(
-                    delta, "reasoning_content", None
+            # Parse the structured JSON response via the base-class parser.
+            data = self._parse_structured_json(completion_buffer)
+            if data is None:
+                yield self._sse(
+                    "error",
+                    {"step": "track_b_parse", "message": "Failed to parse AI response"},
                 )
-                if reasoning:
-                    yield _sse("thinking", {"content": reasoning})
+                return
 
-                # Completion tokens (the JSON response)
-                if delta.content:
-                    completion_buffer += delta.content
+            # Existing order: enrichment, decomposition, gaps. Bloom LAST.
+            if "enrichment" in data:
+                yield self._sse("enrichment", data["enrichment"])
+            if "decomposition" in data:
+                yield self._sse("decomposition", data["decomposition"])
+            if "gaps" in data:
+                yield self._sse("gaps", data["gaps"])
 
-            # Parse the structured JSON response
-            if completion_buffer:
-                for event in self._parse_analysis_response(completion_buffer):
-                    yield event
+            bloom = data.get("bloom_assessment")
+            if bloom and isinstance(bloom, dict):
+                level = bloom.get("inferred_level")
+                rationale = bloom.get("rationale") or ""
+                evidence_phrases = bloom.get("evidence_phrases") or []
+                if isinstance(level, int) and 1 <= level <= 6:
+                    # Emit the SSE event first so the client always gets the
+                    # inference signal even if persistence fails.
+                    yield self._sse(
+                        "bloom_inferred",
+                        {
+                            "card_id": self.card_id,
+                            "level": level,
+                            "source": "ai_inferred",
+                            "rationale": rationale,
+                            "evidence_phrases": list(evidence_phrases),
+                        },
+                    )
+                    try:
+                        await asyncio.to_thread(
+                            self._persist_bloom_inference,
+                            level,
+                            rationale,
+                            list(evidence_phrases),
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Bloom persistence failed for card %s: %s",
+                            self.card_id,
+                            exc,
+                            exc_info=True,
+                        )
+                        yield self._sse(
+                            "error",
+                            {"step": "bloom_persist", "message": str(exc)},
+                        )
 
         except Exception as exc:
             logger.warning("Track B failed for card %s: %s", self.card_id, exc, exc_info=True)
-            yield _sse("error", {"step": "track_b", "message": str(exc)})
+            yield self._sse("error", {"step": "track_b", "message": str(exc)})
+
+    def _persist_bloom_inference(
+        self, level: int, rationale: str, evidence_phrases: list[str]
+    ) -> None:
+        """Persist Bloom fields without bumping updated_at.
+
+        See the ``updated-at-corruption`` learning (cross-model, confidence 10/10):
+        when saving *infrastructure* metadata about a card (Bloom inference,
+        embedding coverage, etc.) the user-visible ``updated_at`` field must
+        not be mutated. We use a Core UPDATE with ``synchronize_session=False``
+        so the ORM does not attach column defaults; the only columns in the
+        UPDATE set-clause are the Bloom ones. The model base declares
+        ``updated_at`` as an *app-managed* default via ``default_factory`` — it
+        is **not** mutated by SQLAlchemy event hooks — so omitting it from the
+        UPDATE leaves its current value untouched.
+        """
+        if self.card_id is None:
+            return
+        from sqlalchemy import update as sa_update
+
+        from alfred.core.utils import utcnow_naive
+        from alfred.models.zettel import ZettelCard
+
+        session = self._db_factory()
+        try:
+            # Read existing bloom_history inside the same transaction so we
+            # can append the new entry deterministically.
+            row = session.exec(
+                select(ZettelCard.bloom_history).where(ZettelCard.id == self.card_id)
+            ).one_or_none()
+            # Normalise: sqlmodel .exec on a scalar select returns either the
+            # scalar or a 1-tuple depending on driver shape.
+            if isinstance(row, tuple):
+                existing_history = row[0]
+            else:
+                existing_history = row
+            new_entry = {
+                "level": level,
+                "source": "ai_inferred",
+                "at": utcnow_naive().isoformat(),
+                "rationale": rationale,
+            }
+            new_history = [*(existing_history or []), new_entry]
+
+            stmt = (
+                sa_update(ZettelCard)
+                .where(ZettelCard.id == self.card_id)
+                .values(
+                    bloom_level=level,
+                    bloom_source="ai_inferred",
+                    bloom_history=new_history,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            session.exec(stmt)
+            session.commit()
+        finally:
+            if self._uses_default_factory:
+                session.close()
+
+    def _fetch_session_sibling_titles(self) -> list[str]:
+        """Return titles of other cards in the same session (excludes this card's row)."""
+        if self.payload.session_id is None:
+            return []
+        session = self._db_factory()
+        try:
+            from alfred.models.zettel import ZettelCard
+
+            stmt = (
+                select(ZettelCard.title)
+                .where(ZettelCard.session_id == self.payload.session_id)
+                .where(ZettelCard.id != (self.card_id or -1))
+                .where(ZettelCard.status != "archived")
+                .limit(20)
+            )
+            rows = session.exec(stmt).all()
+            # sqlmodel's .exec on a single-column select may yield plain
+            # strings OR 1-tuples depending on the engine/driver. Normalise.
+            titles: list[str] = []
+            for row in rows:
+                if isinstance(row, tuple):
+                    titles.append(row[0])
+                else:
+                    titles.append(row)
+            return titles
+        finally:
+            if self._uses_default_factory:
+                session.close()
 
     def _fetch_kb_context(self) -> dict[str, Any]:
         """Fetch lightweight KB context for the AI prompt. Prefers Redis cache."""
@@ -252,7 +394,6 @@ class ZettelCreationStream:
         session = self._db_factory()
         try:
             from sqlalchemy import func as sa_func
-            from sqlmodel import select
 
             from alfred.models.zettel import ZettelCard
 
@@ -278,8 +419,12 @@ class ZettelCreationStream:
             if self._uses_default_factory:
                 session.close()
 
-    def _build_analysis_prompt(self, context: dict[str, Any]) -> list[dict[str, str]]:
-        """Build the o4-mini prompt for enrichment + decomposition + gaps."""
+    def _build_analysis_prompt(
+        self,
+        context: dict[str, Any],
+        sibling_titles: list[str] | None = None,
+    ) -> list[dict[str, str]]:
+        """Build the o4-mini prompt for enrichment + decomposition + gaps + Bloom."""
         topics_str = (
             ", ".join(f"{t['topic']} ({t['count']})" for t in context.get("topics", []))
             or "none yet"
@@ -288,7 +433,16 @@ class ZettelCreationStream:
         system = (
             "You are a knowledge analyst for a Zettelkasten system. "
             "The user is creating a new knowledge card. Analyze it and provide "
-            "enrichment, decomposition assessment, and knowledge gap analysis.\n\n"
+            "enrichment, decomposition assessment, knowledge gap analysis, and a "
+            "Bloom's Taxonomy classification.\n\n"
+            "Classify the card on Bloom's Taxonomy. "
+            "Level 1 (Remember): bare facts or definitions. "
+            "Level 2 (Understand): explanation in the user's own words. "
+            "Level 3 (Apply): use in context. "
+            "Level 4 (Analyze): decomposition or comparison. "
+            "Level 5 (Evaluate): judgment or critique. "
+            "Level 6 (Create): synthesis or new framing. "
+            "Pick the LOWEST level that fits (err conservative).\n\n"
             f"Knowledge base context:\n"
             f"- Total cards: {context.get('total_cards', 0)}\n"
             f"- Topics (with card counts): {topics_str}\n\n"
@@ -308,6 +462,11 @@ class ZettelCreationStream:
             '  "gaps": {\n'
             '    "missing_topics": ["topic1"],\n'
             '    "weak_areas": [{"topic": "...", "existing_count": N, "note": "..."}]\n'
+            "  },\n"
+            '  "bloom_assessment": {\n'
+            '    "inferred_level": 1-6,\n'
+            '    "rationale": "one sentence",\n'
+            '    "evidence_phrases": ["...", "..."]\n'
             "  }\n"
             "}"
         )
@@ -321,42 +480,17 @@ class ZettelCreationStream:
             f"Tags: {tags_str}\n"
             f"Topic: {self.payload.topic or 'not set'}"
         )
+        if sibling_titles:
+            user += (
+                "\n\nThis card is being written alongside these sibling cards "
+                f"in the same session: {', '.join(sibling_titles)}. "
+                "Consider cross-linking in your analysis."
+            )
 
         return [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ]
-
-    def _parse_analysis_response(self, raw: str) -> list[str]:
-        """Parse the JSON response from the analysis model into SSE events."""
-        events: list[str] = []
-        try:
-            cleaned = raw.strip()
-            if cleaned.startswith("```"):
-                cleaned = "\n".join(cleaned.split("\n")[1:])
-            if cleaned.endswith("```"):
-                cleaned = "\n".join(cleaned.split("\n")[:-1])
-            cleaned = cleaned.strip()
-
-            data = json.loads(cleaned)
-
-            if "enrichment" in data:
-                events.append(_sse("enrichment", data["enrichment"]))
-            if "decomposition" in data:
-                events.append(_sse("decomposition", data["decomposition"]))
-            if "gaps" in data:
-                events.append(_sse("gaps", data["gaps"]))
-
-        except (json.JSONDecodeError, KeyError) as exc:
-            logger.warning("Failed to parse Track B response: %s", exc)
-            events.append(
-                _sse(
-                    "error",
-                    {"step": "track_b_parse", "message": f"Failed to parse AI response: {exc}"},
-                )
-            )
-
-        return events
 
     def _fetch_final_card(self) -> dict[str, Any]:
         """Fetch the final card state for the done event."""
@@ -394,7 +528,7 @@ class ZettelCreationStream:
 
         if self.card_id is None:
             # Phase 0 failed — emit done and stop
-            yield _sse("done", {"card": None, "stats": {"error": "card_save_failed"}})
+            yield self._sse("done", {"card": None, "stats": {"error": "card_save_failed"}})
             return
 
         # Phase 1: run Track A and Track B concurrently, merge their events
@@ -403,4 +537,4 @@ class ZettelCreationStream:
 
         # Phase 2: fetch final card state
         final_card = await asyncio.to_thread(self._fetch_final_card)
-        yield _sse("done", {"card": final_card, "stats": {"card_id": self.card_id}})
+        yield self._sse("done", {"card": final_card, "stats": {"card_id": self.card_id}})

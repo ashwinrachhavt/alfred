@@ -61,6 +61,7 @@ export const apiRoutes = {
     generatePreview: "/api/zettels/cards/generate/preview",
     generatePreviewStream: "/api/zettels/cards/generate/preview-stream",
     createStream: "/api/zettels/cards/create-stream",
+    decomposeStream: "/api/zettels/decompose-stream",
     suggestTags: "/api/zettels/suggest-tags",
     graph: "/api/zettels/graph",
     batchLink: "/api/zettels/batch-link",
@@ -71,6 +72,15 @@ export const apiRoutes = {
     search: "/api/zettels/cards/search",
     backlinks: (id: number) => `/api/zettels/cards/${id}/backlinks`,
     syncWikiLinks: "/api/zettels/wiki-links/sync",
+    // Session workspace (T6/T7/T10)
+    sessions: {
+      create: "/api/zettels/sessions",
+      end: (id: number) => `/api/zettels/sessions/${id}/end`,
+      hydrate: (id: number) => `/api/zettels/sessions/${id}/hydrate`,
+    },
+    resumeEnrichment: (id: number) =>
+      `/api/zettels/cards/${id}/resume-enrichment`,
+    bulkFromDecomposition: "/api/zettels/bulk-from-decomposition",
   },
   pipeline: {
     replay: (docId: string) => `/api/pipeline/${docId}/replay`,

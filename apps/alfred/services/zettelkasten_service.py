@@ -8,6 +8,7 @@ document storage services without hard coupling.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -17,12 +18,14 @@ from sqlalchemy import func
 from sqlalchemy import text as sa_text
 from sqlmodel import Session, select
 
+from alfred.core.dependencies import get_qdrant_client
 from alfred.core.utils import STAGE_TO_DELTA, clamp_int
 from alfred.core.utils import utcnow_naive as _utcnow
 from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview
 from alfred.schemas.zettel import LinkQuality, LinkSuggestion
-from alfred.core.dependencies import get_qdrant_client
 from alfred.services.spaced_repetition import compute_next_review_schedule
+
+log = logging.getLogger(__name__)
 
 # Sentinel for "field not provided" on optional patch kwargs where the None
 # value itself carries meaning (e.g. "clear context" vs "don't touch context").
@@ -83,6 +86,9 @@ class ZettelkastenService:
         importance: int = 0,
         confidence: float = 0.0,
         status: str = "active",
+        session_id: int | None = None,
+        bloom_level: int = 1,
+        bloom_source: str = "backfill",
     ) -> ZettelCard:
         card = ZettelCard(
             title=title.strip(),
@@ -95,11 +101,27 @@ class ZettelkastenService:
             importance=clamp_int(int(importance), lo=0, hi=10),
             confidence=max(0.0, min(1.0, float(confidence))),
             status=status,
+            session_id=session_id,
+            bloom_level=clamp_int(int(bloom_level), lo=1, hi=6),
+            bloom_source=(bloom_source or "backfill").strip() or "backfill",
         )
         self.session.add(card)
         self.session.commit()
         self.session.refresh(card)
         self._ensure_open_review(card_id=card.id or 0)
+        # Close the crud-vector-sync-gap: push the new card into Qdrant so
+        # semantic search / similarity features see it immediately. Sync
+        # failures must NOT fail card creation — the card is already saved
+        # in Postgres; the embedding can be backfilled later.
+        try:
+            self.ensure_embedding(card)
+        except Exception as exc:
+            log.warning(
+                "ensure_embedding failed for card %s: %s",
+                card.id,
+                exc,
+                exc_info=True,
+            )
         return card
 
     def create_stub_card(self, title: str) -> ZettelCard:
@@ -111,9 +133,18 @@ class ZettelkastenService:
         return card
 
     def create_cards_batch(self, cards_data: list[dict]) -> list[ZettelCard]:
-        """Create multiple zettel cards in a single transaction."""
+        """Create multiple zettel cards in a single transaction.
+
+        Per-card dict keys supported:
+            title (required), content, summary, tags, topic, source_url,
+            document_id, importance, confidence, status, session_id,
+            bloom_level, bloom_source
+        """
         cards = []
         for data in cards_data:
+            bloom_level = clamp_int(int(data.get("bloom_level", 1)), lo=1, hi=6)
+            bloom_source_raw = data.get("bloom_source") or "backfill"
+            bloom_source = str(bloom_source_raw).strip() or "backfill"
             card = ZettelCard(
                 title=str(data["title"]).strip(),
                 content=data.get("content"),
@@ -125,6 +156,9 @@ class ZettelkastenService:
                 importance=clamp_int(int(data.get("importance", 0)), lo=0, hi=10),
                 confidence=max(0.0, min(1.0, float(data.get("confidence", 0.0)))),
                 status=data.get("status", "active"),
+                session_id=data.get("session_id"),
+                bloom_level=bloom_level,
+                bloom_source=bloom_source,
             )
             cards.append(card)
         self.session.add_all(cards)
@@ -132,9 +166,31 @@ class ZettelkastenService:
         for card in cards:
             self.session.refresh(card)
             self._ensure_open_review(card_id=card.id or 0)
+            # Close the crud-vector-sync-gap per-card. Isolating the try
+            # inside the loop means one embedding failure can't block
+            # Qdrant sync for the remaining cards in the batch.
+            try:
+                self.ensure_embedding(card)
+            except Exception as exc:
+                log.warning(
+                    "ensure_embedding failed for card %s: %s",
+                    card.id,
+                    exc,
+                    exc_info=True,
+                )
         return cards
 
-    def _apply_card_filters(self, stmt, *, q=None, topic=None, tags=None, document_id=None, status="active", importance_min=None):
+    def _apply_card_filters(
+        self,
+        stmt,
+        *,
+        q=None,
+        topic=None,
+        tags=None,
+        document_id=None,
+        status="active",
+        importance_min=None,
+    ):
         """Apply common card filters to a SELECT statement."""
         if q:
             like = f"%{q.strip()}%"
@@ -156,9 +212,7 @@ class ZettelkastenService:
         if tags:
             # Single containment check instead of per-tag loop
             stmt = stmt.where(
-                sa_text("tags::jsonb @> :all_tags::jsonb").bindparams(
-                    all_tags=json.dumps(tags)
-                )
+                sa_text("tags::jsonb @> :all_tags::jsonb").bindparams(all_tags=json.dumps(tags))
             )
         return stmt
 
@@ -178,8 +232,13 @@ class ZettelkastenService:
     ) -> list[ZettelCard]:
         stmt = select(ZettelCard)
         stmt = self._apply_card_filters(
-            stmt, q=q, topic=topic, tags=tags, document_id=document_id,
-            status=status, importance_min=importance_min,
+            stmt,
+            q=q,
+            topic=topic,
+            tags=tags,
+            document_id=document_id,
+            status=status,
+            importance_min=importance_min,
         )
 
         sort_col = _ALLOWED_SORT_COLUMNS.get(sort_by or "", ZettelCard.updated_at)
@@ -204,8 +263,13 @@ class ZettelkastenService:
         """Count cards matching filters (for pagination)."""
         stmt = select(func.count()).select_from(ZettelCard)
         stmt = self._apply_card_filters(
-            stmt, q=q, topic=topic, tags=tags, document_id=document_id,
-            status=status, importance_min=importance_min,
+            stmt,
+            q=q,
+            topic=topic,
+            tags=tags,
+            document_id=document_id,
+            status=status,
+            importance_min=importance_min,
         )
         result = self.session.exec(stmt).one()
         return int(result)
@@ -950,12 +1014,20 @@ class ZettelkastenService:
         qdrant = get_qdrant_client()
         if qdrant is not None:
             return self._find_similar_via_qdrant(
-                card, base_embedding, existing_links, qdrant,
-                threshold=threshold, limit=limit,
+                card,
+                base_embedding,
+                existing_links,
+                qdrant,
+                threshold=threshold,
+                limit=limit,
             )
         return self._find_similar_via_scan(
-            card, card_id, base_embedding, existing_links,
-            threshold=threshold, limit=limit,
+            card,
+            card_id,
+            base_embedding,
+            existing_links,
+            threshold=threshold,
+            limit=limit,
         )
 
     def _find_similar_via_qdrant(
@@ -979,8 +1051,12 @@ class ZettelkastenService:
             )
         except Exception:
             return self._find_similar_via_scan(
-                card, card.id, base_embedding, existing_links,
-                threshold=threshold, limit=limit,
+                card,
+                card.id,
+                base_embedding,
+                existing_links,
+                threshold=threshold,
+                limit=limit,
             )
 
         scored: list[tuple[ZettelCard, LinkQuality]] = []
