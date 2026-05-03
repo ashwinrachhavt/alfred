@@ -323,17 +323,25 @@ function ResearchReportView({ payload }: { payload: ResearchPayload }) {
  </div>
 
  {report.references?.length ? (
- <Sources>
+ // The vendored <Sources> forwards props to a Collapsible root but its
+ // public type signature (ComponentProps<"div">) hides `defaultOpen`.
+ // Cast to inject the prop without touching the vendored module.
+ <Sources {...({ defaultOpen: report.references.length <= 10 } as React.ComponentProps<typeof Sources>)}>
  <SourcesTrigger count={report.references.length} />
  <SourcesContent>
  {report.references.map((ref, idx) => {
  const isUrl = ref.startsWith("http");
+ if (isUrl) {
+ return <Source key={`${idx}-${ref}`} href={ref} title={ref} />;
+ }
  return (
- <Source
+ <div
  key={`${idx}-${ref}`}
- href={isUrl ? ref : "#"}
- title={ref}
- />
+ className="flex items-center gap-2"
+ >
+ <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
+ <span className="block font-medium">{ref}</span>
+ </div>
  );
  })}
  </SourcesContent>
