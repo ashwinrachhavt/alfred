@@ -16,7 +16,7 @@ import {
  useRecentResearchReports,
  useResearchReport,
 } from "@/features/research/queries";
-import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
+import { useTaskTrackerActions } from "@/features/tasks/task-tracker-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +24,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import {
+ Source,
+ Sources,
+ SourcesContent,
+ SourcesTrigger,
+} from "@/components/ai-elements/sources";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -317,24 +323,21 @@ function ResearchReportView({ payload }: { payload: ResearchPayload }) {
  </div>
 
  {report.references?.length ? (
- <Card>
- <CardHeader>
- <CardTitle className="text-base">References</CardTitle>
- </CardHeader>
- <CardContent className="space-y-1 text-sm">
- {report.references.map((ref, idx) => (
- <a
+ <Sources>
+ <SourcesTrigger count={report.references.length} />
+ <SourcesContent>
+ {report.references.map((ref, idx) => {
+ const isUrl = ref.startsWith("http");
+ return (
+ <Source
  key={`${idx}-${ref}`}
- className="text-primary block truncate underline-offset-2 hover:underline"
- href={ref.startsWith("http") ? ref : undefined}
- target="_blank"
- rel="noreferrer"
- >
- {ref}
- </a>
- ))}
- </CardContent>
- </Card>
+ href={isUrl ? ref : "#"}
+ title={ref}
+ />
+ );
+ })}
+ </SourcesContent>
+ </Sources>
  ) : null}
  </div>
  );
@@ -348,7 +351,7 @@ function NewResearchForm({ onGenerated }: { onGenerated: () => void }) {
  const [topic, setTopic] = useState("");
  const [refresh, setRefresh] = useState(false);
  const startResearch = useStartDeepResearch();
- const { trackTask } = useTaskTracker();
+ const { trackTask } = useTaskTrackerActions();
 
  return (
  <Card>
