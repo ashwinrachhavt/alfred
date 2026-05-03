@@ -138,7 +138,10 @@ type AgentState = {
   noteContext: NoteContext | null;
 
   // Actions
-  sendMessage: (text: string, opts?: { intent?: string; intentArgs?: Record<string, unknown> }) => Promise<void>;
+  sendMessage: (
+    text: string,
+    opts?: { intent?: string; intentArgs?: Record<string, unknown>; displayText?: string },
+  ) => Promise<void>;
   cancelStream: () => void;
   setLens: (lens: string | null) => void;
   setModel: (model: string) => void;
@@ -192,7 +195,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   abortController: null,
   noteContext: null,
 
-  sendMessage: async (text: string, opts?: { intent?: string; intentArgs?: Record<string, unknown> }) => {
+  sendMessage: async (
+    text: string,
+    opts?: { intent?: string; intentArgs?: Record<string, unknown>; displayText?: string },
+  ) => {
     const state = get();
 
     // Cancel existing stream if active (cancel + send behavior)
@@ -203,7 +209,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const userMsg: AgentMessage = {
       id: `user-${Date.now()}`,
       role: "user",
-      content: text,
+      content: opts?.displayText ?? text,
       artifacts: [],
       relatedCards: [],
       gaps: [],

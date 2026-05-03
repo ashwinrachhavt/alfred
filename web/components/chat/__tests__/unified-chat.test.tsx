@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactElement, ReactNode } from "react";
 
 import { DEFAULT_AI_MODEL } from "@/lib/constants/ai";
 
@@ -74,6 +77,14 @@ vi.mock("@/lib/api/client", () => ({
   apiFetch: vi.fn(),
 }));
 
+const mockSearchCards = vi.fn();
+const mockGetZettelCard = vi.fn();
+
+vi.mock("@/lib/api/zettels", () => ({
+  searchCards: (...args: unknown[]) => mockSearchCards(...args),
+  getZettelCard: (...args: unknown[]) => mockGetZettelCard(...args),
+}));
+
 vi.mock("@/components/agent/artifact-card", () => ({
   ArtifactCardComponent: () => <div data-testid="artifact-card" />,
 }));
@@ -108,10 +119,29 @@ import { UnifiedChat } from "../unified-chat";
 // Tests
 // ---------------------------------------------------------------------------
 
+function renderWithClient(ui: ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+
+  function Wrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  }
+
+  return render(ui, { wrapper: Wrapper });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockSetChatMode.mockReset();
   mockOpenZettelViewer.mockReset();
+  defaultAgentState.sendMessage = vi.fn();
+  defaultAgentState.createThread = vi.fn();
+  mockSearchCards.mockResolvedValue({ text_matches: [], ai_suggestions: [] });
+  mockGetZettelCard.mockReset();
 });
 
 describe("UnifiedChat — sidebar mode", () => {
@@ -123,7 +153,7 @@ describe("UnifiedChat — sidebar mode", () => {
       toggleChatExpanded: mockToggleChatExpanded,
     } as unknown as ReturnType<typeof useShellStore>);
 
-    const { container } = render(<UnifiedChat mode="sidebar" />);
+    const { container } = renderWithClient(<UnifiedChat mode="sidebar" />);
     expect(container.innerHTML).toBe("");
   });
 
@@ -135,7 +165,7 @@ describe("UnifiedChat — sidebar mode", () => {
       toggleChatExpanded: mockToggleChatExpanded,
     } as unknown as ReturnType<typeof useShellStore>);
 
-    render(<UnifiedChat mode="sidebar" />);
+    renderWithClient(<UnifiedChat mode="sidebar" />);
 
     expect(screen.getByText("Alfred AI")).toBeInTheDocument();
     expect(screen.getByRole("complementary")).toBeInTheDocument();
@@ -149,7 +179,7 @@ describe("UnifiedChat — sidebar mode", () => {
       toggleChatExpanded: mockToggleChatExpanded,
     } as unknown as ReturnType<typeof useShellStore>);
 
-    render(<UnifiedChat mode="sidebar" />);
+    renderWithClient(<UnifiedChat mode="sidebar" />);
 
     expect(screen.getByText("What do I know about...")).toBeInTheDocument();
     expect(screen.getByText("Find connections between...")).toBeInTheDocument();
@@ -163,7 +193,7 @@ describe("UnifiedChat — sidebar mode", () => {
       toggleChatExpanded: mockToggleChatExpanded,
     } as unknown as ReturnType<typeof useShellStore>);
 
-    render(<UnifiedChat mode="sidebar" />);
+    renderWithClient(<UnifiedChat mode="sidebar" />);
 
     const textarea = screen.getByPlaceholderText("Ask about your knowledge...");
     expect(textarea).toBeInTheDocument();
@@ -178,10 +208,94 @@ describe("UnifiedChat — sidebar mode", () => {
       toggleChatExpanded: mockToggleChatExpanded,
     } as unknown as ReturnType<typeof useShellStore>);
 
-    render(<UnifiedChat mode="sidebar" />);
+    renderWithClient(<UnifiedChat mode="sidebar" />);
 
     const sendButton = screen.getByRole("button", { name: "Send message" });
     expect(sendButton).toBeDisabled();
+  });
+
+  it("attaches a zettel with @ search and sends it as hidden context", async () => {
+    const user = userEvent.setup();
+    mockSearchCards.mockResolvedValue({
+      text_matches: [
+        {
+          id: 42,
+          title: "Memory consolidation needs retrieval",
+          topic: "learning",
+          tags: ["memory", "retrieval"],
+          status: "active",
+        },
+      ],
+      ai_suggestions: [],
+    });
+    mockGetZettelCard.mockResolvedValue({
+      id: 42,
+      title: "Memory consolidation needs retrieval",
+      content: "Retrieval practice strengthens memory by forcing reconstruction instead of recognition.",
+      summary: "Testing yourself improves durable learning.",
+      tags: ["memory", "retrieval"],
+      topic: "learning",
+      source_url: null,
+      document_id: null,
+      importance: 3,
+      confidence: 4,
+      status: "active",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+    });
+    vi.mocked(useShellStore).mockReturnValue({
+      aiPanelOpen: true,
+      chatMode: "sidebar",
+      toggleAiPanel: mockToggleAiPanel,
+      toggleChatExpanded: mockToggleChatExpanded,
+    } as unknown as ReturnType<typeof useShellStore>);
+
+    renderWithClient(<UnifiedChat mode="sidebar" />);
+
+    const textarea = screen.getByPlaceholderText("Ask about your knowledge...");
+    await user.type(textarea, "How does @memo apply?");
+    await user.click(await screen.findByText("Memory consolidation needs retrieval"));
+
+    expect(await screen.findByText("@Memory consolidation needs retrieval")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+
+    expect(defaultAgentState.sendMessage).toHaveBeenCalledTimes(1);
+    const [sentText, opts] = vi.mocked(defaultAgentState.sendMessage).mock.calls[0];
+    expect(sentText).toContain("Referenced zettels:");
+    expect(sentText).toContain("[42] Memory consolidation needs retrieval");
+    expect(sentText).toContain("Testing yourself improves durable learning.");
+    expect(opts).toMatchObject({ displayText: "How does apply?" });
+  });
+
+  it("opens recent zettels when the user types a bare @", async () => {
+    const user = userEvent.setup();
+    mockSearchCards.mockResolvedValue({
+      text_matches: [
+        {
+          id: 7,
+          title: "Recent zettel",
+          topic: "notes",
+          tags: ["recent"],
+          status: "active",
+        },
+      ],
+      ai_suggestions: [],
+    });
+    vi.mocked(useShellStore).mockReturnValue({
+      aiPanelOpen: true,
+      chatMode: "sidebar",
+      toggleAiPanel: mockToggleAiPanel,
+      toggleChatExpanded: mockToggleChatExpanded,
+    } as unknown as ReturnType<typeof useShellStore>);
+
+    renderWithClient(<UnifiedChat mode="sidebar" />);
+
+    const textarea = screen.getByPlaceholderText("Ask about your knowledge...");
+    await user.type(textarea, "@");
+
+    expect(await screen.findByText("Recent zettel")).toBeInTheDocument();
+    expect(mockSearchCards).toHaveBeenCalledWith("");
   });
 
   it("has a close button that calls toggleAiPanel", () => {
@@ -192,7 +306,7 @@ describe("UnifiedChat — sidebar mode", () => {
       toggleChatExpanded: mockToggleChatExpanded,
     } as unknown as ReturnType<typeof useShellStore>);
 
-    render(<UnifiedChat mode="sidebar" />);
+    renderWithClient(<UnifiedChat mode="sidebar" />);
 
     const closeButton = screen.getByRole("button", { name: "Close AI panel" });
     fireEvent.click(closeButton);
@@ -207,7 +321,7 @@ describe("UnifiedChat — sidebar mode", () => {
       toggleChatExpanded: mockToggleChatExpanded,
     } as unknown as ReturnType<typeof useShellStore>);
 
-    render(<UnifiedChat mode="sidebar" />);
+    renderWithClient(<UnifiedChat mode="sidebar" />);
 
     const expandButton = screen.getByRole("button", { name: "Expand chat" });
     fireEvent.click(expandButton);
@@ -222,7 +336,7 @@ describe("UnifiedChat — sidebar mode", () => {
       toggleChatExpanded: mockToggleChatExpanded,
     } as unknown as ReturnType<typeof useShellStore>);
 
-    render(<UnifiedChat mode="sidebar" />);
+    renderWithClient(<UnifiedChat mode="sidebar" />);
 
     const panel = screen.getByRole("complementary");
     expect(panel.className).toContain("w-[380px]");
@@ -238,7 +352,7 @@ describe("UnifiedChat — expanded mode", () => {
       toggleChatExpanded: mockToggleChatExpanded,
     } as unknown as ReturnType<typeof useShellStore>);
 
-    render(<UnifiedChat mode="expanded" />);
+    renderWithClient(<UnifiedChat mode="expanded" />);
 
     expect(screen.getByText("Alfred AI")).toBeInTheDocument();
     expect(screen.getByRole("main")).toBeInTheDocument();
@@ -252,7 +366,7 @@ describe("UnifiedChat — expanded mode", () => {
       toggleChatExpanded: mockToggleChatExpanded,
     } as unknown as ReturnType<typeof useShellStore>);
 
-    render(<UnifiedChat mode="expanded" />);
+    renderWithClient(<UnifiedChat mode="expanded" />);
 
     const collapseButton = screen.getByRole("button", {
       name: "Collapse to sidebar",
@@ -269,7 +383,7 @@ describe("UnifiedChat — expanded mode", () => {
       toggleChatExpanded: mockToggleChatExpanded,
     } as unknown as ReturnType<typeof useShellStore>);
 
-    render(<UnifiedChat mode="expanded" />);
+    renderWithClient(<UnifiedChat mode="expanded" />);
 
     expect(screen.getByText("What would you like to explore?")).toBeInTheDocument();
     expect(screen.getByText(/Alfred can search your knowledge/)).toBeInTheDocument();
@@ -283,7 +397,7 @@ describe("UnifiedChat — expanded mode", () => {
       toggleChatExpanded: mockToggleChatExpanded,
     } as unknown as ReturnType<typeof useShellStore>);
 
-    render(<UnifiedChat mode="expanded" />);
+    renderWithClient(<UnifiedChat mode="expanded" />);
 
     const messagesArea = screen.getByRole("log");
     const innerDiv = messagesArea.firstChild as HTMLElement;

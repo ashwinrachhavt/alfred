@@ -67,13 +67,29 @@ def _make_candidates_json(candidates: list[dict]) -> str:
     return json.dumps({"candidates": candidates})
 
 
-def _long_content(marker: str, length: int = 120) -> str:
-    """Produce a body longer than MIN_CONTENT_LEN (50) including `marker`."""
-    filler = " padding text to exceed the fifty-character minimum body length"
+def _long_content(marker: str, length: int = 180) -> str:
+    """Produce a body at least as long as MIN_CONTENT_LEN including `marker`."""
+    filler = " padding text to exceed the minimum block-sized body length"
     base = f"{marker}.{filler}"
     if len(base) < length:
         base = base + filler * 3
     return base[:length]
+
+
+def test_decompose_prompt_prefers_block_sized_cards_over_sentence_atoms():
+    payload = ZettelDecomposeRequest(
+        raw_text="First block.\n\nSecond block.",
+        shared_topic="learning",
+    )
+    stream = ZettelDecomposeStream(payload)
+
+    messages = stream._build_decompose_prompt()
+    system = messages[0]["content"]
+
+    assert "coherent block-sized cards" in system
+    assert "3-6 sentences" in system
+    assert "Do NOT split sentence-by-sentence" in system
+    assert "less than 120 characters" in system
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +191,7 @@ async def test_decompose_caps_at_15_candidates():
 
 
 @pytest.mark.asyncio
-async def test_decompose_rejects_candidates_under_50_chars():
+async def test_decompose_rejects_candidates_under_minimum_block_size():
     """A candidate with 30-char content should be dropped."""
     short = "x" * 30  # below MIN_CONTENT_LEN
     candidates = [

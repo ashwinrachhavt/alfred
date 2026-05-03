@@ -11,44 +11,44 @@ import { Toaster } from "@/components/ui/sonner";
 import { TaskTrackerProvider } from "@/features/tasks/task-tracker-provider";
 
 export function createQueryClient(): QueryClient {
- return new QueryClient({
- defaultOptions: {
- queries: {
- retry: 1,
- refetchOnWindowFocus: false,
- staleTime: 30_000,
- gcTime: 10 * 60 * 1000, // keep unused data in cache for 10 minutes
- },
- },
- });
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: 1,
+        refetchOnWindowFocus: false,
+        staleTime: 30_000,
+        gcTime: 10 * 60 * 1000, // keep unused data in cache for 10 minutes
+      },
+    },
+  });
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {
- const [queryClient] = useState(() => createQueryClient());
+  const [queryClient] = useState(() => createQueryClient());
 
- return (
- <ThemeProvider
- attribute="class"
- defaultTheme="dark"
- enableSystem={false}
- enableColorScheme
- disableTransitionOnChange
- >
- <QueryClientProvider client={queryClient}>
- <TaskTrackerProvider>
- <AppCommandPaletteProvider>
- <a
- href="#main-content"
- className="focus:bg-background focus:text-foreground focus:ring-ring sr-only fixed top-4 left-4 z-50 rounded-md px-3 py-2 text-sm shadow-sm focus:not-sr-only focus:ring-2 focus:outline-none"
- >
- Skip to content
- </a>
- {children}
- <TaskCenterSheet />
- <Toaster />
- </AppCommandPaletteProvider>
- </TaskTrackerProvider>
- </QueryClientProvider>
- </ThemeProvider>
- );
+  return (
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="dark"
+      enableSystem={false}
+      enableColorScheme
+      disableTransitionOnChange
+    >
+      <QueryClientProvider client={queryClient}>
+        <TaskTrackerProvider>
+          <AppCommandPaletteProvider>
+            <a
+              href="#main-content"
+              className="focus:bg-background focus:text-foreground focus:ring-ring sr-only fixed top-4 left-4 z-50 rounded-md px-3 py-2 text-sm shadow-sm focus:not-sr-only focus:ring-2 focus:outline-none"
+            >
+              Skip to content
+            </a>
+            {children}
+            <TaskCenterSheet />
+            <Toaster />
+          </AppCommandPaletteProvider>
+        </TaskTrackerProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
+  );
 }

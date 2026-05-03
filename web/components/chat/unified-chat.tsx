@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  AtSign,
   Brain,
   ChevronDown,
   Loader2,
@@ -21,6 +23,13 @@ import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "@/components/ui/button";
 import { useLocalStorageString } from "@/lib/hooks/use-local-storage-value";
+import {
+  getZettelCard,
+  searchCards,
+  type AISuggestionMatch,
+  type ApiZettelCard,
+  type CardSearchMatch,
+} from "@/lib/api/zettels";
 import {
   useAgentStore,
   useToolCallStore,
@@ -73,8 +82,82 @@ const SUGGESTIONS: Record<string, string[]> = {
 
 type ResponseCommentsByMessageId = Record<string, ResponseComment[]>;
 
+type AttachedZettelContext = Pick<
+  ApiZettelCard,
+  "id" | "title" | "content" | "summary" | "topic" | "tags"
+>;
+
+type ZettelMentionMatch = {
+  query: string;
+  start: number;
+  end: number;
+};
+
+type ZettelMentionRow =
+  | (CardSearchMatch & { kind: "text" })
+  | (AISuggestionMatch & { kind: "ai" });
+
 function buildResponseCommentsStorageKey(threadId: number | null): string {
   return `alfred:chat:response-comments:${threadId ?? "draft"}`;
+}
+
+function findZettelMention(input: string): ZettelMentionMatch | null {
+  const matches = Array.from(input.matchAll(/(^|\s)@([^\s@]{0,80})/g));
+  const match = matches.at(-1);
+  if (!match || match.index === undefined) return null;
+
+  const prefix = match[1] ?? "";
+  const query = match[2] ?? "";
+
+  const start = match.index + prefix.length;
+  return {
+    query,
+    start,
+    end: start + query.length + 1,
+  };
+}
+
+function removeMentionToken(input: string, match: ZettelMentionMatch): string {
+  return `${input.slice(0, match.start)}${input.slice(match.end)}`
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function buildZettelContextPrompt(
+  userText: string,
+  zettels: AttachedZettelContext[],
+): string {
+  if (zettels.length === 0) return userText;
+
+  const context = zettels
+    .map((zettel) => {
+      const body = (zettel.summary || zettel.content || "").replace(/\s+/g, " ").trim();
+      const excerpt = body.length > 700 ? `${body.slice(0, 697)}...` : body;
+      const metadata = [
+        zettel.topic ? `Topic: ${zettel.topic}` : null,
+        zettel.tags?.length ? `Tags: ${zettel.tags.join(", ")}` : null,
+      ]
+        .filter(Boolean)
+        .join(" | ");
+
+      return [
+        `[${zettel.id}] ${zettel.title}`,
+        metadata,
+        excerpt ? `Excerpt: ${excerpt}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .join("\n\n");
+
+  return [
+    userText,
+    "",
+    "Referenced zettels:",
+    context,
+    "",
+    "Use the referenced zettels as explicit chat context. Do not assume they are the only relevant knowledge.",
+  ].join("\n");
 }
 
 function parseResponseComments(raw: string): ResponseCommentsByMessageId {
@@ -171,8 +254,10 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
   const [showSettings, setShowSettings] = useState(false);
   const [showThreads, setShowThreads] = useState(false);
   const [editingZettelId, setEditingZettelId] = useState<number | null>(null);
+  const [attachedZettels, setAttachedZettels] = useState<AttachedZettelContext[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastThreadLoadRef = useRef(0);
+  const queryClient = useQueryClient();
   const {
     containerRef: messagesContainerRef,
     endRef: messagesEndRef,
@@ -190,10 +275,62 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
     "{}",
   );
 
+  const zettelMention = useMemo(() => findZettelMention(input), [input]);
+  const zettelMentionSearch = useQuery({
+    queryKey: ["chat-zettel-mention", zettelMention?.query ?? ""],
+    queryFn: () => searchCards(zettelMention?.query ?? ""),
+    enabled: !!zettelMention && !isStreaming,
+    staleTime: 30_000,
+  });
+
+  const zettelMentionRows = useMemo<ZettelMentionRow[]>(() => {
+    const response = zettelMentionSearch.data;
+    if (!response || !zettelMention) return [];
+    const selectedIds = new Set(attachedZettels.map((zettel) => zettel.id));
+    const textRows = response.text_matches.map((row) => ({ ...row, kind: "text" as const }));
+    const aiRows = response.ai_suggestions.map((row) => ({ ...row, kind: "ai" as const }));
+    return [...textRows, ...aiRows].filter((row) => !selectedIds.has(row.id)).slice(0, 6);
+  }, [attachedZettels, zettelMention, zettelMentionSearch.data]);
+
   const commentsByMessageId = useMemo(
     () => parseResponseComments(responseCommentsRaw),
     [responseCommentsRaw],
   );
+
+  const handleAttachZettel = useCallback(
+    async (row: ZettelMentionRow) => {
+      if (!zettelMention) return;
+
+      const card = await queryClient.fetchQuery({
+        queryKey: ["zettels", "card", row.id],
+        queryFn: () => getZettelCard(row.id),
+        staleTime: 60_000,
+      });
+
+      setAttachedZettels((current) =>
+        current.some((zettel) => zettel.id === card.id)
+          ? current
+          : [
+              ...current,
+              {
+                id: card.id,
+                title: card.title,
+                content: card.content,
+                summary: card.summary,
+                topic: card.topic,
+                tags: card.tags,
+              },
+            ],
+      );
+      setInput((current) => removeMentionToken(current, zettelMention));
+      requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    [queryClient, zettelMention],
+  );
+
+  const handleRemoveAttachedZettel = useCallback((zettelId: number) => {
+    setAttachedZettels((current) => current.filter((zettel) => zettel.id !== zettelId));
+  }, []);
 
   // Load threads on mount/open
   useEffect(() => {
@@ -223,13 +360,14 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
     if (!text) return;
 
     setInput("");
+    setAttachedZettels([]);
     scrollToBottom("smooth");
 
     if (!activeThreadId) {
       await createThread(text.slice(0, 60));
     }
-    await sendMessage(text);
-  }, [input, activeThreadId, createThread, scrollToBottom, sendMessage]);
+    await sendMessage(buildZettelContextPrompt(text, attachedZettels), { displayText: text });
+  }, [input, activeThreadId, attachedZettels, createThread, scrollToBottom, sendMessage]);
 
   const handleAddResponseComment = useCallback(
     (messageId: string, body: string, target: ResponseCommentTarget) => {
@@ -476,6 +614,11 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
             activeModel={activeModel}
             isOnNotes={!!isOnNotes}
             noteContext={noteContext}
+            attachedZettels={attachedZettels}
+            mentionRows={zettelMentionRows}
+            isMentionLoading={zettelMentionSearch.isFetching}
+            onAttachZettel={handleAttachZettel}
+            onRemoveAttachedZettel={handleRemoveAttachedZettel}
             showSettings={showSettings}
             onToggleSettings={() => setShowSettings(!showSettings)}
             onSend={handleSend}
@@ -490,6 +633,11 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
             setInput={setInput}
             isStreaming={isStreaming}
             activeModel={activeModel}
+            attachedZettels={attachedZettels}
+            mentionRows={zettelMentionRows}
+            isMentionLoading={zettelMentionSearch.isFetching}
+            onAttachZettel={handleAttachZettel}
+            onRemoveAttachedZettel={handleRemoveAttachedZettel}
             showSettings={showSettings}
             onToggleSettings={() => setShowSettings(!showSettings)}
             onSend={handleSend}
@@ -702,7 +850,12 @@ type InputProps = {
   setInput: (v: string) => void;
   isStreaming: boolean;
   activeModel: string;
+  attachedZettels: AttachedZettelContext[];
+  mentionRows: ZettelMentionRow[];
+  isMentionLoading: boolean;
   showSettings: boolean;
+  onAttachZettel: (row: ZettelMentionRow) => void | Promise<void>;
+  onRemoveAttachedZettel: (zettelId: number) => void;
   onToggleSettings: () => void;
   onSend: () => void;
   onCancel: () => void;
@@ -720,6 +873,80 @@ const MODEL_OPTIONS = [
   { value: "o4-mini", label: "o4-mini" },
 ];
 
+function ZettelContextChips({
+  attachedZettels,
+  onRemove,
+}: {
+  attachedZettels: AttachedZettelContext[];
+  onRemove: (zettelId: number) => void;
+}) {
+  if (attachedZettels.length === 0) return null;
+
+  return (
+    <div className="mb-2 flex flex-wrap gap-1.5">
+      {attachedZettels.map((zettel) => (
+        <span
+          key={zettel.id}
+          className="inline-flex max-w-full items-center gap-1.5 rounded-sm border border-[var(--border-strong)] bg-[var(--alfred-accent-subtle)] px-2 py-1 text-[11px] text-foreground"
+        >
+          <AtSign className="text-primary size-3 shrink-0" />
+          <span className="truncate">@{zettel.title}</span>
+          <button
+            type="button"
+            onClick={() => onRemove(zettel.id)}
+            className="text-muted-foreground hover:text-foreground"
+            aria-label={`Remove ${zettel.title} context`}
+          >
+            <X className="size-3" />
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ZettelMentionPicker({
+  rows,
+  loading,
+  onSelect,
+}: {
+  rows: ZettelMentionRow[];
+  loading: boolean;
+  onSelect: (row: ZettelMentionRow) => void | Promise<void>;
+}) {
+  if (!loading && rows.length === 0) return null;
+
+  return (
+    <div className="bg-popover absolute right-0 bottom-full left-0 z-50 mb-2 max-h-56 overflow-y-auto rounded-md border border-[var(--border-strong)] shadow-lg">
+      {loading && rows.length === 0 ? (
+        <div className="text-muted-foreground flex items-center gap-2 px-3 py-2 text-xs">
+          <Loader2 className="size-3 animate-spin" />
+          Searching zettels
+        </div>
+      ) : (
+        rows.map((row) => (
+          <button
+            key={`${row.kind}-${row.id}`}
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => onSelect(row)}
+            className="hover:bg-secondary flex w-full items-center gap-2 px-3 py-2 text-left transition-colors"
+          >
+            <AtSign className="text-primary size-3 shrink-0" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs text-foreground">{row.title}</span>
+              <span className="text-muted-foreground block truncate text-[10px]">
+                {row.topic ?? "zettel"}
+                {row.tags?.length ? ` · ${row.tags.slice(0, 3).join(", ")}` : ""}
+              </span>
+            </span>
+          </button>
+        ))
+      )}
+    </div>
+  );
+}
+
 const SidebarInput = forwardRef<
   HTMLTextAreaElement,
   InputProps & {
@@ -734,22 +961,45 @@ const SidebarInput = forwardRef<
     activeModel,
     isOnNotes,
     noteContext,
+    attachedZettels,
+    mentionRows,
+    isMentionLoading,
     onSend,
     onCancel,
     onKeyDown,
+    onAttachZettel,
+    onRemoveAttachedZettel,
     onModelChange,
     onToggleSettings,
   },
   ref,
 ) {
+  const handleInputKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Enter" && !event.shiftKey && mentionRows.length > 0) {
+      event.preventDefault();
+      void onAttachZettel(mentionRows[0]);
+      return;
+    }
+    onKeyDown(event);
+  };
+
   return (
     <div className="border-t p-3">
-      <div className="flex gap-2">
+      <ZettelContextChips
+        attachedZettels={attachedZettels}
+        onRemove={onRemoveAttachedZettel}
+      />
+      <div className="relative flex gap-2">
+        <ZettelMentionPicker
+          rows={mentionRows}
+          loading={isMentionLoading}
+          onSelect={onAttachZettel}
+        />
         <textarea
           ref={ref}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={onKeyDown}
+          onKeyDown={handleInputKeyDown}
           placeholder={
             isOnNotes && noteContext
               ? `Ask about ${noteContext.title}...`
@@ -814,23 +1064,46 @@ const ExpandedInput = forwardRef<HTMLTextAreaElement, InputProps>(function Expan
     setInput,
     isStreaming,
     activeModel,
+    attachedZettels,
+    mentionRows,
+    isMentionLoading,
     onSend,
     onCancel,
     onKeyDown,
+    onAttachZettel,
+    onRemoveAttachedZettel,
     onModelChange,
     onToggleSettings,
   },
   ref,
 ) {
+  const handleInputKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Enter" && !event.shiftKey && mentionRows.length > 0) {
+      event.preventDefault();
+      void onAttachZettel(mentionRows[0]);
+      return;
+    }
+    onKeyDown(event);
+  };
+
   return (
     <div className="border-t">
       <div className="mx-auto max-w-3xl px-6 py-4">
-        <div className="bg-card focus-within:border-primary flex items-end gap-0 rounded-xl border shadow-sm transition-colors">
+        <ZettelContextChips
+          attachedZettels={attachedZettels}
+          onRemove={onRemoveAttachedZettel}
+        />
+        <div className="bg-card focus-within:border-primary relative flex items-end gap-0 rounded-xl border shadow-sm transition-colors">
+          <ZettelMentionPicker
+            rows={mentionRows}
+            loading={isMentionLoading}
+            onSelect={onAttachZettel}
+          />
           <textarea
             ref={ref}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
+            onKeyDown={handleInputKeyDown}
             placeholder="Do anything with AI..."
             rows={1}
             className="placeholder:text-muted-foreground flex-1 resize-none bg-transparent px-4 py-3 text-sm outline-none"

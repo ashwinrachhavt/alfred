@@ -39,7 +39,7 @@ class ZettelDecomposeStream(SSEStreamOrchestrator):
     """Stream atomic-card candidates decomposed from a raw paragraph."""
 
     MAX_CANDIDATES = 15
-    MIN_CONTENT_LEN = 50
+    MIN_CONTENT_LEN = 120
     INPUT_CHAR_LIMIT = 16_000
 
     # Redis key prefix for idempotency; value is the latest sha256[:16] the
@@ -116,15 +116,21 @@ class ZettelDecomposeStream(SSEStreamOrchestrator):
     def _build_decompose_prompt(self) -> list[dict[str, str]]:
         """Build the system+user messages for the decomposition LLM call."""
         system = (
-            "You are a Zettelkasten decomposition engine. Break a paragraph of "
-            "raw knowledge into atomic cards — one idea per card.\n\n"
+            "You are a Zettelkasten decomposition engine. Break raw knowledge "
+            "into coherent block-sized cards — one meaningful block of thought "
+            "per card.\n\n"
             "Atomicity contract:\n"
-            "- ONE idea per card. If two ideas naturally stand alone, they are "
-            "  two cards.\n"
+            "- ONE coherent block per card. A block may contain a claim, its "
+            "  supporting reasoning, and one concrete example or implication.\n"
+            "- Do NOT split sentence-by-sentence. If adjacent sentences explain "
+            "  the same claim, preserve them together in one card.\n"
+            "- Split only when two blocks naturally stand alone and would be "
+            "  useful to review independently.\n"
             "- The title IS the idea, expressed as a crisp claim — not a label. "
             "  Do not write category names like 'Introduction' or 'Background'.\n"
-            "- Body is 1-3 sentences of supporting detail the title alone can't "
-            "  carry. Prefer concrete evidence over restating the title.\n"
+            "- Body is 3-6 sentences of supporting detail the title alone can't "
+            "  carry. Prefer concrete evidence, examples, and implications over "
+            "  restating the title.\n"
             "- Assign Bloom's Taxonomy level 1-6 per card (1 Remember, "
             "  2 Understand, 3 Apply, 4 Analyze, 5 Evaluate, 6 Create). Pick the "
             "  LOWEST level that honestly fits.\n"
@@ -136,7 +142,7 @@ class ZettelDecomposeStream(SSEStreamOrchestrator):
             "  your output. Do NOT reference cards outside this response.\n\n"
             "Hard constraints:\n"
             "- Cap at 15 cards. Reject over-splits — if you would produce a "
-            "  candidate with less than 50 characters of content, merge it "
+            "  candidate with less than 120 characters of content, merge it "
             "  into an adjacent candidate or skip it.\n"
             "- Do NOT repeat content across cards. Each card earns its place.\n\n"
             "Respond ONLY with valid JSON (no markdown fences, no commentary). "
