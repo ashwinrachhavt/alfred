@@ -309,6 +309,17 @@ class ZettelkastenService:
         self.session.add(card)
         self.session.commit()
         self.session.refresh(card)
+        # Keep Qdrant in sync. Archived cards should leave the searchable
+        # index; all other changes refresh payload (or re-embed if text changed).
+        if card.status == "archived" and card.id is not None:
+            self._delete_from_qdrant(card.id)
+        elif text_changed:
+            try:
+                self.ensure_embedding(card)
+            except Exception as exc:
+                log.warning("Re-embed after update failed for card %s: %s", card.id, exc)
+        else:
+            self._upsert_to_qdrant(card)
         return card
 
     def archive_card(self, card: ZettelCard, *, remove_links: bool = True) -> ZettelCard:
@@ -322,6 +333,8 @@ class ZettelkastenService:
                 self.session.delete(link)
         self.session.commit()
         self.session.refresh(card)
+        if card.id is not None:
+            self._delete_from_qdrant(card.id)
         return card
 
     # ---------------
@@ -928,6 +941,7 @@ class ZettelkastenService:
 
     def ensure_embedding(self, card: ZettelCard) -> ZettelCard:
         if card.embedding:
+            self._upsert_to_qdrant(card)
             return card
         embedding = self.embed_card(card)
         card.embedding = embedding
@@ -935,7 +949,133 @@ class ZettelkastenService:
         self.session.add(card)
         self.session.commit()
         self.session.refresh(card)
+        self._upsert_to_qdrant(card)
         return card
+
+    def _ensure_qdrant_collection(self, client, *, vector_size: int) -> bool:
+        from alfred.core.settings import settings
+        from qdrant_client.models import Distance, VectorParams
+
+        coll = settings.qdrant_zettels_collection
+        try:
+            existing = {c.name for c in client.get_collections().collections}
+            if coll not in existing:
+                client.create_collection(
+                    collection_name=coll,
+                    vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
+                )
+                log.info("Created Qdrant collection %s (dim=%d)", coll, vector_size)
+            return True
+        except Exception as exc:
+            log.warning("Could not ensure Qdrant collection %s: %s", coll, exc)
+            return False
+
+    def _build_card_payload(self, card: ZettelCard) -> dict:
+        return {
+            "status": card.status,
+            "topic": card.topic,
+            "tags": list(card.tags or []),
+            "importance": card.importance,
+        }
+
+    def _upsert_to_qdrant(self, card: ZettelCard) -> None:
+        if not card.embedding or card.id is None:
+            return
+        client = get_qdrant_client()
+        if client is None:
+            return
+        from alfred.core.settings import settings
+        from qdrant_client.models import PointStruct
+
+        if not self._ensure_qdrant_collection(client, vector_size=len(card.embedding)):
+            return
+        try:
+            client.upsert(
+                collection_name=settings.qdrant_zettels_collection,
+                points=[
+                    PointStruct(
+                        id=int(card.id),
+                        vector=list(card.embedding),
+                        payload=self._build_card_payload(card),
+                    )
+                ],
+            )
+        except Exception as exc:
+            log.warning("Qdrant upsert failed for card %s: %s", card.id, exc)
+
+    def _delete_from_qdrant(self, card_id: int) -> None:
+        client = get_qdrant_client()
+        if client is None:
+            return
+        from alfred.core.settings import settings
+        from qdrant_client.models import PointIdsList
+
+        try:
+            client.delete(
+                collection_name=settings.qdrant_zettels_collection,
+                points_selector=PointIdsList(points=[int(card_id)]),
+            )
+        except Exception as exc:
+            log.debug("Qdrant delete for card %s failed (non-fatal): %s", card_id, exc)
+
+    def sync_all_to_vector_index(self, *, batch_size: int = 64) -> int:
+        from alfred.core.settings import settings
+        from qdrant_client.models import PointStruct
+
+        client = get_qdrant_client()
+        if client is None:
+            log.warning("Qdrant client unavailable; skipping vector-index sync.")
+            return 0
+
+        stmt = select(ZettelCard).where(ZettelCard.status != "archived")
+        cards = list(self.session.exec(stmt))
+        if not cards:
+            return 0
+
+        for card in cards:
+            if not card.embedding:
+                try:
+                    embedding = self.embed_card(card)
+                    card.embedding = embedding
+                    card.updated_at = _utcnow()
+                    self.session.add(card)
+                except Exception as exc:
+                    log.warning("Failed to embed card %s during sync: %s", card.id, exc)
+        self.session.commit()
+
+        cards_with_vec = [c for c in cards if c.embedding and c.id is not None]
+        if not cards_with_vec:
+            return 0
+
+        vector_size = len(cards_with_vec[0].embedding)
+        if not self._ensure_qdrant_collection(client, vector_size=vector_size):
+            return 0
+
+        indexed = 0
+        for i in range(0, len(cards_with_vec), batch_size):
+            chunk = cards_with_vec[i : i + batch_size]
+            points = [
+                PointStruct(
+                    id=int(c.id),
+                    vector=list(c.embedding),
+                    payload=self._build_card_payload(c),
+                )
+                for c in chunk
+            ]
+            try:
+                client.upsert(
+                    collection_name=settings.qdrant_zettels_collection,
+                    points=points,
+                )
+                indexed += len(points)
+            except Exception as exc:
+                log.warning(
+                    "Qdrant batch upsert failed (offset=%d size=%d): %s",
+                    i,
+                    len(chunk),
+                    exc,
+                )
+        return indexed
 
     def _existing_links(self, card_id: int) -> set[tuple[int, int]]:
         links = self.session.exec(
