@@ -111,10 +111,12 @@ def test_omnibox_returns_document_matches_and_action_rows(
     assert document["id"] == str(doc.id)
     assert document["title"] == "Learning notes"
     assert document["topic"] == "Learning"
-    assert {item["action"] for item in body["results"] if item["kind"] == "action"} == {
-        "search_all",
-        "create_card",
-    }
+    actions = {item["action"]: item for item in body["results"] if item["kind"] == "action"}
+    assert set(actions) == {"search_all", "create_card"}
+    assert actions["search_all"]["title"] == "Search all knowledge for memory"
+    assert actions["create_card"]["title"] == "Create a card from memory"
+    assert "Polymath" in actions["search_all"]["description"]
+    assert "Polymath" in actions["create_card"]["description"]
 
 
 def test_omnibox_bare_query_returns_recent_sources_and_default_actions(
@@ -142,3 +144,69 @@ def test_omnibox_bare_query_returns_recent_sources_and_default_actions(
         "search_all",
         "create_card",
     }
+
+
+def test_omnibox_limit_one_returns_exact_zettel_before_action(
+    client: TestClient, session: Session
+) -> None:
+    card = _card(session, title="memory")
+
+    resp = client.get("/api/chat/omnibox", params={"q": "memory", "limit": "1"})
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert len(body["results"]) == 1
+    assert body["results"][0]["kind"] == "zettel"
+    assert body["results"][0]["id"] == card.id
+
+
+def test_omnibox_bounded_candidates_keep_old_exact_title_match(
+    client: TestClient, session: Session
+) -> None:
+    exact = _card(
+        session,
+        title="memory",
+        updated_at=datetime(2026, 5, 1, 8, 0, tzinfo=UTC),
+    )
+    for index in range(25):
+        _card(
+            session,
+            title=f"Recent content match {index}",
+            content="A recent note mentioning memory in the body.",
+            updated_at=datetime(2026, 5, 2, 8, index, tzinfo=UTC),
+        )
+
+    resp = client.get("/api/chat/omnibox", params={"q": "memory", "limit": "1"})
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["results"][0]["kind"] == "zettel"
+    assert body["results"][0]["id"] == exact.id
+
+
+def test_omnibox_excludes_archived_zettels(client: TestClient, session: Session) -> None:
+    active = _card(session, title="Memory systems")
+    _card(session, title="Memory archive", status="archived")
+
+    resp = client.get("/api/chat/omnibox", params={"q": "memory"})
+
+    assert resp.status_code == 200, resp.text
+    zettel_ids = [item["id"] for item in resp.json()["results"] if item["kind"] == "zettel"]
+    assert zettel_ids == [active.id]
+
+
+def test_omnibox_excerpt_uses_matching_zettel_field(
+    client: TestClient, session: Session
+) -> None:
+    _card(
+        session,
+        title="Practice note",
+        summary="This summary does not include the query.",
+        content="Daily memory drills strengthen recall.",
+    )
+
+    resp = client.get("/api/chat/omnibox", params={"q": "memory"})
+
+    assert resp.status_code == 200, resp.text
+    zettel = next(item for item in resp.json()["results"] if item["kind"] == "zettel")
+    assert "memory drills" in zettel["excerpt"]

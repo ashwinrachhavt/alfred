@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import String, cast, func, or_
+from sqlalchemy import String, case, cast, func, or_
 from sqlmodel import Session, select
 
 from alfred.models.doc_storage import DocumentRow
@@ -46,6 +46,18 @@ def _excerpt(value: Any, query: str, limit: int = 180) -> str | None:
     prefix = "..." if start > 0 else ""
     suffix = "..." if end < len(text) else ""
     return f"{prefix}{text[start:end]}{suffix}"
+
+
+def _matched_excerpt(query: str, *values: Any) -> str | None:
+    if query:
+        for value in values:
+            if _contains(value, query):
+                return _excerpt(value, query)
+    for value in values:
+        excerpt = _excerpt(value, query)
+        if excerpt:
+            return excerpt
+    return None
 
 
 def _topic_from_document(topics: dict[str, Any] | None) -> str | None:
@@ -124,23 +136,65 @@ def _lower_like(column: Any, query: str) -> Any:
     return func.lower(cast(column, String)).contains(query.lower())
 
 
+def _lower_text(column: Any) -> Any:
+    return func.lower(cast(column, String))
+
+
+def _db_title_score(
+    column: Any, query: str, exact: float, prefix: float, substring: float
+) -> Any:
+    value = _lower_text(column)
+    query_value = query.lower()
+    return case(
+        (value == query_value, exact),
+        (value.startswith(query_value), prefix),
+        (value.contains(query_value), substring),
+        else_=0.0,
+    )
+
+
+def _db_zettel_score(query: str) -> Any:
+    title_score = _db_title_score(ZettelCard.title, query, 100.0, 90.0, 80.0)
+    return case(
+        (title_score > 0, title_score),
+        (or_(_lower_like(ZettelCard.topic, query), _lower_like(ZettelCard.tags, query)), 70.0),
+        (_lower_like(ZettelCard.summary, query), 60.0),
+        (_lower_like(ZettelCard.content, query), 50.0),
+        else_=0.0,
+    )
+
+
+def _db_document_score(query: str) -> Any:
+    title_score = _db_title_score(DocumentRow.title, query, 95.0, 85.0, 75.0)
+    return case(
+        (title_score > 0, title_score),
+        (or_(_lower_like(DocumentRow.topics, query), _lower_like(DocumentRow.tags, query)), 70.0),
+        (_lower_like(DocumentRow.summary, query), 60.0),
+        (_lower_like(DocumentRow.cleaned_text, query), 50.0),
+        else_=0.0,
+    )
+
+
 @dataclass
 class ChatOmniboxService:
     session: Session
 
     def search(self, query: str | None, limit: int = 8) -> list[ChatOmniboxResult]:
         clean_query = _clean_query(query)
-        source_limit = max(limit - 2, 0)
-        source_results = self._search_sources(clean_query, source_limit)
+        source_limit = limit if limit <= 2 else max(limit - 2, 0)
+        candidate_limit = max(limit * 4, 20)
+        source_results = self._search_sources(clean_query, source_limit, candidate_limit)
         action_results = self._actions(clean_query)
         return [*source_results, *action_results][:limit]
 
-    def _search_sources(self, query: str, limit: int) -> list[ChatOmniboxResult]:
+    def _search_sources(
+        self, query: str, limit: int, candidate_limit: int
+    ) -> list[ChatOmniboxResult]:
         if limit <= 0:
             return []
 
-        zettels = self._query_zettels(query)
-        documents = self._query_documents(query)
+        zettels = self._query_zettels(query, limit=candidate_limit)
+        documents = self._query_documents(query, limit=candidate_limit)
         results: list[ChatOmniboxResult] = []
 
         for card in zettels:
@@ -155,7 +209,14 @@ class ChatOmniboxService:
                     topic=card.topic,
                     tags=list(card.tags or []),
                     source_url=card.source_url,
-                    excerpt=_excerpt(card.summary or card.content, query),
+                    excerpt=_matched_excerpt(
+                        query,
+                        card.title,
+                        card.topic,
+                        card.tags,
+                        card.summary,
+                        card.content,
+                    ),
                     score=score,
                     query=query,
                 )
@@ -177,7 +238,13 @@ class ChatOmniboxService:
                     topic=_topic_from_document(doc.topics),
                     tags=list(doc.tags or []),
                     source_url=doc.source_url,
-                    excerpt=_excerpt(doc.summary or doc.cleaned_text, query),
+                    excerpt=_matched_excerpt(
+                        query,
+                        doc.title,
+                        doc.topics,
+                        doc.summary,
+                        doc.cleaned_text,
+                    ),
                     score=score,
                     query=query,
                 )
@@ -185,7 +252,7 @@ class ChatOmniboxService:
 
         return sorted(results, key=self._sort_key)[:limit]
 
-    def _query_zettels(self, query: str) -> list[ZettelCard]:
+    def _query_zettels(self, query: str, limit: int) -> list[ZettelCard]:
         statement = select(ZettelCard).where(ZettelCard.status != "archived")
         if query:
             statement = statement.where(
@@ -199,11 +266,11 @@ class ChatOmniboxService:
             )
         return list(
             self.session.exec(
-                statement.order_by(ZettelCard.updated_at.desc().nullslast(), ZettelCard.id.desc())
+                self._order_zettels(statement, query).limit(limit)
             )
         )
 
-    def _query_documents(self, query: str) -> list[DocumentRow]:
+    def _query_documents(self, query: str, limit: int) -> list[DocumentRow]:
         statement = select(DocumentRow)
         if query:
             statement = statement.where(
@@ -216,34 +283,56 @@ class ChatOmniboxService:
             )
         return list(
             self.session.exec(
-                statement.order_by(
-                    DocumentRow.captured_at.desc().nullslast(),
-                    DocumentRow.updated_at.desc().nullslast(),
-                    DocumentRow.id.desc(),
-                )
+                self._order_documents(statement, query).limit(limit)
             )
+        )
+
+    @staticmethod
+    def _order_zettels(statement: Any, query: str) -> Any:
+        if query:
+            return statement.order_by(
+                _db_zettel_score(query).desc(),
+                ZettelCard.updated_at.desc().nullslast(),
+                ZettelCard.id.desc(),
+            )
+        return statement.order_by(ZettelCard.updated_at.desc().nullslast(), ZettelCard.id.desc())
+
+    @staticmethod
+    def _order_documents(statement: Any, query: str) -> Any:
+        if query:
+            return statement.order_by(
+                _db_document_score(query).desc(),
+                DocumentRow.captured_at.desc().nullslast(),
+                DocumentRow.updated_at.desc().nullslast(),
+                DocumentRow.id.desc(),
+            )
+        return statement.order_by(
+            DocumentRow.captured_at.desc().nullslast(),
+            DocumentRow.updated_at.desc().nullslast(),
+            DocumentRow.id.desc(),
         )
 
     def _actions(self, query: str) -> list[ChatOmniboxResult]:
         search_score = 5.0 if query else 0.3
         create_score = 4.0 if query else 0.2
+        label = query or "your current context"
         return [
             ChatOmniboxResult(
                 kind="action",
                 id="search_all",
-                title="Search all",
+                title=f"Search all knowledge for {label}",
                 score=search_score,
                 action="search_all",
-                description="Search across Alfred",
+                description="Search across Polymath knowledge sources",
                 query=query,
             ),
             ChatOmniboxResult(
                 kind="action",
                 id="create_card",
-                title="Create card",
+                title=f"Create a card from {label}",
                 score=create_score,
                 action="create_card",
-                description="Create a new knowledge card",
+                description="Create a new Polymath knowledge card",
                 query=query,
             ),
         ]
