@@ -32,6 +32,8 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
             "alfred.tasks.canvas_tasks",
             "alfred.tasks.today_pipeline",
             "alfred.tasks.session_cleanup",
+            "alfred.tasks.capture_coordinator",
+            "alfred.tasks.image_download",
         ]
         if include_tasks
         else []
@@ -143,13 +145,17 @@ def create_celery_app(*, include_tasks: bool = True) -> Celery:
         celery_app.autodiscover_tasks(["alfred"])
         # Be explicit to avoid "Received unregistered task" when running workers from
         # different entrypoints/working directories.
+        import alfred.tasks.batch_linking
         import alfred.tasks.canvas_tasks
+        import alfred.tasks.capture_coordinator
+        import alfred.tasks.daily_briefing
         import alfred.tasks.deep_research
         import alfred.tasks.document_concepts
         import alfred.tasks.document_enrichment
         import alfred.tasks.document_pipeline
         import alfred.tasks.document_processing
         import alfred.tasks.document_title_image
+        import alfred.tasks.image_download
         import alfred.tasks.learning_concepts
         import alfred.tasks.mind_palace_agent
         import alfred.tasks.notion_import

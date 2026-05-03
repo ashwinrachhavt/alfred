@@ -2,11 +2,14 @@
 
 Tasks are imported explicitly here so Celery's autodiscovery can find them via
 `app.autodiscover_tasks(["alfred"])` without the API process needing to import
-task modules.
+task modules. Keep this list in sync with the explicit imports in
+`alfred.core.celery.create_celery_app` — adding a task module here alone is
+not enough; the worker also needs the explicit import there.
 """
 
 from . import batch_linking as batch_linking
 from . import canvas_tasks as canvas_tasks
+from . import capture_coordinator as capture_coordinator
 from . import daily_briefing as daily_briefing
 from . import deep_research as deep_research
 from . import document_concepts as document_concepts
@@ -14,5 +17,11 @@ from . import document_enrichment as document_enrichment
 from . import document_pipeline as document_pipeline
 from . import document_processing as document_processing
 from . import document_title_image as document_title_image
+from . import image_download as image_download
 from . import learning_concepts as learning_concepts
 from . import mind_palace_agent as mind_palace_agent
+from . import notion_import as notion_import
+from . import planning as planning
+from . import session_cleanup as session_cleanup
+from . import taxonomy_reclassify as taxonomy_reclassify
+from . import today_pipeline as today_pipeline
