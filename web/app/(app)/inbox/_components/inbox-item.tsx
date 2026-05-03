@@ -45,7 +45,7 @@ function getStatus(pipelineStatus: string, primaryTopic: string | null): StatusI
  if (primaryTopic) {
  return {
  label: "Connected",
- className: "text-[var(--success)] bg-[rgba(45,106,79,0.15)]",
+ className: "text-success bg-success/15",
  };
  }
  return {

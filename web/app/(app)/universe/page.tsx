@@ -10,6 +10,11 @@ const KnowledgeUniverse = dynamic(
   { ssr: false }
 );
 
+// Scene overrides the app theme: the universe is always a dark immersive
+// backdrop regardless of light/dark mode. Token defined in globals.css.
+const SCENE_CLASS = "bg-[var(--alfred-scene-bg)]";
+const PRIMARY_BUTTON_CLASS = "bg-primary text-primary-foreground";
+
 export default function UniversePage() {
   const { data, isLoading, error, refetch } = useExtendedGraph();
   const [isMobile, setIsMobile] = useState(false);
@@ -24,7 +29,7 @@ export default function UniversePage() {
 
   if (isMobile) {
     return (
-      <div className="flex h-full items-center justify-center bg-[#0F0E0D] text-white/60">
+      <div className={`flex h-full items-center justify-center ${SCENE_CLASS} text-white/60`}>
         <p className="max-w-xs text-center font-sans text-base">
           The Knowledge Universe is best experienced on desktop.
         </p>
@@ -34,11 +39,11 @@ export default function UniversePage() {
 
   if (error) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 bg-[#0F0E0D]">
+      <div className={`flex h-full flex-col items-center justify-center gap-3 ${SCENE_CLASS}`}>
         <p className="font-sans text-base text-white/60">Couldn&apos;t load your universe.</p>
         <button
           onClick={() => refetch()}
-          className="rounded-md bg-[#E8590C] px-4 py-2 font-sans text-base text-white"
+          className={`rounded-md ${PRIMARY_BUTTON_CLASS} px-4 py-2 font-sans text-base`}
         >
           Retry
         </button>
@@ -48,8 +53,8 @@ export default function UniversePage() {
 
   if (isLoading || !data) {
     return (
-      <div className="flex h-full items-center justify-center bg-[#0F0E0D]">
-        <div className="h-3 w-3 animate-pulse rounded-full bg-[#E8590C]" />
+      <div className={`flex h-full items-center justify-center ${SCENE_CLASS}`}>
+        <div className="h-3 w-3 animate-pulse rounded-full bg-primary" />
         <span className="ml-3 font-mono text-base text-white/40">Loading your universe...</span>
       </div>
     );
@@ -57,14 +62,14 @@ export default function UniversePage() {
 
   if (data.nodes.length === 0) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 bg-[#0F0E0D]">
+      <div className={`flex h-full flex-col items-center justify-center gap-4 ${SCENE_CLASS}`}>
         <p className="font-sans text-base text-white/60">Your universe is empty.</p>
         <p className="font-sans text-base text-white/30">
           Start by creating your first knowledge card.
         </p>
         <a
           href="/knowledge"
-          className="rounded-md bg-[#E8590C] px-4 py-2 font-sans text-base text-white"
+          className={`rounded-md ${PRIMARY_BUTTON_CLASS} px-4 py-2 font-sans text-base`}
         >
           Go to Knowledge Hub
         </a>
@@ -73,7 +78,7 @@ export default function UniversePage() {
   }
 
   return (
-    <div className="relative h-full w-full bg-[#0F0E0D]">
+    <div className={`relative h-full w-full ${SCENE_CLASS}`}>
       <WebGLErrorBoundary>
         <KnowledgeUniverse data={data} />
       </WebGLErrorBoundary>

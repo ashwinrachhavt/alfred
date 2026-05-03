@@ -1,4 +1,4 @@
-import { useQuery, keepPreviousData, queryOptions } from "@tanstack/react-query";
+import { useQuery, keepPreviousData, queryOptions, useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
@@ -21,9 +21,9 @@ import {
 } from "@/lib/api/zettels";
 import type { Zettel, BloomLevel } from "@/app/(app)/knowledge/_components/mock-data";
 import { createMarkdownPreview } from "@/lib/utils/markdown";
+import { zettelGraphQueryOptions, type ApiZettelGraph } from "@/features/zettels/hooks/use-zettel-graph";
 
 type GraphEdge = { from: number; to: number; type: string };
-type GraphSummary = { nodes: unknown[]; edges: GraphEdge[] };
 
 function buildConnectionMap(edges: GraphEdge[]): Map<string, string[]> {
   const map = new Map<string, string[]>();
@@ -83,7 +83,17 @@ export type PaginatedZettels = {
   totalPages: number;
 };
 
-export function zettelCardsQueryOptions(filters?: ZettelFilterParams, pagination?: ZettelPaginationOptions) {
+const THIRTY_MINUTES = 30 * 60 * 1000;
+
+function fetchGraphCached(queryClient: QueryClient): Promise<ApiZettelGraph> {
+  return queryClient.fetchQuery(zettelGraphQueryOptions);
+}
+
+export function zettelCardsQueryOptions(
+  queryClient: QueryClient,
+  filters?: ZettelFilterParams,
+  pagination?: ZettelPaginationOptions,
+) {
   const page = pagination?.page ?? 1;
   const pageSize = pagination?.pageSize ?? 24;
   const skip = (page - 1) * pageSize;
@@ -91,17 +101,16 @@ export function zettelCardsQueryOptions(filters?: ZettelFilterParams, pagination
   return queryOptions({
     queryKey: ["zettels", "cards", filters || null, page, pageSize] as const,
     queryFn: async (): Promise<PaginatedZettels> => {
-      // When no status filter is set, fetch all non-archived cards (active + draft)
       const effectiveFilters = {
         ...filters,
-        status: filters?.status || undefined, // undefined = no status filter sent to API
+        status: filters?.status || undefined,
       };
       const [response, graph] = await Promise.all([
         apiListZettelCards(effectiveFilters, { limit: pageSize, skip }),
-        apiFetch<GraphSummary>(apiRoutes.zettels.graph, { cache: "no-store" }),
+        fetchGraphCached(queryClient),
       ]);
 
-      const connectionMap = buildConnectionMap(graph.edges);
+      const connectionMap = buildConnectionMap(graph.edges as GraphEdge[]);
       const items = response.items
         .filter((c) => c.status !== "archived")
         .map((c) => mapApiToZettel(c, connectionMap.get(String(c.id)) || []));
@@ -117,19 +126,21 @@ export function zettelCardsQueryOptions(filters?: ZettelFilterParams, pagination
 }
 
 export function useZettelCards(filters?: ZettelFilterParams, pagination?: ZettelPaginationOptions) {
-  return useQuery(zettelCardsQueryOptions(filters, pagination));
+  const queryClient = useQueryClient();
+  return useQuery(zettelCardsQueryOptions(queryClient, filters, pagination));
 }
 
 export function useZettelCard(cardId: number | null) {
+  const queryClient = useQueryClient();
   return useQuery<Zettel>({
     queryKey: ["zettels", "card", cardId],
     queryFn: async () => {
       const [card, graph] = await Promise.all([
         getZettelCard(cardId!),
-        apiFetch<GraphSummary>(apiRoutes.zettels.graph, { cache: "no-store" }),
+        fetchGraphCached(queryClient),
       ]);
 
-      const connectionMap = buildConnectionMap(graph.edges);
+      const connectionMap = buildConnectionMap(graph.edges as GraphEdge[]);
       return mapApiToZettel(card, connectionMap.get(String(card.id)) || []);
     },
     enabled: cardId !== null && Number.isFinite(cardId),
@@ -141,7 +152,7 @@ export function useZettelCount(filters?: ZettelFilterParams) {
   return useQuery({
     queryKey: ["zettels", "count", filters || null],
     queryFn: () => apiCountZettelCards(filters),
-    staleTime: 10_000,
+    staleTime: THIRTY_MINUTES,
   });
 }
 
@@ -149,7 +160,7 @@ export function useZettelTopics() {
   return useQuery({
     queryKey: ["zettel-topics"],
     queryFn: () => listZettelTopics(),
-    staleTime: 5 * 60 * 1000,
+    staleTime: THIRTY_MINUTES,
   });
 }
 
@@ -157,7 +168,7 @@ export function useZettelTags() {
   return useQuery({
     queryKey: ["zettel-tags"],
     queryFn: () => listZettelTags(),
-    staleTime: 5 * 60 * 1000,
+    staleTime: THIRTY_MINUTES,
   });
 }
 
@@ -166,7 +177,7 @@ export function useZettelLinks(cardId: number | null) {
     queryKey: ["zettels", "links", cardId],
     queryFn: () => listZettelLinks(cardId!),
     enabled: cardId !== null,
-    staleTime: 10_000,
+    staleTime: 60_000,
   });
 }
 
@@ -209,9 +220,7 @@ export function useZettelReviewsDue() {
   return useQuery({
     queryKey: ["zettels", "reviews", "due"],
     queryFn: () =>
-      apiFetch<Array<{ id: number; card_id: number }>>(apiRoutes.zettels.reviewsDue, {
-        cache: "no-store",
-      }),
-    staleTime: 30_000,
+      apiFetch<Array<{ id: number; card_id: number }>>(apiRoutes.zettels.reviewsDue),
+    staleTime: 60_000,
   });
 }

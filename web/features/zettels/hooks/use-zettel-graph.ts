@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 
 import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
@@ -26,10 +26,16 @@ export type ApiZettelGraph = {
   edges: ApiGraphEdge[];
 };
 
+const FIVE_MINUTES = 5 * 60 * 1000;
+
+export const zettelGraphQueryKey = ["zettels", "graph"] as const;
+
+export const zettelGraphQueryOptions = queryOptions<ApiZettelGraph>({
+  queryKey: zettelGraphQueryKey,
+  queryFn: () => apiFetch<ApiZettelGraph>(apiRoutes.zettels.graph),
+  staleTime: FIVE_MINUTES,
+});
+
 export function useZettelGraph() {
-  return useQuery<ApiZettelGraph>({
-    queryKey: ["zettels", "graph"],
-    queryFn: () => apiFetch<ApiZettelGraph>(apiRoutes.zettels.graph, { cache: "no-store" }),
-    staleTime: 30_000,
-  });
+  return useQuery(zettelGraphQueryOptions);
 }

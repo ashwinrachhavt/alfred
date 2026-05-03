@@ -14,6 +14,7 @@ select = [
   "UP",      # pyupgrade (modernize syntax)
   "T20",     # flake8-print (flag print statements)
   "RUF",     # Ruff-specific rules
+  "TID251",  # banned-api — forbid config access outside settings.py (guardrail)
 ]
 # E501 (line length) is treated as a soft limit in this repo; ignore to reduce noise.
 # B008: FastAPI uses function calls in defaults (Depends, Query, Header, etc.) by design.
@@ -28,8 +29,14 @@ ignore = [
 ]
 
 [lint.per-file-ignores]
-"tests/**" = []
+"tests/**" = ["TID251"]
 "scripts/**" = ["T20"]  # allow print() in CLI scripts
+"apps/alfred/core/settings.py" = ["TID251"]
+"**/conftest.py" = ["TID251"]
+
+[lint.flake8-tidy-imports.banned-api]
+"os.getenv" = { msg = "Use `from alfred.core.settings import settings` instead. Config must go through Pydantic validation." }
+"os.environ" = { msg = "Use `from alfred.core.settings import settings` instead. Config must go through Pydantic validation." }
 
 [lint.isort]
 known-first-party = ["alfred"]

@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 
 from celery import shared_task
+from sqlalchemy import func, union_all
 from sqlmodel import select
 
 from alfred.core.database import SessionLocal
@@ -93,25 +94,30 @@ def batch_link_task(
     """
     session = SessionLocal()
     try:
-        # Find cards with few links (candidates for link discovery)
-        all_cards = list(session.exec(
+        # Aggregate link counts per card via SQL (uses ix_zettel_links_from/to indexes).
+        link_endpoints = union_all(
+            select(ZettelLink.from_card_id.label("card_id")),
+            select(ZettelLink.to_card_id.label("card_id")),
+        ).subquery()
+        count_stmt = select(
+            link_endpoints.c.card_id,
+            func.count().label("n"),
+        ).group_by(link_endpoints.c.card_id)
+        link_counts: dict[int, int] = {
+            row.card_id: row.n for row in session.exec(count_stmt)
+        }
+
+        candidate_stmt = (
             select(ZettelCard)
             .where(ZettelCard.status != "archived")
             .order_by(ZettelCard.updated_at.desc())
-        ))
-
-        # Count existing links per card
-        all_links = list(session.exec(select(ZettelLink)))
-        link_counts: dict[int, int] = {}
-        for link in all_links:
-            link_counts[link.from_card_id] = link_counts.get(link.from_card_id, 0) + 1
-            link_counts[link.to_card_id] = link_counts.get(link.to_card_id, 0) + 1
-
-        # Filter to cards needing links
-        candidates = [
-            c for c in all_cards
-            if link_counts.get(c.id or 0, 0) <= max_existing_links
-        ][:limit]
+        )
+        candidates: list[ZettelCard] = []
+        for card in session.exec(candidate_stmt):
+            if link_counts.get(card.id or 0, 0) <= max_existing_links:
+                candidates.append(card)
+                if len(candidates) >= limit:
+                    break
 
         card_ids = [int(c.id or 0) for c in candidates if (c.id or 0) > 0]
         if not card_ids:

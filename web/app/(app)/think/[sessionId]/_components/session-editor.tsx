@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import type { Block, PartialBlock } from "@blocknote/core";
 import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
 import "@blocknote/shadcn/style.css";
@@ -53,20 +54,15 @@ function BlockNoteEditor({
  initialContent,
  onChange,
 }: {
- initialContent: unknown[] | undefined;
- onChange: (blocks: unknown[]) => void;
+ initialContent: PartialBlock[] | undefined;
+ onChange: (blocks: Block[]) => void;
 }) {
- const editor = useCreateBlockNote({
- // eslint-disable-next-line @typescript-eslint/no-explicit-any
- initialContent: initialContent as any,
- });
+ const editor = useCreateBlockNote({ initialContent });
 
  return (
  <BlockNoteView
  editor={editor}
- onChange={() => {
- onChange(editor.document as unknown as unknown[]);
- }}
+ onChange={() => onChange(editor.document)}
  theme="light"
  className="min-h-0 flex-1"
  />
@@ -95,7 +91,7 @@ export function SessionEditor({
  const [title, setTitle] = useState("");
  const [autosaveState, setAutosaveState] = useState<AutosaveState>("idle");
 
- const draftRef = useRef<{ title: string; blocks: unknown[] }>({
+ const draftRef = useRef<{ title: string; blocks: Block[] }>({
  title: "",
  blocks: [],
  });
@@ -108,11 +104,12 @@ export function SessionEditor({
 
  // Hydrate from query data
  const session = sessionQuery.data;
- const initialBlocks = useMemo(() => {
+ const initialBlocks = useMemo((): PartialBlock[] | undefined => {
  if (!session) return undefined;
- // blocks column stores BlockNote native JSON
  const raw = session.blocks;
- if (Array.isArray(raw) && raw.length > 0) return raw as unknown[];
+ // session.blocks is stored as BlockNote-native JSON but typed as ThinkingBlock[]
+ // server-side. Cross-type cast is required until the backend schema aligns.
+ if (Array.isArray(raw) && raw.length > 0) return raw as unknown as PartialBlock[];
  return undefined;
  }, [session]);
 
@@ -121,8 +118,10 @@ export function SessionEditor({
  const t = session.title ?? "";
  setTitle(t);
  draftRef.current.title = t;
- const blocks = Array.isArray(session.blocks) ? session.blocks : [];
- draftRef.current.blocks = blocks as unknown[];
+ const blocks = Array.isArray(session.blocks)
+ ? (session.blocks as unknown as Block[])
+ : [];
+ draftRef.current.blocks = blocks;
  lastSavedRef.current = {
  title: t,
  blocksJson: JSON.stringify(blocks),
