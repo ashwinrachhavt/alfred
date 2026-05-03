@@ -600,10 +600,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             [],
           plan: m.plan || [],
           pendingApprovals: m.pendingApprovals || [],
-          // Task 4 will hydrate parts[] from the DB. Until then, legacy
-          // messages arrive without parts — initialize to [] so the field
-          // is never undefined.
-          parts: m.parts || [],
+          // Hydrate parts[] from the DB (Task 4). Backend returns the canonical
+          // AI Elements parts list when available; legacy rows (no `parts`
+          // column value) fall back to [] and the UI synthesizes from legacy
+          // fields via synthesizePartsFromLegacy.
+          parts:
+            (m as { parts?: MessagePart[] }).parts ??
+            m.parts ??
+            [],
           timestamp: new Date(
             (m as { createdAt?: string; created_at?: string }).createdAt ||
               (m as { created_at?: string }).created_at ||

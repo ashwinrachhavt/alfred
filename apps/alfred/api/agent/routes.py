@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime
 from typing import Any
 
@@ -25,6 +26,7 @@ from alfred.services.knowledge_notifications import (
     get_pending_notifications,
 )
 from alfred.streaming.producers.agent_producer import AgentProducer
+from alfred.streaming.projectors import _parts as _parts_helpers
 from alfred.streaming.projectors.message_row import MessageProjector
 from alfred.streaming.projectors.snapshot import SnapshotProjector
 from alfred.streaming.projectors.wire_agui import AGUIProjector
@@ -78,6 +80,7 @@ class MessageOut(BaseModel):
     related_cards: list | None = None
     gaps: list | None = None
     reasoning: str | None = None
+    parts: list | None = None
     active_lens: str | None = None
     model_used: str | None = None
     created_at: Any = None
@@ -146,6 +149,7 @@ def _persist_message(
     related_cards: list | None = None,
     gaps: list | None = None,
     reasoning: str | None = None,
+    parts: list | None = None,
     lens: str | None = None,
     model: str | None = None,
 ) -> AgentMessageRow:
@@ -159,6 +163,7 @@ def _persist_message(
         artifacts=artifacts,
         related_cards=related_cards,
         gaps=gaps,
+        parts=parts,
         active_lens=lens,
         model_used=model,
     )
@@ -166,6 +171,46 @@ def _persist_message(
     db.commit()
     db.refresh(msg)
     return msg
+
+
+def _handle_event_for_parts(
+    parts: list[dict[str, Any]],
+    event_name: str,
+    data: dict[str, Any],
+) -> None:
+    """Mirror agent-store.ts _handleSSEEvent parts construction into Python.
+
+    Called for every SSE event as it streams through the v1 route so that a
+    canonical AI Elements parts[] is assembled alongside the legacy fields.
+    """
+    now_ms = int(time.time() * 1000)
+    if event_name == "token":
+        _parts_helpers.handle_token(parts, data.get("content", "") or "")
+    elif event_name == "reasoning":
+        _parts_helpers.handle_reasoning(parts, data.get("content", "") or "", now_ms)
+    elif event_name == "tool_start":
+        _parts_helpers.handle_tool_start(
+            parts,
+            tool_name=str(data.get("tool", "")),
+            call_id=str(data.get("call_id") or ""),
+            args=data.get("args") if isinstance(data.get("args"), dict) else None,
+            now_ms=now_ms,
+        )
+    elif event_name == "tool_result":
+        _parts_helpers.handle_tool_result(
+            parts,
+            call_id=str(data.get("call_id") or ""),
+            result=data.get("result"),
+        )
+    elif event_name == "error":
+        _parts_helpers.handle_error(parts, str(data.get("message") or "Something went wrong."), now_ms)
+    # All other events (plan, task_*, artifact, related, gaps, approval_required,
+    # tool_end, thread_created, done) do not mutate parts[] — same as frontend.
+
+
+def _finalize_streaming_parts(parts: list[dict[str, Any]], now_ms: int) -> None:
+    """Close any trailing streaming text/reasoning parts."""
+    _parts_helpers.finalize_streaming_parts(parts, now_ms)
 
 
 def _sse_event(event: str, data: dict) -> str:
@@ -225,6 +270,7 @@ async def agent_stream(
         service = AgentService(db)
         assistant_content = ""
         last_done_data: dict[str, Any] = {}
+        parts: list[dict[str, Any]] = []
 
         async for event_name, data, sse_str in service.stream_turn(
             message=message_text,
@@ -241,11 +287,18 @@ async def agent_stream(
             # Forward SSE to client
             yield sse_str
 
-            # Collect content for persistence
+            # Accumulate the canonical assistant content for the legacy column.
             if event_name == "token":
-                assistant_content += data.get("content", "")
+                assistant_content += data.get("content", "") or ""
             elif event_name == "done":
                 last_done_data = data
+
+            # Build parts[] the same way the frontend store does so the DB
+            # row round-trips identically to what the client renders.
+            _handle_event_for_parts(parts, event_name, data)
+
+        # Close any still-streaming text/reasoning parts before persistence.
+        _finalize_streaming_parts(parts, int(time.time() * 1000))
 
         # Persist assistant message using collected data
         try:
@@ -258,6 +311,7 @@ async def agent_stream(
                     tool_calls=last_done_data.get("tool_calls"),
                     artifacts=last_done_data.get("artifacts"),
                     reasoning=last_done_data.get("reasoning"),
+                    parts=parts or None,
                     lens=body.lens,
                     model=body.model,
                 )
@@ -470,6 +524,7 @@ def get_thread(thread_id: int, db: Session = Depends(get_db_session)) -> dict[st
                 related_cards=m.related_cards,
                 gaps=m.gaps,
                 reasoning=m.reasoning_traces,
+                parts=m.parts,
                 active_lens=m.active_lens,
                 model_used=m.model_used,
                 created_at=m.created_at,

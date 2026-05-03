@@ -13,6 +13,7 @@ Spec: docs/superpowers/specs/2026-05-01-streaming-revamp-design.md section 6.3
 
 from __future__ import annotations
 
+import time
 from typing import Any
 from uuid import UUID
 
@@ -29,6 +30,13 @@ from alfred.streaming.events import (
     ToolResult,
     ToolStarted,
 )
+from alfred.streaming.projectors._parts import (
+    finalize_streaming_parts,
+    handle_reasoning,
+    handle_token,
+    handle_tool_result,
+    handle_tool_start,
+)
 
 
 class MessageProjector:
@@ -44,6 +52,9 @@ class MessageProjector:
         self.artifacts: list[dict[str, Any]] = []
         self.related_cards: list[dict[str, Any]] = []
         self.gaps: list[dict[str, Any]] = []
+        # AI Elements canonical parts[] — dual-written alongside legacy fields.
+        # Mirrors web/lib/stores/agent-store.ts parts construction.
+        self.parts: list[dict[str, Any]] = []
         self._message_id: UUID | None = None
         self._thread_id: int | None = None
         self._active_lens: str | None = None
@@ -51,6 +62,7 @@ class MessageProjector:
         self._run_id: UUID | None = None
 
     def on_event(self, event: AnyRunEvent) -> None:
+        now_ms = int(time.time() * 1000)
         if isinstance(event, RunStarted):
             self._thread_id = event.thread_id
             self._active_lens = event.active_lens
@@ -60,8 +72,10 @@ class MessageProjector:
             self._message_id = event.message_id
         elif isinstance(event, MessageDelta):
             self.content_parts.append(event.delta_text)
+            handle_token(self.parts, event.delta_text)
         elif isinstance(event, ThinkingDelta):
             self.thinking_parts.append(event.delta_text)
+            handle_reasoning(self.parts, event.delta_text, now_ms)
         elif isinstance(event, ToolStarted):
             # v1 legacy key shape: call_id / tool / args / status
             self.tool_calls.append({
@@ -70,6 +84,13 @@ class MessageProjector:
                 "args": dict(event.args_preview),
                 "status": "pending",
             })
+            handle_tool_start(
+                self.parts,
+                tool_name=event.tool_name,
+                call_id=str(event.tool_call_id),
+                args=dict(event.args_preview),
+                now_ms=now_ms,
+            )
         elif isinstance(event, ToolResult):
             target_id = str(event.tool_call_id)
             for tc in self.tool_calls:
@@ -77,6 +98,12 @@ class MessageProjector:
                     tc["status"] = event.status
                     tc["result"] = event.result_json
                     break
+            handle_tool_result(
+                self.parts,
+                call_id=target_id,
+                result=event.result_json,
+                is_error=(event.status != "ok"),
+            )
         elif isinstance(event, StateDelta):
             self._apply_state(event)
 
@@ -88,6 +115,8 @@ class MessageProjector:
         # Match v1 skip predicate: write only if content OR tools OR artifacts present.
         if not content_text and not self.tool_calls and not self.artifacts:
             return
+        # Close any still-streaming text/reasoning parts before persistence.
+        finalize_streaming_parts(self.parts, int(time.time() * 1000))
         # Late import keeps projector importable without the models package loaded.
         from alfred.models.thinking import AgentMessageRow
 
@@ -104,6 +133,7 @@ class MessageProjector:
             artifacts=self.artifacts or None,
             related_cards=self.related_cards or None,
             gaps=self.gaps or None,
+            parts=self.parts or None,
             active_lens=self._active_lens,
             model_used=self._model_id,
             token_count=token_count,
