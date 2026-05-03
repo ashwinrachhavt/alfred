@@ -71,7 +71,7 @@ function InlineEdit({
  setEditing(false);
  }
  }}
- className="bg-secondary border border-border rounded-sm px-1.5 py-0.5 text-sm outline-none focus:ring-1 focus:ring-[#E8590C]/50"
+ className="bg-secondary border border-border rounded-sm px-1.5 py-0.5 text-sm outline-none focus:ring-1 focus:ring-primary/50"
  />
  );
  }
@@ -209,7 +209,7 @@ function AddChildForm({
  if (e.key === "Enter") submit();
  if (e.key === "Escape") onCreated();
  }}
- className="bg-secondary border border-border rounded-sm px-1.5 py-0.5 text-sm outline-none focus:ring-1 focus:ring-[#E8590C]/50 w-48"
+ className="bg-secondary border border-border rounded-sm px-1.5 py-0.5 text-sm outline-none focus:ring-1 focus:ring-primary/50 w-48"
  />
  );
 }
@@ -220,7 +220,7 @@ function ReclassifyPrompt({ onDismiss }: { onDismiss: () => void }) {
  const { mutate, isPending } = useReclassifyAll();
 
  return (
- <div className="flex items-center gap-3 rounded-md border border-[#E8590C]/30 bg-[var(--alfred-accent-subtle)] px-3 py-2">
+ <div className="flex items-center gap-3 rounded-md border border-primary/30 bg-[var(--alfred-accent-subtle)] px-3 py-2">
  <span className="text-xs text-foreground">
  Taxonomy changed. Reclassify zettels?
  </span>
@@ -235,7 +235,7 @@ function ReclassifyPrompt({ onDismiss }: { onDismiss: () => void }) {
  </Button>
  <Button
  size="sm"
- className="text-xs h-6 px-2 bg-[#E8590C] text-white hover:bg-[#E8590C]/90 gap-1"
+ className="text-xs h-6 px-2 bg-primary text-primary-foreground hover:bg-primary/90 gap-1"
  disabled={isPending}
  onClick={() =>
  mutate(undefined, { onSettled: () => onDismiss() })
@@ -334,7 +334,7 @@ function TreeNode({
  setAddingChild(true);
  setExpanded(true);
  }}
- className="opacity-30 group-hover:opacity-100 transition-opacity p-0.5 rounded-sm hover:bg-[var(--alfred-accent-subtle)] text-muted-foreground hover:text-[#E8590C]"
+ className="opacity-30 group-hover:opacity-100 transition-opacity p-0.5 rounded-sm hover:bg-[var(--alfred-accent-subtle)] text-muted-foreground hover:text-primary"
  title="Add child"
  >
  <Plus className="size-3" />
@@ -432,7 +432,7 @@ function ReclassifyButton() {
  <Button
  onClick={handleConfirm}
  disabled={isPending}
- className="text-xs gap-1.5 bg-[#E8590C] text-white hover:bg-[#E8590C]/90"
+ className="text-xs gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
  >
  <RefreshCw className="size-3" />
  Start Reclassification
@@ -463,7 +463,7 @@ export function TaxonomySection() {
  {/* Header row */}
  <div className="flex items-center justify-between">
  <div className="flex items-center gap-2">
- <FolderTree className="size-4 text-[#E8590C]" />
+ <FolderTree className="size-4 text-primary" />
  <span className="font-medium text-[10px] uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
  Taxonomy
  </span>

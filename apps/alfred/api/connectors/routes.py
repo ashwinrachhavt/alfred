@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 from fastapi import APIRouter
@@ -13,9 +12,18 @@ router = APIRouter(prefix="/api/connectors", tags=["connectors"])
 logger = logging.getLogger(__name__)
 
 
-def _env_present(*keys: str) -> bool:
-    """Return True if all env vars are non-empty."""
-    return all((os.getenv(k) or "").strip() for k in keys)
+def _has_value(value: object) -> bool:
+    """True if a settings attribute holds a non-empty string or SecretStr."""
+    if value is None:
+        return False
+    from pydantic import SecretStr
+    if isinstance(value, SecretStr):
+        return bool(value.get_secret_value().strip())
+    return bool(str(value).strip())
+
+
+def _all_have_value(*values: object) -> bool:
+    return all(_has_value(v) for v in values)
 
 
 def _notion_status() -> dict[str, Any]:
@@ -41,22 +49,23 @@ def _notion_status() -> dict[str, Any]:
 
 
 def _google_status(service: str) -> dict[str, Any]:
-    configured = _env_present(
-        "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
-        "GOOGLE_REDIRECT_URI", "GOOGLE_PROJECT_ID",
+    configured = _all_have_value(
+        settings.google_client_id,
+        settings.google_client_secret,
+        settings.google_redirect_uri,
+        settings.google_project_id,
     )
-    token_dir = (os.getenv("TOKEN_STORE_DIR") or "").strip()
+    token_dir_ready = _has_value(settings.token_store_dir)
     return {
-        "connected": configured and bool(token_dir),
+        "connected": configured and token_dir_ready,
         "auth_type": "oauth",
-        "details": {"configured": configured, "token_dir_ready": bool(token_dir)},
+        "details": {"configured": configured, "token_dir_ready": token_dir_ready},
     }
 
 
-def _api_key_status(env_var: str) -> dict[str, Any]:
-    present = _env_present(env_var)
+def _api_key_status(value: object) -> dict[str, Any]:
     return {
-        "connected": present,
+        "connected": _has_value(value),
         "auth_type": "api_key",
         "details": {},
     }
@@ -69,11 +78,11 @@ def _open_status() -> dict[str, Any]:
 _CONNECTOR_STATUS_MAP: dict[str, Any] = {
     # Knowledge
     "notion": _notion_status,
-    "readwise": lambda: _api_key_status("READWISE_TOKEN"),
-    "pocket": lambda: _api_key_status("POCKET_ACCESS_TOKEN"),
-    "hypothesis": lambda: _api_key_status("HYPOTHESIS_TOKEN"),
+    "readwise": lambda: _api_key_status(settings.readwise_token),
+    "pocket": lambda: _api_key_status(settings.pocket_access_token),
+    "hypothesis": lambda: _api_key_status(settings.hypothesis_token),
     "arxiv": _open_status,
-    "semantic_scholar": lambda: _api_key_status("SEMANTIC_SCHOLAR_API_KEY"),
+    "semantic_scholar": lambda: _api_key_status(settings.semantic_scholar_api_key),
     "wikipedia": _open_status,
     "rss": _open_status,
     "web": _open_status,
@@ -82,17 +91,17 @@ _CONNECTOR_STATUS_MAP: dict[str, Any] = {
     "calendar": lambda: _google_status("calendar"),
     "gdrive": lambda: _google_status("gdrive"),
     "google_tasks": lambda: _google_status("google_tasks"),
-    "github": lambda: _api_key_status("GITHUB_TOKEN"),
-    "linear": lambda: _api_key_status("LINEAR_API_KEY"),
-    "todoist": lambda: _api_key_status("TODOIST_TOKEN"),
-    "airtable": lambda: _api_key_status("AIRTABLE_API_KEY"),
-    "slack": lambda: _api_key_status("SLACK_API_KEY"),
+    "github": lambda: _api_key_status(settings.github_token),
+    "linear": lambda: _api_key_status(settings.linear_api_key),
+    "todoist": lambda: _api_key_status(settings.todoist_token),
+    "airtable": lambda: _api_key_status(settings.airtable_api_key),
+    "slack": lambda: _api_key_status(settings.slack_api_key),
     # AI & Search
     "searxng": _open_status,
-    "tavily": lambda: _api_key_status("TAVILY_API_KEY"),
-    "brave_search": lambda: _api_key_status("BRAVE_API_KEY"),
-    "wolfram": lambda: _api_key_status("WOLFRAM_APP_ID"),
-    "exa": lambda: _api_key_status("EXA_API_KEY"),
+    "tavily": lambda: _api_key_status(settings.tavily_api_key),
+    "brave_search": lambda: _api_key_status(settings.brave_api_key),
+    "wolfram": lambda: _api_key_status(settings.wolfram_app_id),
+    "exa": lambda: _api_key_status(settings.exa_api_key),
 }
 
 

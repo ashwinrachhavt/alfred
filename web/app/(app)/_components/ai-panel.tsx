@@ -185,7 +185,7 @@ export function AiPanel() {
  onClick={() => setShowThreads(!showThreads)}
  className="flex items-center gap-1 text-xs uppercase tracking-wider hover:text-foreground transition-colors"
  >
- Alfred AI
+ Polymath AI
  <ChevronDown className={cn("size-3 text-muted-foreground transition-transform", showThreads && "rotate-180")} />
  </button>
  </div>

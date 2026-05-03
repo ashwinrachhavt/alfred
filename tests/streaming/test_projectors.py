@@ -110,6 +110,12 @@ async def test_message_projector_writes_assistant_row_on_run_finished(session: S
     assert r.reasoning_traces is None
     assert r.tool_calls is None
     assert r.artifacts is None
+    # parts[] dual-write — single finalized streaming-text part
+    assert r.parts is not None
+    assert len(r.parts) == 1
+    assert r.parts[0]["type"] == "text"
+    assert r.parts[0]["text"] == "Hello world"
+    assert r.parts[0]["state"] == "done"
 
 
 @pytest.mark.asyncio
@@ -162,6 +168,16 @@ async def test_message_projector_captures_tool_calls_and_artifacts(session: Sess
         "zettel": {"id": 42, "title": "Belief vs knowledge",
                    "summary": "", "topic": "", "tags": []},
     }]
+    # parts[] dual-write — tool part with output-available state
+    assert row.parts is not None
+    tool_parts = [p for p in row.parts if str(p.get("type", "")).startswith("tool-")]
+    assert len(tool_parts) == 1
+    tp = tool_parts[0]
+    assert tp["type"] == "tool-search_kb"
+    assert tp["toolCallId"] == str(tool_id)
+    assert tp["state"] == "output-available"
+    assert tp["input"] == {"q": "epistemology"}
+    assert tp["output"] == {"hits": ["z1", "z2"]}
 
 
 @pytest.mark.asyncio

@@ -7,21 +7,10 @@ from alfred.connectors.web_connector import (
     SearxClient,
     WebConnector,
     _dedupe_by_url,
-    _env,
     _normalize_list_result,
 )
 from alfred.core.exceptions import ConfigurationError
 from alfred.core.settings import settings
-
-
-def test_env_helper(monkeypatch):
-    assert _env("__NON_EXISTENT__") is None
-    # Empty/whitespace returns None
-    monkeypatch.setenv("SOME_EMPTY_VAR", "   ")
-    assert _env("SOME_EMPTY_VAR") is None
-    # Non-empty returns stripped value
-    monkeypatch.setenv("SOME_VAR", "  value ")
-    assert _env("SOME_VAR") == "value"
 
 
 def test_normalize_list_result_various_shapes():
@@ -75,7 +64,8 @@ def test_webconnector_unconfigured_without_host(monkeypatch):
 
 def test_webconnector_constructs_client_when_env_set(monkeypatch):
     # Construction should not hit the network; only the subsequent search would.
-    monkeypatch.setenv("SEARXNG_HOST", "http://127.0.0.1:8080")
+    monkeypatch.setattr(settings, "searxng_host", "http://127.0.0.1:8080")
+    monkeypatch.setattr(settings, "searx_host", None)
     conn = WebConnector(searx_k=3)
     assert conn._client is not None
 

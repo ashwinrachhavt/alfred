@@ -555,7 +555,7 @@ export function TodayDashboard() {
               </h1>
               <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
                 Explore what you captured, distilled, connected, and still owe yourself on{" "}
-                {format(selectedDate, "MMMM d, yyyy")}. Alfred keeps the ledger by day so your
+                {format(selectedDate, "MMMM d, yyyy")}. Polymath keeps the ledger by day so your
                 learning stays inspectable.
               </p>
             </div>
@@ -591,7 +591,7 @@ export function TodayDashboard() {
                   Calendar
                 </div>
                 <p className="text-muted-foreground mt-2 text-sm">
-                  Select any day to audit what landed in Alfred.
+                  Select any day to audit what landed in Polymath.
                 </p>
               </div>
               <div className="rounded-sm border px-2 py-1 font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
@@ -733,7 +733,7 @@ export function TodayDashboard() {
             <div className="bg-card rounded-xl border p-6">
               <p className="font-serif text-2xl">Could not load this day</p>
               <p className="text-muted-foreground mt-2 text-sm">
-                Alfred could not build the audit for {format(selectedDate, "MMMM d, yyyy")}.
+                Polymath could not build the audit for {format(selectedDate, "MMMM d, yyyy")}.
               </p>
               <Button
                 variant="outline"
@@ -872,7 +872,7 @@ export function TodayDashboard() {
                           title={hasDayActivity ? "Nothing matched these filters" : "Quiet day"}
                           body={
                             hasDayActivity
-                              ? "This date has activity in Alfred, but none of it falls inside the selected categories."
+                              ? "This date has activity in Polymath, but none of it falls inside the selected categories."
                               : "No documents, cards, connections, reviews, or gaps were recorded for this date."
                           }
                         />
@@ -902,7 +902,7 @@ export function TodayDashboard() {
                         }
                         body={
                           scopeTotals.total_events > 0
-                            ? "This range has activity in Alfred, but none of it matches the selected filters."
+                            ? "This range has activity in Polymath, but none of it matches the selected filters."
                             : "Nothing was captured, stored, connected, reviewed, or surfaced in this range."
                         }
                       />
@@ -988,7 +988,7 @@ export function TodayDashboard() {
                 {selectedKindSet.has("capture") ? (
                   <SectionCard
                     title="Captured Documents"
-                    subtitle="Source material Alfred ingested that day"
+                    subtitle="Source material Polymath ingested that day"
                     count={briefing.captures.length}
                   >
                     {briefing.captures.length > 0 ? (
@@ -1095,7 +1095,7 @@ export function TodayDashboard() {
                 {selectedKindSet.has("review") ? (
                   <SectionCard
                     title="Reviews Scheduled"
-                    subtitle="Cards Alfred expected you to revisit that day"
+                    subtitle="Cards Polymath expected you to revisit that day"
                     count={briefing.reviews.length}
                   >
                     {briefing.reviews.length > 0 ? (

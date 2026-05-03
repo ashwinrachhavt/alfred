@@ -1,6 +1,6 @@
 import { KnowledgeHub } from "./_components/knowledge-hub";
 
-export const metadata = { title: "Knowledge — Alfred" };
+export const metadata = { title: "Knowledge — Polymath" };
 
 export default function KnowledgePage() {
  return (

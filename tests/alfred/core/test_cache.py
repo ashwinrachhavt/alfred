@@ -3,9 +3,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from alfred.core.cache import cache_get, cache_set, cache_invalidate
+from alfred.core.cache import cache_get, cache_invalidate, cache_set
 
 
 class TestCacheGet:

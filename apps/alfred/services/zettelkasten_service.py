@@ -1059,16 +1059,26 @@ class ZettelkastenService:
                 limit=limit,
             )
 
-        scored: list[tuple[ZettelCard, LinkQuality]] = []
+        scores_by_id: dict[int, float] = {}
         for hit in results.points:
             hit_id = int(hit.id) if not isinstance(hit.id, int) else hit.id
             if hit_id == card.id or (card.id, hit_id) in existing_links:
                 continue
-            cand = self.session.get(ZettelCard, hit_id)
-            if not cand:
-                continue
-            quality = self._quality(card, cand, semantic_score=hit.score)
-            scored.append((cand, quality))
+            scores_by_id[hit_id] = hit.score
+
+        if not scores_by_id:
+            return []
+
+        candidate_stmt = select(ZettelCard).where(
+            ZettelCard.id.in_(list(scores_by_id.keys()))
+        )
+        candidates = self.session.exec(candidate_stmt).all()
+
+        scored: list[tuple[ZettelCard, LinkQuality]] = [
+            (cand, self._quality(card, cand, semantic_score=scores_by_id[cand.id]))
+            for cand in candidates
+            if cand.id in scores_by_id
+        ]
 
         scored.sort(key=lambda item: item[1].composite_score, reverse=True)
         return scored[:limit]

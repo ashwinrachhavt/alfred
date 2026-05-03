@@ -28,16 +28,16 @@ from alfred.services.note_assets_service import (
     NoteAssetTooLargeError,
     NoteAssetUnsupportedTypeError,
 )
+from alfred.services.notes_filesystem_service import (
+    FilesystemPathNotAllowedError,
+    FilesystemPathNotFoundError,
+    NotesFilesystemService,
+)
 from alfred.services.notes_service import (
     NoteMoveConflictError,
     NoteNotFoundError,
     NotesService,
     WorkspaceNotFoundError,
-)
-from alfred.services.notes_filesystem_service import (
-    FilesystemPathNotAllowedError,
-    FilesystemPathNotFoundError,
-    NotesFilesystemService,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["notes"])

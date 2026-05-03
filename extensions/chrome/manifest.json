@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Alfred – Knowledge Capture",
+  "name": "Polymath - Knowledge Capture",
   "version": "2.0.0",
-  "description": "Capture text, pages, and notes directly into Alfred's knowledge base from any webpage.",
+  "description": "Capture text, pages, and notes directly into Polymath's knowledge base from any webpage.",
   "permissions": ["storage", "activeTab", "scripting", "sidePanel"],
   "host_permissions": [
     "http://localhost:3001/*",

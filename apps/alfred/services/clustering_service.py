@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from sklearn.cluster import KMeans
@@ -195,7 +195,7 @@ class ClusteringService:
     # Diverse nebula palette — muted, space-appropriate hues that stay
     # warm-leaning for the Midnight Editorial aesthetic.  The accent orange
     # (#E8590C) is deliberately excluded so UI elements remain distinct.
-    _NEBULA_PALETTE = [
+    _NEBULA_PALETTE: ClassVar[list[str]] = [
         "#C47A5A",  # terracotta
         "#7A9E7E",  # sage
         "#8B7EC8",  # lavender

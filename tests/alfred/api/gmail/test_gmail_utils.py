@@ -1,24 +1,14 @@
-from alfred.api.gmail.routes import _truthy, gmail_status
-
-
-def test_truthy_variants():
-    assert _truthy(None) is False
-    assert _truthy("1") is True
-    assert _truthy(" true ") is True
-    assert _truthy("Yes") is True
-    assert _truthy("ON") is True
-    assert _truthy("0") is False
-    assert _truthy("no") is False
-    assert _truthy("off") is False
+from alfred.api.gmail.routes import gmail_status
+from alfred.core.settings import settings
 
 
 def test_gmail_status_ready(monkeypatch, tmp_path):
-    monkeypatch.setenv("ENABLE_GMAIL", "true")
-    monkeypatch.setenv("GOOGLE_CLIENT_ID", "abc")
-    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "def")
-    monkeypatch.setenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/callback")
-    monkeypatch.setenv("GOOGLE_PROJECT_ID", "proj")
-    monkeypatch.setenv("TOKEN_STORE_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "enable_gmail", True)
+    monkeypatch.setattr(settings, "google_client_id", "abc")
+    monkeypatch.setattr(settings, "google_client_secret", "def")
+    monkeypatch.setattr(settings, "google_redirect_uri", "http://localhost:8000/callback")
+    monkeypatch.setattr(settings, "google_project_id", "proj")
+    monkeypatch.setattr(settings, "token_store_dir", str(tmp_path))
 
     status = gmail_status()
     assert status["enabled"] is True
@@ -29,16 +19,13 @@ def test_gmail_status_ready(monkeypatch, tmp_path):
 
 
 def test_gmail_status_not_configured(monkeypatch):
-    # Enabled but missing essential config should not be ready
-    monkeypatch.setenv("ENABLE_GMAIL", "true")
-    for key in [
-        "GOOGLE_CLIENT_ID",
-        "GOOGLE_CLIENT_SECRET",
-        "GOOGLE_REDIRECT_URI",
-        "GOOGLE_PROJECT_ID",
-        "TOKEN_STORE_DIR",
-    ]:
-        monkeypatch.delenv(key, raising=False)
+    # Enabled but missing essential config should not be ready.
+    monkeypatch.setattr(settings, "enable_gmail", True)
+    monkeypatch.setattr(settings, "google_client_id", None)
+    monkeypatch.setattr(settings, "google_client_secret", None)
+    monkeypatch.setattr(settings, "google_redirect_uri", None)
+    monkeypatch.setattr(settings, "google_project_id", None)
+    monkeypatch.setattr(settings, "token_store_dir", "")
 
     status = gmail_status()
     assert status["enabled"] is True

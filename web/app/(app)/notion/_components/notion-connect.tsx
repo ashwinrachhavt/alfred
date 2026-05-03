@@ -119,7 +119,7 @@ export function NotionConnect() {
  <div className="space-y-3">
  <p className="text-muted-foreground text-sm">
  Connect your Notion workspace to search pages, read content, and sync
- knowledge into Alfred.
+ knowledge into Polymath.
  </p>
  {!status?.oauth_configured && (
  <Alert>

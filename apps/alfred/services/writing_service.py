@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, TypedDict
@@ -414,8 +413,7 @@ class WriterState(TypedDict, total=False):
 
 
 def _use_stub_writing() -> bool:
-    # Back-compat for earlier env var naming.
-    if os.getenv("ALFRED_WRITING_STUB") == "1" or os.getenv("ALFRED_WRITER_STUB") == "1":
+    if settings.alfred_writing_stub:
         return True
     if settings.app_env in {"test", "ci"}:
         return True

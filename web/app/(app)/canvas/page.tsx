@@ -1,6 +1,6 @@
 import { CanvasWorkbenchClient } from "./_components/canvas-workbench-client";
 
-export const metadata = { title: "Canvas — Alfred" };
+export const metadata = { title: "Canvas — Polymath" };
 
 type CanvasPageProps = {
  searchParams?: Promise<{

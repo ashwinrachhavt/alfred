@@ -9,7 +9,7 @@ import { AlertCircle, BookOpen, Layers, Link2, Loader2, Play, Plus, RefreshCw, S
 import { Button } from "@/components/ui/button";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { useZettelCards, useZettelTopics, useZettelTags } from "@/features/zettels/queries";
-import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
+import { useTaskTrackerActions } from "@/features/tasks/task-tracker-provider";
 import { apiPostJson } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
 import { getDueCount } from "./mock-data";
@@ -92,7 +92,7 @@ export function KnowledgeHub() {
  [router],
  );
 
- const { trackTask } = useTaskTracker();
+ const { trackTask } = useTaskTrackerActions();
  const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
  // Server-side allZettels data with pagination

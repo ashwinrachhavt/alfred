@@ -61,7 +61,7 @@ const EDIT_PRESETS: Preset[] = [
 const PANEL_PRESETS: Preset[] = [
   { label: "Explain", prompt: "Explain this in simpler terms", panel: true },
   { label: "Research", prompt: "Research this topic in my knowledge base", panel: true },
-  { label: "Ask Alfred", prompt: "", panel: true },
+  { label: "Ask Polymath", prompt: "", panel: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -71,11 +71,11 @@ const PANEL_PRESETS: Preset[] = [
 function getPlaceholder(mode: AIPromptMode): string {
   switch (mode) {
     case "generate":
-      return "What should Alfred write here?";
+      return "What should Polymath write here?";
     case "edit":
-      return "How should Alfred revise this passage?";
+      return "How should Polymath revise this passage?";
     case "transform":
-      return "How should Alfred transform this selection?";
+      return "How should Polymath transform this selection?";
   }
 }
 

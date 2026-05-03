@@ -72,7 +72,7 @@
     const dot = qs("#alfred-dock-status");
     if (dot) {
       dot.classList.toggle("alfred-status-online", isOnline);
-      dot.title = isOnline ? "Alfred backend connected" : "Alfred backend offline";
+      dot.title = isOnline ? "Polymath backend connected" : "Polymath backend offline";
     }
   }
 
@@ -89,8 +89,8 @@
       // Header
       el("div", { id: "alfred-dock-header" }, [
         el("div", { class: "alfred-logo" }, [
-          el("span", { class: "alfred-logo-icon" }, "A"),
-          "Alfred",
+          el("span", { class: "alfred-logo-icon" }, "P"),
+          "Polymath",
           el("div", { id: "alfred-dock-status", title: "Checking..." }),
         ]),
         el("div", { class: "alfred-dock-actions" }, [
@@ -289,7 +289,7 @@
         textarea.value = "";
         try { localStorage.removeItem(DOMAIN_KEY); } catch {}
       }
-      showToast(isFullPage ? "Page captured to Alfred!" : "Note saved to Alfred!", "success");
+      showToast(isFullPage ? "Page captured to Polymath!" : "Note saved to Polymath!", "success");
       AlfredAPI.addCaptureHistory({
         title: isFullPage ? `[Page] ${document.title}` : text.slice(0, 80),
         url: location.href,
@@ -314,7 +314,7 @@
         content_type_hint: extracted.content_type_hint,
       });
       const qualityLabel = extracted.quality === "rich" ? "Rich capture \u2713" : "Basic capture";
-      showToast(`Page captured to Alfred! (${qualityLabel})`, "success");
+      showToast(`Page captured to Polymath! (${qualityLabel})`, "success");
       AlfredAPI.addCaptureHistory({
         title: `[Page] ${document.title}`,
         url: location.href,
@@ -341,7 +341,7 @@
         selectedText: selText,
         raw_markdown: extracted.raw_markdown,
       });
-      showToast("Selection saved to Alfred!", "success");
+      showToast("Selection saved to Polymath!", "success");
       AlfredAPI.addCaptureHistory({
         title: selText.slice(0, 80),
         url: location.href,
@@ -457,7 +457,7 @@
 
   function buildFab() {
     const fab = el("div", { id: "alfred-fab" }, [
-      el("span", { class: "alfred-fab-letter", onClick: toggleDock }, "A"),
+      el("span", { class: "alfred-fab-letter", onClick: toggleDock }, "P"),
     ]);
     // Long-press or right-click opens side panel
     fab.addEventListener("contextmenu", (e) => {

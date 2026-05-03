@@ -347,7 +347,7 @@ export function DashboardClient() {
             <Link href="/research">Research a company</Link>
           </Button>
           <Button type="button" size="sm" variant="outline" onClick={() => openAiPanel("expanded")}>
-            Ask Alfred
+            Ask Polymath
           </Button>
           <Button asChild size="sm" variant="outline">
             <Link href="/library">Library</Link>

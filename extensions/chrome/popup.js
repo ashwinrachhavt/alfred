@@ -25,7 +25,7 @@
     const online = await AlfredAPI.health();
     const dot = $("#status-dot");
     dot.classList.toggle("online", online);
-    dot.title = online ? "Alfred backend connected" : "Alfred backend offline";
+    dot.title = online ? "Polymath backend connected" : "Polymath backend offline";
   }
   checkStatus();
 

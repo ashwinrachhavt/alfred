@@ -7,7 +7,7 @@ import { explorerDocumentsQueryOptions } from "@/features/documents/queries";
 type Prefetcher = (qc: QueryClient) => void;
 
 const routePrefetchMap: Record<string, Prefetcher> = {
-  "/knowledge": (qc) => qc.prefetchQuery(zettelCardsQueryOptions()),
+  "/knowledge": (qc) => qc.prefetchQuery(zettelCardsQueryOptions(qc)),
   "/notes": (qc) => qc.prefetchQuery(workspacesQueryOptions()),
   "/documents": (qc) => qc.prefetchInfiniteQuery(explorerDocumentsQueryOptions()),
 };

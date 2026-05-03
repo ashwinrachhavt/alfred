@@ -118,6 +118,9 @@ export const apiRoutes = {
     threads: "/api/agent/threads",
     threadById: (id: number) => `/api/agent/threads/${id}`,
   },
+  chat: {
+    omnibox: "/api/chat/omnibox",
+  },
   connectors: {
     status: (name: string) => `/api/${name}/status`,
     statusAll: "/api/connectors/status-all",

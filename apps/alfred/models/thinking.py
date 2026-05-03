@@ -66,6 +66,7 @@ class AgentMessageRow(Model, table=True):
     │  related_cards: [{zettel_id, title, reason}] │
     │  gaps: [{concept, description, confidence}]  │
     │  reasoning_traces: str (o3/o4 reasoning)    │
+    │  parts: [{type, text|input|output|state,...}]│
     └──────────────────────────────────────────────┘
     """
 
@@ -85,6 +86,7 @@ class AgentMessageRow(Model, table=True):
     artifacts: list | None = Field(default=None, sa_column=Column(JSON, nullable=True))
     related_cards: list | None = Field(default=None, sa_column=Column(JSON, nullable=True))
     gaps: list | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+    parts: list | None = Field(default=None, sa_column=Column(JSON, nullable=True))
     active_lens: str | None = Field(default=None, sa_column=Column(String(64), nullable=True))
     model_used: str | None = Field(default=None, sa_column=Column(String(128), nullable=True))
     token_count: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))

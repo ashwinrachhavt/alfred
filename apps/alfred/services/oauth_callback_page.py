@@ -37,7 +37,7 @@ def render_oauth_callback_page(*, ok: bool, message: str, provider: str = "googl
       <span class="badge {status}">{status}</span>
       <h1>{heading}</h1>
       <p>{body}</p>
-      <p class="hint">This window should close automatically. If it doesn't, you can close it and return to Alfred.</p>
+      <p class="hint">This window should close automatically. If it doesn't, you can close it and return to Polymath.</p>
     </div>
     <script>
       try {{

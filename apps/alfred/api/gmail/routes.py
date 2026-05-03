@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
@@ -23,26 +21,19 @@ GMAIL_TOKEN_NAMESPACE = "gmail"
 MESSAGE_PREVIEW_HEADERS = ["From", "To", "Subject", "Date"]
 
 
-def _truthy(val: str | None) -> bool:
-    if val is None:
-        return False
-    return val.strip().lower() in {"1", "true", "yes", "on"}
-
-
 @router.get("/status")
 def gmail_status():
-    enabled = _truthy(os.getenv("ENABLE_GMAIL"))
-    client_id = (os.getenv("GOOGLE_CLIENT_ID") or "").strip()
-    client_secret = (os.getenv("GOOGLE_CLIENT_SECRET") or "").strip()
-    redirect_uri = (os.getenv("GOOGLE_REDIRECT_URI") or "").strip()
-    project_id = (os.getenv("GOOGLE_PROJECT_ID") or "").strip()
-    token_dir = (os.getenv("TOKEN_STORE_DIR") or "").strip()
+    client_id = (settings.google_client_id or "").strip()
+    client_secret = (settings.google_client_secret or "").strip()
+    redirect_uri = (str(settings.google_redirect_uri) if settings.google_redirect_uri else "").strip()
+    project_id = (settings.google_project_id or "").strip()
+    token_dir = (settings.token_store_dir or "").strip()
     configured = all([client_id, client_secret, redirect_uri, project_id])
     token_dir_ready = bool(token_dir)
     deps_ok = True
-    ready = enabled and configured and deps_ok and token_dir_ready
+    ready = settings.enable_gmail and configured and deps_ok and token_dir_ready
     return {
-        "enabled": enabled,
+        "enabled": settings.enable_gmail,
         "configured": configured,
         "deps_installed": deps_ok,
         "token_dir_ready": token_dir_ready,
@@ -83,7 +74,7 @@ def gmail_oauth_callback(
         return result
 
     return HTMLResponse(
-        content=render_oauth_callback_page(ok=True, message="You can return to Alfred."),
+        content=render_oauth_callback_page(ok=True, message="You can return to Polymath."),
         status_code=200,
     )
 

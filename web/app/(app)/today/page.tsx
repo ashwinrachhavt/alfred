@@ -1,7 +1,7 @@
 import { TodayDashboard } from "./_components/today-dashboard";
 import { TodayViewShell } from "./_components/today-view-shell";
 
-export const metadata = { title: "Today — Alfred" };
+export const metadata = { title: "Today — Polymath" };
 
 type ViewMode = "table" | "kanban" | "calendar";
 const VALID_VIEWS: ViewMode[] = ["table", "kanban", "calendar"];

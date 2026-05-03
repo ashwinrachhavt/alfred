@@ -9,10 +9,12 @@ import {
   AtSign,
   Brain,
   ChevronDown,
+  FileText,
   Loader2,
   Maximize2,
   Minimize2,
   Plus,
+  Search,
   Send,
   Settings2,
   Sparkles,
@@ -23,13 +25,9 @@ import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "@/components/ui/button";
 import { useLocalStorageString } from "@/lib/hooks/use-local-storage-value";
-import {
-  getZettelCard,
-  searchCards,
-  type AISuggestionMatch,
-  type ApiZettelCard,
-  type CardSearchMatch,
-} from "@/lib/api/zettels";
+import { searchChatOmnibox, type OmniboxResult } from "@/lib/api/chat-omnibox";
+import { getDocumentDetails } from "@/lib/api/documents";
+import { getZettelCard } from "@/lib/api/zettels";
 import {
   useAgentStore,
   useToolCallStore,
@@ -82,26 +80,37 @@ const SUGGESTIONS: Record<string, string[]> = {
 
 type ResponseCommentsByMessageId = Record<string, ResponseComment[]>;
 
-type AttachedZettelContext = Pick<
-  ApiZettelCard,
-  "id" | "title" | "content" | "summary" | "topic" | "tags"
->;
+type AttachedChatContext =
+  | {
+      kind: "zettel";
+      id: number;
+      title: string;
+      content: string | null;
+      summary: string | null;
+      topic: string | null;
+      tags: string[] | null;
+    }
+  | {
+      kind: "document";
+      id: string;
+      title: string;
+      cleanedText: string;
+      summary: unknown;
+      sourceUrl: string | null;
+      topics: unknown;
+    };
 
-type ZettelMentionMatch = {
+type OmniboxMentionMatch = {
   query: string;
   start: number;
   end: number;
 };
 
-type ZettelMentionRow =
-  | (CardSearchMatch & { kind: "text" })
-  | (AISuggestionMatch & { kind: "ai" });
-
 function buildResponseCommentsStorageKey(threadId: number | null): string {
   return `alfred:chat:response-comments:${threadId ?? "draft"}`;
 }
 
-function findZettelMention(input: string): ZettelMentionMatch | null {
+function findOmniboxMention(input: string): OmniboxMentionMatch | null {
   const matches = Array.from(input.matchAll(/(^|\s)@([^\s@]{0,80})/g));
   const match = matches.at(-1);
   if (!match || match.index === undefined) return null;
@@ -117,31 +126,61 @@ function findZettelMention(input: string): ZettelMentionMatch | null {
   };
 }
 
-function removeMentionToken(input: string, match: ZettelMentionMatch): string {
+function removeMentionToken(input: string, match: OmniboxMentionMatch): string {
   return `${input.slice(0, match.start)}${input.slice(match.end)}`
     .replace(/\s{2,}/g, " ")
     .trim();
 }
 
-function buildZettelContextPrompt(
-  userText: string,
-  zettels: AttachedZettelContext[],
-): string {
-  if (zettels.length === 0) return userText;
+function removeMentionTokenIfCurrent(input: string, match: OmniboxMentionMatch): string {
+  if (input.slice(match.start, match.end) !== `@${match.query}`) return input;
+  return removeMentionToken(input, match);
+}
 
-  const context = zettels
-    .map((zettel) => {
-      const body = (zettel.summary || zettel.content || "").replace(/\s+/g, " ").trim();
+function chatContextKey(context: Pick<AttachedChatContext, "kind" | "id">): string {
+  return `${context.kind}:${context.id}`;
+}
+
+function stringifyContextValue(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") return value.trim() || null;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function buildChatContextPrompt(userText: string, contexts: AttachedChatContext[]): string {
+  if (contexts.length === 0) return userText;
+
+  const context = contexts
+    .map((item) => {
+      const body =
+        item.kind === "zettel"
+          ? (item.summary || item.content || "").replace(/\s+/g, " ").trim()
+          : item.cleanedText.replace(/\s+/g, " ").trim();
       const excerpt = body.length > 700 ? `${body.slice(0, 697)}...` : body;
-      const metadata = [
-        zettel.topic ? `Topic: ${zettel.topic}` : null,
-        zettel.tags?.length ? `Tags: ${zettel.tags.join(", ")}` : null,
-      ]
-        .filter(Boolean)
-        .join(" | ");
+      const metadata =
+        item.kind === "zettel"
+          ? [
+              item.topic ? `Topic: ${item.topic}` : null,
+              item.tags?.length ? `Tags: ${item.tags.join(", ")}` : null,
+            ]
+              .filter(Boolean)
+              .join(" | ")
+          : [
+              item.sourceUrl ? `Source: ${item.sourceUrl}` : null,
+              stringifyContextValue(item.summary)
+                ? `Summary: ${stringifyContextValue(item.summary)}`
+                : null,
+              stringifyContextValue(item.topics) ? `Topics: ${stringifyContextValue(item.topics)}` : null,
+            ]
+              .filter(Boolean)
+              .join(" | ");
 
       return [
-        `[${zettel.id}] ${zettel.title}`,
+        `${item.kind === "zettel" ? "Zettel" : "Document"} [${item.id}] ${item.title}`,
         metadata,
         excerpt ? `Excerpt: ${excerpt}` : null,
       ]
@@ -153,10 +192,10 @@ function buildZettelContextPrompt(
   return [
     userText,
     "",
-    "Referenced zettels:",
+    "Referenced Polymath context:",
     context,
     "",
-    "Use the referenced zettels as explicit chat context. Do not assume they are the only relevant knowledge.",
+    "Use the referenced Polymath context as explicit chat context. Do not assume it is the only relevant knowledge.",
   ].join("\n");
 }
 
@@ -254,7 +293,8 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
   const [showSettings, setShowSettings] = useState(false);
   const [showThreads, setShowThreads] = useState(false);
   const [editingZettelId, setEditingZettelId] = useState<number | null>(null);
-  const [attachedZettels, setAttachedZettels] = useState<AttachedZettelContext[]>([]);
+  const [attachedContext, setAttachedContext] = useState<AttachedChatContext[]>([]);
+  const [dismissedOmniboxToken, setDismissedOmniboxToken] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastThreadLoadRef = useRef(0);
   const queryClient = useQueryClient();
@@ -275,61 +315,126 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
     "{}",
   );
 
-  const zettelMention = useMemo(() => findZettelMention(input), [input]);
-  const zettelMentionSearch = useQuery({
-    queryKey: ["chat-zettel-mention", zettelMention?.query ?? ""],
-    queryFn: () => searchCards(zettelMention?.query ?? ""),
-    enabled: !!zettelMention && !isStreaming,
+  const omniboxMention = useMemo(() => findOmniboxMention(input), [input]);
+  const omniboxMentionToken = omniboxMention
+    ? `${omniboxMention.start}:${omniboxMention.end}:${omniboxMention.query}`
+    : null;
+  const isOmniboxDismissed =
+    omniboxMentionToken !== null && omniboxMentionToken === dismissedOmniboxToken;
+  const isOmniboxQueryEnabled = !!omniboxMention && !isStreaming && !isOmniboxDismissed;
+  const omniboxSearch = useQuery({
+    queryKey: ["chat-omnibox", omniboxMention?.query ?? ""],
+    queryFn: () => searchChatOmnibox(omniboxMention?.query ?? "", 8),
+    enabled: isOmniboxQueryEnabled,
     staleTime: 30_000,
   });
 
-  const zettelMentionRows = useMemo<ZettelMentionRow[]>(() => {
-    const response = zettelMentionSearch.data;
-    if (!response || !zettelMention) return [];
-    const selectedIds = new Set(attachedZettels.map((zettel) => zettel.id));
-    const textRows = response.text_matches.map((row) => ({ ...row, kind: "text" as const }));
-    const aiRows = response.ai_suggestions.map((row) => ({ ...row, kind: "ai" as const }));
-    return [...textRows, ...aiRows].filter((row) => !selectedIds.has(row.id)).slice(0, 6);
-  }, [attachedZettels, zettelMention, zettelMentionSearch.data]);
+  const omniboxRows = useMemo<OmniboxResult[]>(() => {
+    const response = omniboxSearch.data;
+    if (!response || !omniboxMention || isOmniboxDismissed) return [];
+    const selectedContext = new Set(attachedContext.map(chatContextKey));
+    return response.results
+      .filter((row) => row.kind === "action" || !selectedContext.has(chatContextKey(row)))
+      .slice(0, 8);
+  }, [attachedContext, isOmniboxDismissed, omniboxMention, omniboxSearch.data]);
 
   const commentsByMessageId = useMemo(
     () => parseResponseComments(responseCommentsRaw),
     [responseCommentsRaw],
   );
 
-  const handleAttachZettel = useCallback(
-    async (row: ZettelMentionRow) => {
-      if (!zettelMention) return;
+  const handleInputChange = useCallback((value: string) => {
+    setInput(value);
+    setDismissedOmniboxToken(null);
+  }, []);
 
-      const card = await queryClient.fetchQuery({
-        queryKey: ["zettels", "card", row.id],
-        queryFn: () => getZettelCard(row.id),
+  const handleSelectOmniboxResult = useCallback(
+    async (row: OmniboxResult) => {
+      if (!omniboxMention) return;
+      const selectedMention = omniboxMention;
+
+      if (row.kind === "action") {
+        const instruction =
+          row.action === "search_all"
+            ? `Search all knowledge for ${row.query}`
+            : `Create a card from ${row.query}`;
+
+        setInput((current) =>
+          [removeMentionTokenIfCurrent(current, selectedMention), instruction]
+            .filter(Boolean)
+            .join(" "),
+        );
+        setDismissedOmniboxToken(null);
+        requestAnimationFrame(() => inputRef.current?.focus());
+        return;
+      }
+
+      if (row.kind === "zettel") {
+        const card = await queryClient.fetchQuery({
+          queryKey: ["zettels", "card", "raw", row.id],
+          queryFn: () => getZettelCard(row.id),
+          staleTime: 60_000,
+        });
+
+        setAttachedContext((current) =>
+          current.some((context) => context.kind === "zettel" && context.id === card.id)
+            ? current
+            : [
+                ...current,
+                {
+                  kind: "zettel",
+                  id: card.id,
+                  title: card.title,
+                  content: card.content,
+                  summary: card.summary,
+                  topic: card.topic,
+                  tags: card.tags,
+                },
+            ],
+        );
+        setInput((current) => removeMentionTokenIfCurrent(current, selectedMention));
+        setDismissedOmniboxToken(null);
+        requestAnimationFrame(() => inputRef.current?.focus());
+        return;
+      }
+
+      const document = await queryClient.fetchQuery({
+        queryKey: ["documents", "details", row.id],
+        queryFn: () => getDocumentDetails(row.id),
         staleTime: 60_000,
       });
 
-      setAttachedZettels((current) =>
-        current.some((zettel) => zettel.id === card.id)
+      setAttachedContext((current) =>
+        current.some((context) => context.kind === "document" && context.id === document.id)
           ? current
           : [
               ...current,
               {
-                id: card.id,
-                title: card.title,
-                content: card.content,
-                summary: card.summary,
-                topic: card.topic,
-                tags: card.tags,
+                kind: "document",
+                id: document.id,
+                title: document.title ?? row.title,
+                cleanedText: document.cleaned_text,
+                summary: document.summary ?? null,
+                sourceUrl: document.source_url ?? document.canonical_url ?? null,
+                topics: document.topics ?? null,
               },
             ],
       );
-      setInput((current) => removeMentionToken(current, zettelMention));
+      setInput((current) => removeMentionTokenIfCurrent(current, selectedMention));
+      setDismissedOmniboxToken(null);
       requestAnimationFrame(() => inputRef.current?.focus());
     },
-    [queryClient, zettelMention],
+    [omniboxMention, queryClient],
   );
 
-  const handleRemoveAttachedZettel = useCallback((zettelId: number) => {
-    setAttachedZettels((current) => current.filter((zettel) => zettel.id !== zettelId));
+  const handleCloseOmnibox = useCallback(() => {
+    if (omniboxMentionToken) setDismissedOmniboxToken(omniboxMentionToken);
+  }, [omniboxMentionToken]);
+
+  const handleRemoveAttachedContext = useCallback((contextKey: string) => {
+    setAttachedContext((current) =>
+      current.filter((context) => chatContextKey(context) !== contextKey),
+    );
   }, []);
 
   // Load threads on mount/open
@@ -360,14 +465,15 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
     if (!text) return;
 
     setInput("");
-    setAttachedZettels([]);
+    setAttachedContext([]);
+    setDismissedOmniboxToken(null);
     scrollToBottom("smooth");
 
     if (!activeThreadId) {
       await createThread(text.slice(0, 60));
     }
-    await sendMessage(buildZettelContextPrompt(text, attachedZettels), { displayText: text });
-  }, [input, activeThreadId, attachedZettels, createThread, scrollToBottom, sendMessage]);
+    await sendMessage(buildChatContextPrompt(text, attachedContext), { displayText: text });
+  }, [input, activeThreadId, attachedContext, createThread, scrollToBottom, sendMessage]);
 
   const handleAddResponseComment = useCallback(
     (messageId: string, body: string, target: ResponseCommentTarget) => {
@@ -533,7 +639,7 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
                 title={emptyTitle}
                 description={
                   !isSidebar
-                    ? "Ask anything. Alfred can search your knowledge, research the web, create cards, run quizzes, find connections, and just chat."
+                    ? "Ask anything. Polymath can search your knowledge, research the web, create cards, run quizzes, find connections, and just chat."
                     : undefined
                 }
                 suggestions={suggestions}
@@ -609,16 +715,18 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
           <SidebarInput
             ref={inputRef}
             input={input}
-            setInput={setInput}
+            setInput={handleInputChange}
             isStreaming={isStreaming}
             activeModel={activeModel}
             isOnNotes={!!isOnNotes}
             noteContext={noteContext}
-            attachedZettels={attachedZettels}
-            mentionRows={zettelMentionRows}
-            isMentionLoading={zettelMentionSearch.isFetching}
-            onAttachZettel={handleAttachZettel}
-            onRemoveAttachedZettel={handleRemoveAttachedZettel}
+            attachedContext={attachedContext}
+            omniboxRows={omniboxRows}
+            isOmniboxOpen={isOmniboxQueryEnabled}
+            isOmniboxLoading={isOmniboxQueryEnabled && omniboxSearch.isFetching}
+            onSelectOmniboxResult={handleSelectOmniboxResult}
+            onCloseOmnibox={handleCloseOmnibox}
+            onRemoveAttachedContext={handleRemoveAttachedContext}
             showSettings={showSettings}
             onToggleSettings={() => setShowSettings(!showSettings)}
             onSend={handleSend}
@@ -630,14 +738,16 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
           <ExpandedInput
             ref={inputRef}
             input={input}
-            setInput={setInput}
+            setInput={handleInputChange}
             isStreaming={isStreaming}
             activeModel={activeModel}
-            attachedZettels={attachedZettels}
-            mentionRows={zettelMentionRows}
-            isMentionLoading={zettelMentionSearch.isFetching}
-            onAttachZettel={handleAttachZettel}
-            onRemoveAttachedZettel={handleRemoveAttachedZettel}
+            attachedContext={attachedContext}
+            omniboxRows={omniboxRows}
+            isOmniboxOpen={isOmniboxQueryEnabled}
+            isOmniboxLoading={isOmniboxQueryEnabled && omniboxSearch.isFetching}
+            onSelectOmniboxResult={handleSelectOmniboxResult}
+            onCloseOmnibox={handleCloseOmnibox}
+            onRemoveAttachedContext={handleRemoveAttachedContext}
             showSettings={showSettings}
             onToggleSettings={() => setShowSettings(!showSettings)}
             onSend={handleSend}
@@ -677,7 +787,7 @@ function SidebarHeader({
           onClick={() => setShowThreads(!showThreads)}
           className="hover:text-foreground flex items-center gap-1 text-xs tracking-wider uppercase transition-colors"
         >
-          Alfred AI
+          Polymath AI
           <ChevronDown
             className={cn(
               "text-muted-foreground size-3 transition-transform",
@@ -737,7 +847,7 @@ function ExpandedHeader({
         className="hover:bg-secondary flex items-center gap-2 rounded-md px-2 py-1 transition-colors"
       >
         <span className="text-[10px] font-medium tracking-wider text-[var(--alfred-text-tertiary)] uppercase">
-          Alfred AI
+          Polymath AI
         </span>
         {activeThread && (
           <>
@@ -850,12 +960,14 @@ type InputProps = {
   setInput: (v: string) => void;
   isStreaming: boolean;
   activeModel: string;
-  attachedZettels: AttachedZettelContext[];
-  mentionRows: ZettelMentionRow[];
-  isMentionLoading: boolean;
+  attachedContext: AttachedChatContext[];
+  omniboxRows: OmniboxResult[];
+  isOmniboxOpen: boolean;
+  isOmniboxLoading: boolean;
   showSettings: boolean;
-  onAttachZettel: (row: ZettelMentionRow) => void | Promise<void>;
-  onRemoveAttachedZettel: (zettelId: number) => void;
+  onSelectOmniboxResult: (row: OmniboxResult) => void | Promise<void>;
+  onCloseOmnibox: () => void;
+  onRemoveAttachedContext: (contextKey: string) => void;
   onToggleSettings: () => void;
   onSend: () => void;
   onCancel: () => void;
@@ -873,29 +985,34 @@ const MODEL_OPTIONS = [
   { value: "o4-mini", label: "o4-mini" },
 ];
 
-function ZettelContextChips({
-  attachedZettels,
+function ChatContextChips({
+  attachedContext,
   onRemove,
 }: {
-  attachedZettels: AttachedZettelContext[];
-  onRemove: (zettelId: number) => void;
+  attachedContext: AttachedChatContext[];
+  onRemove: (contextKey: string) => void;
 }) {
-  if (attachedZettels.length === 0) return null;
+  if (attachedContext.length === 0) return null;
 
   return (
     <div className="mb-2 flex flex-wrap gap-1.5">
-      {attachedZettels.map((zettel) => (
+      {attachedContext.map((context) => (
         <span
-          key={zettel.id}
+          key={chatContextKey(context)}
           className="inline-flex max-w-full items-center gap-1.5 rounded-sm border border-[var(--border-strong)] bg-[var(--alfred-accent-subtle)] px-2 py-1 text-[11px] text-foreground"
         >
-          <AtSign className="text-primary size-3 shrink-0" />
-          <span className="truncate">@{zettel.title}</span>
+          {context.kind === "zettel" ? (
+            <AtSign className="text-primary size-3 shrink-0" />
+          ) : (
+            <FileText className="text-primary size-3 shrink-0" />
+          )}
+          <span className="text-[var(--alfred-text-tertiary)]">{context.kind}</span>
+          <span className="truncate">{context.title}</span>
           <button
             type="button"
-            onClick={() => onRemove(zettel.id)}
+            onClick={() => onRemove(chatContextKey(context))}
             className="text-muted-foreground hover:text-foreground"
-            aria-label={`Remove ${zettel.title} context`}
+            aria-label={`Remove ${context.title} context`}
           >
             <X className="size-3" />
           </button>
@@ -905,39 +1022,67 @@ function ZettelContextChips({
   );
 }
 
-function ZettelMentionPicker({
+function OmniboxIcon({ row }: { row: OmniboxResult }) {
+  if (row.kind === "document") return <FileText className="text-primary size-3 shrink-0" />;
+  if (row.kind === "action") return <Search className="text-primary size-3 shrink-0" />;
+  return <AtSign className="text-primary size-3 shrink-0" />;
+}
+
+function omniboxRowMeta(row: OmniboxResult): string {
+  if (row.kind === "action") return row.description;
+
+  return [
+    row.kind,
+    row.topic,
+    row.tags?.length ? row.tags.slice(0, 3).join(", ") : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function OmniboxPicker({
   rows,
   loading,
+  open,
   onSelect,
 }: {
-  rows: ZettelMentionRow[];
+  rows: OmniboxResult[];
   loading: boolean;
-  onSelect: (row: ZettelMentionRow) => void | Promise<void>;
+  open: boolean;
+  onSelect: (row: OmniboxResult) => void | Promise<void>;
 }) {
-  if (!loading && rows.length === 0) return null;
+  if (!open || (!loading && rows.length === 0)) return null;
 
   return (
-    <div className="bg-popover absolute right-0 bottom-full left-0 z-50 mb-2 max-h-56 overflow-y-auto rounded-md border border-[var(--border-strong)] shadow-lg">
+    <div
+      id="polymath-omnibox-listbox"
+      role="listbox"
+      aria-label="Polymath context search"
+      className="bg-popover absolute right-0 bottom-full left-0 z-50 mb-2 max-h-56 overflow-y-auto rounded-md border border-[var(--border-strong)] shadow-lg"
+    >
       {loading && rows.length === 0 ? (
         <div className="text-muted-foreground flex items-center gap-2 px-3 py-2 text-xs">
           <Loader2 className="size-3 animate-spin" />
-          Searching zettels
+          Searching Polymath
         </div>
       ) : (
         rows.map((row) => (
           <button
             key={`${row.kind}-${row.id}`}
+            id={`polymath-omnibox-option-${row.kind}-${row.id}`}
             type="button"
+            role="option"
+            aria-selected={false}
+            aria-label={`${row.title} ${row.kind}`}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onSelect(row)}
             className="hover:bg-secondary flex w-full items-center gap-2 px-3 py-2 text-left transition-colors"
           >
-            <AtSign className="text-primary size-3 shrink-0" />
+            <OmniboxIcon row={row} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-xs text-foreground">{row.title}</span>
               <span className="text-muted-foreground block truncate text-[10px]">
-                {row.topic ?? "zettel"}
-                {row.tags?.length ? ` · ${row.tags.slice(0, 3).join(", ")}` : ""}
+                {omniboxRowMeta(row)}
               </span>
             </span>
           </button>
@@ -961,23 +1106,30 @@ const SidebarInput = forwardRef<
     activeModel,
     isOnNotes,
     noteContext,
-    attachedZettels,
-    mentionRows,
-    isMentionLoading,
+    attachedContext,
+    omniboxRows,
+    isOmniboxOpen,
+    isOmniboxLoading,
     onSend,
     onCancel,
     onKeyDown,
-    onAttachZettel,
-    onRemoveAttachedZettel,
+    onSelectOmniboxResult,
+    onCloseOmnibox,
+    onRemoveAttachedContext,
     onModelChange,
     onToggleSettings,
   },
   ref,
 ) {
   const handleInputKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === "Enter" && !event.shiftKey && mentionRows.length > 0) {
+    if (event.key === "Escape" && isOmniboxOpen) {
       event.preventDefault();
-      void onAttachZettel(mentionRows[0]);
+      onCloseOmnibox();
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey && isOmniboxOpen && omniboxRows.length > 0) {
+      event.preventDefault();
+      void onSelectOmniboxResult(omniboxRows[0]);
       return;
     }
     onKeyDown(event);
@@ -985,21 +1137,27 @@ const SidebarInput = forwardRef<
 
   return (
     <div className="border-t p-3">
-      <ZettelContextChips
-        attachedZettels={attachedZettels}
-        onRemove={onRemoveAttachedZettel}
+      <ChatContextChips
+        attachedContext={attachedContext}
+        onRemove={onRemoveAttachedContext}
       />
       <div className="relative flex gap-2">
-        <ZettelMentionPicker
-          rows={mentionRows}
-          loading={isMentionLoading}
-          onSelect={onAttachZettel}
+        <OmniboxPicker
+          rows={omniboxRows}
+          loading={isOmniboxLoading}
+          open={isOmniboxOpen}
+          onSelect={onSelectOmniboxResult}
         />
         <textarea
           ref={ref}
+          role="combobox"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleInputKeyDown}
+          aria-autocomplete="list"
+          aria-controls={isOmniboxOpen ? "polymath-omnibox-listbox" : undefined}
+          aria-expanded={isOmniboxOpen}
+          aria-haspopup="listbox"
           placeholder={
             isOnNotes && noteContext
               ? `Ask about ${noteContext.title}...`
@@ -1064,23 +1222,30 @@ const ExpandedInput = forwardRef<HTMLTextAreaElement, InputProps>(function Expan
     setInput,
     isStreaming,
     activeModel,
-    attachedZettels,
-    mentionRows,
-    isMentionLoading,
+    attachedContext,
+    omniboxRows,
+    isOmniboxOpen,
+    isOmniboxLoading,
     onSend,
     onCancel,
     onKeyDown,
-    onAttachZettel,
-    onRemoveAttachedZettel,
+    onSelectOmniboxResult,
+    onCloseOmnibox,
+    onRemoveAttachedContext,
     onModelChange,
     onToggleSettings,
   },
   ref,
 ) {
   const handleInputKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === "Enter" && !event.shiftKey && mentionRows.length > 0) {
+    if (event.key === "Escape" && isOmniboxOpen) {
       event.preventDefault();
-      void onAttachZettel(mentionRows[0]);
+      onCloseOmnibox();
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey && isOmniboxOpen && omniboxRows.length > 0) {
+      event.preventDefault();
+      void onSelectOmniboxResult(omniboxRows[0]);
       return;
     }
     onKeyDown(event);
@@ -1089,21 +1254,27 @@ const ExpandedInput = forwardRef<HTMLTextAreaElement, InputProps>(function Expan
   return (
     <div className="border-t">
       <div className="mx-auto max-w-3xl px-6 py-4">
-        <ZettelContextChips
-          attachedZettels={attachedZettels}
-          onRemove={onRemoveAttachedZettel}
+        <ChatContextChips
+          attachedContext={attachedContext}
+          onRemove={onRemoveAttachedContext}
         />
         <div className="bg-card focus-within:border-primary relative flex items-end gap-0 rounded-xl border shadow-sm transition-colors">
-          <ZettelMentionPicker
-            rows={mentionRows}
-            loading={isMentionLoading}
-            onSelect={onAttachZettel}
+          <OmniboxPicker
+            rows={omniboxRows}
+            loading={isOmniboxLoading}
+            open={isOmniboxOpen}
+            onSelect={onSelectOmniboxResult}
           />
           <textarea
             ref={ref}
+            role="combobox"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleInputKeyDown}
+            aria-autocomplete="list"
+            aria-controls={isOmniboxOpen ? "polymath-omnibox-listbox" : undefined}
+            aria-expanded={isOmniboxOpen}
+            aria-haspopup="listbox"
             placeholder="Do anything with AI..."
             rows={1}
             className="placeholder:text-muted-foreground flex-1 resize-none bg-transparent px-4 py-3 text-sm outline-none"

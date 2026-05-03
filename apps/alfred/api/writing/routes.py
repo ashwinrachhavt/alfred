@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Iterator
 
 from fastapi import APIRouter, Header, HTTPException
 from starlette.responses import StreamingResponse
 
+from alfred.core.settings import settings
 from alfred.schemas.writing import WritingPreset, WritingRequest, WritingResponse
 from alfred.services.writing_service import list_writing_presets, write, write_stream
 
@@ -20,7 +20,8 @@ def _require_extension_token(x_alfred_token: str | None) -> None:
     If ALFRED_EXTENSION_TOKEN is set, clients must send `X-Alfred-Token`.
     """
 
-    expected = (os.getenv("ALFRED_EXTENSION_TOKEN") or "").strip()
+    token = settings.alfred_extension_token
+    expected = token.get_secret_value().strip() if token else ""
     if not expected:
         return
     got = (x_alfred_token or "").strip()

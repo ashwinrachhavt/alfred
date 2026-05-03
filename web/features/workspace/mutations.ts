@@ -28,7 +28,9 @@ export function useEndSession() {
     mutationFn: (id) => endSession(id),
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ["workspace", "session", id] });
-      qc.invalidateQueries({ queryKey: ["zettels"] });
+      qc.invalidateQueries({ queryKey: ["zettels", "cards"] });
+      qc.invalidateQueries({ queryKey: ["zettels", "count"] });
+      qc.invalidateQueries({ queryKey: ["zettels", "graph"] });
     },
   });
 }
@@ -62,7 +64,11 @@ export function useBulkFromDecomposition() {
           queryKey: ["workspace", "session", body.session_id],
         });
       }
-      qc.invalidateQueries({ queryKey: ["zettels"] });
+      qc.invalidateQueries({ queryKey: ["zettels", "cards"] });
+      qc.invalidateQueries({ queryKey: ["zettels", "count"] });
+      qc.invalidateQueries({ queryKey: ["zettels", "graph"] });
+      qc.invalidateQueries({ queryKey: ["zettel-topics"] });
+      qc.invalidateQueries({ queryKey: ["zettel-tags"] });
     },
   });
 }

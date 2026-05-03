@@ -8,6 +8,28 @@ import type {
   GraphNode,
   GraphEdge,
 } from "@/features/universe/queries";
+
+/**
+ * Minimal shape of three.js OrbitControls (no types shipped with our install).
+ * We only touch the properties used in this component.
+ */
+type OrbitControlsLike = {
+  enableDamping: boolean;
+  dampingFactor: number;
+  rotateSpeed: number;
+  zoomSpeed: number;
+  panSpeed: number;
+  autoRotate: boolean;
+  autoRotateSpeed: number;
+  minDistance: number;
+  maxDistance: number;
+  target: THREE.Vector3;
+  update: () => void;
+} | null | undefined;
+
+function asOrbitControls(controls: unknown): OrbitControlsLike {
+  return controls as OrbitControlsLike;
+}
 import { useUniverseStore } from "@/lib/stores/universe-store";
 import { CardPreviewOverlay } from "./card-preview-overlay";
 import { UniverseControls } from "./universe-controls";
@@ -124,11 +146,11 @@ export function KnowledgeUniverse({ data }: Props) {
   /** Pause auto-rotate during interaction, resume after idle. */
   const autoRotateTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pauseAutoRotate = useCallback(() => {
-    const controls = fgRef.current?.controls() as any;
+    const controls = asOrbitControls(fgRef.current?.controls());
     if (controls) controls.autoRotate = false;
     clearTimeout(autoRotateTimerRef.current);
     autoRotateTimerRef.current = setTimeout(() => {
-      const c = fgRef.current?.controls() as any;
+      const c = asOrbitControls(fgRef.current?.controls());
       if (c) c.autoRotate = true;
     }, 8000); // Resume after 8s idle
   }, []);
@@ -281,7 +303,7 @@ export function KnowledgeUniverse({ data }: Props) {
     const fg = fgRef.current;
 
     // Smooth orbit controls — low damping for long, momentum-like glide
-    const controls = fg.controls() as any;
+    const controls = asOrbitControls(fg.controls());
     if (controls) {
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
@@ -534,7 +556,7 @@ export function KnowledgeUniverse({ data }: Props) {
 
     function tick() {
       const fg = fgRef.current;
-      const controls = fg?.controls() as any;
+      const controls = asOrbitControls(fg?.controls());
 
       if (fg && controls?.target) {
         // Accumulate velocity from held keys
@@ -596,7 +618,7 @@ export function KnowledgeUniverse({ data }: Props) {
         if (hasActiveMotion && !moving) {
           hasActiveMotion = false;
           autoRotateTimerRef.current = setTimeout(() => {
-            const c = fgRef.current?.controls() as any;
+            const c = asOrbitControls(fgRef.current?.controls());
             if (c) c.autoRotate = true;
           }, 5000);
         }
@@ -672,7 +694,7 @@ export function KnowledgeUniverse({ data }: Props) {
   /*  Node rendering — cached meshes, shared geometry                  */
   /* ---------------------------------------------------------------- */
   const nodeThreeObject = useCallback(
-    (node: any) => {
+    (node: GraphNode) => {
       const gn = node as GraphNode & { x?: number; y?: number; z?: number };
       const cache = meshCacheRef.current;
 
@@ -704,31 +726,27 @@ export function KnowledgeUniverse({ data }: Props) {
   /* ---------------------------------------------------------------- */
   /*  Wormhole edge styling                                            */
   /* ---------------------------------------------------------------- */
-  const linkColor = useCallback((link: any) => {
-    const edge = link as GraphEdge;
-    if (edge.type === "auto_high") return "#FFAA33";
-    if (edge.type === "ai-suggested") return "#E8590C";
+  const linkColor = useCallback((link: GraphEdge) => {
+    if (link.type === "auto_high") return "#FFAA33";
+    if (link.type === "ai-suggested") return "#E8590C";
     return "#ffffff20";
   }, []);
 
-  const linkWidth = useCallback((link: any) => {
-    const edge = link as GraphEdge;
-    if (edge.type === "auto_high") return 2;
-    if (edge.type === "ai-suggested") return 1.5;
+  const linkWidth = useCallback((link: GraphEdge) => {
+    if (link.type === "auto_high") return 2;
+    if (link.type === "ai-suggested") return 1.5;
     return 0.4;
   }, []);
 
-  const linkParticles = useCallback((link: any) => {
-    const edge = link as GraphEdge;
-    if (edge.type === "auto_high") return 4;
-    if (edge.type === "ai-suggested") return 3;
+  const linkParticles = useCallback((link: GraphEdge) => {
+    if (link.type === "auto_high") return 4;
+    if (link.type === "ai-suggested") return 3;
     return 0;
   }, []);
 
-  const linkParticleWidth = useCallback((link: any) => {
-    const edge = link as GraphEdge;
-    if (edge.type === "auto_high") return 2;
-    if (edge.type === "ai-suggested") return 1.5;
+  const linkParticleWidth = useCallback((link: GraphEdge) => {
+    if (link.type === "auto_high") return 2;
+    if (link.type === "ai-suggested") return 1.5;
     return 0;
   }, []);
 
@@ -736,7 +754,7 @@ export function KnowledgeUniverse({ data }: Props) {
   /*  Hover glow — brighten + scale on hover for instant feedback      */
   /* ---------------------------------------------------------------- */
   const handleNodeHover = useCallback(
-    (node: any) => {
+    (node: GraphNode | null) => {
       const newId = node?.id ?? null;
       const prevId = hoveredIdRef.current;
       if (newId === prevId) return;
@@ -816,7 +834,7 @@ export function KnowledgeUniverse({ data }: Props) {
 
   // Click handler — select + fly-to; double-click for close-up
   const handleNodeClick = useCallback(
-    (node: any, event: MouseEvent) => {
+    (node: GraphNode, event: MouseEvent) => {
       playClickSound();
       const now = Date.now();
       const last = lastClickRef.current;
@@ -831,13 +849,9 @@ export function KnowledgeUniverse({ data }: Props) {
       clearSelection();
       selectNode(node.id);
 
-      if (isDoubleClick) {
-        // Close-up zoom on double-click
-        flyToNode(node as PositionedGraphNode, 35, 400);
-      } else {
-        // Gentle fly-to on single click
-        flyToNode(node as PositionedGraphNode, 80, 600);
-      }
+      const distance = isDoubleClick ? 35 : 80;
+      const duration = isDoubleClick ? 400 : 600;
+      flyToNode(node as PositionedGraphNode, distance, duration);
     },
     [selectNode, clearSelection, playClickSound, flyToNode],
   );
@@ -858,8 +872,12 @@ export function KnowledgeUniverse({ data }: Props) {
     }
 
     const nodeIds = new Set(filteredNodes.map((n) => n.id));
+    // force-graph hydrates source/target into node objects after first render;
+    // accept either a raw id or a resolved node and read .id off it.
+    const endpointId = (ref: number | { id: number }): number =>
+      typeof ref === "number" ? ref : ref.id;
     const filteredEdges = data.edges.filter(
-      (e) => nodeIds.has(e.source as any) && nodeIds.has(e.target as any),
+      (e) => nodeIds.has(endpointId(e.source)) && nodeIds.has(endpointId(e.target)),
     );
 
     // Prune mesh cache for nodes no longer in the graph
@@ -886,13 +904,13 @@ export function KnowledgeUniverse({ data }: Props) {
   /* ---------------------------------------------------------------- */
   if (isHugeGraph) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 bg-[#0F0E0D]">
+      <div className="flex h-full flex-col items-center justify-center gap-4 bg-[var(--alfred-scene-bg)]">
         <p className="font-sans text-sm text-white/60">
           Too many cards ({data.nodes.length}) for the 3D view.
         </p>
         <a
           href="/knowledge"
-          className="rounded-md bg-[#E8590C] px-4 py-2 font-sans text-sm text-white"
+          className="rounded-md bg-primary px-4 py-2 font-sans text-sm text-primary-foreground"
         >
           View in Knowledge Hub
         </a>
@@ -913,8 +931,8 @@ export function KnowledgeUniverse({ data }: Props) {
 
       {/* Time-lapse date display */}
       {timeLapseDate && (
-        <div className="absolute left-1/2 top-14 z-20 -translate-x-1/2 rounded-full border border-[#E8590C]/30 bg-black/60 px-4 py-1.5 backdrop-blur-sm">
-          <span className="font-mono text-sm text-[#E8590C]">
+        <div className="absolute left-1/2 top-14 z-20 -translate-x-1/2 rounded-full border border-primary/30 bg-black/60 px-4 py-1.5 backdrop-blur-sm">
+          <span className="font-mono text-sm text-primary">
             {timeLapseDate.toLocaleDateString("en-US", {
               year: "numeric",
               month: "short",
@@ -938,7 +956,7 @@ export function KnowledgeUniverse({ data }: Props) {
         onNodeClick={handleNodeClick}
         onNodeHover={handleNodeHover}
         onBackgroundClick={clearSelection}
-        nodeLabel={(node: any) =>
+        nodeLabel={(node: GraphNode) =>
           `${node.title} (${node.degree} connections)`
         }
         linkColor={linkColor}

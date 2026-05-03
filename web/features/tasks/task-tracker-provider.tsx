@@ -20,28 +20,38 @@ import {
 
 import { isRecord } from "@/lib/utils";
 
-type TaskTrackerContextValue = {
+type TaskTrackerActions = {
+ trackTask: (task: Omit<TrackedTask, "createdAt"> & { createdAt?: string }) => void;
+ removeTask: (taskId: string) => void;
+ clearCompleted: () => void;
+ setTaskCenterOpen: (open: boolean) => void;
+};
+
+type TaskTrackerState = {
  tasks: TrackedTask[];
  statusById: Record<string, TaskStatusResponse | undefined>;
  activeCount: number;
  isOnline: boolean;
  isTaskCenterOpen: boolean;
- setTaskCenterOpen: (open: boolean) => void;
- trackTask: (task: Omit<TrackedTask, "createdAt"> & { createdAt?: string }) => void;
- removeTask: (taskId: string) => void;
- clearCompleted: () => void;
 };
 
-const TaskTrackerContext = React.createContext<TaskTrackerContextValue | null>(null);
+const ActionsContext = React.createContext<TaskTrackerActions | null>(null);
+const StateContext = React.createContext<TaskTrackerState | null>(null);
 
-function useTaskTrackerContext(): TaskTrackerContextValue {
- const ctx = React.useContext(TaskTrackerContext);
+function useActions(): TaskTrackerActions {
+ const ctx = React.useContext(ActionsContext);
+ if (!ctx) throw new Error("useTaskTracker must be used within TaskTrackerProvider.");
+ return ctx;
+}
+
+function useState(): TaskTrackerState {
+ const ctx = React.useContext(StateContext);
  if (!ctx) throw new Error("useTaskTracker must be used within TaskTrackerProvider.");
  return ctx;
 }
 
 function defaultTaskHref(taskId: string): string {
- return`/tasks?taskId=${encodeURIComponent(taskId)}`;
+ return `/tasks?taskId=${encodeURIComponent(taskId)}`;
 }
 
 function withDefaultHref(task: TrackedTask): TrackedTask {
@@ -87,7 +97,7 @@ function deriveTaskHref(task: TrackedTask, status: TaskStatusResponse | undefine
 
  const reportId = extractCompanyResearchReportId(status.result);
  if (!reportId) return null;
- return`/research?reportId=${encodeURIComponent(reportId)}`;
+ return `/research?reportId=${encodeURIComponent(reportId)}`;
 }
 
 function deriveTaskLabel(task: TrackedTask, status: TaskStatusResponse | undefined): string | null {
@@ -97,16 +107,14 @@ function deriveTaskLabel(task: TrackedTask, status: TaskStatusResponse | undefin
 
  const company = extractCompanyResearchCompanyName(status.result);
  if (!company) return null;
- return`Deep research: ${company}`;
+ return `Deep research: ${company}`;
 }
 
 function mergeTask(existing: TrackedTask, next: TrackedTask): TrackedTask {
  return {
  ...existing,
  ...next,
- // Preserve creation time for stable ordering.
  createdAt: existing.createdAt,
- // Preserve status if the next task doesn't include it.
  lastStatus: next.lastStatus ?? existing.lastStatus,
  };
 }
@@ -168,8 +176,11 @@ export function TaskTrackerProvider({ children }: { children: React.ReactNode })
  };
  }, []);
 
- const taskQueries = useQueries({
- queries: tasks.map((task) => ({
+ // Memoize the queries array so useQueries doesn't restart polls on unrelated re-renders.
+ // The identity of each query definition only changes when its taskId changes.
+ const queryDefs = React.useMemo(
+ () =>
+ tasks.map((task) => ({
  queryKey: ["tasks", "status", task.id] as const,
  queryFn: () => getTaskStatus(task.id),
  enabled: isOnline,
@@ -180,9 +191,12 @@ export function TaskTrackerProvider({ children }: { children: React.ReactNode })
  return Math.min(2000 * Math.pow(2, Math.min(fetchCount, 4)), 30_000);
  },
  retry: 1,
- staleTime: 0,
+ staleTime: 5_000,
  })),
- });
+ [tasks, isOnline],
+ );
+
+ const taskQueries = useQueries({ queries: queryDefs });
 
  const statusById = React.useMemo(() => {
  const map: Record<string, TaskStatusResponse | undefined> = {};
@@ -247,9 +261,15 @@ export function TaskTrackerProvider({ children }: { children: React.ReactNode })
  [persistTasks],
  );
 
+ // Keep a live ref of statusById so clearCompleted stays stable.
+ const statusByIdRef = React.useRef(statusById);
+ React.useEffect(() => {
+ statusByIdRef.current = statusById;
+ }, [statusById]);
+
  const clearCompleted = React.useCallback(() => {
- persistTasks((prev) => prev.filter((task) => !statusById[task.id]?.ready));
- }, [persistTasks, statusById]);
+ persistTasks((prev) => prev.filter((task) => !statusByIdRef.current[task.id]?.ready));
+ }, [persistTasks]);
 
  React.useEffect(() => {
  const patches: Record<string, Partial<TrackedTask>> = {};
@@ -321,38 +341,42 @@ export function TaskTrackerProvider({ children }: { children: React.ReactNode })
  notifiedRef.current.add(task.id);
  saveNotifiedTaskIds(notifiedRef.current);
 
- // Persist last known status for offline display without re-rendering.
  saveTrackedTasks(tasks.map((t) => (t.id === task.id ? { ...t, lastStatus: status } : t)));
  });
  }, [router, statusById, tasks]);
 
- const value = React.useMemo<TaskTrackerContextValue>(
- () => ({
- tasks,
- statusById,
- activeCount,
- isOnline,
- isTaskCenterOpen,
- setTaskCenterOpen,
- trackTask,
- removeTask,
- clearCompleted,
- }),
- [
- activeCount,
- clearCompleted,
- isOnline,
- isTaskCenterOpen,
- removeTask,
- statusById,
- tasks,
- trackTask,
- ],
+ // Actions are stable — never changes after mount, so consumers that only use actions never re-render.
+ const actions = React.useMemo<TaskTrackerActions>(
+ () => ({ trackTask, removeTask, clearCompleted, setTaskCenterOpen }),
+ [trackTask, removeTask, clearCompleted],
  );
 
- return <TaskTrackerContext.Provider value={value}>{children}</TaskTrackerContext.Provider>;
+ const state = React.useMemo<TaskTrackerState>(
+ () => ({ tasks, statusById, activeCount, isOnline, isTaskCenterOpen }),
+ [tasks, statusById, activeCount, isOnline, isTaskCenterOpen],
+ );
+
+ return (
+ <ActionsContext.Provider value={actions}>
+ <StateContext.Provider value={state}>{children}</StateContext.Provider>
+ </ActionsContext.Provider>
+ );
 }
 
+export function useTaskTrackerActions(): TaskTrackerActions {
+ return useActions();
+}
+
+export function useTaskTrackerState(): TaskTrackerState {
+ return useState();
+}
+
+/**
+ * Backwards-compatible combined hook. Prefer useTaskTrackerActions or
+ * useTaskTrackerState where possible to avoid unnecessary re-renders.
+ */
 export function useTaskTracker() {
- return useTaskTrackerContext();
+ const actions = useActions();
+ const state = useState();
+ return { ...state, ...actions };
 }
