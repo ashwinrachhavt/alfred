@@ -4,8 +4,6 @@ from __future__ import annotations
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 def _make_mock_card(card_id: int) -> MagicMock:
     """Create a mock ZettelCard with all attributes _quality needs."""
@@ -22,7 +20,9 @@ def _make_mock_card(card_id: int) -> MagicMock:
 
 
 def test_find_similar_cards_uses_qdrant_when_available():
-    """Qdrant primary path: query_points instead of full table scan."""
+    """Qdrant primary path: hits are batch-fetched from SQL via a single `id IN (...)`
+    query (no full-table scan, no per-hit session.get).
+    """
     from alfred.services.zettelkasten_service import ZettelkastenService
 
     session = MagicMock()
@@ -37,8 +37,14 @@ def test_find_similar_cards_uses_qdrant_when_available():
         return {1: mock_card, 2: mock_cand}.get(pk)
 
     session.get.side_effect = side_get
-    # _existing_links calls session.exec — return empty for links query
-    session.exec.return_value = iter([])
+
+    # session.exec is called twice: once by _existing_links (returns empty links),
+    # once by the batched candidate fetch (returns the hydrated candidate rows).
+    existing_links_result = MagicMock()
+    existing_links_result.__iter__ = lambda self: iter([])
+    candidates_result = MagicMock()
+    candidates_result.all.return_value = [mock_cand]
+    session.exec.side_effect = [existing_links_result, candidates_result]
 
     mock_qdrant = MagicMock()
     mock_hit = MagicMock()
@@ -50,11 +56,11 @@ def test_find_similar_cards_uses_qdrant_when_available():
         "alfred.services.zettelkasten_service.get_qdrant_client",
         return_value=mock_qdrant,
     ):
-        results = svc.find_similar_cards(1, threshold=0.5, limit=5)
+        svc.find_similar_cards(1, threshold=0.5, limit=5)
 
     mock_qdrant.query_points.assert_called_once()
-    # session.exec is called once by _existing_links, but NOT for the scan
-    assert session.exec.call_count == 1
+    # Two calls: _existing_links + batched candidate fetch (no per-hit session.get).
+    assert session.exec.call_count == 2
 
 
 def test_find_similar_cards_falls_back_without_qdrant():

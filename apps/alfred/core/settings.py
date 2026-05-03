@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
-from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
+from pydantic import AliasChoices, AnyHttpUrl, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Explicitly load .env from project root so Celery workers find it regardless of CWD
@@ -146,6 +146,18 @@ class Settings(BaseSettings):
     enable_gmail: bool = Field(default=False, alias="ENABLE_GMAIL")
     gmail_push_oidc_audience: str | None = Field(default=None, alias="GMAIL_PUSH_OIDC_AUDIENCE")
 
+    # Browser extension shared secret (optional — if set, /capture requires X-Alfred-Token).
+    alfred_extension_token: SecretStr | None = Field(
+        default=None, alias="ALFRED_EXTENSION_TOKEN"
+    )
+
+    # Test/dev switch to force deterministic writing output (no LLM call).
+    # Reads from either ALFRED_WRITING_STUB or ALFRED_WRITER_STUB for back-compat.
+    alfred_writing_stub: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("ALFRED_WRITING_STUB", "ALFRED_WRITER_STUB"),
+    )
+
     # Google Drive
     enable_google_drive: bool = Field(default=False, alias="ENABLE_GOOGLE_DRIVE")
 
@@ -197,6 +209,10 @@ class Settings(BaseSettings):
     # Connectors (misc)
     linear_api_key: SecretStr | None = Field(default=None, alias="LINEAR_API_KEY")
     slack_api_key: SecretStr | None = Field(default=None, alias="SLACK_API_KEY")
+    tavily_api_key: SecretStr | None = Field(default=None, alias="TAVILY_API_KEY")
+    brave_api_key: SecretStr | None = Field(default=None, alias="BRAVE_API_KEY")
+    wolfram_app_id: SecretStr | None = Field(default=None, alias="WOLFRAM_APP_ID")
+    exa_api_key: SecretStr | None = Field(default=None, alias="EXA_API_KEY")
 
     # Database
     database_url: str = Field(

@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from alfred.api.writing import router as writing_router
 from alfred.core.exceptions import register_exception_handlers
+from alfred.core.settings import settings
 
 
 def _enable_writing_stub(monkeypatch) -> None:
     # Ensure tests never hit external LLM/network calls even if local env has keys configured.
-    monkeypatch.setenv("ALFRED_WRITING_STUB", "1")
+    monkeypatch.setattr(settings, "alfred_writing_stub", True)
 
 
 def make_client() -> TestClient:
@@ -58,7 +60,7 @@ def test_writing_stream_is_sse_and_contains_events(monkeypatch) -> None:
 
 def test_writing_extension_token_is_enforced_when_configured(monkeypatch) -> None:
     _enable_writing_stub(monkeypatch)
-    monkeypatch.setenv("ALFRED_EXTENSION_TOKEN", "secret")
+    monkeypatch.setattr(settings, "alfred_extension_token", SecretStr("secret"))
     client = make_client()
     res = client.post("/api/writing/compose", json={"draft": "hello"})
     assert res.status_code == 401

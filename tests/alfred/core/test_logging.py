@@ -18,7 +18,10 @@ def test_setup_logging_numeric():
     assert logging.getLogger().getEffectiveLevel() == logging.DEBUG
 
 
-def test_setup_logging_from_env(monkeypatch):
-    monkeypatch.setenv("ALFRED_LOG_LEVEL", "WARNING")
-    setup_logging(None)  # resolve from env
+def test_setup_logging_from_settings(monkeypatch):
+    from alfred.core.settings import settings
+
+    monkeypatch.setattr(settings, "log_level", "WARNING")
+    monkeypatch.setattr(settings, "log_level_fallback", None)
+    setup_logging(None)  # resolve from settings
     assert logging.getLogger().getEffectiveLevel() == logging.WARNING

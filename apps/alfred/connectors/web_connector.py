@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -35,15 +34,9 @@ class SearchResponse:
     meta: dict[str, Any] | None = None
 
 
-def _env(key: str) -> str | None:
-    val = os.getenv(key)
-    return val.strip() if val and val.strip() else None
-
-
 def _resolve_searx_host() -> str | None:
-    return (
-        _env("SEARXNG_HOST") or _env("SEARX_HOST") or settings.searxng_host or settings.searx_host
-    )
+    host = (settings.searxng_host or "").strip() or (settings.searx_host or "").strip()
+    return host or None
 
 
 def _normalize_list_result(items: Any, provider: Provider) -> list[SearchHit]:
@@ -285,6 +278,5 @@ __all__ = [
     "SearxClient",
     "WebConnector",
     "_dedupe_by_url",
-    "_env",
     "_normalize_list_result",
 ]
