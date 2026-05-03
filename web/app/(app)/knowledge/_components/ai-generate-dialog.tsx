@@ -27,6 +27,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  ChainOfThought,
+  ChainOfThoughtStep,
+} from "@/components/ai-elements/chain-of-thought";
+import { MessageResponse } from "@/components/ai-elements/message";
 import { useCreateZettel } from "@/features/zettels/mutations";
 import { useCardSearch, useZettelTopics } from "@/features/zettels/queries";
 import {
@@ -93,58 +98,6 @@ function normalizeDraft(draft: ZettelCardCreatePayload): ZettelCardCreatePayload
   };
 }
 
-function decodeJsonStringFragment(value: string): string {
-  return value
-    .replace(/\\n/g, "\n")
-    .replace(/\\t/g, "\t")
-    .replace(/\\"/g, '"')
-    .replace(/\\\\/g, "\\");
-}
-
-function extractPartialJsonStringField(raw: string, field: string): string | null {
-  const keyIndex = raw.indexOf(`"${field}"`);
-  if (keyIndex === -1) return null;
-
-  const colonIndex = raw.indexOf(":", keyIndex);
-  if (colonIndex === -1) return null;
-
-  const valueStart = raw.indexOf('"', colonIndex + 1);
-  if (valueStart === -1) return null;
-
-  let escaped = false;
-  let value = "";
-  for (let index = valueStart + 1; index < raw.length; index += 1) {
-    const character = raw[index];
-    if (escaped) {
-      value += `\\${character}`;
-      escaped = false;
-      continue;
-    }
-    if (character === "\\") {
-      escaped = true;
-      continue;
-    }
-    if (character === '"') break;
-    value += character;
-  }
-
-  return decodeJsonStringFragment(value);
-}
-
-function formatGeneratedStream(raw: string): string {
-  const title = extractPartialJsonStringField(raw, "title");
-  const summary = extractPartialJsonStringField(raw, "summary");
-  const content = extractPartialJsonStringField(raw, "content");
-
-  const sections = [
-    title ? `Title\n${title}` : null,
-    summary ? `Summary\n${summary}` : null,
-    content ? `Content\n${content}` : null,
-  ].filter(Boolean);
-
-  return sections.length > 0 ? sections.join("\n\n") : raw;
-}
-
 export function AIGenerateDialog({ open, onOpenChange }: Props) {
   const queryClient = useQueryClient();
   const [input, setInput] = useState("");
@@ -191,10 +144,6 @@ export function AIGenerateDialog({ open, onOpenChange }: Props) {
   const contentRows = draft
     ? Math.min(14, Math.max(7, Math.ceil((draft.content ?? "").length / 82)))
     : 8;
-  const readableGeneratedText = useMemo(
-    () => formatGeneratedStream(generatedText),
-    [generatedText],
-  );
 
   const reset = useCallback(() => {
     setInput("");
@@ -335,7 +284,15 @@ export function AIGenerateDialog({ open, onOpenChange }: Props) {
           }),
         ),
       );
-      await queryClient.invalidateQueries({ queryKey: ["zettels"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["zettels", "cards"] }),
+        queryClient.invalidateQueries({ queryKey: ["zettels", "count"] }),
+        queryClient.invalidateQueries({ queryKey: ["zettels", "graph"] }),
+        queryClient.invalidateQueries({ queryKey: ["zettels", "links"] }),
+        queryClient.invalidateQueries({ queryKey: ["zettels", "backlinks"] }),
+        queryClient.invalidateQueries({ queryKey: ["zettel-topics"] }),
+        queryClient.invalidateQueries({ queryKey: ["zettel-tags"] }),
+      ]);
       toast.success("Zettel saved");
       reset();
       onOpenChange(false);
@@ -425,17 +382,30 @@ export function AIGenerateDialog({ open, onOpenChange }: Props) {
 
               {isGenerating ? (
                 <div className="rounded-md border bg-[var(--alfred-accent-subtle)] px-4 py-3">
-                  <div className="text-primary flex items-center gap-2 text-sm">
-                    <Loader2 className="size-4 animate-spin" />
-                    {GENERATION_STEPS[generationStep]}
-                  </div>
+                  <ChainOfThought defaultOpen>
+                    {GENERATION_STEPS.map((label, idx) => (
+                      <ChainOfThoughtStep
+                        key={label}
+                        label={label}
+                        status={
+                          idx < generationStep
+                            ? "complete"
+                            : idx === generationStep
+                              ? "active"
+                              : "pending"
+                        }
+                      />
+                    ))}
+                  </ChainOfThought>
                   <div className="bg-background/80 mt-3 max-h-48 overflow-y-auto rounded-sm border p-3">
                     <p className="mb-2 text-[10px] font-medium text-[var(--alfred-text-tertiary)] uppercase">
                       Generated Text
                     </p>
-                    <pre className="text-foreground text-sm leading-6 break-words whitespace-pre-wrap">
-                      {readableGeneratedText || "Waiting for first token..."}
-                    </pre>
+                    {generatedText ? (
+                      <MessageResponse>{generatedText}</MessageResponse>
+                    ) : (
+                      <p className="text-muted-foreground text-sm">Waiting for first token...</p>
+                    )}
                   </div>
                 </div>
               ) : null}
@@ -654,9 +624,7 @@ export function AIGenerateDialog({ open, onOpenChange }: Props) {
                     </button>
                     {showGeneratedText ? (
                       <div className="bg-secondary/50 mt-3 max-h-56 overflow-y-auto rounded-sm border px-3 py-2">
-                        <pre className="text-foreground text-sm leading-6 break-words whitespace-pre-wrap">
-                          {readableGeneratedText}
-                        </pre>
+                        <MessageResponse>{generatedText}</MessageResponse>
                       </div>
                     ) : null}
                   </div>
