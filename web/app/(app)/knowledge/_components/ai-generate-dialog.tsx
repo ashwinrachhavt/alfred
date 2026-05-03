@@ -174,7 +174,7 @@ export function AIGenerateDialog({ open, onOpenChange }: Props) {
   useEffect(() => {
     if (!isGenerating) return;
     const timer = window.setInterval(() => {
-      setGenerationStep((step) => (step + 1) % GENERATION_STEPS.length);
+      setGenerationStep((step) => Math.min(step + 1, GENERATION_STEPS.length - 1));
     }, 900);
     return () => window.clearInterval(timer);
   }, [isGenerating]);
@@ -285,11 +285,7 @@ export function AIGenerateDialog({ open, onOpenChange }: Props) {
         ),
       );
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["zettels", "cards"] }),
-        queryClient.invalidateQueries({ queryKey: ["zettels", "count"] }),
-        queryClient.invalidateQueries({ queryKey: ["zettels", "graph"] }),
-        queryClient.invalidateQueries({ queryKey: ["zettels", "links"] }),
-        queryClient.invalidateQueries({ queryKey: ["zettels", "backlinks"] }),
+        queryClient.invalidateQueries({ queryKey: ["zettels"] }),
         queryClient.invalidateQueries({ queryKey: ["zettel-topics"] }),
         queryClient.invalidateQueries({ queryKey: ["zettel-tags"] }),
       ]);
