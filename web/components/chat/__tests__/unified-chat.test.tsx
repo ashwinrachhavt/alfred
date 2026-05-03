@@ -77,12 +77,20 @@ vi.mock("@/lib/api/client", () => ({
   apiFetch: vi.fn(),
 }));
 
-const mockSearchCards = vi.fn();
 const mockGetZettelCard = vi.fn();
+const mockSearchChatOmnibox = vi.fn();
+const mockGetDocumentDetails = vi.fn();
 
 vi.mock("@/lib/api/zettels", () => ({
-  searchCards: (...args: unknown[]) => mockSearchCards(...args),
   getZettelCard: (...args: unknown[]) => mockGetZettelCard(...args),
+}));
+
+vi.mock("@/lib/api/chat-omnibox", () => ({
+  searchChatOmnibox: (...args: unknown[]) => mockSearchChatOmnibox(...args),
+}));
+
+vi.mock("@/lib/api/documents", () => ({
+  getDocumentDetails: (...args: unknown[]) => mockGetDocumentDetails(...args),
 }));
 
 vi.mock("@/components/agent/artifact-card", () => ({
@@ -143,8 +151,9 @@ beforeEach(() => {
   mockOpenZettelViewer.mockReset();
   defaultAgentState.sendMessage = vi.fn();
   defaultAgentState.createThread = vi.fn();
-  mockSearchCards.mockResolvedValue({ text_matches: [], ai_suggestions: [] });
+  mockSearchChatOmnibox.mockResolvedValue({ results: [] });
   mockGetZettelCard.mockReset();
+  mockGetDocumentDetails.mockReset();
 });
 
 describe("UnifiedChat — sidebar mode", () => {
@@ -160,7 +169,7 @@ describe("UnifiedChat — sidebar mode", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("renders the panel with Alfred AI header when open", () => {
+  it("renders the panel with Polymath AI header when open", () => {
     vi.mocked(useShellStore).mockReturnValue({
       aiPanelOpen: true,
       chatMode: "sidebar",
@@ -170,7 +179,7 @@ describe("UnifiedChat — sidebar mode", () => {
 
     renderWithClient(<UnifiedChat mode="sidebar" />);
 
-    expect(screen.getByText("Alfred AI")).toBeInTheDocument();
+    expect(screen.getByText("Polymath AI")).toBeInTheDocument();
     expect(screen.getByRole("complementary")).toBeInTheDocument();
   });
 
@@ -217,19 +226,69 @@ describe("UnifiedChat — sidebar mode", () => {
     expect(sendButton).toBeDisabled();
   });
 
-  it("attaches a zettel with @ search and sends it as hidden context", async () => {
+  it("renders mixed omnibox rows for @memory", async () => {
     const user = userEvent.setup();
-    mockSearchCards.mockResolvedValue({
-      text_matches: [
+    mockSearchChatOmnibox.mockResolvedValue({
+      results: [
         {
+          kind: "zettel",
           id: 42,
           title: "Memory consolidation needs retrieval",
           topic: "learning",
           tags: ["memory", "retrieval"],
-          status: "active",
+          excerpt: "Retrieval practice strengthens recall.",
+        },
+        {
+          kind: "document",
+          id: "doc-memory",
+          title: "Memory Systems Paper",
+          topic: "research",
+          tags: ["memory"],
+          excerpt: "Working memory and consolidation mechanisms.",
+        },
+        {
+          kind: "action",
+          id: "search-memory",
+          title: "Search all knowledge for memory",
+          description: "Search notes, documents, and connected context",
+          action: "search_all",
+          query: "memory",
         },
       ],
-      ai_suggestions: [],
+    });
+    vi.mocked(useShellStore).mockReturnValue({
+      aiPanelOpen: true,
+      chatMode: "sidebar",
+      toggleAiPanel: mockToggleAiPanel,
+      toggleChatExpanded: mockToggleChatExpanded,
+    } as unknown as ReturnType<typeof useShellStore>);
+
+    renderWithClient(<UnifiedChat mode="sidebar" />);
+
+    const textarea = screen.getByPlaceholderText("Ask about your knowledge...");
+    await user.type(textarea, "@memory");
+
+    const listbox = await screen.findByRole("listbox", { name: "Polymath context search" });
+    expect(listbox).toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: /Memory consolidation needs retrieval/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Memory Systems Paper/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Search all knowledge for memory/ })).toBeInTheDocument();
+    expect(mockSearchChatOmnibox).toHaveBeenCalledWith("memory", 8);
+  });
+
+  it("attaches a zettel with @ search and sends it as hidden Polymath context", async () => {
+    const user = userEvent.setup();
+    mockSearchChatOmnibox.mockResolvedValue({
+      results: [
+        {
+          kind: "zettel",
+          id: 42,
+          title: "Memory consolidation needs retrieval",
+          topic: "learning",
+          tags: ["memory", "retrieval"],
+          excerpt: "Retrieval practice strengthens recall.",
+        },
+      ],
     });
     mockGetZettelCard.mockResolvedValue({
       id: 42,
@@ -259,31 +318,170 @@ describe("UnifiedChat — sidebar mode", () => {
     await user.type(textarea, "How does @memo apply?");
     await user.click(await screen.findByText("Memory consolidation needs retrieval"));
 
-    expect(await screen.findByText("@Memory consolidation needs retrieval")).toBeInTheDocument();
+    expect(await screen.findByText("Memory consolidation needs retrieval")).toBeInTheDocument();
+    expect(screen.getByText("zettel")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Send message" }));
 
     expect(defaultAgentState.sendMessage).toHaveBeenCalledTimes(1);
     const [sentText, opts] = vi.mocked(defaultAgentState.sendMessage).mock.calls[0];
-    expect(sentText).toContain("Referenced zettels:");
-    expect(sentText).toContain("[42] Memory consolidation needs retrieval");
+    expect(sentText).toContain("Referenced Polymath context:");
+    expect(sentText).toContain("Zettel [42] Memory consolidation needs retrieval");
     expect(sentText).toContain("Testing yourself improves durable learning.");
     expect(opts).toMatchObject({ displayText: "How does apply?" });
   });
 
-  it("opens recent zettels when the user types a bare @", async () => {
+  it("attaches a document with @ search and sends it as hidden Polymath context", async () => {
     const user = userEvent.setup();
-    mockSearchCards.mockResolvedValue({
-      text_matches: [
+    mockSearchChatOmnibox.mockResolvedValue({
+      results: [
         {
+          kind: "document",
+          id: "doc-memory",
+          title: "Memory Systems Paper",
+          topic: "research",
+          tags: ["memory"],
+          excerpt: "Working memory and consolidation mechanisms.",
+        },
+      ],
+    });
+    mockGetDocumentDetails.mockResolvedValue({
+      id: "doc-memory",
+      source_url: "https://example.com/memory",
+      canonical_url: "https://example.com/canonical-memory",
+      title: "Memory Systems Paper",
+      content_type: "text/html",
+      cleaned_text: "Documents can carry long source context for synthesis.",
+      summary: { short: "Memory systems overview" },
+      topics: { primary: "research" },
+      tags: ["memory"],
+      captured_at: "2026-01-01T00:00:00Z",
+      day_bucket: "2026-01-01",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+      metadata: {},
+    });
+    vi.mocked(useShellStore).mockReturnValue({
+      aiPanelOpen: true,
+      chatMode: "sidebar",
+      toggleAiPanel: mockToggleAiPanel,
+      toggleChatExpanded: mockToggleChatExpanded,
+    } as unknown as ReturnType<typeof useShellStore>);
+
+    renderWithClient(<UnifiedChat mode="sidebar" />);
+
+    const textarea = screen.getByPlaceholderText("Ask about your knowledge...");
+    await user.type(textarea, "Compare @memo");
+    await user.click(await screen.findByText("Memory Systems Paper"));
+
+    expect(await screen.findByText("Memory Systems Paper")).toBeInTheDocument();
+    expect(screen.getByText("document")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+
+    expect(defaultAgentState.sendMessage).toHaveBeenCalledTimes(1);
+    const [sentText, opts] = vi.mocked(defaultAgentState.sendMessage).mock.calls[0];
+    expect(sentText).toContain("Referenced Polymath context:");
+    expect(sentText).toContain("Document [doc-memory] Memory Systems Paper");
+    expect(sentText).toContain("Documents can carry long source context for synthesis.");
+    expect(opts).toMatchObject({ displayText: "Compare" });
+  });
+
+  it("selects an open Omnibox row with Enter before sending chat", async () => {
+    const user = userEvent.setup();
+    mockSearchChatOmnibox.mockResolvedValue({
+      results: [
+        {
+          kind: "zettel",
+          id: 42,
+          title: "Memory consolidation needs retrieval",
+          topic: "learning",
+          tags: ["memory", "retrieval"],
+          excerpt: "Retrieval practice strengthens recall.",
+        },
+      ],
+    });
+    mockGetZettelCard.mockResolvedValue({
+      id: 42,
+      title: "Memory consolidation needs retrieval",
+      content: "Retrieval practice strengthens memory.",
+      summary: "Testing yourself improves durable learning.",
+      tags: ["memory", "retrieval"],
+      topic: "learning",
+      source_url: null,
+      document_id: null,
+      importance: 3,
+      confidence: 4,
+      status: "active",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+    });
+    vi.mocked(useShellStore).mockReturnValue({
+      aiPanelOpen: true,
+      chatMode: "sidebar",
+      toggleAiPanel: mockToggleAiPanel,
+      toggleChatExpanded: mockToggleChatExpanded,
+    } as unknown as ReturnType<typeof useShellStore>);
+
+    renderWithClient(<UnifiedChat mode="sidebar" />);
+
+    const textarea = screen.getByPlaceholderText("Ask about your knowledge...");
+    await user.type(textarea, "Use @memo");
+    expect(await screen.findByText("Memory consolidation needs retrieval")).toBeInTheDocument();
+
+    await user.keyboard("{Enter}");
+
+    expect(mockGetZettelCard).toHaveBeenCalledWith(42);
+    expect(defaultAgentState.sendMessage).not.toHaveBeenCalled();
+    expect(await screen.findByText("Memory consolidation needs retrieval")).toBeInTheDocument();
+  });
+
+  it("closes the Omnibox with Escape", async () => {
+    const user = userEvent.setup();
+    mockSearchChatOmnibox.mockResolvedValue({
+      results: [
+        {
+          kind: "zettel",
           id: 7,
           title: "Recent zettel",
           topic: "notes",
           tags: ["recent"],
-          status: "active",
+          excerpt: "Recently updated context.",
         },
       ],
-      ai_suggestions: [],
+    });
+    vi.mocked(useShellStore).mockReturnValue({
+      aiPanelOpen: true,
+      chatMode: "sidebar",
+      toggleAiPanel: mockToggleAiPanel,
+      toggleChatExpanded: mockToggleChatExpanded,
+    } as unknown as ReturnType<typeof useShellStore>);
+
+    renderWithClient(<UnifiedChat mode="sidebar" />);
+
+    const textarea = screen.getByPlaceholderText("Ask about your knowledge...");
+    await user.type(textarea, "@");
+    expect(await screen.findByRole("listbox", { name: "Polymath context search" })).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("listbox", { name: "Polymath context search" })).not.toBeInTheDocument();
+    expect(defaultAgentState.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("opens recent zettels when the user types a bare @", async () => {
+    const user = userEvent.setup();
+    mockSearchChatOmnibox.mockResolvedValue({
+      results: [
+        {
+          kind: "zettel",
+          id: 7,
+          title: "Recent zettel",
+          topic: "notes",
+          tags: ["recent"],
+          excerpt: "Recently updated context.",
+        },
+      ],
     });
     vi.mocked(useShellStore).mockReturnValue({
       aiPanelOpen: true,
@@ -298,7 +496,7 @@ describe("UnifiedChat — sidebar mode", () => {
     await user.type(textarea, "@");
 
     expect(await screen.findByText("Recent zettel")).toBeInTheDocument();
-    expect(mockSearchCards).toHaveBeenCalledWith("");
+    expect(mockSearchChatOmnibox).toHaveBeenCalledWith("", 8);
   });
 
   it("loads a raw zettel when the detail cache already contains a transformed card", async () => {
@@ -311,17 +509,17 @@ describe("UnifiedChat — sidebar mode", () => {
       summary: "Cached transformed summary",
       tags: [],
     });
-    mockSearchCards.mockResolvedValue({
-      text_matches: [
+    mockSearchChatOmnibox.mockResolvedValue({
+      results: [
         {
+          kind: "zettel",
           id: 42,
           title: "Memory consolidation needs retrieval",
           topic: "learning",
           tags: ["memory", "retrieval"],
-          status: "active",
+          excerpt: "Retrieval practice strengthens recall.",
         },
       ],
-      ai_suggestions: [],
     });
     mockGetZettelCard.mockResolvedValue({
       id: 42,
@@ -352,8 +550,8 @@ describe("UnifiedChat — sidebar mode", () => {
     await user.click(await screen.findByText("Memory consolidation needs retrieval"));
 
     expect(mockGetZettelCard).toHaveBeenCalledWith(42);
-    expect(await screen.findByText("@Memory consolidation needs retrieval")).toBeInTheDocument();
-    expect(screen.queryByText("@Cached transformed card")).not.toBeInTheDocument();
+    expect(await screen.findByText("Memory consolidation needs retrieval")).toBeInTheDocument();
+    expect(screen.queryByText("Cached transformed card")).not.toBeInTheDocument();
   });
 
   it("has a close button that calls toggleAiPanel", () => {
@@ -412,7 +610,7 @@ describe("UnifiedChat — expanded mode", () => {
 
     renderWithClient(<UnifiedChat mode="expanded" />);
 
-    expect(screen.getByText("Alfred AI")).toBeInTheDocument();
+    expect(screen.getByText("Polymath AI")).toBeInTheDocument();
     expect(screen.getByRole("main")).toBeInTheDocument();
   });
 
@@ -444,7 +642,7 @@ describe("UnifiedChat — expanded mode", () => {
     renderWithClient(<UnifiedChat mode="expanded" />);
 
     expect(screen.getByText("What would you like to explore?")).toBeInTheDocument();
-    expect(screen.getByText(/Alfred can search your knowledge/)).toBeInTheDocument();
+    expect(screen.getByText(/Polymath can search your knowledge/)).toBeInTheDocument();
   });
 
   it("uses max-w-3xl centered layout for messages", () => {
