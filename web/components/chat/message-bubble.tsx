@@ -5,7 +5,6 @@ import { memo, useMemo, useState } from "react";
 import {
   BookmarkPlus,
   Check,
-  ChevronRight,
   ClipboardCopy,
   CornerDownRight,
   FilePlus2,
@@ -19,12 +18,33 @@ import { toast } from "sonner";
 
 import { ArtifactCardComponent } from "@/components/agent/artifact-card";
 import { InsightToCard } from "@/components/agent/insight-to-card";
-import { MarkdownMessage } from "@/components/agent/markdown-message";
 import { RelatedCards } from "@/components/agent/related-cards";
+import {
+  ChainOfThought,
+  ChainOfThoughtStep,
+} from "@/components/ai-elements/chain-of-thought";
+import { MessageResponse } from "@/components/ai-elements/message";
+import {
+  Reasoning,
+  ReasoningContent,
+  ReasoningTrigger,
+} from "@/components/ai-elements/reasoning";
+import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolInput,
+  ToolOutput,
+} from "@/components/ai-elements/tool";
 import { apiRoutes } from "@/lib/api/routes";
 import { apiFetch } from "@/lib/api/client";
 import { copyTextToClipboard } from "@/lib/clipboard";
-import type { AgentMessage, ArtifactCard } from "@/lib/stores/agent-store";
+import type {
+  AgentMessage,
+  ArtifactCard,
+  MessagePart,
+  StepPart,
+} from "@/lib/stores/agent-store";
 import type { ChatMode } from "@/lib/stores/shell-store";
 import { markdownToPlainText } from "@/lib/utils/markdown";
 import { cn } from "@/lib/utils";
@@ -170,49 +190,6 @@ function buildMarkdownBlocks(content: string): MarkdownBlock[] {
     content: block,
     preview: markdownToPlainText(block).slice(0, 140).trim() || `Block ${index + 1}`,
   }));
-}
-
-function ReasoningTrace({ reasoning }: { reasoning: string }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div className="mb-1.5">
-      <button
-        onClick={() => setOpen(!open)}
-        className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-[10px] transition-colors"
-      >
-        <ChevronRight className={cn("size-3 transition-transform", open && "rotate-90")} />
-        <span className="tracking-wider uppercase">Thinking</span>
-      </button>
-      {open ? (
-        <div className="bg-secondary/50 text-muted-foreground mt-1 max-h-64 overflow-y-auto rounded-sm border border-dashed px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap">
-          {reasoning}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ToolCallsDisplay({ toolCalls }: { toolCalls: AgentMessage["toolCalls"] }) {
-  if (toolCalls.length === 0) return null;
-
-  return (
-    <div className="flex flex-wrap items-center gap-1.5 py-0.5">
-      {toolCalls.map((toolCall, index) => (
-        <span
-          key={toolCall.call_id ?? index}
-          className="text-muted-foreground inline-flex items-center gap-1 text-[10px]"
-        >
-          {toolCall.status === "pending" ? (
-            <Loader2 className="text-primary size-3 animate-spin" />
-          ) : (
-            <Check className="text-primary size-3" />
-          )}
-          {toolCall.tool.replace(/_/g, " ")}
-        </span>
-      ))}
-    </div>
-  );
 }
 
 function CopyMessageButton({
@@ -427,26 +404,6 @@ function NoteMessageButton({
       )}
       {showLabel ? (viewNoteId ? savedLabel : idleLabel) : null}
     </button>
-  );
-}
-
-function PlanDisplay({ plan }: { plan: AgentMessage["plan"] }) {
-  if (plan.length === 0) return null;
-
-  return (
-    <div className="bg-secondary/30 mb-2 rounded-md border px-3 py-2">
-      <div className="text-muted-foreground mb-1 text-[10px] tracking-wider uppercase">Plan</div>
-      <div className="space-y-1">
-        {plan.map((task) => (
-          <div key={task.id} className="flex items-center justify-between gap-3 text-xs">
-            <span className="text-foreground/90">
-              {task.agent}: {task.objective}
-            </span>
-            <span className="text-muted-foreground">{task.status}</span>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -741,7 +698,7 @@ function CommentableMarkdownBlock({
         </button>
       </div>
 
-      <MarkdownMessage content={block.content} />
+      <MessageResponse>{block.content}</MessageResponse>
 
       {comments.length > 0 && !isOpen ? (
         <button
@@ -767,6 +724,134 @@ function CommentableMarkdownBlock({
       ) : null}
     </div>
   );
+}
+
+/**
+ * Synthesize MessagePart[] from legacy AgentMessage fields.
+ *
+ * Used as a fallback for messages that predate the parts[] dual-write
+ * (e.g., threads loaded from the DB before Task 4 ships persistence).
+ * Order mirrors how the new SSE pipeline would emit them:
+ * reasoning -> tool calls -> text.
+ */
+function synthesizePartsFromLegacy(message: AgentMessage): MessagePart[] {
+  const parts: MessagePart[] = [];
+  if (message.reasoning) {
+    parts.push({
+      type: "reasoning",
+      text: message.reasoning,
+      state: "done",
+      startedAt: 0,
+      finishedAt: 0,
+    });
+  }
+  for (const tc of message.toolCalls ?? []) {
+    parts.push({
+      type: `tool-${tc.tool}` as `tool-${string}`,
+      toolCallId: tc.call_id ?? `legacy-${tc.tool}-${parts.length}`,
+      state:
+        tc.status === "done"
+          ? "output-available"
+          : tc.status === "error"
+            ? "output-error"
+            : "input-available",
+      input: tc.args ?? {},
+      output: tc.result,
+    });
+  }
+  if (message.content) {
+    parts.push({ type: "text", text: message.content, state: "done" });
+  }
+  return parts;
+}
+
+type GroupedEntry =
+  | { kind: "part"; part: MessagePart }
+  | { kind: "steps"; steps: StepPart[] };
+
+/**
+ * Group consecutive StepParts into single ChainOfThought segments so plan
+ * steps render together as one cohesive block rather than scattered rows.
+ */
+function groupSteps(parts: MessagePart[]): GroupedEntry[] {
+  const out: GroupedEntry[] = [];
+  let buffer: StepPart[] = [];
+  for (const p of parts) {
+    if (p.type === "step") {
+      buffer.push(p);
+    } else {
+      if (buffer.length) {
+        out.push({ kind: "steps", steps: buffer });
+        buffer = [];
+      }
+      out.push({ kind: "part", part: p });
+    }
+  }
+  if (buffer.length) out.push({ kind: "steps", steps: buffer });
+  return out;
+}
+
+function renderNonTextPart(entry: GroupedEntry, index: number) {
+  if (entry.kind === "steps") {
+    return (
+      <ChainOfThought key={`steps-${index}`} defaultOpen>
+        {entry.steps.map((step, j) => (
+          <ChainOfThoughtStep
+            key={step.taskId ?? `${index}-${j}`}
+            label={step.label}
+            description={step.description}
+            status={
+              step.state === "complete"
+                ? "complete"
+                : step.state === "active"
+                  ? "active"
+                  : step.state === "error"
+                    ? "complete"
+                    : "pending"
+            }
+          />
+        ))}
+      </ChainOfThought>
+    );
+  }
+
+  const part = entry.part;
+
+  if (part.type === "reasoning") {
+    const isStreaming = part.state === "streaming";
+    const duration =
+      part.finishedAt && part.startedAt
+        ? Math.max(0, Math.round((part.finishedAt - part.startedAt) / 1000))
+        : undefined;
+    return (
+      <Reasoning
+        key={`reasoning-${index}`}
+        isStreaming={isStreaming}
+        duration={duration}
+      >
+        <ReasoningTrigger />
+        <ReasoningContent>{part.text}</ReasoningContent>
+      </Reasoning>
+    );
+  }
+
+  if (typeof part.type === "string" && part.type.startsWith("tool-")) {
+    const tool = part as Extract<MessagePart, { type: `tool-${string}` }>;
+    return (
+      <Tool
+        key={tool.toolCallId || `tool-${index}`}
+        defaultOpen={tool.state === "output-error"}
+      >
+        <ToolHeader type={tool.type} state={tool.state} />
+        <ToolContent>
+          <ToolInput input={tool.input} />
+          <ToolOutput output={tool.output} errorText={tool.errorText} />
+        </ToolContent>
+      </Tool>
+    );
+  }
+
+  return null;
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -795,9 +880,21 @@ export const MessageBubble = memo(function MessageBubble({
   const artifacts = message.artifacts ?? [];
   const relatedCards = message.relatedCards ?? [];
   const gaps = message.gaps ?? [];
-  const plan = message.plan ?? [];
   const pendingApprovals = message.pendingApprovals ?? [];
-  const toolCalls = message.toolCalls ?? [];
+  const assistantParts = useMemo<MessagePart[]>(
+    () => (message.parts?.length ? message.parts : synthesizePartsFromLegacy(message)),
+    [message],
+  );
+  const groupedParts = useMemo(() => groupSteps(assistantParts), [assistantParts]);
+  const isAssistantStreaming = useMemo(
+    () =>
+      assistantParts.some(
+        (p) =>
+          (p.type === "text" && p.state === "streaming") ||
+          (p.type === "reasoning" && p.state === "streaming"),
+      ),
+    [assistantParts],
+  );
   const markdownBlocks = useMemo(() => buildMarkdownBlocks(message.content), [message.content]);
   const markdownBlockIds = useMemo(
     () => new Set(markdownBlocks.map((block) => block.id)),
@@ -865,34 +962,70 @@ export const MessageBubble = memo(function MessageBubble({
     setOpenCommentBlockId((current) => (current === firstBlockId ? null : firstBlockId));
   };
 
-  const contentEl = (
+  // Render every part in order. Text parts render via <MessageResponse>; a
+  // separate block-commenting pass below takes over once the stream is done.
+  // During streaming, text parts render inline here for a live preview;
+  // once `done` we swap to per-block rendering so block comments keep working.
+  // This produces a brief flicker at stream-end — acceptable for the first cut.
+  const streamingPartsEl = (
     <>
-      {plan.length > 0 ? <PlanDisplay plan={plan} /> : null}
-      {message.reasoning ? <ReasoningTrace reasoning={message.reasoning} /> : null}
-      {toolCalls.length > 0 ? <ToolCallsDisplay toolCalls={toolCalls} /> : null}
-      {markdownBlocks.length > 0 ? (
-        <div className="space-y-1">
-          {markdownBlocks.map((block) => (
-            <CommentableMarkdownBlock
-              key={block.id}
-              block={block}
-              comments={commentsByBlockId.get(block.id) ?? []}
-              draft={commentDraftsByBlockId[block.id] ?? ""}
-              isOpen={openCommentBlockId === block.id}
-              setDraft={(value) => setBlockDraft(block.id, value)}
-              onToggle={() =>
-                setOpenCommentBlockId((current) => (current === block.id ? null : block.id))
-              }
-              onAddComment={() => handleAddComment(block)}
-              onReplyToComments={handleReplyToComments}
-              onViewZettel={onViewZettel}
-            />
-          ))}
-        </div>
-      ) : null}
-      {pendingApprovals.length > 0 ? <ApprovalDisplay approvals={pendingApprovals} /> : null}
+      {groupedParts.map((entry, index) => {
+        if (entry.kind === "part" && entry.part.type === "text") {
+          return (
+            <MessageResponse key={`text-${index}`}>{entry.part.text}</MessageResponse>
+          );
+        }
+        if (entry.kind === "part" && entry.part.type === "source-url") {
+          // Sources are handled separately (Task 5) — skip here.
+          return null;
+        }
+        return renderNonTextPart(entry, index);
+      })}
     </>
   );
+
+  const doneNonTextPartsEl = (
+    <>
+      {groupedParts.map((entry, index) => {
+        if (entry.kind === "part" && entry.part.type === "text") return null;
+        if (entry.kind === "part" && entry.part.type === "source-url") return null;
+        return renderNonTextPart(entry, index);
+      })}
+    </>
+  );
+
+  const contentEl =
+    isAssistantStreaming || !message.content ? (
+      <>
+        {streamingPartsEl}
+        {pendingApprovals.length > 0 ? <ApprovalDisplay approvals={pendingApprovals} /> : null}
+      </>
+    ) : (
+      <>
+        {doneNonTextPartsEl}
+        {markdownBlocks.length > 0 ? (
+          <div className="space-y-1">
+            {markdownBlocks.map((block) => (
+              <CommentableMarkdownBlock
+                key={block.id}
+                block={block}
+                comments={commentsByBlockId.get(block.id) ?? []}
+                draft={commentDraftsByBlockId[block.id] ?? ""}
+                isOpen={openCommentBlockId === block.id}
+                setDraft={(value) => setBlockDraft(block.id, value)}
+                onToggle={() =>
+                  setOpenCommentBlockId((current) => (current === block.id ? null : block.id))
+                }
+                onAddComment={() => handleAddComment(block)}
+                onReplyToComments={handleReplyToComments}
+                onViewZettel={onViewZettel}
+              />
+            ))}
+          </div>
+        ) : null}
+        {pendingApprovals.length > 0 ? <ApprovalDisplay approvals={pendingApprovals} /> : null}
+      </>
+    );
 
   return (
     <div className={cn("group space-y-2", !isSidebar && "space-y-3")}>

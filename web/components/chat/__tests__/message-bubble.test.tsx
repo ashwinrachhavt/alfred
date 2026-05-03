@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiFetch } from "@/lib/api/client";
-import type { AgentMessage } from "@/lib/stores/agent-store";
+import type { AgentMessage, MessagePart, ToolCall } from "@/lib/stores/agent-store";
 
 const { copyTextToClipboard } = vi.hoisted(() => ({
   copyTextToClipboard: vi.fn(),
@@ -26,9 +26,71 @@ vi.mock("@/components/agent/insight-to-card", () => ({
   ),
 }));
 
-vi.mock("@/components/agent/markdown-message", () => ({
-  MarkdownMessage: ({ content }: { content: string }) => (
-    <div data-testid="markdown-message">{content}</div>
+// AI Elements depend on Streamdown (ESM) which is heavy in jsdom; stub to
+// simple passthrough renderers that preserve content so assertions work.
+vi.mock("@/components/ai-elements/message", () => ({
+  Message: ({ children }: { children: ReactNode }) => (
+    <div data-testid="ai-message">{children}</div>
+  ),
+  MessageContent: ({ children }: { children: ReactNode }) => (
+    <div data-testid="ai-message-content">{children}</div>
+  ),
+  MessageResponse: ({ children }: { children: string }) => (
+    <div data-testid="ai-message-response">{children}</div>
+  ),
+}));
+
+vi.mock("@/components/ai-elements/reasoning", () => ({
+  Reasoning: ({ children, isStreaming }: { children: ReactNode; isStreaming?: boolean }) => (
+    <div data-testid="ai-reasoning" data-streaming={isStreaming ? "true" : "false"}>
+      {children}
+    </div>
+  ),
+  ReasoningTrigger: () => <button type="button">Thinking</button>,
+  ReasoningContent: ({ children }: { children: string }) => (
+    <div data-testid="ai-reasoning-content">{children}</div>
+  ),
+}));
+
+vi.mock("@/components/ai-elements/tool", () => ({
+  Tool: ({ children }: { children: ReactNode }) => (
+    <div data-testid="ai-tool">{children}</div>
+  ),
+  ToolHeader: ({ type, state }: { type: string; state: string }) => (
+    <div data-testid="ai-tool-header">
+      {type.replace(/^tool-/, "").replace(/_/g, " ")} · {state}
+    </div>
+  ),
+  ToolContent: ({ children }: { children: ReactNode }) => (
+    <div data-testid="ai-tool-content">{children}</div>
+  ),
+  ToolInput: ({ input }: { input: unknown }) => (
+    <div data-testid="ai-tool-input">{JSON.stringify(input)}</div>
+  ),
+  ToolOutput: ({ output, errorText }: { output?: unknown; errorText?: string }) => (
+    <div data-testid="ai-tool-output">
+      {errorText ?? (output ? JSON.stringify(output) : "")}
+    </div>
+  ),
+}));
+
+vi.mock("@/components/ai-elements/chain-of-thought", () => ({
+  ChainOfThought: ({ children }: { children: ReactNode }) => (
+    <div data-testid="ai-chain-of-thought">{children}</div>
+  ),
+  ChainOfThoughtStep: ({
+    label,
+    description,
+    status,
+  }: {
+    label: ReactNode;
+    description?: ReactNode;
+    status?: string;
+  }) => (
+    <div data-testid="ai-chain-step" data-status={status}>
+      <span>{label}</span>
+      {description ? <span>{description}</span> : null}
+    </div>
   ),
 }));
 
@@ -88,26 +150,45 @@ describe("MessageBubble", () => {
 
     render(<MessageBubble message={message} mode="sidebar" onArtifactClick={vi.fn()} />);
 
-    expect(screen.getByTestId("markdown-message")).toBeInTheDocument();
+    // Post-stream rendering uses CommentableMarkdownBlock -> MessageResponse.
+    expect(screen.getByTestId("ai-message-response")).toBeInTheDocument();
     expect(screen.getByText("Test response")).toBeInTheDocument();
   });
 
-  it("shows reasoning trace when reasoning exists", () => {
-    const message = makeMessage({ reasoning: "Let me think about this..." });
+  it("shows reasoning trace when reasoning exists (via parts[])", () => {
+    const parts: MessagePart[] = [
+      {
+        type: "reasoning",
+        text: "Let me think about this...",
+        state: "done",
+        startedAt: 0,
+        finishedAt: 1000,
+      },
+    ];
+    const message = makeMessage({
+      reasoning: "Let me think about this...",
+      parts,
+    });
 
     render(<MessageBubble message={message} mode="sidebar" onArtifactClick={vi.fn()} />);
 
+    expect(screen.getByTestId("ai-reasoning")).toBeInTheDocument();
     expect(screen.getByText("Thinking")).toBeInTheDocument();
   });
 
-  it("expands reasoning trace on click", () => {
-    const message = makeMessage({ reasoning: "Deep thoughts here" });
+  it("renders reasoning from legacy `reasoning` field via synthesis", () => {
+    // Message with no parts[] (e.g., historical DB row).
+    const message = makeMessage({
+      reasoning: "Deep thoughts here",
+      parts: [],
+    });
 
     render(<MessageBubble message={message} mode="sidebar" onArtifactClick={vi.fn()} />);
 
-    fireEvent.click(screen.getByText("Thinking"));
-
-    expect(screen.getByText("Deep thoughts here")).toBeInTheDocument();
+    expect(screen.getByTestId("ai-reasoning")).toBeInTheDocument();
+    expect(screen.getByTestId("ai-reasoning-content")).toHaveTextContent(
+      "Deep thoughts here",
+    );
   });
 
   it("does not show reasoning section when reasoning is absent", () => {
@@ -115,21 +196,22 @@ describe("MessageBubble", () => {
 
     render(<MessageBubble message={message} mode="sidebar" onArtifactClick={vi.fn()} />);
 
-    expect(screen.queryByText("Thinking")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ai-reasoning")).not.toBeInTheDocument();
   });
 
-  it("shows tool calls with status indicators", () => {
-    const message = makeMessage({
-      toolCalls: [
-        { tool: "search_kb", args: {}, status: "pending" },
-        { tool: "create_zettel", args: {}, status: "done", call_id: "c1" },
-      ],
-    });
+  it("shows tool calls via AI Elements Tool primitive", () => {
+    const toolCalls: ToolCall[] = [
+      { tool: "search_kb", args: {}, status: "pending" },
+      { tool: "create_zettel", args: {}, status: "done", call_id: "c1" },
+    ];
+    const message = makeMessage({ toolCalls });
 
     render(<MessageBubble message={message} mode="sidebar" onArtifactClick={vi.fn()} />);
 
-    expect(screen.getByText("search kb")).toBeInTheDocument();
-    expect(screen.getByText("create zettel")).toBeInTheDocument();
+    const headers = screen.getAllByTestId("ai-tool-header");
+    expect(headers).toHaveLength(2);
+    expect(headers[0]).toHaveTextContent("search kb");
+    expect(headers[1]).toHaveTextContent("create zettel");
   });
 
   it("renders artifact cards", () => {
@@ -161,7 +243,19 @@ describe("MessageBubble", () => {
     expect(screen.getByText("gap: epistemology")).toBeInTheDocument();
   });
 
-  it("renders orchestration plan rows", () => {
+  it("renders orchestration plan via ChainOfThought steps", () => {
+    // With the AI Elements migration, plan rows surface through StepParts
+    // grouped into a ChainOfThought block. Plan must be populated on
+    // parts[] — the legacy plan[] field alone no longer renders anything
+    // in the new primitives-based pipeline.
+    const parts: MessagePart[] = [
+      {
+        type: "step",
+        label: "knowledge: Search Polymath's knowledge base",
+        state: "active",
+        taskId: "task-1",
+      },
+    ];
     const message = makeMessage({
       plan: [
         {
@@ -171,12 +265,15 @@ describe("MessageBubble", () => {
           status: "running",
         },
       ],
+      parts,
     });
 
     render(<MessageBubble message={message} mode="sidebar" onArtifactClick={vi.fn()} />);
 
-    expect(screen.getByText("Plan")).toBeInTheDocument();
-    expect(screen.getByText(/knowledge: Search Polymath's knowledge base/)).toBeInTheDocument();
+    expect(screen.getByTestId("ai-chain-of-thought")).toBeInTheDocument();
+    expect(screen.getByTestId("ai-chain-step")).toHaveTextContent(
+      "knowledge: Search Polymath's knowledge base",
+    );
   });
 
   it("renders approval-required section", () => {
