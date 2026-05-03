@@ -63,6 +63,7 @@ function makeMessage(overrides: Partial<AgentMessage> = {}): AgentMessage {
     toolCalls: [],
     plan: [],
     pendingApprovals: [],
+    parts: [],
     timestamp: Date.now(),
     ...overrides,
   };

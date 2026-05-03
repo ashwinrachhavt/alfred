@@ -54,6 +54,119 @@ export type PendingApproval = {
   preview: Record<string, unknown>;
 };
 
+// --- Message parts (AI Elements migration — Task 2) ---
+// These types drive the new AI Elements primitives. The store dual-writes
+// them alongside the legacy `content`/`reasoning`/`toolCalls`/`plan` fields
+// until Task 6 swaps the MessageBubble consumer.
+
+export type TextPart = {
+  type: "text";
+  text: string;
+  state?: "streaming" | "done";
+};
+
+export type ReasoningPart = {
+  type: "reasoning";
+  text: string;
+  state: "streaming" | "done";
+  startedAt: number;
+  finishedAt?: number;
+};
+
+export type ToolState =
+  | "input-streaming"
+  | "input-available"
+  | "output-available"
+  | "output-error";
+
+// One member per tool known to the backend. Keep `type` as a string template
+// literal so <Tool type={part.type}> can consume it directly.
+export type SearchKbPart = {
+  type: "tool-search_kb";
+  toolCallId: string;
+  state: ToolState;
+  input: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  errorText?: string;
+};
+export type CreateZettelPart = {
+  type: "tool-create_zettel";
+  toolCallId: string;
+  state: ToolState;
+  input: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  errorText?: string;
+};
+export type GetZettelPart = {
+  type: "tool-get_zettel";
+  toolCallId: string;
+  state: ToolState;
+  input: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  errorText?: string;
+};
+export type UpdateZettelPart = {
+  type: "tool-update_zettel";
+  toolCallId: string;
+  state: ToolState;
+  input: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  errorText?: string;
+};
+export type DeepResearchPart = {
+  type: "tool-deep_research";
+  toolCallId: string;
+  state: ToolState;
+  input: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  errorText?: string;
+};
+export type FirecrawlScrapePart = {
+  type: "tool-firecrawl_scrape";
+  toolCallId: string;
+  state: ToolState;
+  input: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  errorText?: string;
+};
+
+// Fallback for tools we don't have a specific type for (future-proofing).
+export type UnknownToolPart = {
+  type: `tool-${string}`;
+  toolCallId: string;
+  state: ToolState;
+  input: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  errorText?: string;
+};
+
+export type StepPart = {
+  type: "step";
+  label: string;
+  description?: string;
+  state: "pending" | "active" | "complete" | "error";
+  taskId?: string;
+};
+
+export type SourcePart = {
+  type: "source-url";
+  url: string;
+  title?: string;
+};
+
+export type MessagePart =
+  | TextPart
+  | ReasoningPart
+  | SearchKbPart
+  | CreateZettelPart
+  | GetZettelPart
+  | UpdateZettelPart
+  | DeepResearchPart
+  | FirecrawlScrapePart
+  | UnknownToolPart
+  | StepPart
+  | SourcePart;
+
 export type AgentMessage = {
   id: string;
   role: "user" | "assistant";
@@ -65,6 +178,13 @@ export type AgentMessage = {
   toolCalls: ToolCall[];
   plan: PlanTask[];
   pendingApprovals: PendingApproval[];
+  /**
+   * AI Elements parts — dual-written alongside the legacy fields above.
+   * Consumers have not yet migrated; this exists to be populated now so
+   * Task 6 (MessageBubble swap) and Task 4 (persistence) can switch over
+   * without a coordinated flip-day.
+   */
+  parts: MessagePart[];
   lens?: string;
   model?: string;
   timestamp: number;
@@ -112,7 +232,14 @@ function _flushTokenBuffer(
   const buffered = _tokenBuffer;
   _tokenBuffer = "";
   _tokenFlushTimer = null;
-  set((s) => _updateLastAssistant(s, (m) => ({ ...m, content: m.content + buffered })));
+  // Dual-write: append to legacy `content` AND to the parts[] streaming
+  // text part in one set() so consumers stay consistent.
+  set((s) =>
+    _updateLastAssistant(s, (m) => {
+      const withContent = { ...m, content: m.content + buffered };
+      return _appendToStreamingText(withContent, buffered);
+    }),
+  );
 }
 
 function _clearTokenBuffer() {
@@ -121,6 +248,78 @@ function _clearTokenBuffer() {
     clearTimeout(_tokenFlushTimer);
     _tokenFlushTimer = null;
   }
+}
+
+// --- Parts helpers (AI Elements migration — Task 2) ---
+// Exported for tests only — not intended as a public API.
+
+export function _appendPart(msg: AgentMessage, part: MessagePart): AgentMessage {
+  return { ...msg, parts: [...msg.parts, part] };
+}
+
+export function _updateLastMatchingPart(
+  msg: AgentMessage,
+  predicate: (p: MessagePart) => boolean,
+  updater: (p: MessagePart) => MessagePart,
+): AgentMessage {
+  for (let i = msg.parts.length - 1; i >= 0; i--) {
+    if (predicate(msg.parts[i])) {
+      const next = [...msg.parts];
+      next[i] = updater(msg.parts[i]);
+      return { ...msg, parts: next };
+    }
+  }
+  return msg;
+}
+
+export function _appendToStreamingText(
+  msg: AgentMessage,
+  delta: string,
+): AgentMessage {
+  const last = msg.parts.at(-1);
+  if (last?.type === "text" && last.state === "streaming") {
+    const next = [...msg.parts];
+    next[next.length - 1] = { ...last, text: last.text + delta };
+    return { ...msg, parts: next };
+  }
+  return _appendPart(msg, { type: "text", text: delta, state: "streaming" });
+}
+
+export function _appendToStreamingReasoning(
+  msg: AgentMessage,
+  delta: string,
+  now: number,
+): AgentMessage {
+  const last = msg.parts.at(-1);
+  if (last?.type === "reasoning" && last.state === "streaming") {
+    const next = [...msg.parts];
+    next[next.length - 1] = { ...last, text: last.text + delta };
+    return { ...msg, parts: next };
+  }
+  return _appendPart(msg, {
+    type: "reasoning",
+    text: delta,
+    state: "streaming",
+    startedAt: now,
+  });
+}
+
+export function _finalizeStreamingParts(
+  msg: AgentMessage,
+  now: number,
+): AgentMessage {
+  return {
+    ...msg,
+    parts: msg.parts.map((p) => {
+      if (p.type === "text" && p.state === "streaming") {
+        return { ...p, state: "done" as const };
+      }
+      if (p.type === "reasoning" && p.state === "streaming") {
+        return { ...p, state: "done" as const, finishedAt: now };
+      }
+      return p;
+    }),
+  };
 }
 
 // --- Store ---
@@ -216,6 +415,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       toolCalls: [],
       plan: [],
       pendingApprovals: [],
+      parts: [],
       lens: state.activeLens ?? undefined,
       model: state.activeModel,
       timestamp: Date.now(),
@@ -231,6 +431,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       toolCalls: [],
       plan: [],
       pendingApprovals: [],
+      parts: [],
       lens: state.activeLens ?? undefined,
       model: state.activeModel,
       timestamp: Date.now(),
@@ -379,6 +580,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             [],
           plan: m.plan || [],
           pendingApprovals: m.pendingApprovals || [],
+          // Task 4 will hydrate parts[] from the DB. Until then, legacy
+          // messages arrive without parts — initialize to [] so the field
+          // is never undefined.
+          parts: m.parts || [],
           timestamp: new Date(
             (m as { createdAt?: string; created_at?: string }).createdAt ||
               (m as { created_at?: string }).created_at ||
@@ -454,17 +659,25 @@ function _handleSSEEvent(
 ) {
   switch (event) {
     case "reasoning": {
-      // Collapsible reasoning trace for o3/o4 models
+      // Collapsible reasoning trace for o3/o4 models.
+      // Dual-write: legacy `reasoning` string + streaming reasoning part.
+      const delta = (data.content as string) || "";
+      const now = Date.now();
       set((s) =>
-        _updateLastAssistant(s, (m) => ({
-          ...m,
-          reasoning: ((m as Record<string, unknown>).reasoning as string || "") + (data.content as string),
-        })),
+        _updateLastAssistant(s, (m) => {
+          const withReasoning = {
+            ...m,
+            reasoning:
+              ((m as Record<string, unknown>).reasoning as string || "") + delta,
+          };
+          return _appendToStreamingReasoning(withReasoning, delta, now);
+        }),
       );
       break;
     }
 
     case "token": {
+      // _flushTokenBuffer handles the parts[] streaming text dual-write.
       const content = data.content as string;
       _tokenBuffer += content;
       if (!_tokenFlushTimer) {
@@ -480,7 +693,29 @@ function _handleSSEEvent(
         args: data.args as Record<string, unknown>,
         status: "pending",
       };
-      set((s) => ({ activeToolCalls: [...s.activeToolCalls, toolCall] }));
+      const toolName = data.tool as string;
+      const callId = (data.call_id as string | undefined) ?? "";
+      const input = (data.args as Record<string, unknown>) || {};
+      const now = Date.now();
+      // Flush any pending buffered tokens so text finalizes before the
+      // tool part appears (so "text → tool → text" produces 3 parts).
+      if (_tokenFlushTimer) {
+        clearTimeout(_tokenFlushTimer);
+        _tokenFlushTimer = null;
+      }
+      _flushTokenBuffer(set);
+      set((s) => ({
+        activeToolCalls: [...s.activeToolCalls, toolCall],
+        ..._updateLastAssistant(s, (m) => {
+          const finalized = _finalizeStreamingParts(m, now);
+          return _appendPart(finalized, {
+            type: `tool-${toolName}` as UnknownToolPart["type"],
+            toolCallId: callId,
+            state: "input-available",
+            input,
+          });
+        }),
+      }));
       break;
     }
 
@@ -489,7 +724,25 @@ function _handleSSEEvent(
         ...task,
         status: task.status || "queued",
       }));
-      set((s) => _updateLastAssistant(s, (m) => ({ ...m, plan: tasks })));
+      set((s) =>
+        _updateLastAssistant(s, (m) => {
+          let next = { ...m, plan: tasks };
+          for (const task of tasks) {
+            // Skip if a step with this taskId already exists.
+            const existing = next.parts.find(
+              (p) => p.type === "step" && p.taskId === task.id,
+            );
+            if (existing) continue;
+            next = _appendPart(next, {
+              type: "step",
+              label: `${task.agent}: ${task.objective}`,
+              state: "pending",
+              taskId: task.id,
+            });
+          }
+          return next;
+        }),
+      );
       break;
     }
 
@@ -508,7 +761,24 @@ function _handleSSEEvent(
                 ...m.plan,
                 { id: taskId, agent, objective, status: "running" as const },
               ];
-          return { ...m, plan };
+          const withPlan = { ...m, plan };
+          const hasStep = withPlan.parts.some(
+            (p) => p.type === "step" && p.taskId === taskId,
+          );
+          if (hasStep) {
+            return _updateLastMatchingPart(
+              withPlan,
+              (p) => p.type === "step" && p.taskId === taskId,
+              (p) =>
+                p.type === "step" ? { ...p, state: "active" as const } : p,
+            );
+          }
+          return _appendPart(withPlan, {
+            type: "step",
+            label: `${agent}: ${objective}`,
+            state: "active",
+            taskId,
+          });
         }),
       );
       break;
@@ -517,12 +787,31 @@ function _handleSSEEvent(
     case "task_done": {
       const taskId = data.task_id as string;
       set((s) =>
-        _updateLastAssistant(s, (m) => ({
-          ...m,
-          plan: m.plan.map((task) =>
-            task.id === taskId ? { ...task, status: "done" as const } : task,
-          ),
-        })),
+        _updateLastAssistant(s, (m) => {
+          const withPlan = {
+            ...m,
+            plan: m.plan.map((task) =>
+              task.id === taskId ? { ...task, status: "done" as const } : task,
+            ),
+          };
+          const hasStep = withPlan.parts.some(
+            (p) => p.type === "step" && p.taskId === taskId,
+          );
+          if (hasStep) {
+            return _updateLastMatchingPart(
+              withPlan,
+              (p) => p.type === "step" && p.taskId === taskId,
+              (p) =>
+                p.type === "step" ? { ...p, state: "complete" as const } : p,
+            );
+          }
+          return _appendPart(withPlan, {
+            type: "step",
+            label: taskId,
+            state: "complete",
+            taskId,
+          });
+        }),
       );
       break;
     }
@@ -530,18 +819,39 @@ function _handleSSEEvent(
     case "task_error": {
       const taskId = data.task_id as string;
       set((s) =>
-        _updateLastAssistant(s, (m) => ({
-          ...m,
-          plan: m.plan.map((task) =>
-            task.id === taskId ? { ...task, status: "error" as const } : task,
-          ),
-        })),
+        _updateLastAssistant(s, (m) => {
+          const withPlan = {
+            ...m,
+            plan: m.plan.map((task) =>
+              task.id === taskId ? { ...task, status: "error" as const } : task,
+            ),
+          };
+          const hasStep = withPlan.parts.some(
+            (p) => p.type === "step" && p.taskId === taskId,
+          );
+          if (hasStep) {
+            return _updateLastMatchingPart(
+              withPlan,
+              (p) => p.type === "step" && p.taskId === taskId,
+              (p) =>
+                p.type === "step" ? { ...p, state: "error" as const } : p,
+            );
+          }
+          return _appendPart(withPlan, {
+            type: "step",
+            label: taskId,
+            state: "error",
+            taskId,
+          });
+        }),
       );
       break;
     }
 
     case "tool_result": {
       const callId = data.call_id as string | undefined;
+      const result = data.result as Record<string, unknown> | undefined;
+      const hasError = !!(result && (result as { error?: unknown }).error);
       set((s) => {
         const tools = s.activeToolCalls.map((tc) =>
           (callId && tc.call_id === callId) || (!callId && tc.status === "pending")
@@ -550,13 +860,43 @@ function _handleSSEEvent(
         );
         return {
           activeToolCalls: tools,
-          ..._updateLastAssistant(s, (m) => ({ ...m, toolCalls: [...tools] })),
+          ..._updateLastAssistant(s, (m) => {
+            const withTools = { ...m, toolCalls: [...tools] };
+            return _updateLastMatchingPart(
+              withTools,
+              (p) =>
+                typeof p.type === "string" &&
+                p.type.startsWith("tool-") &&
+                "toolCallId" in p &&
+                (callId
+                  ? (p as { toolCallId: string }).toolCallId === callId
+                  : (p as { state: ToolState }).state === "input-available"),
+              (p) => {
+                if (!("toolCallId" in p)) return p;
+                if (hasError) {
+                  return {
+                    ...p,
+                    state: "output-error" as const,
+                    errorText: String(
+                      (result as { error: unknown }).error,
+                    ),
+                  } as MessagePart;
+                }
+                return {
+                  ...p,
+                  state: "output-available" as const,
+                  output: result,
+                } as MessagePart;
+              },
+            );
+          }),
         };
       });
       break;
     }
 
     case "tool_end": {
+      // Deprecated — tool_result covers this. No parts mutation.
       set((s) => {
         const tools = s.activeToolCalls.map((tc, i) =>
           i === s.activeToolCalls.length - 1
@@ -612,8 +952,18 @@ function _handleSSEEvent(
     }
 
     case "error": {
+      const message = (data.message as string) || "Something went wrong.";
+      const now = Date.now();
       set((s) => ({
-        ..._updateLastAssistant(s, (m) => ({ ...m, content: (data.message as string) || "Something went wrong." })),
+        ..._updateLastAssistant(s, (m) => {
+          const withContent = { ...m, content: message };
+          const finalized = _finalizeStreamingParts(withContent, now);
+          return _appendPart(finalized, {
+            type: "text",
+            text: message,
+            state: "done",
+          });
+        }),
         isStreaming: false,
       }));
       break;
@@ -627,13 +977,19 @@ function _handleSSEEvent(
       break;
     }
 
-    case "done":
-      // Flush any remaining buffered tokens
+    case "done": {
+      // Flush any remaining buffered tokens.
       if (_tokenFlushTimer) {
         clearTimeout(_tokenFlushTimer);
         _tokenFlushTimer = null;
       }
       _flushTokenBuffer(set);
+      // Finalize any still-streaming parts.
+      const now = Date.now();
+      set((s) =>
+        _updateLastAssistant(s, (m) => _finalizeStreamingParts(m, now)),
+      );
       break;
+    }
   }
 }
