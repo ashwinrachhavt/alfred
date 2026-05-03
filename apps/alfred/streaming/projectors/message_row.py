@@ -13,9 +13,12 @@ Spec: docs/superpowers/specs/2026-05-01-streaming-revamp-design.md section 6.3
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 from uuid import UUID
+
+logger = logging.getLogger(__name__)
 
 from sqlmodel import Session
 
@@ -116,7 +119,15 @@ class MessageProjector:
         if not content_text and not self.tool_calls and not self.artifacts:
             return
         # Close any still-streaming text/reasoning parts before persistence.
-        finalize_streaming_parts(self.parts, int(time.time() * 1000))
+        # Defensive: parts[] is a dual-write side channel; if it corrupts, the
+        # legacy-column write must still succeed.
+        try:
+            finalize_streaming_parts(self.parts, int(time.time() * 1000))
+            parts_to_write = self.parts or None
+        except Exception:
+            logger.exception("parts finalize failed; persisting without parts")
+            parts_to_write = None
+
         # Late import keeps projector importable without the models package loaded.
         from alfred.models.thinking import AgentMessageRow
 
@@ -133,7 +144,7 @@ class MessageProjector:
             artifacts=self.artifacts or None,
             related_cards=self.related_cards or None,
             gaps=self.gaps or None,
-            parts=self.parts or None,
+            parts=parts_to_write,
             active_lens=self._active_lens,
             model_used=self._model_id,
             token_count=token_count,

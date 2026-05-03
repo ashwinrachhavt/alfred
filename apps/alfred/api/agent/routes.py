@@ -298,7 +298,14 @@ async def agent_stream(
             _handle_event_for_parts(parts, event_name, data)
 
         # Close any still-streaming text/reasoning parts before persistence.
-        _finalize_streaming_parts(parts, int(time.time() * 1000))
+        # Defensive: parts[] is a dual-write side channel; corruption here must
+        # not abort the legacy-column write.
+        try:
+            _finalize_streaming_parts(parts, int(time.time() * 1000))
+            parts_to_write = parts or None
+        except Exception:
+            logger.exception("parts finalize failed for thread %s; persisting without parts", thread_id)
+            parts_to_write = None
 
         # Persist assistant message using collected data
         try:
@@ -311,7 +318,7 @@ async def agent_stream(
                     tool_calls=last_done_data.get("tool_calls"),
                     artifacts=last_done_data.get("artifacts"),
                     reasoning=last_done_data.get("reasoning"),
-                    parts=parts or None,
+                    parts=parts_to_write,
                     lens=body.lens,
                     model=body.model,
                 )
