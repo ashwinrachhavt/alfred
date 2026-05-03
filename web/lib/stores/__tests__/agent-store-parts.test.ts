@@ -281,6 +281,68 @@ describe("_updateLastMatchingPart", () => {
   });
 });
 
+describe("_finalizeStreamingParts — single streaming text part", () => {
+  it("transitions a single streaming text part to state: done", () => {
+    const msg = makeMessage({
+      parts: [{ type: "text", text: "partial reply", state: "streaming" }],
+    });
+
+    const next = _finalizeStreamingParts(msg, 1234);
+
+    expect(next.parts).toHaveLength(1);
+    expect(next.parts[0]).toEqual({
+      type: "text",
+      text: "partial reply",
+      state: "done",
+    });
+  });
+});
+
+describe("cancelStream finalizes streaming parts (integration)", () => {
+  it("cancelStream flips isStreaming false AND finalizes streaming text parts", async () => {
+    const { useAgentStore } = await import("../agent-store");
+
+    const controller = new AbortController();
+    const abortSpy = vi.spyOn(controller, "abort");
+
+    // Seed an assistant message with an in-flight streaming text part and
+    // an active abort controller (simulating a mid-stream cancel).
+    useAgentStore.setState({
+      messagesById: {
+        "assistant-1": makeMessage({
+          id: "assistant-1",
+          parts: [{ type: "text", text: "partial...", state: "streaming" }],
+        }),
+      },
+      messageOrder: ["assistant-1"],
+      isStreaming: true,
+      abortController: controller,
+    });
+
+    useAgentStore.getState().cancelStream();
+
+    const state = useAgentStore.getState();
+    expect(abortSpy).toHaveBeenCalled();
+    expect(state.isStreaming).toBe(false);
+    expect(state.abortController).toBeNull();
+    const finalMsg = state.messagesById["assistant-1"];
+    expect(finalMsg.parts).toHaveLength(1);
+    expect(finalMsg.parts[0]).toMatchObject({
+      type: "text",
+      text: "partial...",
+      state: "done",
+    });
+
+    // Reset store for isolation from other suites.
+    useAgentStore.setState({
+      messagesById: {},
+      messageOrder: [],
+      isStreaming: false,
+      abortController: null,
+    });
+  });
+});
+
 describe("text -> tool -> text produces 3 parts (edge case)", () => {
   // Simulates the order of operations that the tool_start SSE case performs:
   //   1. Finalize streaming parts (so in-flight text closes).

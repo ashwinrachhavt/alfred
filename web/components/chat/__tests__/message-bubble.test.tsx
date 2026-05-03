@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -41,8 +41,20 @@ vi.mock("@/components/ai-elements/message", () => ({
 }));
 
 vi.mock("@/components/ai-elements/reasoning", () => ({
-  Reasoning: ({ children, isStreaming }: { children: ReactNode; isStreaming?: boolean }) => (
-    <div data-testid="ai-reasoning" data-streaming={isStreaming ? "true" : "false"}>
+  Reasoning: ({
+    children,
+    isStreaming,
+    duration,
+  }: {
+    children: ReactNode;
+    isStreaming?: boolean;
+    duration?: number;
+  }) => (
+    <div
+      data-testid="ai-reasoning"
+      data-streaming={isStreaming ? "true" : "false"}
+      data-duration={String(duration ?? "")}
+    >
       {children}
     </div>
   ),
@@ -53,8 +65,21 @@ vi.mock("@/components/ai-elements/reasoning", () => ({
 }));
 
 vi.mock("@/components/ai-elements/tool", () => ({
-  Tool: ({ children }: { children: ReactNode }) => (
-    <div data-testid="ai-tool">{children}</div>
+  Tool: ({
+    children,
+    open,
+    defaultOpen,
+  }: {
+    children: ReactNode;
+    open?: boolean;
+    defaultOpen?: boolean;
+  }) => (
+    <div
+      data-testid="ai-tool"
+      data-open={String(open ?? defaultOpen ?? false)}
+    >
+      {children}
+    </div>
   ),
   ToolHeader: ({ type, state }: { type: string; state: string }) => (
     <div data-testid="ai-tool-header">
@@ -82,12 +107,22 @@ vi.mock("@/components/ai-elements/chain-of-thought", () => ({
     label,
     description,
     status,
+    icon: Icon,
+    className,
   }: {
     label: ReactNode;
     description?: ReactNode;
     status?: string;
+    icon?: ComponentType<{ "data-testid"?: string }>;
+    className?: string;
   }) => (
-    <div data-testid="ai-chain-step" data-status={status}>
+    <div
+      data-testid="ai-chain-step"
+      data-status={status}
+      data-description={typeof description === "string" ? description : ""}
+      data-classname={className ?? ""}
+    >
+      {Icon ? <Icon data-testid="ai-chain-step-icon" /> : null}
       <span>{label}</span>
       {description ? <span>{description}</span> : null}
     </div>
@@ -274,6 +309,115 @@ describe("MessageBubble", () => {
     expect(screen.getByTestId("ai-chain-step")).toHaveTextContent(
       "knowledge: Search Polymath's knowledge base",
     );
+  });
+
+  it("renders plan tasks from legacy message via synthesis (no parts[])", () => {
+    // Simulates a DB-loaded message that has plan[] populated but no parts[].
+    // Without the synthesizer extension, ChainOfThought would not render.
+    const message = makeMessage({
+      content: "Here is my answer.",
+      plan: [
+        {
+          id: "task-1",
+          agent: "knowledge",
+          objective: "Search knowledge base",
+          status: "done",
+        },
+        {
+          id: "task-2",
+          agent: "research",
+          objective: "Deep research",
+          status: "error",
+        },
+      ],
+      parts: [],
+    });
+
+    render(<MessageBubble message={message} mode="sidebar" onArtifactClick={vi.fn()} />);
+
+    expect(screen.getByTestId("ai-chain-of-thought")).toBeInTheDocument();
+    const steps = screen.getAllByTestId("ai-chain-step");
+    expect(steps).toHaveLength(2);
+    expect(steps[0]).toHaveTextContent("knowledge: Search knowledge base");
+    expect(steps[0]).toHaveAttribute("data-status", "complete");
+    expect(steps[1]).toHaveTextContent("research: Deep research");
+  });
+
+  it("step with state=error renders with error indicator (icon + destructive class)", () => {
+    const parts: MessagePart[] = [
+      {
+        type: "step",
+        label: "research: Deep research",
+        state: "error",
+        description: "network timeout",
+        taskId: "task-err",
+      },
+    ];
+    const message = makeMessage({ content: "Partial answer.", parts });
+
+    render(<MessageBubble message={message} mode="sidebar" onArtifactClick={vi.fn()} />);
+
+    const step = screen.getByTestId("ai-chain-step");
+    // Icon is rendered only when the error step passes one in.
+    expect(screen.getByTestId("ai-chain-step-icon")).toBeInTheDocument();
+    expect(step).toHaveAttribute("data-classname", "text-destructive");
+    // Description is prefixed with "Error: " so the visual differs from
+    // a successful step even when status is "complete".
+    expect(step).toHaveAttribute("data-description", "Error: network timeout");
+  });
+
+  it("tool part in output-error state renders expanded (data-open=true)", () => {
+    const parts: MessagePart[] = [
+      {
+        type: "tool-search_kb",
+        toolCallId: "call-err",
+        state: "output-error",
+        input: { q: "monads" },
+        errorText: "boom",
+      },
+    ];
+    const message = makeMessage({ content: "Tool failed.", parts });
+
+    render(<MessageBubble message={message} mode="sidebar" onArtifactClick={vi.fn()} />);
+
+    const tool = screen.getByTestId("ai-tool");
+    expect(tool).toHaveAttribute("data-open", "true");
+  });
+
+  it("tool part in input-available state does not render expanded by default", () => {
+    const parts: MessagePart[] = [
+      {
+        type: "tool-search_kb",
+        toolCallId: "call-ok",
+        state: "input-available",
+        input: { q: "monads" },
+      },
+    ];
+    const message = makeMessage({ content: "Tool running.", parts });
+
+    render(<MessageBubble message={message} mode="sidebar" onArtifactClick={vi.fn()} />);
+
+    const tool = screen.getByTestId("ai-tool");
+    expect(tool).toHaveAttribute("data-open", "false");
+  });
+
+  it("reasoning part exposes duration via mock prop", () => {
+    const parts: MessagePart[] = [
+      {
+        type: "reasoning",
+        text: "thinking",
+        state: "done",
+        startedAt: 1000,
+        finishedAt: 4000, // 3s
+      },
+    ];
+    const message = makeMessage({ reasoning: "thinking", parts });
+
+    render(<MessageBubble message={message} mode="sidebar" onArtifactClick={vi.fn()} />);
+
+    const reasoning = screen.getByTestId("ai-reasoning");
+    expect(reasoning).toHaveAttribute("data-duration", "3");
+    expect(reasoning).toHaveAttribute("data-streaming", "false");
   });
 
   it("renders approval-required section", () => {

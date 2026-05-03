@@ -250,6 +250,24 @@ function _clearTokenBuffer() {
   }
 }
 
+/**
+ * Clear the flush timer, flush any buffered tokens, and finalize any
+ * streaming text/reasoning parts on the last assistant message. Called from
+ * all non-`done` stream exit paths (abort, network error, finally block)
+ * so that `state: "streaming"` never leaks past stream teardown.
+ */
+function _flushAndFinalize(
+  set: (fn: (s: AgentState) => Partial<AgentState>) => void,
+) {
+  if (_tokenFlushTimer) {
+    clearTimeout(_tokenFlushTimer);
+    _tokenFlushTimer = null;
+  }
+  _flushTokenBuffer(set);
+  const now = Date.now();
+  set((s) => _updateLastAssistant(s, (m) => _finalizeStreamingParts(m, now)));
+}
+
 // --- Parts helpers (AI Elements migration — Task 2) ---
 // Exported for tests only — not intended as a public API.
 
@@ -500,21 +518,21 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       clearTimeout(timeoutId);
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        // User cancelled — expected
+        // User cancelled — expected. Still finalize streaming parts so the
+        // UI doesn't get stuck with `state: "streaming"` forever.
+        _flushAndFinalize(set);
       } else {
-        // Flush any buffered tokens before setting error
-        _flushTokenBuffer(set);
+        // Flush any buffered tokens and finalize streaming parts before
+        // setting the fallback error message.
+        _flushAndFinalize(set);
         set((s) => _updateLastAssistant(s, (m) =>
           !m.content ? { ...m, content: "Sorry, something went wrong. Please try again." } : m,
         ));
       }
     } finally {
-      // Flush any remaining buffered tokens
-      if (_tokenFlushTimer) {
-        clearTimeout(_tokenFlushTimer);
-        _tokenFlushTimer = null;
-      }
-      _flushTokenBuffer(set);
+      // Defensive second pass: if `done` was received, this is cheap (no
+      // streaming parts remain to update). If not, it guarantees finalize.
+      _flushAndFinalize(set);
       set({ isStreaming: false, abortController: null });
     }
   },
@@ -523,7 +541,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const { abortController } = get();
     if (abortController) {
       abortController.abort();
-      _clearTokenBuffer();
+      // Finalize before flipping streaming state so MessageBubble's
+      // isAssistantStreaming flips false in the same render as isStreaming.
+      _flushAndFinalize(set);
       set({ isStreaming: false, abortController: null });
     }
   },

@@ -3,6 +3,7 @@
 import { memo, useMemo, useState } from "react";
 
 import {
+  AlertCircle,
   BookmarkPlus,
   Check,
   ClipboardCopy,
@@ -732,7 +733,7 @@ function CommentableMarkdownBlock({
  * Used as a fallback for messages that predate the parts[] dual-write
  * (e.g., threads loaded from the DB before Task 4 ships persistence).
  * Order mirrors how the new SSE pipeline would emit them:
- * reasoning -> tool calls -> text.
+ * reasoning -> plan steps -> tool calls -> text.
  */
 function synthesizePartsFromLegacy(message: AgentMessage): MessagePart[] {
   const parts: MessagePart[] = [];
@@ -743,6 +744,24 @@ function synthesizePartsFromLegacy(message: AgentMessage): MessagePart[] {
       state: "done",
       startedAt: 0,
       finishedAt: 0,
+    });
+  }
+  // Legacy DB rows carry plan[] but no StepParts. Mirror what the SSE
+  // "plan"/"task_*" events would have produced so ChainOfThought renders.
+  for (const task of message.plan ?? []) {
+    const state: StepPart["state"] =
+      task.status === "queued"
+        ? "pending"
+        : task.status === "running"
+          ? "active"
+          : task.status === "error"
+            ? "error"
+            : "complete";
+    parts.push({
+      type: "step",
+      label: `${task.agent}: ${task.objective}`,
+      state,
+      taskId: task.id,
     });
   }
   for (const tc of message.toolCalls ?? []) {
@@ -791,26 +810,72 @@ function groupSteps(parts: MessagePart[]): GroupedEntry[] {
   return out;
 }
 
+/**
+ * Renders a single tool part with a controlled open state so that tools
+ * which transition into `output-error` after mount auto-expand (the
+ * uncontrolled `defaultOpen` prop was only read on first render and
+ * silently ignored post-mount).
+ *
+ * Implementation note: we avoid a setState-in-effect pattern (flagged by
+ * `react-hooks/set-state-in-effect`) by OR-ing local "user intent" state
+ * with the derived `output-error` signal when computing `open`.
+ */
+function ToolPart({
+  part,
+}: {
+  part: Extract<MessagePart, { type: `tool-${string}` }>;
+}) {
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  const isError = part.state === "output-error";
+  // Error auto-opens. Otherwise respect user intent if they've toggled,
+  // else fall back to closed (matches previous defaultOpen=false default).
+  const open = userOpen ?? isError;
+
+  return (
+    <Tool open={open} onOpenChange={setUserOpen}>
+      <ToolHeader type={part.type} state={part.state} />
+      <ToolContent>
+        <ToolInput input={part.input} />
+        <ToolOutput output={part.output} errorText={part.errorText} />
+      </ToolContent>
+    </Tool>
+  );
+}
+
 function renderNonTextPart(entry: GroupedEntry, index: number) {
   if (entry.kind === "steps") {
     return (
       <ChainOfThought key={`steps-${index}`} defaultOpen>
-        {entry.steps.map((step, j) => (
-          <ChainOfThoughtStep
-            key={step.taskId ?? `${index}-${j}`}
-            label={step.label}
-            description={step.description}
-            status={
-              step.state === "complete"
-                ? "complete"
-                : step.state === "active"
-                  ? "active"
-                  : step.state === "error"
-                    ? "complete"
-                    : "pending"
-            }
-          />
-        ))}
+        {entry.steps.map((step, j) => {
+          const isError = step.state === "error";
+          const status: "complete" | "active" | "pending" =
+            step.state === "complete"
+              ? "complete"
+              : step.state === "active"
+                ? "active"
+                : step.state === "error"
+                  ? // Error surfaces as "complete" (the primitive's finished
+                    // state) but styled destructively via `icon` + className
+                    // below so it reads as a failure, not a success.
+                    "complete"
+                  : "pending";
+          return (
+            <ChainOfThoughtStep
+              key={step.taskId ?? `${index}-${j}`}
+              label={step.label}
+              description={
+                isError
+                  ? step.description
+                    ? `Error: ${step.description}`
+                    : "Error"
+                  : step.description
+              }
+              status={status}
+              icon={isError ? AlertCircle : undefined}
+              className={isError ? "text-destructive" : undefined}
+            />
+          );
+        })}
       </ChainOfThought>
     );
   }
@@ -837,18 +902,7 @@ function renderNonTextPart(entry: GroupedEntry, index: number) {
 
   if (typeof part.type === "string" && part.type.startsWith("tool-")) {
     const tool = part as Extract<MessagePart, { type: `tool-${string}` }>;
-    return (
-      <Tool
-        key={tool.toolCallId || `tool-${index}`}
-        defaultOpen={tool.state === "output-error"}
-      >
-        <ToolHeader type={tool.type} state={tool.state} />
-        <ToolContent>
-          <ToolInput input={tool.input} />
-          <ToolOutput output={tool.output} errorText={tool.errorText} />
-        </ToolContent>
-      </Tool>
-    );
+    return <ToolPart key={tool.toolCallId || `tool-${index}`} part={tool} />;
   }
 
   return null;
