@@ -132,6 +132,11 @@ function removeMentionToken(input: string, match: OmniboxMentionMatch): string {
     .trim();
 }
 
+function removeMentionTokenIfCurrent(input: string, match: OmniboxMentionMatch): string {
+  if (input.slice(match.start, match.end) !== `@${match.query}`) return input;
+  return removeMentionToken(input, match);
+}
+
 function chatContextKey(context: Pick<AttachedChatContext, "kind" | "id">): string {
   return `${context.kind}:${context.id}`;
 }
@@ -316,10 +321,11 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
     : null;
   const isOmniboxDismissed =
     omniboxMentionToken !== null && omniboxMentionToken === dismissedOmniboxToken;
+  const isOmniboxQueryEnabled = !!omniboxMention && !isStreaming && !isOmniboxDismissed;
   const omniboxSearch = useQuery({
     queryKey: ["chat-omnibox", omniboxMention?.query ?? ""],
     queryFn: () => searchChatOmnibox(omniboxMention?.query ?? "", 8),
-    enabled: !!omniboxMention && !isStreaming,
+    enabled: isOmniboxQueryEnabled,
     staleTime: 30_000,
   });
 
@@ -345,6 +351,7 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
   const handleSelectOmniboxResult = useCallback(
     async (row: OmniboxResult) => {
       if (!omniboxMention) return;
+      const selectedMention = omniboxMention;
 
       if (row.kind === "action") {
         const instruction =
@@ -353,7 +360,9 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
             : `Create a card from ${row.query}`;
 
         setInput((current) =>
-          [removeMentionToken(current, omniboxMention), instruction].filter(Boolean).join(" "),
+          [removeMentionTokenIfCurrent(current, selectedMention), instruction]
+            .filter(Boolean)
+            .join(" "),
         );
         setDismissedOmniboxToken(null);
         requestAnimationFrame(() => inputRef.current?.focus());
@@ -381,9 +390,9 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
                   topic: card.topic,
                   tags: card.tags,
                 },
-              ],
+            ],
         );
-        setInput((current) => removeMentionToken(current, omniboxMention));
+        setInput((current) => removeMentionTokenIfCurrent(current, selectedMention));
         setDismissedOmniboxToken(null);
         requestAnimationFrame(() => inputRef.current?.focus());
         return;
@@ -411,7 +420,7 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
               },
             ],
       );
-      setInput((current) => removeMentionToken(current, omniboxMention));
+      setInput((current) => removeMentionTokenIfCurrent(current, selectedMention));
       setDismissedOmniboxToken(null);
       requestAnimationFrame(() => inputRef.current?.focus());
     },
@@ -713,8 +722,8 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
             noteContext={noteContext}
             attachedContext={attachedContext}
             omniboxRows={omniboxRows}
-            isOmniboxOpen={!!omniboxMention && !isOmniboxDismissed}
-            isOmniboxLoading={omniboxSearch.isFetching}
+            isOmniboxOpen={isOmniboxQueryEnabled}
+            isOmniboxLoading={isOmniboxQueryEnabled && omniboxSearch.isFetching}
             onSelectOmniboxResult={handleSelectOmniboxResult}
             onCloseOmnibox={handleCloseOmnibox}
             onRemoveAttachedContext={handleRemoveAttachedContext}
@@ -734,8 +743,8 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
             activeModel={activeModel}
             attachedContext={attachedContext}
             omniboxRows={omniboxRows}
-            isOmniboxOpen={!!omniboxMention && !isOmniboxDismissed}
-            isOmniboxLoading={omniboxSearch.isFetching}
+            isOmniboxOpen={isOmniboxQueryEnabled}
+            isOmniboxLoading={isOmniboxQueryEnabled && omniboxSearch.isFetching}
             onSelectOmniboxResult={handleSelectOmniboxResult}
             onCloseOmnibox={handleCloseOmnibox}
             onRemoveAttachedContext={handleRemoveAttachedContext}
@@ -1046,6 +1055,7 @@ function OmniboxPicker({
 
   return (
     <div
+      id="polymath-omnibox-listbox"
       role="listbox"
       aria-label="Polymath context search"
       className="bg-popover absolute right-0 bottom-full left-0 z-50 mb-2 max-h-56 overflow-y-auto rounded-md border border-[var(--border-strong)] shadow-lg"
@@ -1059,6 +1069,7 @@ function OmniboxPicker({
         rows.map((row) => (
           <button
             key={`${row.kind}-${row.id}`}
+            id={`polymath-omnibox-option-${row.kind}-${row.id}`}
             type="button"
             role="option"
             aria-selected={false}
@@ -1139,9 +1150,14 @@ const SidebarInput = forwardRef<
         />
         <textarea
           ref={ref}
+          role="combobox"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleInputKeyDown}
+          aria-autocomplete="list"
+          aria-controls={isOmniboxOpen ? "polymath-omnibox-listbox" : undefined}
+          aria-expanded={isOmniboxOpen}
+          aria-haspopup="listbox"
           placeholder={
             isOnNotes && noteContext
               ? `Ask about ${noteContext.title}...`
@@ -1251,9 +1267,14 @@ const ExpandedInput = forwardRef<HTMLTextAreaElement, InputProps>(function Expan
           />
           <textarea
             ref={ref}
+            role="combobox"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleInputKeyDown}
+            aria-autocomplete="list"
+            aria-controls={isOmniboxOpen ? "polymath-omnibox-listbox" : undefined}
+            aria-expanded={isOmniboxOpen}
+            aria-haspopup="listbox"
             placeholder="Do anything with AI..."
             rows={1}
             className="placeholder:text-muted-foreground flex-1 resize-none bg-transparent px-4 py-3 text-sm outline-none"

@@ -24,7 +24,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Alfred",
+  title: "Polymath",
   description: "Your knowledge factory — ingest, decompose, connect, think.",
 };
 

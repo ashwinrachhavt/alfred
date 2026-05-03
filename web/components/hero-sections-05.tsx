@@ -37,7 +37,7 @@ export default function HeroSection() {
 
         {/* Title — Inter (sans) */}
         <h1 className="text-6xl tracking-tight sm:text-7xl lg:text-8xl">
-          Alfred<span className="text-primary">.</span>
+          Polymath<span className="text-primary">.</span>
         </h1>
 
         {/* Tagline */}

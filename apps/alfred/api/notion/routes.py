@@ -156,7 +156,7 @@ def notion_oauth_callback(
 
     return HTMLResponse(
         content=render_oauth_callback_page(
-            ok=True, message="You can return to Alfred.", provider="notion"
+            ok=True, message="You can return to Polymath.", provider="notion"
         ),
         status_code=200,
     )

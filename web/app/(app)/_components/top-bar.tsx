@@ -18,7 +18,7 @@ export function TopBar() {
         {/* Left: breadcrumb area — can be filled by page-level components */}
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-medium tracking-widest text-[var(--alfred-text-tertiary)] uppercase">
-            Alfred
+            Polymath
           </span>
         </div>
 

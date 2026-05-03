@@ -47,7 +47,7 @@ const navSections: NavSection[] = [
     title: "Navigate",
     items: [
       { label: "Today", href: "/today", icon: Calendar },
-      { label: "Alfred AI", href: "#ai", icon: Bot, shortcut: "0", action: "toggle-ai-panel" },
+      { label: "Polymath AI", href: "#ai", icon: Bot, shortcut: "0", action: "toggle-ai-panel" },
       { label: "Inbox", href: "/inbox", icon: Inbox, shortcut: "1" },
       { label: "Canvas", href: "/canvas", icon: Network, shortcut: "2" },
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, shortcut: "4" },
@@ -184,7 +184,7 @@ export function AppSidebar() {
       {/* Logo */}
       <div className="flex h-12 items-center px-5">
         <Link href="/inbox" className="flex items-center gap-2">
-          <span className="text-xl tracking-tight">Alfred</span>
+          <span className="text-xl tracking-tight">Polymath</span>
           <span className="text-primary text-xl">.</span>
         </Link>
       </div>

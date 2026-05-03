@@ -1,6 +1,6 @@
 import { Settings } from "lucide-react";
 
-export const metadata = { title: "Settings — Alfred" };
+export const metadata = { title: "Settings — Polymath" };
 
 export default function SettingsPage() {
   return (

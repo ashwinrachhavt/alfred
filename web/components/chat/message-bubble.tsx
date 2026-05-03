@@ -650,7 +650,7 @@ function ResponseCommentsPanel({
         </div>
       ) : (
         <p className="text-muted-foreground mb-3 text-xs">
-          Add a review note for this block. Alfred can reply to all comments afterward.
+          Add a review note for this block. Polymath can reply to all comments afterward.
         </p>
       )}
 

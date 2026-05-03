@@ -183,7 +183,7 @@ export function CaptureModal({ open, onOpenChange }: Props) {
             <span className="text-[10px] text-muted-foreground/50">
               {detectedType === "url"
                 ? "URL detected — will scrape and decompose"
-                : "Paste anything — Alfred handles the rest"}
+                : "Paste anything — Polymath handles the rest"}
             </span>
             <span className="text-[10px] text-muted-foreground/50">
               {isApplePlatform ? "⌘" : "Ctrl"}+Enter to capture

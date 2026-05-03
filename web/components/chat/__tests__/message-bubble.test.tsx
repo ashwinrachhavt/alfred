@@ -166,7 +166,7 @@ describe("MessageBubble", () => {
         {
           id: "task-1",
           agent: "knowledge",
-          objective: "Search Alfred's knowledge base",
+          objective: "Search Polymath's knowledge base",
           status: "running",
         },
       ],
@@ -175,7 +175,7 @@ describe("MessageBubble", () => {
     render(<MessageBubble message={message} mode="sidebar" onArtifactClick={vi.fn()} />);
 
     expect(screen.getByText("Plan")).toBeInTheDocument();
-    expect(screen.getByText(/knowledge: Search Alfred's knowledge base/)).toBeInTheDocument();
+    expect(screen.getByText(/knowledge: Search Polymath's knowledge base/)).toBeInTheDocument();
   });
 
   it("renders approval-required section", () => {
@@ -445,7 +445,7 @@ describe("MessageBubble", () => {
     expect(onViewZettel).toHaveBeenCalledWith(777);
   });
 
-  it("tags commented responses and can ask Alfred to reply to the comments", async () => {
+  it("tags commented responses and can ask Polymath to reply to the comments", async () => {
     const user = userEvent.setup();
     const onReplyToResponseComments = vi.fn();
     const message = makeMessage({ content: "Reviewed answer." });

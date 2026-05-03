@@ -288,7 +288,7 @@ export function CanvasAIPanel({
 
         if (!data || !Array.isArray(data.elements) || data.elements.length === 0) {
           throw new Error(
-            data?.description || "Alfred could not generate a diagram for that prompt.",
+            data?.description || "Polymath could not generate a diagram for that prompt.",
           );
         }
 
@@ -370,7 +370,7 @@ export function CanvasAIPanel({
   const placeholder =
     mode === "visualize"
       ? "Describe what to draw: flowchart, mind map, user journey, architecture, timeline..."
-      : "Ask Alfred about this canvas...";
+      : "Ask Polymath about this canvas...";
 
   return (
     <div
@@ -392,7 +392,7 @@ export function CanvasAIPanel({
           <GripVertical className="text-muted-foreground/60 size-3.5" />
           <Bot className="text-primary size-4" />
           <span className="text-[10px] font-medium tracking-widest text-[var(--alfred-text-tertiary)] uppercase">
-            Alfred AI
+            Polymath AI
           </span>
         </div>
 
@@ -453,8 +453,8 @@ export function CanvasAIPanel({
             <Bot className="text-muted-foreground/40 size-8" />
             <p className="text-muted-foreground text-sm">
               {mode === "visualize"
-                ? "Describe any concept and Alfred will turn it into a smart, editable diagram on your canvas."
-                : "Ask Alfred about the current canvas. Chat responses stay textual and can be copied onto the board."}
+                ? "Describe any concept and Polymath will turn it into a smart, editable diagram on your canvas."
+                : "Ask Polymath about the current canvas. Chat responses stay textual and can be copied onto the board."}
             </p>
 
             {mode === "visualize" && (
@@ -481,7 +481,7 @@ export function CanvasAIPanel({
         {messages.map((message) => (
           <div key={message.id} className="space-y-1">
             <span className="text-[10px] font-medium tracking-widest text-[var(--alfred-text-tertiary)] uppercase">
-              {message.role === "user" ? "You" : "Alfred"}
+              {message.role === "user" ? "You" : "Polymath"}
             </span>
             <div
               className={

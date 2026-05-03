@@ -38,7 +38,7 @@ export function SessionAiDialog({
  <DialogHeader>
  <DialogTitle>Generate system diagram</DialogTitle>
  <DialogDescription>
- Describe the architecture you want. Alfred will generate a new Excalidraw diagram.
+ Describe the architecture you want. Polymath will generate a new Excalidraw diagram.
  </DialogDescription>
  </DialogHeader>
 

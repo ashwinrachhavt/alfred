@@ -5,7 +5,7 @@ import { ConnectionsCard } from "./_components/connections-card";
 import { ActivityStrip } from "./_components/activity-strip";
 import { TaxonomySection } from "./_components/taxonomy-section";
 
-export const metadata = { title: "Dashboard — Alfred" };
+export const metadata = { title: "Dashboard — Polymath" };
 
 export default function DashboardPage() {
  return (

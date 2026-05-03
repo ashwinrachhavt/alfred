@@ -74,7 +74,7 @@ export default function DesignSystemPage() {
  <Badge variant="secondary">Internal</Badge>
  </div>
  <p className="text-muted-foreground max-w-2xl text-sm">
- A living reference for Alfred’s UI foundations, components, and usage guidelines.
+ A living reference for Polymath’s UI foundations, components, and usage guidelines.
  </p>
  <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
  <span className="bg-muted/30 rounded-full border px-3 py-1">Semantic tokens</span>

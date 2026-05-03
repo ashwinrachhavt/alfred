@@ -83,7 +83,7 @@ def gmail_oauth_callback(
         return result
 
     return HTMLResponse(
-        content=render_oauth_callback_page(ok=True, message="You can return to Alfred."),
+        content=render_oauth_callback_page(ok=True, message="You can return to Polymath."),
         status_code=200,
     )
 

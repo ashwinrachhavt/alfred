@@ -70,7 +70,7 @@ const AlfredAPI = {
     const resp = await fetch(url, merged);
     if (!resp.ok) {
       const text = await resp.text().catch(() => "");
-      throw new Error(`Alfred API ${resp.status}: ${text}`);
+      throw new Error(`Polymath API ${resp.status}: ${text}`);
     }
     const ct = resp.headers.get("content-type") || "";
     if (ct.includes("application/json")) {

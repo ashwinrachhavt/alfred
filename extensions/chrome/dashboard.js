@@ -24,7 +24,7 @@
     const online = await AlfredAPI.health();
     const dot = $("#sidebar-status");
     dot.classList.toggle("online", online);
-    dot.title = online ? "Connected to Alfred" : "Alfred backend offline";
+    dot.title = online ? "Connected to Polymath" : "Polymath backend offline";
     return online;
   }
   const isOnline = await checkStatus();
@@ -88,7 +88,7 @@
       allNotes = flattenNotes(data);
       renderNotes(allNotes);
     } catch (err) {
-      container.innerHTML = `<p class="empty-state">Could not load notes. Is Alfred running?</p>`;
+      container.innerHTML = `<p class="empty-state">Could not load notes. Is Polymath running?</p>`;
     }
   }
 
@@ -222,7 +222,7 @@
       allDocs = Array.isArray(data) ? data : data.documents || data.items || [];
       renderLibrary(allDocs);
     } catch {
-      container.innerHTML = '<p class="empty-state">Could not load library. Is Alfred running?</p>';
+      container.innerHTML = '<p class="empty-state">Could not load library. Is Polymath running?</p>';
     }
   }
 
@@ -318,8 +318,8 @@
     loadNotes();
     loadLibrary();
   } else {
-    $("#notes-list").innerHTML = '<p class="empty-state">Alfred backend is offline. Start Alfred and refresh.</p>';
-    $("#library-list").innerHTML = '<p class="empty-state">Alfred backend is offline. Start Alfred and refresh.</p>';
+    $("#notes-list").innerHTML = '<p class="empty-state">Polymath backend is offline. Start Polymath and refresh.</p>';
+    $("#library-list").innerHTML = '<p class="empty-state">Polymath backend is offline. Start Polymath and refresh.</p>';
   }
   loadHistory();
 })();

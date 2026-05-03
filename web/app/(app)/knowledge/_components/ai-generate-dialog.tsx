@@ -385,8 +385,8 @@ export function AIGenerateDialog({ open, onOpenChange }: Props) {
                 />
                 <p className="text-xs text-[var(--alfred-text-tertiary)]">
                   {inferredMode === "content"
-                    ? "Looks like source content. Alfred will extract one atomic zettel."
-                    : "Looks like a topic. Alfred will write a concise knowledge card."}
+                    ? "Looks like source content. Polymath will extract one atomic zettel."
+                    : "Looks like a topic. Polymath will write a concise knowledge card."}
                 </p>
               </div>
 

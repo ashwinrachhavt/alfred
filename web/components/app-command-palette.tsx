@@ -166,7 +166,7 @@ function AppCommandPaletteDialog({
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} contentClassName="max-w-xl">
       <CommandInput
-        placeholder="Search Alfred..."
+        placeholder="Search Polymath..."
         value={query}
         onValueChange={setQuery}
         autoFocus
@@ -180,14 +180,14 @@ function AppCommandPaletteDialog({
               return (
                 <CommandItem
                   key={p.key}
-                  value="ask alfred assistant rag chat knowledge ai"
+                  value="ask polymath assistant rag chat knowledge ai"
                   onSelect={() => {
                     useShellStore.getState().openAiPanel("expanded");
                     onOpenChange(false);
                   }}
                 >
                   <Sparkles className="h-4 w-4" aria-hidden="true" />
-                  <span>Ask Alfred</span>
+                  <span>Ask Polymath</span>
                   <CommandShortcut>⌘J</CommandShortcut>
                 </CommandItem>
               );

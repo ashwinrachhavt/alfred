@@ -1,6 +1,6 @@
 import { InboxStream } from "./_components/inbox-stream";
 
-export const metadata = { title: "Inbox — Alfred" };
+export const metadata = { title: "Inbox — Polymath" };
 
 export default function InboxPage() {
  return (
