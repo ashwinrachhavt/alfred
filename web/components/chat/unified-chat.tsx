@@ -302,7 +302,7 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
       if (!zettelMention) return;
 
       const card = await queryClient.fetchQuery({
-        queryKey: ["zettels", "card", row.id],
+        queryKey: ["zettels", "card", "raw", row.id],
         queryFn: () => getZettelCard(row.id),
         staleTime: 60_000,
       });

@@ -119,13 +119,16 @@ import { UnifiedChat } from "../unified-chat";
 // Tests
 // ---------------------------------------------------------------------------
 
-function renderWithClient(ui: ReactElement) {
-  const queryClient = new QueryClient({
+function createTestQueryClient() {
+  return new QueryClient({
     defaultOptions: {
       queries: { retry: false },
       mutations: { retry: false },
     },
   });
+}
+
+function renderWithClient(ui: ReactElement, queryClient = createTestQueryClient()) {
 
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
@@ -296,6 +299,61 @@ describe("UnifiedChat — sidebar mode", () => {
 
     expect(await screen.findByText("Recent zettel")).toBeInTheDocument();
     expect(mockSearchCards).toHaveBeenCalledWith("");
+  });
+
+  it("loads a raw zettel when the detail cache already contains a transformed card", async () => {
+    const user = userEvent.setup();
+    const queryClient = createTestQueryClient();
+    queryClient.setQueryData(["zettels", "card", 42], {
+      id: "42",
+      title: "Cached transformed card",
+      content: "Cached transformed content",
+      summary: "Cached transformed summary",
+      tags: [],
+    });
+    mockSearchCards.mockResolvedValue({
+      text_matches: [
+        {
+          id: 42,
+          title: "Memory consolidation needs retrieval",
+          topic: "learning",
+          tags: ["memory", "retrieval"],
+          status: "active",
+        },
+      ],
+      ai_suggestions: [],
+    });
+    mockGetZettelCard.mockResolvedValue({
+      id: 42,
+      title: "Memory consolidation needs retrieval",
+      content: "Retrieval practice strengthens memory by forcing reconstruction instead of recognition.",
+      summary: "Testing yourself improves durable learning.",
+      tags: ["memory", "retrieval"],
+      topic: "learning",
+      source_url: null,
+      document_id: null,
+      importance: 3,
+      confidence: 4,
+      status: "active",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+    });
+    vi.mocked(useShellStore).mockReturnValue({
+      aiPanelOpen: true,
+      chatMode: "sidebar",
+      toggleAiPanel: mockToggleAiPanel,
+      toggleChatExpanded: mockToggleChatExpanded,
+    } as unknown as ReturnType<typeof useShellStore>);
+
+    renderWithClient(<UnifiedChat mode="sidebar" />, queryClient);
+
+    const textarea = screen.getByPlaceholderText("Ask about your knowledge...");
+    await user.type(textarea, "Use @memo");
+    await user.click(await screen.findByText("Memory consolidation needs retrieval"));
+
+    expect(mockGetZettelCard).toHaveBeenCalledWith(42);
+    expect(await screen.findByText("@Memory consolidation needs retrieval")).toBeInTheDocument();
+    expect(screen.queryByText("@Cached transformed card")).not.toBeInTheDocument();
   });
 
   it("has a close button that calls toggleAiPanel", () => {
