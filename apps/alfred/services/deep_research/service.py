@@ -112,6 +112,10 @@ class DeepResearchService:
         run_id = f"run_{uuid.uuid4().hex[:12]}"
         final_files: dict[str, str] = {}
         last_todos: list[dict[str, Any]] = []
+        # deepagents namespaces each sub-agent with a UUID (`tools:<uuid>`).
+        # We learn the human name from messages tagged with `name=` on the
+        # sub-agent's model output, then decorate subsequent events.
+        subagent_names: dict[str, str] = {}
 
         try:
             inputs = {"messages": [{"role": "user", "content": topic}]}
@@ -122,7 +126,9 @@ class DeepResearchService:
                 subgraphs=True,
                 version="v2",
             ):
-                async for translated in self._translate_chunk(chunk, last_todos, final_files):
+                async for translated in self._translate_chunk(
+                    chunk, last_todos, final_files, subagent_names
+                ):
                     yield translated
 
         except Exception as exc:
@@ -142,18 +148,35 @@ class DeepResearchService:
         chunk: dict[str, Any],
         last_todos: list[dict[str, Any]],
         final_files: dict[str, str],
+        subagent_names: dict[str, str],
     ) -> AsyncIterator[tuple[str, dict[str, Any], str]]:
         """Translate one deepagents stream chunk into zero or more SSE events."""
         ctype = chunk.get("type")
         ns = chunk.get("ns") or []
-        subagent_name = next(
+        subagent_uuid = next(
             (n.split(":", 1)[1] for n in ns if isinstance(n, str) and n.startswith("tools:")),
             None,
         )
-        is_subagent = subagent_name is not None
+        subagent_name: str | None = (
+            subagent_names.get(subagent_uuid) if subagent_uuid else None
+        )
+        is_subagent = subagent_uuid is not None
 
         if ctype == "updates":
             for node_name, update in (chunk.get("data") or {}).items():
+                # Learn the human name for this sub-agent UUID. deepagents
+                # tags each sub-agent's model output with msg.name == spec.name.
+                if subagent_uuid and subagent_uuid not in subagent_names:
+                    if isinstance(update, dict) and "messages" in update:
+                        msgs = update["messages"]
+                        msg_list = msgs if isinstance(msgs, list) else [msgs]
+                        for msg in msg_list:
+                            nm = getattr(msg, "name", None)
+                            if isinstance(nm, str) and nm and nm != "tools":
+                                subagent_names[subagent_uuid] = nm
+                                subagent_name = nm
+                                break
+
                 if isinstance(update, dict) and "todos" in update:
                     todos = update["todos"]
                     if isinstance(todos, list) and todos != last_todos:
@@ -164,14 +187,49 @@ class DeepResearchService:
                 if isinstance(update, dict) and "files" in update:
                     files = update["files"] or {}
                     if isinstance(files, dict):
-                        for path, content in files.items():
-                            if final_files.get(path) != content:
-                                final_files[path] = content
-                                data = {
-                                    "path": path,
-                                    "bytes": len(content) if isinstance(content, str) else 0,
-                                }
+                        for path, raw in files.items():
+                            # deepagents >=0.5 stores each file as
+                            # {"content": "...", "encoding": "utf-8",
+                            #  "created_at": "...", "modified_at": "..."}
+                            # Older versions stored the string directly.
+                            if isinstance(raw, dict):
+                                text = raw.get("content")
+                                if not isinstance(text, str):
+                                    text = ""
+                            elif isinstance(raw, str):
+                                text = raw
+                            else:
+                                text = ""
+                            if final_files.get(path) != text:
+                                final_files[path] = text
+                                data = {"path": path, "bytes": len(text)}
                                 yield ("file_write", data, _sse("file_write", data))
+
+                # Tool execution complete: the `tools` node emits ToolMessage
+                # instances whose tool_call_id matches the call_id we sent in
+                # tool_start. Translate each into a tool_result event.
+                if node_name == "tools" and isinstance(update, dict) and "messages" in update:
+                    msgs = update["messages"]
+                    msg_list = msgs if isinstance(msgs, list) else [msgs]
+                    for msg in msg_list:
+                        tcid = getattr(msg, "tool_call_id", None)
+                        if not tcid:
+                            continue
+                        raw_content = getattr(msg, "content", "")
+                        # Try to parse JSON results into structured data for the UI.
+                        parsed: Any = raw_content
+                        if isinstance(raw_content, str):
+                            try:
+                                parsed = json.loads(raw_content)
+                            except (ValueError, TypeError):
+                                parsed = raw_content
+                        tr_data = {
+                            "call_id": tcid,
+                            "tool": getattr(msg, "name", None),
+                            "result": parsed,
+                            "subagent": subagent_name,
+                        }
+                        yield ("tool_result", tr_data, _sse("tool_result", tr_data))
 
                 if node_name in ("model_request", "tools", "agent"):
                     data = {"node": node_name, "subagent": subagent_name}
@@ -180,6 +238,12 @@ class DeepResearchService:
         elif ctype == "messages":
             token, _metadata = chunk.get("data", (None, None))
             if token is None:
+                return
+            # Suppress ToolMessage tokens — they're echoes of tool results that
+            # we already surface via the `tool_result` event above. Leaking them
+            # into `token`/`subagent_msg` floods the UI with raw JSON.
+            token_type = type(token).__name__
+            if token_type == "ToolMessage":
                 return
             content = getattr(token, "content", None)
             if content:

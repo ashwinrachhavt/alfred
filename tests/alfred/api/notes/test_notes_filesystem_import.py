@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel
 
 from alfred.api.notes import routes as notes_routes
+from alfred.services import notes_filesystem_service as notes_fs
 
 
 def _client() -> TestClient:
@@ -59,6 +60,31 @@ def test_browse_filesystem_lists_hidden_entries() -> None:
     assert by_name["settings.json"]["importable"] is True
 
 
+def test_browse_filesystem_allows_configured_roots(monkeypatch, tmp_path) -> None:
+    client = _client()
+    configured_root = tmp_path / "configured-root"
+    configured_root.mkdir()
+    (configured_root / "note.md").write_text("# From configured root\n", encoding="utf-8")
+
+    other_temp_root = tmp_path / "other-temp-root"
+    other_temp_root.mkdir()
+    monkeypatch.setattr(notes_fs.tempfile, "gettempdir", lambda: str(other_temp_root))
+    monkeypatch.setattr(
+        notes_fs.settings,
+        "notes_filesystem_roots",
+        [str(configured_root)],
+        raising=False,
+    )
+
+    response = client.get(
+        "/api/v1/notes/filesystem/browse",
+        params={"path": str(configured_root)},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["path"] == str(configured_root.resolve())
+
+
 def test_import_filesystem_directory_creates_note_tree() -> None:
     client = _client()
     workspace = client.post("/api/v1/workspaces", json={"name": "Imports", "icon": "📓"}).json()
@@ -93,6 +119,41 @@ def test_import_filesystem_directory_creates_note_tree() -> None:
     flattened = _flatten_tree(items)
     titles = [node["note"]["title"] for node in flattened]
     assert ".claude" in titles
+    assert "agents" in titles
+    assert "settings.json" in titles
+    assert "system.md" in titles
+
+    settings_node = next(node for node in flattened if node["note"]["title"] == "settings.json")
+    settings_note = client.get(f"/api/v1/notes/{settings_node['note']['id']}")
+    assert settings_note.status_code == 200
+    assert settings_note.json()["content_markdown"] == '{"theme":"dark"}\n'
+
+
+def test_upload_filesystem_folder_creates_note_tree() -> None:
+    client = _client()
+    workspace = client.post("/api/v1/workspaces", json={"name": "Uploads", "icon": "📓"}).json()
+
+    uploaded = client.post(
+        "/api/v1/notes/filesystem/import-upload",
+        data={"workspace_id": workspace["id"]},
+        files=[
+            ("files", ("Project/settings.json", b'{"theme":"dark"}\n', "application/json")),
+            ("files", ("Project/agents/system.md", b"# System prompt\n", "text/markdown")),
+            ("files", ("Project/binary.bin", b"\x00\x01\x02", "application/octet-stream")),
+        ],
+    )
+
+    assert uploaded.status_code == 201
+    result = uploaded.json()
+    assert result["imported_count"] == 4
+    assert result["skipped_count"] == 1
+
+    tree = client.get("/api/v1/notes/tree", params={"workspace_id": workspace["id"]})
+    assert tree.status_code == 200
+
+    flattened = _flatten_tree(tree.json()["items"])
+    titles = [node["note"]["title"] for node in flattened]
+    assert "Project" in titles
     assert "agents" in titles
     assert "settings.json" in titles
     assert "system.md" in titles

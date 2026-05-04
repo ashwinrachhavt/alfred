@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+import json
+import logging
+
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlmodel import Session
 
@@ -11,12 +15,38 @@ from alfred.models.vocabulary import SaveIntent, VocabularyEntry
 from alfred.services.dictionary_service import (
     _generate_ai_explanation,
     lookup,
+    lookup_stream_events,
 )
 from alfred.services.llm_service import LLMService
 
 router = APIRouter(prefix="/api/dictionary", tags=["dictionary"])
+logger = logging.getLogger(__name__)
 
 _llm = LLMService()
+
+
+def _sse_json(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
+
+
+def _search_saved_entries(query: str) -> list[dict]:
+    with Session(engine) as session:
+        stmt = (
+            select(VocabularyEntry)
+            .where(VocabularyEntry.word.ilike(f"%{query}%"))
+            .order_by(VocabularyEntry.created_at.desc())
+            .limit(10)
+        )
+        saved = session.exec(stmt).all()
+        return [
+            {
+                "id": e.id,
+                "word": e.word,
+                "save_intent": e.save_intent,
+                "domain_tags": e.domain_tags,
+            }
+            for e in saved
+        ]
 
 
 @router.get("/lookup")
@@ -24,9 +54,41 @@ async def lookup_word(
     word: str = Query(..., min_length=1, max_length=255),
     lang: str = Query("en"),
 ) -> dict:
-    """Look up a word from external sources (Wiktionary + Wikipedia + AI)."""
-    result = await lookup(word.strip().lower(), llm=_llm)
+    """Look up a word from lexical sources without blocking on AI."""
+    result = await lookup(word.strip().lower(), llm=None)
     return result.to_dict()
+
+
+@router.get("/lookup/stream")
+async def lookup_word_stream(
+    request: Request,
+    word: str = Query(..., min_length=1, max_length=255),
+    lang: str = Query("en"),
+) -> StreamingResponse:
+    """Stream a lookup: lexical result first, then AI tokens and context."""
+    normalized_word = word.strip().lower()
+
+    async def gen():
+        try:
+            async for event, data in lookup_stream_events(normalized_word, llm=_llm):
+                if await request.is_disconnected():
+                    break
+                yield _sse_json(event, data)
+        except Exception:
+            logger.exception("Dictionary stream failed for '%s'", normalized_word)
+            yield _sse_json(
+                "error",
+                {"message": "Dictionary lookup failed. Please try again."},
+            )
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/entries")
@@ -72,9 +134,7 @@ def list_entries(
 ) -> list[dict]:
     """List saved vocabulary entries with optional filters."""
     with Session(engine) as session:
-        stmt = select(VocabularyEntry).order_by(
-            VocabularyEntry.created_at.desc()
-        )
+        stmt = select(VocabularyEntry).order_by(VocabularyEntry.created_at.desc())
         if save_intent:
             stmt = stmt.where(VocabularyEntry.save_intent == save_intent)
         stmt = stmt.offset(offset).limit(limit)
@@ -165,33 +225,14 @@ def delete_entry(entry_id: int) -> dict:
 
 @router.get("/search")
 async def search_dictionary(q: str = Query(..., min_length=1)) -> dict:
-    """Search saved vocabulary first, then fall back to external lookup."""
+    """Search saved vocabulary without triggering an external lookup."""
     query = q.strip().lower()
-
-    with Session(engine) as session:
-        stmt = (
-            select(VocabularyEntry)
-            .where(VocabularyEntry.word.ilike(f"%{query}%"))
-            .order_by(VocabularyEntry.created_at.desc())
-            .limit(10)
-        )
-        saved = session.exec(stmt).all()
-        saved_results = [
-            {
-                "id": e.id,
-                "word": e.word,
-                "save_intent": e.save_intent,
-                "domain_tags": e.domain_tags,
-            }
-            for e in saved
-        ]
-
-    external = await lookup(query, llm=_llm)
+    saved_results = _search_saved_entries(query)
 
     return {
         "query": query,
         "saved": saved_results,
-        "lookup": external.to_dict(),
+        "lookup": None,
     }
 
 
@@ -209,13 +250,10 @@ async def regenerate_ai_explanation(entry_id: int) -> dict:
             for defn in entry.definitions:
                 for sense in defn.get("senses", []):
                     definitions_text += (
-                        f"({defn.get('part_of_speech', '')}) "
-                        f"{sense.get('definition', '')}; "
+                        f"({defn.get('part_of_speech', '')}) " f"{sense.get('definition', '')}; "
                     )
 
-        ai_text = await _generate_ai_explanation(
-            entry.word, definitions_text, domains, _llm
-        )
+        ai_text = await _generate_ai_explanation(entry.word, definitions_text, domains, _llm)
         entry.ai_explanation = ai_text
         entry.ai_explanation_domains = domains
         session.add(entry)

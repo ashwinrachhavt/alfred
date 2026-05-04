@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 from enum import Enum
@@ -104,6 +105,26 @@ class Settings(BaseSettings):
             return None
         return v
 
+    @field_validator("notes_filesystem_roots", mode="before")
+    @classmethod
+    def _parse_notes_filesystem_roots(cls, v: object) -> object:
+        if v is None:
+            return []
+        if isinstance(v, str):
+            raw = v.strip()
+            if not raw:
+                return []
+            if raw.startswith("["):
+                try:
+                    return json.loads(raw)
+                except json.JSONDecodeError:
+                    return [raw]
+            for separator in (os.pathsep, ","):
+                if separator in raw:
+                    return [item.strip() for item in raw.split(separator) if item.strip()]
+            return [raw]
+        return v
+
     # Qdrant
     qdrant_url: str | None = Field(default=None, alias="QDRANT_URL")
     qdrant_api_key: SecretStr | None = Field(default=None, alias="QDRANT_API_KEY")
@@ -180,6 +201,11 @@ class Settings(BaseSettings):
     # MCP / tools
     enable_mcp: bool = True
     mcp_filesystem_path: str = "./data"
+    notes_filesystem_roots: list[str] = Field(
+        default=[],
+        alias="ALFRED_NOTES_FILESYSTEM_ROOTS",
+        description="Additional local roots the Notes filesystem browser/importer may read.",
+    )
     enable_mcp_browser: bool = True
     enable_mcp_everything: bool = False
 

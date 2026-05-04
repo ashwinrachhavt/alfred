@@ -6,6 +6,7 @@ import type {
   NoteFilesystemBrowseResponse,
   NoteFilesystemImportRequest,
   NoteFilesystemImportResponse,
+  NoteFilesystemUploadImportRequest,
   NoteResponse,
   NoteTreeResponse,
   NoteUpdateRequest,
@@ -64,6 +65,32 @@ export async function importNoteFilesystem(
     apiRoutes.notes.filesystemImport,
     payload,
   );
+}
+
+function fileRelativePath(file: File): string {
+  const browserFile = file as File & { webkitRelativePath?: string };
+  return browserFile.webkitRelativePath || file.name;
+}
+
+export async function importUploadedNoteFilesystem(
+  payload: NoteFilesystemUploadImportRequest,
+): Promise<NoteFilesystemImportResponse> {
+  const form = new FormData();
+  form.append("workspace_id", payload.workspace_id);
+  if (payload.parent_id) {
+    form.append("parent_id", payload.parent_id);
+  }
+  if (typeof payload.max_files === "number") {
+    form.append("max_files", String(payload.max_files));
+  }
+  for (const file of payload.files) {
+    form.append("files", file, fileRelativePath(file));
+  }
+
+  return apiFetch<NoteFilesystemImportResponse>(apiRoutes.notes.filesystemImportUpload, {
+    method: "POST",
+    body: form,
+  });
 }
 
 export async function createNote(payload: NoteCreateRequest): Promise<NoteResponse> {

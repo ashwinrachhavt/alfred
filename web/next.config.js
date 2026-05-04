@@ -34,6 +34,13 @@ const nextConfig = {
       { source: "/api/company/:path*", destination: `${apiBaseUrl}/company/:path*` },
       { source: "/api/tasks/:path*", destination: `${apiBaseUrl}/tasks/:path*` },
       { source: "/api/rag/:path*", destination: `${apiBaseUrl}/rag/:path*` },
+      // New deep-research routes mount at /api/research/agents/* and /api/research/run
+      // on the backend (with the /api prefix). Must be listed BEFORE the legacy
+      // /api/research rewrites below, which strip /api for the old /reports routes.
+      { source: "/api/research/agents", destination: `${apiBaseUrl}/api/research/agents` },
+      { source: "/api/research/agents/:path*", destination: `${apiBaseUrl}/api/research/agents/:path*` },
+      { source: "/api/research/run", destination: `${apiBaseUrl}/api/research/run` },
+      // Legacy report routes are mounted at /research/* on the backend (no /api prefix).
       { source: "/api/research", destination: `${apiBaseUrl}/research/` },
       { source: "/api/research/:path*", destination: `${apiBaseUrl}/research/:path*` },
       { source: "/api/:path*", destination: `${apiBaseUrl}/api/:path*` },

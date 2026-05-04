@@ -41,6 +41,7 @@ x-api-env: &api-env
   FIRECRAWL_BASE_URL: http://firecrawl:3002/v1
   SEARXNG_HOST: http://searxng:8080
   SEARX_HOST: http://searxng:8080
+  ALFRED_NOTES_FILESYSTEM_ROOTS: ${HOME}
   TOKEN_STORE_DIR: /app/.alfred_data/tokens
   CORS_ALLOW_ORIGINS: '["*"]'
 
@@ -48,6 +49,7 @@ x-api-volumes: &api-volumes
   - ./apps:/app/apps
   - ./.alfred_data:/app/.alfred_data
   - ./data:/app/data
+  - ${HOME}:${HOME}:ro
 
 services:
   # Core infrastructure

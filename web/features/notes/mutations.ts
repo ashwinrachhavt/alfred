@@ -5,11 +5,13 @@ import {
   createWorkspace,
   deleteNote,
   importNoteFilesystem,
+  importUploadedNoteFilesystem,
   updateNote,
   uploadNoteAsset,
 } from "@/lib/api/notes";
 import type {
   NoteFilesystemImportRequest,
+  NoteFilesystemUploadImportRequest,
   NoteCreateRequest,
   NoteUpdateRequest,
   WorkspaceCreateRequest,
@@ -90,6 +92,21 @@ export function useImportNoteFilesystem(params: { workspaceId?: string | null } 
 
   return useMutation({
     mutationFn: (payload: NoteFilesystemImportRequest) => importNoteFilesystem(payload),
+    onSuccess: async () => {
+      if (workspaceId) {
+        await queryClient.invalidateQueries({ queryKey: noteTreeQueryKey(workspaceId) });
+      }
+    },
+  });
+}
+
+export function useImportUploadedNoteFilesystem(params: { workspaceId?: string | null } = {}) {
+  const queryClient = useQueryClient();
+  const workspaceId = params.workspaceId ?? null;
+
+  return useMutation({
+    mutationFn: (payload: NoteFilesystemUploadImportRequest) =>
+      importUploadedNoteFilesystem(payload),
     onSuccess: async () => {
       if (workspaceId) {
         await queryClient.invalidateQueries({ queryKey: noteTreeQueryKey(workspaceId) });

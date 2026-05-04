@@ -1,5 +1,6 @@
 import { apiFetch, apiPostJson, apiPatchJson } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
+import { streamSSEGet } from "@/lib/api/sse";
 
 // --------------- Types ---------------
 
@@ -101,8 +102,31 @@ export type SearchResult = {
     save_intent: SaveIntent;
     domain_tags: string[] | null;
   }[];
-  lookup: DictionaryResult;
+  lookup: DictionaryResult | null;
 };
+
+export type DictionaryStreamEventName =
+  | "status"
+  | "lookup"
+  | "ai_start"
+  | "ai_delta"
+  | "ai_done"
+  | "wikipedia"
+  | "done"
+  | "error";
+
+export type DictionaryStreamPayloads = {
+  status: { phase: string; message?: string };
+  lookup: DictionaryResult;
+  ai_start: { word: string };
+  ai_delta: { content: string };
+  ai_done: { content: string };
+  wikipedia: { summary: string; source_url: string };
+  done: DictionaryResult;
+  error: { message: string; step?: string };
+};
+
+export type DictionaryStreamPayload = DictionaryStreamPayloads[DictionaryStreamEventName];
 
 // --------------- API calls ---------------
 
@@ -113,9 +137,21 @@ export function lookupWord(word: string): Promise<DictionaryResult> {
   );
 }
 
-export function saveEntry(
-  payload: SaveEntryPayload,
-): Promise<{ id: number; word: string }> {
+export function streamDictionaryLookup(
+  word: string,
+  onEvent: (event: DictionaryStreamEventName, data: DictionaryStreamPayload) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return streamSSEGet(
+    `${apiRoutes.dictionary.lookupStream}?word=${encodeURIComponent(word)}`,
+    (event, data) => {
+      onEvent(event as DictionaryStreamEventName, data as DictionaryStreamPayload);
+    },
+    signal,
+  );
+}
+
+export function saveEntry(payload: SaveEntryPayload): Promise<{ id: number; word: string }> {
   return apiPostJson(apiRoutes.dictionary.entries, payload);
 }
 
@@ -132,9 +168,7 @@ export function listEntries(params?: {
   if (params?.offset) searchParams.set("offset", String(params.offset));
 
   const qs = searchParams.toString();
-  const url = qs
-    ? `${apiRoutes.dictionary.entries}?${qs}`
-    : apiRoutes.dictionary.entries;
+  const url = qs ? `${apiRoutes.dictionary.entries}?${qs}` : apiRoutes.dictionary.entries;
   return apiFetch<VocabularyListItem[]>(url, { cache: "no-store" });
 }
 
@@ -158,10 +192,9 @@ export function deleteEntry(id: number): Promise<{ deleted: boolean }> {
 }
 
 export function searchDictionary(query: string): Promise<SearchResult> {
-  return apiFetch<SearchResult>(
-    `${apiRoutes.dictionary.search}?q=${encodeURIComponent(query)}`,
-    { cache: "no-store" },
-  );
+  return apiFetch<SearchResult>(`${apiRoutes.dictionary.search}?q=${encodeURIComponent(query)}`, {
+    cache: "no-store",
+  });
 }
 
 export function regenerateAiExplanation(

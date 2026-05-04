@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections.abc import AsyncGenerator, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -16,6 +17,8 @@ from alfred.services.wikipedia import retrieve_wikipedia
 logger = logging.getLogger(__name__)
 
 WIKTIONARY_API = "https://en.wiktionary.org/api/rest_v1/page/definition"
+WIKTIONARY_TIMEOUT_SECONDS = 4.0
+_STREAM_END = object()
 
 
 @dataclass
@@ -95,11 +98,7 @@ def _parse_wiktionary_response(data: dict[str, Any]) -> dict[str, Any]:
             if not clean_def:
                 continue
 
-            examples = [
-                _strip_html(ex)
-                for ex in defn.get("examples", [])
-                if isinstance(ex, str)
-            ]
+            examples = [_strip_html(ex) for ex in defn.get("examples", []) if isinstance(ex, str)]
             senses.append({"definition": clean_def, "examples": examples})
 
         if senses:
@@ -123,14 +122,10 @@ def _merge_results(
     groups = []
     for defn in wiktionary.get("definitions", []):
         senses = [
-            DefinitionSense(
-                definition=s["definition"], examples=s.get("examples", [])
-            )
+            DefinitionSense(definition=s["definition"], examples=s.get("examples", []))
             for s in defn.get("senses", [])
         ]
-        groups.append(
-            DefinitionGroup(part_of_speech=defn["part_of_speech"], senses=senses)
-        )
+        groups.append(DefinitionGroup(part_of_speech=defn["part_of_speech"], senses=senses))
 
     source_urls: list[str] = []
     if wiktionary.get("definitions"):
@@ -152,7 +147,7 @@ def _merge_results(
 async def _fetch_wiktionary(word: str) -> dict[str, Any]:
     """Fetch and parse Wiktionary definition."""
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=WIKTIONARY_TIMEOUT_SECONDS) as client:
             resp = await client.get(f"{WIKTIONARY_API}/{word}")
             if resp.status_code == 404:
                 return {
@@ -184,18 +179,24 @@ async def _fetch_wikipedia(word: str) -> str | None:
     return None
 
 
-async def _generate_ai_explanation(
+def _definitions_text(wiktionary_data: dict[str, Any]) -> str:
+    definitions_text = ""
+    for defn in wiktionary_data.get("definitions", []):
+        for sense in defn.get("senses", []):
+            definitions_text += f"({defn['part_of_speech']}) {sense['definition']}; "
+    return definitions_text
+
+
+def _build_ai_explanation_messages(
     word: str,
     definitions_text: str,
     domains: list[str],
-    llm: LLMService,
-) -> str | None:
-    """Generate contextual AI explanation."""
+) -> list[dict[str, str]]:
     if not definitions_text:
         definitions_text = f"The word '{word}'"
 
     domain_str = ", ".join(domains) if domains else "general knowledge"
-    messages = [
+    return [
         {
             "role": "system",
             "content": (
@@ -216,6 +217,40 @@ async def _generate_ai_explanation(
             ),
         },
     ]
+
+
+def _next_stream_chunk(iterator: Iterator[str]) -> str | object:
+    try:
+        return next(iterator)
+    except StopIteration:
+        return _STREAM_END
+
+
+async def _stream_ai_explanation(
+    word: str,
+    definitions_text: str,
+    domains: list[str],
+    llm: LLMService,
+) -> AsyncGenerator[str, None]:
+    messages = _build_ai_explanation_messages(word, definitions_text, domains)
+    iterator = iter(llm.chat_stream(messages, temperature=0.3))
+
+    while True:
+        chunk = await asyncio.to_thread(_next_stream_chunk, iterator)
+        if chunk is _STREAM_END:
+            return
+        if isinstance(chunk, str) and chunk:
+            yield chunk
+
+
+async def _generate_ai_explanation(
+    word: str,
+    definitions_text: str,
+    domains: list[str],
+    llm: LLMService,
+) -> str | None:
+    """Generate contextual AI explanation."""
+    messages = _build_ai_explanation_messages(word, definitions_text, domains)
     try:
         return await llm.chat_async(messages, temperature=0.3)
     except Exception:
@@ -238,18 +273,11 @@ async def lookup(
     wiktionary_data = await wiktionary_task
     wikipedia_summary = await wikipedia_task
 
-    definitions_text = ""
-    for defn in wiktionary_data.get("definitions", []):
-        for sense in defn.get("senses", []):
-            definitions_text += (
-                f"({defn['part_of_speech']}) {sense['definition']}; "
-            )
+    definitions_text = _definitions_text(wiktionary_data)
 
     ai_explanation = None
     if llm:
-        ai_explanation = await _generate_ai_explanation(
-            word, definitions_text, domains, llm
-        )
+        ai_explanation = await _generate_ai_explanation(word, definitions_text, domains, llm)
 
     return _merge_results(
         word=word,
@@ -257,3 +285,78 @@ async def lookup(
         wikipedia_summary=wikipedia_summary,
         ai_explanation=ai_explanation,
     )
+
+
+async def lookup_stream_events(
+    word: str,
+    *,
+    user_domains: list[str] | None = None,
+    llm: LLMService | None = None,
+) -> AsyncGenerator[tuple[str, dict[str, Any]], None]:
+    """Stream dictionary lookup phases as event/data pairs."""
+    domains = user_domains or []
+
+    yield (
+        "status",
+        {"phase": "lexicon", "message": "Checking dictionary sources"},
+    )
+
+    wikipedia_task = asyncio.create_task(_fetch_wikipedia(word))
+    wiktionary_data = await _fetch_wiktionary(word)
+    definitions_text = _definitions_text(wiktionary_data)
+
+    lexical_result = _merge_results(
+        word=word,
+        wiktionary=wiktionary_data,
+        wikipedia_summary=None,
+        ai_explanation=None,
+    )
+    yield ("lookup", lexical_result.to_dict())
+
+    ai_explanation: str | None = None
+    if llm:
+        yield (
+            "status",
+            {"phase": "ai", "message": "Streaming contextual explanation"},
+        )
+        yield ("ai_start", {"word": word})
+        chunks: list[str] = []
+        try:
+            async for chunk in _stream_ai_explanation(word, definitions_text, domains, llm):
+                chunks.append(chunk)
+                yield ("ai_delta", {"content": chunk})
+        except Exception:
+            logger.exception("AI explanation stream failed for '%s'", word)
+            yield (
+                "error",
+                {
+                    "step": "ai",
+                    "message": "AI explanation could not be generated.",
+                },
+            )
+
+        ai_explanation = "".join(chunks).strip() or None
+        if ai_explanation:
+            yield ("ai_done", {"content": ai_explanation})
+
+    yield (
+        "status",
+        {"phase": "encyclopedia", "message": "Checking encyclopedia context"},
+    )
+    wikipedia_summary = await wikipedia_task
+    if wikipedia_summary:
+        yield (
+            "wikipedia",
+            {
+                "summary": wikipedia_summary,
+                "source_url": f"https://en.wikipedia.org/wiki/{word}",
+            },
+        )
+
+    final_result = _merge_results(
+        word=word,
+        wiktionary=wiktionary_data,
+        wikipedia_summary=wikipedia_summary,
+        ai_explanation=ai_explanation,
+    )
+    yield ("done", final_result.to_dict())

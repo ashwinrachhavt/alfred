@@ -1,28 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Search } from "lucide-react";
+import { CornerDownLeft, Search, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useDictionarySearch } from "@/features/dictionary/queries";
 
-export function DictionarySearchBar({
-  onLookup,
-}: {
-  onLookup: (word: string) => void;
-}) {
+export function DictionarySearchBar({ onLookup }: { onLookup: (word: string) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [localQuery, setLocalQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
 
-  const { data: searchResult } = useDictionarySearch(debouncedQuery);
+  const { data: searchResult, isFetching } = useDictionarySearch(debouncedQuery);
 
   useEffect(() => {
-    if (localQuery.length < 2) {
-      setDebouncedQuery(null);
-      return;
-    }
-    const timer = setTimeout(() => setDebouncedQuery(localQuery), 300);
+    const timer = setTimeout(
+      () => setDebouncedQuery(localQuery.length >= 2 ? localQuery : null),
+      localQuery.length >= 2 ? 300 : 0,
+    );
     return () => clearTimeout(timer);
   }, [localQuery]);
 
@@ -55,10 +50,15 @@ export function DictionarySearchBar({
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  const lookupSuggestion = localQuery.trim().toLowerCase();
+  const showLookupSuggestion = showDropdown && lookupSuggestion.length >= 2;
+  const savedResults = searchResult?.saved ?? [];
+  const lookupPreview = searchResult?.lookup ?? null;
+
   return (
-    <div className="relative w-full max-w-2xl mx-auto">
-      <div className="relative">
-        <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+    <div className="relative mx-auto w-full max-w-2xl">
+      <div className="bg-card/90 relative rounded-md border shadow-sm backdrop-blur transition-colors focus-within:border-[var(--alfred-accent-muted)]">
+        <Search className="text-muted-foreground absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2" />
         <Input
           ref={inputRef}
           value={localQuery}
@@ -69,51 +69,62 @@ export function DictionarySearchBar({
           onFocus={() => localQuery.length >= 2 && setShowDropdown(true)}
           onKeyDown={handleKeyDown}
           placeholder="Look up a word..."
-          className="h-14 pl-12 pr-20 text-lg font-serif placeholder:text-muted-foreground/50"
+          className="placeholder:text-muted-foreground/50 h-14 border-0 bg-transparent pr-24 pl-12 font-serif text-lg shadow-none focus-visible:ring-0"
         />
-        <kbd className="absolute right-4 top-1/2 -translate-y-1/2 rounded border bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
+        <kbd className="bg-muted text-muted-foreground absolute top-1/2 right-4 -translate-y-1/2 rounded-sm border px-2 py-0.5 font-mono text-xs">
           {"\u2318"}K
         </kbd>
       </div>
 
-      {showDropdown && searchResult && (
-        <div className="absolute top-full left-0 right-0 z-20 mt-1 rounded-md border bg-popover shadow-lg">
-          {searchResult.saved.length > 0 && (
+      {showLookupSuggestion && (
+        <div className="bg-popover/95 absolute top-full right-0 left-0 z-20 mt-2 overflow-hidden rounded-md border shadow-lg backdrop-blur">
+          {savedResults.length > 0 && (
             <div className="p-2">
-              <span className="px-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              <span className="text-muted-foreground px-2 font-mono text-[10px] tracking-wider uppercase">
                 Your Vocabulary
               </span>
-              {searchResult.saved.map((item) => (
+              {savedResults.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => handleSelect(item.word)}
-                  className="mt-1 flex w-full items-center rounded px-2 py-1.5 text-left text-sm hover:bg-accent transition-colors"
+                  className="hover:bg-accent mt-1 flex w-full items-center rounded px-2 py-1.5 text-left text-sm transition-colors"
                 >
                   <span className="font-medium">{item.word}</span>
-                  <span className="ml-auto font-mono text-[10px] uppercase text-muted-foreground">
+                  <span className="text-muted-foreground ml-auto font-mono text-[10px] uppercase">
                     {item.save_intent}
                   </span>
                 </button>
               ))}
             </div>
           )}
-          {searchResult.lookup.definitions.length > 0 && (
+          <div className={savedResults.length > 0 ? "border-t p-2" : "p-2"}>
+            <span className="text-muted-foreground px-2 font-mono text-[10px] tracking-wider uppercase">
+              Look Up
+            </span>
+            <button
+              onClick={() => handleSelect(lookupSuggestion)}
+              className="hover:bg-accent mt-1 flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-sm transition-colors"
+            >
+              <Sparkles className="h-4 w-4 text-[var(--alfred-accent)]" />
+              <span className="font-medium">{lookupSuggestion}</span>
+              <span className="text-muted-foreground ml-auto flex items-center gap-1 font-mono text-[10px] tracking-wider uppercase">
+                {isFetching ? "Checking" : "Return"}
+                <CornerDownLeft className="h-3 w-3" />
+              </span>
+            </button>
+          </div>
+          {lookupPreview && lookupPreview.definitions.length > 0 && (
             <div className="border-t p-2">
-              <span className="px-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                Look Up
+              <span className="text-muted-foreground px-2 font-mono text-[10px] tracking-wider uppercase">
+                Preview
               </span>
               <button
-                onClick={() => handleSelect(searchResult.lookup.word)}
-                className="mt-1 flex w-full items-center rounded px-2 py-1.5 text-left text-sm hover:bg-accent transition-colors"
+                onClick={() => handleSelect(lookupPreview.word)}
+                className="hover:bg-accent mt-1 flex w-full items-center rounded px-2 py-1.5 text-left text-sm transition-colors"
               >
-                <span className="font-medium">
-                  {searchResult.lookup.word}
-                </span>
-                <span className="ml-2 text-xs text-muted-foreground">
-                  {searchResult.lookup.definitions[0]?.senses[0]?.definition.slice(
-                    0,
-                    60,
-                  )}
+                <span className="font-medium">{lookupPreview.word}</span>
+                <span className="text-muted-foreground ml-2 text-xs">
+                  {lookupPreview.definitions[0]?.senses[0]?.definition.slice(0, 60)}
                   ...
                 </span>
               </button>

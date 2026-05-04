@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 
 # Environment is loaded by Pydantic Settings (see alfred.core.settings).
+from alfred.admin import mount_admin
 from alfred.api import register_routes
 from alfred.core.exceptions import register_exception_handlers
 from alfred.core.logging import setup_logging
@@ -32,6 +33,7 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 register_routes(app)
+mount_admin(app)
 
 
 @app.on_event("shutdown")

@@ -90,14 +90,25 @@ async def test_stream_run_emits_plan_event_once_per_change() -> None:
 
 @pytest.mark.asyncio
 async def test_stream_run_lanes_subagent_tokens() -> None:
-    """Tokens from namespace `tools:researcher` should emit subagent_msg, not token."""
+    """Tokens in a `tools:<uuid>` namespace should emit subagent_msg decorated with the
+    human subagent name (learned from msg.name on updates) rather than the UUID."""
     db = MagicMock()
     svc = DeepResearchService(db)
 
+    named_msg = MagicMock()
+    named_msg.name = "researcher"
+
     chunks = [
+        # First an `updates` chunk teaches the service the UUID->name mapping.
+        {
+            "type": "updates",
+            "ns": ["tools:uuid-123"],
+            "data": {"model": {"messages": [named_msg]}},
+        },
+        # Now a `messages` chunk from the same namespace should be lane-tagged.
         {
             "type": "messages",
-            "ns": ["tools:researcher"],
+            "ns": ["tools:uuid-123"],
             "data": (FakeToken(content="sub output"), {}),
         },
         {

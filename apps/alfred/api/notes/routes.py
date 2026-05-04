@@ -3,7 +3,17 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlmodel import Session
 
 from alfred.api.dependencies import get_db_session
@@ -32,6 +42,7 @@ from alfred.services.notes_filesystem_service import (
     FilesystemPathNotAllowedError,
     FilesystemPathNotFoundError,
     NotesFilesystemService,
+    UploadedFilesystemFile,
 )
 from alfred.services.notes_service import (
     NoteMoveConflictError,
@@ -252,6 +263,54 @@ def import_note_filesystem(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except FilesystemPathNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except WorkspaceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except NoteNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except NoteMoveConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return NoteFilesystemImportResponse(
+        source_path=result.source_path,
+        root_note_id=result.root_note_id,
+        imported_count=result.imported_count,
+        skipped_count=result.skipped_count,
+        skipped_paths=result.skipped_paths,
+    )
+
+
+@router.post(
+    "/notes/filesystem/import-upload",
+    response_model=NoteFilesystemImportResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def import_note_filesystem_upload(
+    workspace_id: str = Form(...),
+    parent_id: str | None = Form(default=None),
+    max_files: int = Form(default=200),
+    files: list[UploadFile] = File(...),
+    user_id: int | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+) -> NoteFilesystemImportResponse:
+    svc = NotesFilesystemService(session)
+    uploaded_files = [
+        UploadedFilesystemFile(
+            relative_path=file.filename or "untitled",
+            content=await file.read(),
+        )
+        for file in files
+    ]
+
+    try:
+        result = svc.import_upload(
+            workspace_id=workspace_id,
+            files=uploaded_files,
+            parent_id=parent_id,
+            user_id=user_id,
+            max_files=max_files,
+        )
     except WorkspaceNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except NoteNotFoundError as exc:

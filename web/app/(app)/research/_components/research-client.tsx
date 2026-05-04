@@ -40,7 +40,7 @@ function AgentPicker({
 }) {
   return (
     <Select
-      value={value !== null ? String(value) : undefined}
+      value={value !== null ? String(value) : ""}
       onValueChange={(v) => onChange(Number(v))}
     >
       <SelectTrigger className="h-9">

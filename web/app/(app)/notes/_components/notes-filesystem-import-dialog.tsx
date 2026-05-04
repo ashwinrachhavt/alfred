@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   ArrowUp,
   Download,
@@ -10,6 +10,7 @@ import {
   Home,
   LoaderCircle,
   RefreshCcw,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -25,7 +26,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { useImportNoteFilesystem } from "@/features/notes/mutations";
+import {
+  useImportNoteFilesystem,
+  useImportUploadedNoteFilesystem,
+} from "@/features/notes/mutations";
 import { useNoteFilesystemBrowse } from "@/features/notes/queries";
 import { ApiError } from "@/lib/api/client";
 
@@ -51,12 +55,23 @@ export function NotesFilesystemImportDialog({
 }: NotesFilesystemImportDialogProps) {
   const [browserPath, setBrowserPath] = useState<string | null>(null);
   const [pathInput, setPathInput] = useState("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
 
   const browseQuery = useNoteFilesystemBrowse(browserPath, open);
   const importMutation = useImportNoteFilesystem({ workspaceId });
+  const uploadMutation = useImportUploadedNoteFilesystem({ workspaceId });
 
   const currentPath = browseQuery.data?.path ?? pathInput.trim();
   const currentEntries = useMemo(() => browseQuery.data?.items ?? [], [browseQuery.data?.items]);
+  const isImporting = importMutation.isPending || uploadMutation.isPending;
+
+  useEffect(() => {
+    const folderInput = folderInputRef.current;
+    if (!folderInput) return;
+    folderInput.setAttribute("webkitdirectory", "");
+    folderInput.setAttribute("directory", "");
+  }, []);
 
   async function handleImport(path: string) {
     if (!workspaceId) {
@@ -81,6 +96,39 @@ export function NotesFilesystemImportDialog({
     }
   }
 
+  async function handleUpload(files: FileList | null) {
+    if (!workspaceId) {
+      toast.error("Create or load a workspace before importing.");
+      return;
+    }
+
+    const selectedFiles = Array.from(files ?? []);
+    if (!selectedFiles.length) return;
+
+    try {
+      const result = await uploadMutation.mutateAsync({
+        workspace_id: workspaceId,
+        files: selectedFiles,
+      });
+      toast.success(describeImportResult(result.imported_count, result.skipped_count));
+      onImported(result.root_note_id);
+      onOpenChange(false);
+    } catch (error) {
+      const message =
+        error instanceof ApiError || error instanceof Error
+          ? error.message
+          : "Failed to import the selected upload.";
+      toast.error(message);
+    }
+  }
+
+  function handleUploadChange(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    void handleUpload(input.files).finally(() => {
+      input.value = "";
+    });
+  }
+
   function handleBrowseSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBrowserPath(pathInput.trim() || null);
@@ -101,12 +149,54 @@ export function NotesFilesystemImportDialog({
         <DialogHeader>
           <DialogTitle>Import Files</DialogTitle>
           <DialogDescription>
-            Paste a server-visible path, or browse the import root, then import one UTF-8 text file
-            or a folder of text files into Notes.
+            Upload UTF-8 text files from Finder, or paste a server-visible path and import it into
+            Notes.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleBrowseSubmit} className="space-y-4">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={handleUploadChange}
+          />
+          <input
+            ref={folderInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={handleUploadChange}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              disabled={!workspaceId || isImporting}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {uploadMutation.isPending ? (
+                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              Upload files
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!workspaceId || isImporting}
+              onClick={() => folderInputRef.current?.click()}
+            >
+              {uploadMutation.isPending ? (
+                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <FolderOpen className="mr-2 h-4 w-4" />
+              )}
+              Upload folder
+            </Button>
+          </div>
+
           <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
@@ -116,7 +206,7 @@ export function NotesFilesystemImportDialog({
                 setBrowserPath(null);
                 setPathInput("");
               }}
-              disabled={browseQuery.isFetching}
+              disabled={browseQuery.isFetching || isImporting}
             >
               <Home className="h-4 w-4" />
               <span className="sr-only">Go to import root</span>
@@ -130,7 +220,7 @@ export function NotesFilesystemImportDialog({
                 setBrowserPath(nextPath);
                 setPathInput(nextPath ?? "");
               }}
-              disabled={!browseQuery.data?.parent_path || browseQuery.isFetching}
+              disabled={!browseQuery.data?.parent_path || browseQuery.isFetching || isImporting}
             >
               <ArrowUp className="h-4 w-4" />
               <span className="sr-only">Go up</span>
@@ -140,7 +230,7 @@ export function NotesFilesystemImportDialog({
               variant="outline"
               size="icon"
               onClick={() => void browseQuery.refetch()}
-              disabled={browseQuery.isFetching}
+              disabled={browseQuery.isFetching || isImporting}
             >
               <RefreshCcw className="h-4 w-4" />
               <span className="sr-only">Refresh</span>
@@ -151,7 +241,7 @@ export function NotesFilesystemImportDialog({
               placeholder="/app/data/notes or ~/notes/draft.md"
               className="min-w-[280px] flex-1"
             />
-            <Button type="submit" variant="outline" disabled={browseQuery.isFetching}>
+            <Button type="submit" variant="outline" disabled={browseQuery.isFetching || isImporting}>
               {browseQuery.isFetching ? (
                 <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -161,7 +251,7 @@ export function NotesFilesystemImportDialog({
             </Button>
             <Button
               type="button"
-              disabled={!pathInput.trim() || importMutation.isPending || !workspaceId}
+              disabled={!pathInput.trim() || isImporting || !workspaceId}
               onClick={() => void handleImport(pathInput.trim())}
             >
               {importMutation.isPending && importMutation.variables?.path === pathInput.trim() ? (
@@ -185,7 +275,7 @@ export function NotesFilesystemImportDialog({
             <Button
               type="button"
               onClick={() => void handleImport(currentPath)}
-              disabled={!currentPath || importMutation.isPending || !workspaceId}
+              disabled={!currentPath || isImporting || !workspaceId}
               className="shrink-0"
             >
               {importMutation.isPending ? (
@@ -273,7 +363,7 @@ export function NotesFilesystemImportDialog({
                         type="button"
                         variant={entry.importable ? "outline" : "ghost"}
                         className="shrink-0"
-                        disabled={!entry.importable || importMutation.isPending || !workspaceId}
+                        disabled={!entry.importable || isImporting || !workspaceId}
                         onClick={() => void handleImport(entry.path)}
                       >
                         {isImportingPath ? (
