@@ -21,6 +21,12 @@ from langchain_core.tools import BaseTool
 from sqlmodel import Session
 
 from alfred.core.settings import settings
+from alfred.services.notes_filesystem_service import (
+    FilesystemPathNotAllowedError,
+    FilesystemPathNotFoundError,
+    NotesFilesystemService,
+)
+from alfred.services.notes_service import NoteNotFoundError, NotesService, WorkspaceNotFoundError
 from alfred.services.zettelkasten_service import ZettelkastenService
 
 logger = logging.getLogger(__name__)
@@ -257,6 +263,41 @@ CORE_TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "import_notes_from_filesystem",
+            "description": (
+                "Import a server-visible local file or folder into Alfred Notes. "
+                "Use when the user asks to import notes, a folder, an export, or local "
+                "text files into Notes. The path must exist on the backend machine and "
+                "must be within Alfred's allowed filesystem roots. If workspace_id is "
+                "omitted, imports into the default Personal workspace."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path, ~/ path, or home-relative path to import.",
+                    },
+                    "workspace_id": {
+                        "type": "string",
+                        "description": "Optional Notes workspace UUID. Defaults to Personal.",
+                    },
+                    "parent_id": {
+                        "type": "string",
+                        "description": "Optional parent note UUID to import under.",
+                    },
+                    "max_files": {
+                        "type": "integer",
+                        "description": "Maximum notes to create, between 1 and 500. Default 200.",
+                    },
+                },
+                "required": ["path"],
             },
         },
     },
@@ -502,6 +543,61 @@ async def _list_recent_cards(args: dict[str, Any], db: Session) -> dict[str, Any
     return {"results": results, "count": len(results)}
 
 
+async def _import_notes_from_filesystem(args: dict[str, Any], db: Session) -> dict[str, Any]:
+    """Import server-visible text files into Alfred Notes."""
+    path = str(args.get("path") or "").strip()
+    if not path:
+        return {"error": "path is required"}
+
+    parent_id = args.get("parent_id") or None
+    workspace_id = args.get("workspace_id") or None
+
+    try:
+        max_files = int(args.get("max_files", 200) or 200)
+    except (TypeError, ValueError):
+        return {"error": "max_files must be an integer"}
+
+    notes = NotesService(db)
+
+    try:
+        if workspace_id:
+            workspace = notes.get_workspace(workspace_id)
+        elif parent_id:
+            parent = notes.get_note(parent_id)
+            workspace = notes.get_workspace(parent.workspace_id)
+            workspace_id = str(workspace.id)
+        else:
+            workspace = notes.get_or_create_default_workspace(user_id=None)
+            workspace_id = str(workspace.id)
+
+        result = NotesFilesystemService(db).import_path(
+            workspace_id=workspace_id,
+            path=path,
+            parent_id=parent_id,
+            user_id=None,
+            max_files=max_files,
+        )
+    except (
+        FilesystemPathNotAllowedError,
+        FilesystemPathNotFoundError,
+        WorkspaceNotFoundError,
+        NoteNotFoundError,
+        ValueError,
+    ) as exc:
+        return {"error": str(exc)}
+
+    return {
+        "action": "imported_notes",
+        "workspace_id": str(workspace.id),
+        "workspace_name": workspace.name,
+        "source_path": result.source_path,
+        "root_note_id": result.root_note_id,
+        "imported_count": result.imported_count,
+        "skipped_count": result.skipped_count,
+        "skipped_paths": result.skipped_paths,
+    }
+
+
 async def _web_search_searxng(args: dict[str, Any], db: Session) -> dict[str, Any]:
     """Search the web using local SearXNG metasearch."""
     import httpx
@@ -620,6 +716,7 @@ _CORE_EXECUTORS: dict[str, Any] = {
     "get_zettel": _get_zettel,
     "update_zettel": _update_zettel,
     "list_recent_cards": _list_recent_cards,
+    "import_notes_from_filesystem": _import_notes_from_filesystem,
     "web_search_searxng": _web_search_searxng,
     "firecrawl_search": _firecrawl_search,
     "firecrawl_scrape": _firecrawl_scrape,

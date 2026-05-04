@@ -45,6 +45,7 @@ def test_browse_filesystem_lists_hidden_entries() -> None:
         root = Path(temp_dir)
         (root / ".claude").mkdir()
         (root / ".gstack").mkdir()
+        (root / "settings.json").write_text('{"theme":"dark"}\n', encoding="utf-8")
         (root / "README.md").write_text("# Alfred\n", encoding="utf-8")
 
         response = client.get("/api/v1/notes/filesystem/browse", params={"path": str(root)})
@@ -55,6 +56,7 @@ def test_browse_filesystem_lists_hidden_entries() -> None:
     assert by_name[".claude"]["kind"] == "directory"
     assert by_name[".claude"]["hidden"] is True
     assert by_name["README.md"]["importable"] is True
+    assert by_name["settings.json"]["importable"] is True
 
 
 def test_import_filesystem_directory_creates_note_tree() -> None:

@@ -229,7 +229,11 @@ def browse_note_filesystem(
     )
 
 
-@router.post("/notes/filesystem/import", response_model=NoteFilesystemImportResponse)
+@router.post(
+    "/notes/filesystem/import",
+    response_model=NoteFilesystemImportResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 def import_note_filesystem(
     payload: NoteFilesystemImportRequest,
     user_id: int | None = Query(default=None),

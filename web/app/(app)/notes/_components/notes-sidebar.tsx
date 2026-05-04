@@ -237,7 +237,7 @@ export function NotesSidebar({
           </Button>
           <Button type="button" size="icon-sm" variant="outline" onClick={onImportMarkdown}>
             <Upload className="h-4 w-4" aria-hidden="true" />
-            <span className="sr-only">Import markdown</span>
+            <span className="sr-only">Import files</span>
           </Button>
           <Button type="button" size="icon" variant="outline" onClick={onCreateNote}>
             <FilePlus2 className="h-4 w-4" aria-hidden="true" />

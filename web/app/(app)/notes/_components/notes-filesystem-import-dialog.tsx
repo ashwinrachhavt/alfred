@@ -99,10 +99,10 @@ export function NotesFilesystemImportDialog({
     >
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Import Markdown</DialogTitle>
+          <DialogTitle>Import Files</DialogTitle>
           <DialogDescription>
-            Paste a server-visible path, or browse the import root, then import one Markdown file or
-            a folder of Markdown files into Notes.
+            Paste a server-visible path, or browse the import root, then import one UTF-8 text file
+            or a folder of text files into Notes.
           </DialogDescription>
         </DialogHeader>
 
@@ -260,7 +260,7 @@ export function NotesFilesystemImportDialog({
                                 ? `${Math.max(1, Math.round(entry.size_bytes / 1024))} KB`
                                 : isDirectory
                                   ? "Folder"
-                                  : "Markdown file"}
+                                  : "Text file"}
                           </p>
                         </div>
                       </button>
@@ -290,7 +290,7 @@ export function NotesFilesystemImportDialog({
             ) : (
               <EmptyState
                 title="This folder is empty"
-                description="Choose another path with Markdown files."
+                description="Choose another path with importable text files."
                 className="py-12"
               />
             )}
