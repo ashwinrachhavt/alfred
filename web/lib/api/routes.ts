@@ -45,6 +45,7 @@ export const apiRoutes = {
     tree: "/api/v1/notes/tree",
     filesystemBrowse: "/api/v1/notes/filesystem/browse",
     filesystemImport: "/api/v1/notes/filesystem/import",
+    filesystemImportUpload: "/api/v1/notes/filesystem/import-upload",
     createNote: "/api/v1/notes",
     noteById: (noteId: string) => `/api/v1/notes/${noteId}`,
     noteAssets: (noteId: string) => `/api/v1/notes/${noteId}/assets`,
@@ -82,8 +83,7 @@ export const apiRoutes = {
       end: (id: number) => `/api/zettels/sessions/${id}/end`,
       hydrate: (id: number) => `/api/zettels/sessions/${id}/hydrate`,
     },
-    resumeEnrichment: (id: number) =>
-      `/api/zettels/cards/${id}/resume-enrichment`,
+    resumeEnrichment: (id: number) => `/api/zettels/cards/${id}/resume-enrichment`,
     bulkFromDecomposition: "/api/zettels/bulk-from-decomposition",
   },
   pipeline: {
@@ -138,6 +138,7 @@ export const apiRoutes = {
   },
   dictionary: {
     lookup: "/api/dictionary/lookup",
+    lookupStream: "/api/dictionary/lookup/stream",
     entries: "/api/dictionary/entries",
     entryById: (id: number) => `/api/dictionary/entries/${id}`,
     search: "/api/dictionary/search",

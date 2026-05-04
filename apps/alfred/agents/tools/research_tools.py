@@ -45,16 +45,16 @@ def search_web(query: str, max_results: int = 10) -> str:
     try:
         from alfred.connectors.web_connector import WebConnector
 
-        conn = WebConnector()
-        results = conn.search(query=query, max_results=max_results)
+        conn = WebConnector(searx_k=max_results)
+        response = conn.search(query=query, num_results=max_results)
         output = [
             {
-                "title": r.get("title"),
-                "url": r.get("url"),
-                "snippet": r.get("snippet", "")[:300],
-                "source": r.get("source", "web"),
+                "title": h.title,
+                "url": h.url,
+                "snippet": (h.snippet or "")[:300],
+                "source": h.source,
             }
-            for r in results[:max_results]
+            for h in (response.hits or [])[:max_results]
         ]
         return json.dumps(output)
     except Exception as exc:
@@ -65,6 +65,13 @@ def search_web(query: str, max_results: int = 10) -> str:
 @tool
 def search_papers(query: str, source: str = "arxiv", max_results: int = 5) -> str:
     """Search academic papers. Source: arxiv or semantic_scholar. Returns papers with abstracts."""
+
+    def _stringify(val):
+        """Convert non-JSON-serializable values (date, datetime) to ISO strings."""
+        if hasattr(val, "isoformat"):
+            return val.isoformat()
+        return val
+
     try:
         if source == "arxiv":
             from alfred.connectors.arxiv_connector import ArxivConnector
@@ -75,17 +82,18 @@ def search_papers(query: str, source: str = "arxiv", max_results: int = 5) -> st
                 {
                     "title": doc.metadata.get("Title"),
                     "authors": doc.metadata.get("Authors"),
-                    "abstract": doc.metadata.get("Summary", "")[:400],
-                    "published": doc.metadata.get("Published"),
+                    "abstract": (doc.metadata.get("Summary") or "")[:400],
+                    "published": _stringify(doc.metadata.get("Published")),
                     "url": doc.metadata.get("entry_id"),
                     "source": "arxiv",
                 }
                 for doc in docs
             ]
         elif source == "semantic_scholar":
-            from alfred.connectors.semantic_scholar_connector import search_by_keyword
+            from alfred.connectors.semantic_scholar_connector import SemanticScholarClient
 
-            papers = search_by_keyword(query=query, limit=max_results)
+            client = SemanticScholarClient()
+            papers = client.search_by_keyword(keyword=query, limit=max_results)
             output = [
                 {
                     "title": p.get("title"),
@@ -139,32 +147,37 @@ def search_kb_for_research(query: str, topic: str | None = None, limit: int = 20
 def scrape_url(url: str, render_js: bool = False) -> str:
     """Scrape content from a URL using Firecrawl. Returns title, text, and markdown."""
     try:
-        from alfred.connectors.firecrawl_connector import FirecrawlConnector
+        from alfred.connectors.firecrawl_connector import FirecrawlClient
+        from alfred.core.settings import settings
 
-        conn = FirecrawlConnector()
-        response = conn.scrape(url=url, render_js=render_js)
+        base_url = settings.firecrawl_base_url or "http://localhost:3002/v1"
+        client = FirecrawlClient(base_url=base_url)
+        response = client.scrape(url=url, render_js=render_js)
 
         if not response.success:
             return json.dumps({
                 "error": "Failed to scrape URL",
-                "message": response.error or "Unknown error",
+                "message": str(response.error or "Unknown error"),
             })
 
+        data = response.data if isinstance(response.data, dict) else {}
+        markdown = response.markdown or data.get("markdown") or ""
+        content = data.get("content") or markdown
         return json.dumps({
             "ok": True,
             "url": url,
-            "title": response.data.get("title", ""),
-            "content": response.data.get("content", "")[:2000],
-            "markdown": response.data.get("markdown", "")[:2000],
+            "title": data.get("title") or data.get("metadata", {}).get("title", ""),
+            "content": (content or "")[:2000],
+            "markdown": (markdown or "")[:2000],
             "metadata": {
-                "author": response.data.get("author"),
-                "description": response.data.get("description"),
-                "language": response.data.get("language"),
+                "author": data.get("author") or data.get("metadata", {}).get("author"),
+                "description": data.get("description") or data.get("metadata", {}).get("description"),
+                "language": data.get("language") or data.get("metadata", {}).get("language"),
             },
         })
     except Exception as exc:
         logger.warning("scrape_url failed: %s", exc)
-        return json.dumps({"error": str(exc), "hint": "Check FIRECRAWL_API_KEY is set"})
+        return json.dumps({"error": str(exc), "hint": "Check firecrawl_base_url + FIRECRAWL_API_KEY"})
 
 
 # List of all research tools for agent registration

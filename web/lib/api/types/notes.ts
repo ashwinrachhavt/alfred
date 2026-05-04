@@ -108,6 +108,13 @@ export type NoteFilesystemImportRequest = {
   max_files?: number;
 };
 
+export type NoteFilesystemUploadImportRequest = {
+  workspace_id: string;
+  files: File[];
+  parent_id?: string | null;
+  max_files?: number;
+};
+
 export type NoteFilesystemImportResponse = {
   source_path: string;
   root_note_id: string;

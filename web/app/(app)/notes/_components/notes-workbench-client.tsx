@@ -183,7 +183,7 @@ export function NotesWorkbenchClient({ initialNoteId }: { initialNoteId: string 
               onClick={() => setImportDialogOpen(true)}
             >
               <Upload className="h-4 w-4" aria-hidden="true" />
-              <span className="sr-only">Import markdown</span>
+              <span className="sr-only">Import files</span>
             </Button>
             <div className="bg-border mt-2 h-px w-full" />
             <div className="mt-1 text-[10px] font-medium tracking-[0.18em] text-[var(--alfred-text-tertiary)] uppercase [writing-mode:vertical-rl]">

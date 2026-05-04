@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-import { streamSSE } from "../sse";
+import { streamSSE, streamSSEGet } from "../sse";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -9,9 +9,7 @@ import { streamSSE } from "../sse";
 /** Build a ReadableStream that emits SSE-formatted chunks. */
 function sseStream(events: Array<{ event: string; data: string }>): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
-  const lines = events
-    .map((e) => `event: ${e.event}\ndata: ${e.data}\n\n`)
-    .join("");
+  const lines = events.map((e) => `event: ${e.event}\ndata: ${e.data}\n\n`).join("");
 
   return new ReadableStream({
     start(controller) {
@@ -22,10 +20,7 @@ function sseStream(events: Array<{ event: string; data: string }>): ReadableStre
 }
 
 /** Minimal Response-like object returned by our mocked fetch. */
-function mockResponse(
-  body: ReadableStream<Uint8Array>,
-  status = 200,
-): Response {
+function mockResponse(body: ReadableStream<Uint8Array>, status = 200): Response {
   return {
     ok: status >= 200 && status < 300,
     status,
@@ -50,10 +45,7 @@ describe("streamSSE", () => {
       { event: "done", data: JSON.stringify({}) },
     ];
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(mockResponse(sseStream(events))),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse(sseStream(events))));
 
     const onEvent = vi.fn();
     await streamSSE("/api/agent/stream", { message: "hi" }, onEvent);
@@ -65,9 +57,7 @@ describe("streamSSE", () => {
   });
 
   it("skips malformed JSON data lines without throwing", async () => {
-    const raw =
-      "event: token\ndata: {not json!!\n\n" +
-      'event: token\ndata: {"content":"ok"}\n\n';
+    const raw = "event: token\ndata: {not json!!\n\n" + 'event: token\ndata: {"content":"ok"}\n\n';
 
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -76,10 +66,7 @@ describe("streamSSE", () => {
       },
     });
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(mockResponse(stream)),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse(stream)));
 
     const onEvent = vi.fn();
     await streamSSE("/api/agent/stream", {}, onEvent);
@@ -93,15 +80,12 @@ describe("streamSSE", () => {
     const controller = new AbortController();
     controller.abort(); // pre-abort
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockRejectedValue(new DOMException("Aborted", "AbortError")),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new DOMException("Aborted", "AbortError")));
 
     const onEvent = vi.fn();
-    await expect(
-      streamSSE("/api/agent/stream", {}, onEvent, controller.signal),
-    ).rejects.toThrow("Aborted");
+    await expect(streamSSE("/api/agent/stream", {}, onEvent, controller.signal)).rejects.toThrow(
+      "Aborted",
+    );
 
     expect(onEvent).not.toHaveBeenCalled();
   });
@@ -113,15 +97,10 @@ describe("streamSSE", () => {
       },
     });
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(mockResponse(body, 500)),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse(body, 500)));
 
     const onEvent = vi.fn();
-    await expect(
-      streamSSE("/api/agent/stream", {}, onEvent),
-    ).rejects.toThrow("Stream failed: 500");
+    await expect(streamSSE("/api/agent/stream", {}, onEvent)).rejects.toThrow("Stream failed: 500");
 
     expect(onEvent).not.toHaveBeenCalled();
   });
@@ -143,10 +122,7 @@ describe("streamSSE", () => {
       },
     });
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(mockResponse(stream)),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse(stream)));
 
     const onEvent = vi.fn();
     await streamSSE("/api/agent/stream", {}, onEvent);
@@ -175,10 +151,7 @@ describe("streamSSE", () => {
       },
     });
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(mockResponse(stream)),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse(stream)));
 
     const onEvent = vi.fn();
     await streamSSE("/api/agent/stream", {}, onEvent);
@@ -212,10 +185,7 @@ describe("streamSSE", () => {
       },
     });
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(mockResponse(stream)),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse(stream)));
 
     const onEvent = vi.fn();
     await streamSSE("/api/agent/stream", {}, onEvent);
@@ -231,7 +201,7 @@ describe("streamSSE", () => {
     // because eventType resets per iteration of the while loop.
     const encoder = new TextEncoder();
     const chunk1 = 'event: token\ndata: {"content":"hello"}\n\n';
-    const chunk2 = 'event: done\ndata: {}\n\n';
+    const chunk2 = "event: done\ndata: {}\n\n";
 
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -241,10 +211,7 @@ describe("streamSSE", () => {
       },
     });
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(mockResponse(stream)),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse(stream)));
 
     const onEvent = vi.fn();
     await streamSSE("/api/agent/stream", {}, onEvent);
@@ -255,9 +222,7 @@ describe("streamSSE", () => {
   });
 
   it("sends POST with JSON body to the resolved URL", async () => {
-    const stream = sseStream([
-      { event: "done", data: JSON.stringify({}) },
-    ]);
+    const stream = sseStream([{ event: "done", data: JSON.stringify({}) }]);
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(stream));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -269,5 +234,23 @@ describe("streamSSE", () => {
     expect(init.method).toBe("POST");
     expect(init.headers["Content-Type"]).toBe("application/json");
     expect(JSON.parse(init.body)).toEqual({ message: "hello", model: "gpt-5.4" });
+  });
+});
+
+describe("streamSSEGet", () => {
+  it("streams from a GET endpoint without a JSON body", async () => {
+    const stream = sseStream([{ event: "lookup", data: JSON.stringify({ word: "ephemeral" }) }]);
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(stream));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onEvent = vi.fn();
+    await streamSSEGet("/api/dictionary/lookup/stream?word=ephemeral", onEvent);
+
+    expect(onEvent).toHaveBeenCalledWith("lookup", { word: "ephemeral" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain("/api/dictionary/lookup/stream?word=ephemeral");
+    expect(init.method).toBe("GET");
+    expect(init.body).toBeUndefined();
   });
 });

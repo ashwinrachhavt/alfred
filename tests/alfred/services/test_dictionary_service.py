@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 WIKTIONARY_RESPONSE = {
     "en": [
         {
@@ -33,7 +37,6 @@ WIKTIONARY_RESPONSE = {
 
 
 class TestParseWiktionaryResponse:
-
     def test_parse_definitions(self):
         from alfred.services.dictionary_service import _parse_wiktionary_response
 
@@ -85,7 +88,6 @@ class TestParseWiktionaryResponse:
 
 
 class TestMergeLookupResult:
-
     def test_merge_builds_complete_result(self):
         from alfred.services.dictionary_service import DictionaryResult, _merge_results
 
@@ -134,3 +136,48 @@ class TestMergeLookupResult:
         assert result.definitions == []
         assert result.wikipedia_summary is None
         assert result.ai_explanation is None
+
+
+@pytest.mark.asyncio
+async def test_lookup_stream_yields_lookup_before_ai_tokens():
+    from alfred.services.dictionary_service import lookup_stream_events
+
+    mock_llm = MagicMock()
+    mock_llm.chat_stream.return_value = iter(["In ", "context."])
+    wiktionary = {
+        "definitions": [
+            {
+                "part_of_speech": "Adjective",
+                "senses": [
+                    {"definition": "Lasting briefly.", "examples": []},
+                ],
+            }
+        ],
+        "pronunciation_ipa": None,
+        "etymology": None,
+    }
+
+    async def fake_wikipedia(_word: str) -> str:
+        return "A short encyclopedia summary."
+
+    with (
+        patch(
+            "alfred.services.dictionary_service._fetch_wiktionary",
+            return_value=wiktionary,
+        ),
+        patch(
+            "alfred.services.dictionary_service._fetch_wikipedia",
+            side_effect=fake_wikipedia,
+        ),
+    ):
+        events = [event async for event in lookup_stream_events("ephemeral", llm=mock_llm)]
+
+    assert events[0][0] == "status"
+    assert events[1][0] == "lookup"
+    assert events[1][1]["word"] == "ephemeral"
+    assert events[1][1]["ai_explanation"] is None
+    assert ("ai_delta", {"content": "In "}) in events
+    assert ("ai_delta", {"content": "context."}) in events
+    assert events[-1][0] == "done"
+    assert events[-1][1]["ai_explanation"] == "In context."
+    assert events[-1][1]["wikipedia_summary"] == "A short encyclopedia summary."

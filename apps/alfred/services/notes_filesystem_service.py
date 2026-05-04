@@ -5,7 +5,8 @@ from __future__ import annotations
 import tempfile
 import uuid
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import Any
 
 from sqlmodel import Session
 
@@ -16,7 +17,6 @@ from alfred.services.notes_service import NotesService
 MAX_IMPORT_FILE_BYTES = 512_000
 DEFAULT_MAX_IMPORT_NOTES = 200
 MAX_IMPORT_NOTES = 500
-MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdx"}
 SKIPPED_RECURSIVE_DIRS = {
     ".git",
     ".hg",
@@ -52,6 +52,11 @@ def _allowed_roots() -> tuple[Path, ...]:
         Path(settings.mcp_filesystem_path).expanduser().resolve(),
         Path(tempfile.gettempdir()).resolve(),
     ]
+    for configured_root in settings.notes_filesystem_roots:
+        raw_root = configured_root.strip()
+        if raw_root:
+            roots.append(Path(raw_root).expanduser().resolve(strict=False))
+
     unique_roots: list[Path] = []
     for root in roots:
         if root not in unique_roots:
@@ -93,6 +98,12 @@ class FilesystemImportResult:
     imported_count: int
     skipped_count: int
     skipped_paths: list[str]
+
+
+@dataclass(slots=True)
+class UploadedFilesystemFile:
+    relative_path: str
+    content: bytes
 
 
 @dataclass(slots=True)
@@ -150,8 +161,8 @@ class NotesFilesystemService:
         state = _ImportState()
 
         if target.is_dir():
-            if not self._has_importable_markdown_descendant(target):
-                raise ValueError("No Markdown files found in the selected folder")
+            if not self._has_importable_text_descendant(target):
+                raise ValueError("No importable text files found in the selected folder")
             root_note = self._import_directory(
                 target,
                 notes=notes,
@@ -179,6 +190,115 @@ class NotesFilesystemService:
 
         return FilesystemImportResult(
             source_path=str(target),
+            root_note_id=str(root_note.id),
+            imported_count=state.imported_count,
+            skipped_count=len(state.skipped_paths or []),
+            skipped_paths=list(state.skipped_paths or []),
+        )
+
+    def import_upload(
+        self,
+        *,
+        workspace_id: str | uuid.UUID,
+        files: list[UploadedFilesystemFile],
+        parent_id: str | uuid.UUID | None = None,
+        user_id: int | None = None,
+        max_files: int = DEFAULT_MAX_IMPORT_NOTES,
+    ) -> FilesystemImportResult:
+        notes = NotesService(self.session)
+        max_notes = max(1, min(int(max_files), MAX_IMPORT_NOTES))
+        state = _ImportState()
+
+        prepared: list[tuple[tuple[str, ...], str, bytes]] = []
+        for uploaded in files:
+            parts = self._safe_upload_parts(uploaded.relative_path)
+            if parts is None:
+                self._record_upload_skip(state, uploaded.relative_path)
+                continue
+
+            is_importable, _reason = self._is_text_bytes_importable(uploaded.content)
+            if not is_importable:
+                self._record_upload_skip(state, "/".join(parts))
+                continue
+
+            prepared.append((parts, uploaded.content.decode("utf-8"), uploaded.content))
+
+        if not prepared:
+            raise ValueError("No importable text files found in the selected upload")
+
+        folder_cache: dict[tuple[str, ...], Any] = {}
+        root_note: Any = None
+
+        for parts, content, raw in sorted(prepared, key=lambda item: tuple(part.lower() for part in item[0])):
+            parent_for_file = parent_id
+            folder_parts = parts[:-1]
+            skipped_for_limit = False
+
+            for index, folder_name in enumerate(folder_parts):
+                key = folder_parts[: index + 1]
+                cached = folder_cache.get(key)
+                if cached is not None:
+                    parent_for_file = cached.id
+                    continue
+
+                if not self._can_import_more(state, max_notes=max_notes):
+                    self._record_upload_skip(state, "/".join(parts))
+                    skipped_for_limit = True
+                    break
+
+                folder_note = notes.create_note(
+                    workspace_id=workspace_id,
+                    parent_id=parent_for_file,
+                    title=folder_name,
+                    icon="📁",
+                    content_markdown=f"Imported from browser upload path `{('/'.join(key))}`.\n",
+                    content_json={
+                        "source": {
+                            "kind": "browser_upload",
+                            "entry_type": "directory",
+                            "path": "/".join(key),
+                        }
+                    },
+                    user_id=user_id,
+                )
+                state.imported_count += 1
+                folder_cache[key] = folder_note
+                parent_for_file = folder_note.id
+                if root_note is None:
+                    root_note = folder_note
+
+            if skipped_for_limit:
+                continue
+
+            if not self._can_import_more(state, max_notes=max_notes):
+                self._record_upload_skip(state, "/".join(parts))
+                continue
+
+            file_note = notes.create_note(
+                workspace_id=workspace_id,
+                parent_id=parent_for_file,
+                title=parts[-1],
+                icon="📄",
+                content_markdown=content,
+                content_json={
+                    "source": {
+                        "kind": "browser_upload",
+                        "entry_type": "file",
+                        "path": "/".join(parts),
+                        "size_bytes": len(raw),
+                    }
+                },
+                user_id=user_id,
+            )
+            state.imported_count += 1
+            if root_note is None:
+                root_note = file_note
+
+        if root_note is None:
+            raise ValueError("The selected upload cannot be imported into notes")
+
+        return FilesystemImportResult(
+            source_path=self._upload_source_path([parts for parts, _content, _raw in prepared]),
             root_note_id=str(root_note.id),
             imported_count=state.imported_count,
             skipped_count=len(state.skipped_paths or []),
@@ -251,7 +371,7 @@ class NotesFilesystemService:
             )
 
         if entry.is_file():
-            is_importable, reason = self._is_markdown_file_importable(entry)
+            is_importable, reason = self._is_text_file_importable(entry)
             return FilesystemEntry(
                 name=entry.name,
                 path=str(entry),
@@ -271,10 +391,21 @@ class NotesFilesystemService:
             reason="Unsupported filesystem entry",
         )
 
-    def _is_markdown_file_importable(self, path: Path) -> tuple[bool, str | None]:
-        if path.suffix.lower() not in MARKDOWN_EXTENSIONS:
-            return False, "Only Markdown files are imported"
+    def _is_text_bytes_importable(self, raw: bytes) -> tuple[bool, str | None]:
+        if len(raw) > MAX_IMPORT_FILE_BYTES:
+            return False, f"File exceeds {MAX_IMPORT_FILE_BYTES // 1024} KB"
 
+        if b"\x00" in raw:
+            return False, "Binary file"
+
+        try:
+            raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return False, "Non UTF-8 text"
+
+        return True, None
+
+    def _is_text_file_importable(self, path: Path) -> tuple[bool, str | None]:
         try:
             size_bytes = path.stat().st_size
         except OSError:
@@ -289,17 +420,35 @@ class NotesFilesystemService:
         except OSError:
             return False, "Unable to read file"
 
-        if b"\x00" in raw:
-            return False, "Binary file"
+        return self._is_text_bytes_importable(raw)
 
-        try:
-            raw.decode("utf-8")
-        except UnicodeDecodeError:
-            return False, "Non UTF-8 text"
+    def _safe_upload_parts(self, relative_path: str) -> tuple[str, ...] | None:
+        normalized = relative_path.replace("\\", "/").strip()
+        if not normalized:
+            return None
 
-        return True, None
+        path = PurePosixPath(normalized)
+        if path.is_absolute():
+            return None
 
-    def _has_importable_markdown_descendant(self, path: Path) -> bool:
+        parts = tuple(part for part in path.parts if part not in {"", "."})
+        if not parts or any(part == ".." for part in parts):
+            return None
+        return parts
+
+    def _record_upload_skip(self, state: _ImportState, relative_path: str) -> None:
+        assert state.skipped_paths is not None
+        state.skipped_paths.append(relative_path)
+
+    def _upload_source_path(self, paths: list[tuple[str, ...]]) -> str:
+        if not paths:
+            return "browser upload"
+        first = paths[0][0]
+        if all(len(path) > 1 and path[0] == first for path in paths):
+            return first
+        return "browser upload"
+
+    def _has_importable_text_descendant(self, path: Path) -> bool:
         try:
             children = self._iter_entries(path)
         except OSError:
@@ -308,10 +457,10 @@ class NotesFilesystemService:
         for child in children:
             if child.is_symlink():
                 continue
-            if child.is_file() and self._is_markdown_file_importable(child)[0]:
+            if child.is_file() and self._is_text_file_importable(child)[0]:
                 return True
             if child.is_dir() and child.name not in SKIPPED_RECURSIVE_DIRS:
-                if self._has_importable_markdown_descendant(child):
+                if self._has_importable_text_descendant(child):
                     return True
         return False
 
@@ -373,7 +522,7 @@ class NotesFilesystemService:
                 if child.name in SKIPPED_RECURSIVE_DIRS:
                     self._record_skip(state, child)
                     continue
-                if not self._has_importable_markdown_descendant(child):
+                if not self._has_importable_text_descendant(child):
                     self._record_skip(state, child)
                     continue
                 self._import_directory(
@@ -418,7 +567,7 @@ class NotesFilesystemService:
             self._record_skip(state, path)
             return None
 
-        is_importable, _reason = self._is_markdown_file_importable(path)
+        is_importable, _reason = self._is_text_file_importable(path)
         if not is_importable:
             self._record_skip(state, path)
             return None
@@ -437,8 +586,8 @@ class NotesFilesystemService:
         row = notes.create_note(
             workspace_id=workspace_id,
             parent_id=parent_id,
-            title=path.stem or path.name,
-            icon="📝",
+            title=path.name,
+            icon="📄",
             content_markdown=content,
             content_json={
                 "source": {
@@ -461,4 +610,5 @@ __all__ = [
     "FilesystemPathNotAllowedError",
     "FilesystemPathNotFoundError",
     "NotesFilesystemService",
+    "UploadedFilesystemFile",
 ]

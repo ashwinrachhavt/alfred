@@ -55,6 +55,7 @@ _TOOL_TIMEOUTS: dict[str, int] = {
     "get_zettel": 30,
     "create_zettel": 60,
     "update_zettel": 60,
+    "import_notes_from_filesystem": 60,
     "deep_research": 120,
     "firecrawl_scrape": 30,
 }

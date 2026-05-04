@@ -186,6 +186,7 @@ CONNECTOR_AGENT = AgentType(
         "list_connectors",
         "run_import",
         "import_status",
+        "import_notes_from_filesystem",
     ],
 )
 

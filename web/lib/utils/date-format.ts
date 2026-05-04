@@ -1,9 +1,5 @@
 /**
  * Centralized date formatting utilities.
- *
- * Consolidates duplicate helpers that were previously scattered across
- * task-center-sheet, company-research-history-sheet,
- * dashboard-client, notion-client, and notion-notetaker.
  */
 
 // ---------------------------------------------------------------------------
