@@ -53,6 +53,10 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.reading import router as reading_router
     from alfred.api.readwise import router as readwise_router
     from alfred.api.research import router as research_router
+    from alfred.api.research_agents import (
+        router as research_agents_router,
+        run_router as research_run_router,
+    )
     from alfred.api.rss import router as rss_router
     from alfred.api.semantic_scholar import router as semantic_scholar_router
     from alfred.api.slack_import import router as slack_import_router
@@ -90,6 +94,8 @@ def register_routes(app: FastAPI) -> None:
         linear_router,
         calendar_router,
         research_router,
+        research_agents_router,
+        research_run_router,
         web_router,
         documents_router,
         mind_palace_agent_router,

@@ -21,6 +21,7 @@ from alfred.models.learning import (
 )
 from alfred.models.notes import NoteAssetRow, NoteRow, WorkspaceRow
 from alfred.models.research import ResearchRun
+from alfred.models.research_agent import ResearchAgentSpecRow
 from alfred.models.streaming import (
     AgentRunEventRow,
     AgentRunRow,
@@ -38,6 +39,7 @@ __all__ = [
     "Model",
     "TimestampMixin",
     "ResearchRun",
+    "ResearchAgentSpecRow",
     "SystemSetting",
     "LearningTopic",
     "LearningResource",

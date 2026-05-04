@@ -8,40 +8,119 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import datetime
 
 from langchain_core.tools import tool
+from sqlmodel import Session, select
 
 from alfred.core.database import SessionLocal
-from alfred.services.zettelkasten_service import ZettelkastenService
+from alfred.models.learning import LearningReview, LearningTopic
+from alfred.services.learning_service import LearningService
 
 logger = logging.getLogger(__name__)
 
 
-def _get_zettel_service() -> ZettelkastenService:
-    """Create a ZettelkastenService with a fresh DB session."""
+@contextmanager
+def _learning_context() -> Iterator[tuple[LearningService, Session]]:
+    """Create a LearningService with a fresh DB session and close it."""
     session = SessionLocal()
-    return ZettelkastenService(session=session)
+    try:
+        yield LearningService(session=session), session
+    finally:
+        session.close()
+
+
+def _iso(value: datetime | None) -> str | None:
+    return value.isoformat() if value else None
+
+
+def _score_from_review_input(
+    *,
+    score: float | None,
+    recalled: bool | None,
+    confidence: int,
+) -> float:
+    if score is not None:
+        return max(0.0, min(1.0, float(score)))
+
+    if recalled is None:
+        raise ValueError("Either score or recalled must be provided")
+
+    if not recalled:
+        return 0.0
+
+    # Backward compatibility for the original agent tool contract:
+    # recalled=True should be treated as a passing review, with confidence
+    # adjusting how strong that pass is.
+    confidence = max(1, min(5, int(confidence)))
+    return {1: 0.8, 2: 0.85, 3: 0.9, 4: 0.95, 5: 1.0}[confidence]
+
+
+def _next_open_review(session: Session, *, topic_id: int) -> LearningReview | None:
+    stmt = (
+        select(LearningReview)
+        .where(LearningReview.topic_id == topic_id)
+        .where(LearningReview.completed_at.is_(None))
+        .order_by(LearningReview.due_at.asc())
+    )
+    return session.exec(stmt).first()
+
+
+def _find_topic(
+    session: Session,
+    *,
+    topic_id: int | None = None,
+    topic_name: str | None = None,
+) -> LearningTopic | None:
+    if topic_id is not None:
+        return session.get(LearningTopic, topic_id)
+
+    name = (topic_name or "").strip()
+    if not name:
+        return None
+
+    stmt = select(LearningTopic).where(LearningTopic.name == name)
+    exact = session.exec(stmt).first()
+    if exact:
+        return exact
+
+    candidates = list(session.exec(select(LearningTopic)))
+    lowered = name.lower()
+    return next((topic for topic in candidates if topic.name.lower() == lowered), None)
+
+
+def _review_payload(review: LearningReview, topic: LearningTopic | None) -> dict:
+    return {
+        "review_id": review.id,
+        "topic_id": review.topic_id,
+        "topic_name": topic.name if topic else "Unknown Topic",
+        "stage": int(review.stage),
+        "iteration": int(review.iteration),
+        "due_at": _iso(review.due_at),
+        "score": review.score,
+    }
 
 
 @tool
 def get_due_reviews(limit: int = 50) -> str:
-    """Get zettel cards due for spaced repetition review. Returns cards sorted by due date."""
-    svc = _get_zettel_service()
+    """Get learning topics due for spaced repetition review. Returns reviews sorted by due date."""
     try:
-        reviews = svc.list_due_reviews(limit=limit)
+        with _learning_context() as (svc, session):
+            reviews = svc.list_due_reviews(limit=limit)
+            topic_ids = {review.topic_id for review in reviews}
+            topics = {
+                topic.id: topic
+                for topic in (
+                    session.get(LearningTopic, topic_id) for topic_id in topic_ids
+                )
+                if topic and topic.id is not None
+            }
+
         output = []
         for review in reviews:
-            card = svc.get_card(review.card_id)
-            if card:
-                output.append({
-                    "review_id": review.id,
-                    "card_id": card.id,
-                    "title": card.title,
-                    "topic": card.topic,
-                    "stage": review.stage,
-                    "due_at": review.due_at.isoformat() if review.due_at else None,
-                    "attempt_count": review.attempt_count,
-                })
+            output.append(_review_payload(review, topics.get(review.topic_id)))
         return json.dumps(output)
     except Exception as exc:
         logger.error("get_due_reviews failed: %s", exc)
@@ -49,21 +128,47 @@ def get_due_reviews(limit: int = 50) -> str:
 
 
 @tool
-def submit_review(review_id: int, recalled: bool, confidence: int = 3) -> str:
-    """Submit a review result. Recalled: True/False, Confidence: 1-5. Updates next review schedule."""
-    svc = _get_zettel_service()
+def submit_review(
+    review_id: int,
+    recalled: bool | None = None,
+    confidence: int = 3,
+    score: float | None = None,
+    attempt_id: int | None = None,
+) -> str:
+    """Submit a learning review result. Pass score 0-1, or recalled plus confidence 1-5."""
     try:
-        review = svc.complete_review(review_id=review_id, recalled=recalled, confidence=confidence)
-        if not review:
+        review_score = _score_from_review_input(
+            score=score,
+            recalled=recalled,
+            confidence=confidence,
+        )
+        with _learning_context() as (svc, session):
+            review = session.get(LearningReview, review_id)
+            if not review:
+                return json.dumps({"error": f"Review {review_id} not found"})
+
+            completed = svc.complete_review(
+                review=review,
+                score=review_score,
+                attempt_id=attempt_id,
+            )
+            next_review = _next_open_review(session, topic_id=completed.topic_id)
+            schedule = next_review or completed
+
+        if not completed:
             return json.dumps({"error": f"Review {review_id} not found"})
 
         return json.dumps({
             "ok": True,
             "review_id": review_id,
+            "topic_id": completed.topic_id,
+            "score": review_score,
             "recalled": recalled,
             "confidence": confidence,
-            "next_stage": review.stage,
-            "next_due": review.due_at.isoformat() if review.due_at else None,
+            "completed_at": _iso(completed.completed_at),
+            "next_stage": int(schedule.stage),
+            "next_iteration": int(schedule.iteration),
+            "next_due": _iso(schedule.due_at),
         })
     except Exception as exc:
         logger.error("submit_review failed: %s", exc)
@@ -71,30 +176,30 @@ def submit_review(review_id: int, recalled: bool, confidence: int = 3) -> str:
 
 
 @tool
-def assess_knowledge(zettel_id: int) -> str:
-    """Assess knowledge level for a zettel using Bloom's taxonomy. Returns level and confidence."""
-    svc = _get_zettel_service()
+def assess_knowledge(topic_id: int | None = None, zettel_id: int | None = None) -> str:
+    """Assess knowledge level for a learning topic using review performance."""
     try:
-        card = svc.get_card(zettel_id)
-        if not card:
-            return json.dumps({"error": f"Zettel {zettel_id} not found"})
+        effective_topic_id = topic_id if topic_id is not None else zettel_id
+        if effective_topic_id is None:
+            return json.dumps({"error": "topic_id is required"})
 
-        # Get review history
-        reviews = svc.session.execute(
-            "SELECT * FROM zettel_reviews WHERE card_id = :card_id ORDER BY completed_at DESC",
-            {"card_id": zettel_id}
-        ).fetchall()
+        with _learning_context() as (_svc, session):
+            topic = session.get(LearningTopic, effective_topic_id)
+            if not topic:
+                return json.dumps({"error": f"Topic {effective_topic_id} not found"})
 
-        # Compute Bloom's level based on review performance
-        # 1: Remember (just encountered)
-        # 2: Understand (1-2 successful reviews)
-        # 3: Apply (3-5 successful reviews)
-        # 4: Analyze (6-10 successful reviews)
-        # 5: Evaluate (11-20 successful reviews)
-        # 6: Create (20+ successful reviews)
+            stmt = (
+                select(LearningReview)
+                .where(LearningReview.topic_id == effective_topic_id)
+                .where(LearningReview.completed_at.is_not(None))
+                .order_by(LearningReview.completed_at.desc())
+            )
+            reviews = list(session.exec(stmt))
+            next_review = _next_open_review(session, topic_id=effective_topic_id)
 
-        successful_reviews = sum(1 for r in reviews if r.get("recalled", False))
-        avg_confidence = card.confidence if card.confidence else 0.5
+        scores = [float(review.score) for review in reviews if review.score is not None]
+        successful_reviews = sum(1 for score_value in scores if score_value >= 0.8)
+        average_score = float(sum(scores) / len(scores)) if scores else 0.0
 
         if successful_reviews == 0:
             bloom_level = 1
@@ -116,13 +221,15 @@ def assess_knowledge(zettel_id: int) -> str:
             level_name = "Create"
 
         return json.dumps({
-            "zettel_id": zettel_id,
-            "title": card.title,
+            "topic_id": effective_topic_id,
+            "topic_name": topic.name,
             "bloom_level": bloom_level,
             "level_name": level_name,
             "successful_reviews": successful_reviews,
-            "confidence": avg_confidence,
+            "average_score": average_score,
             "total_reviews": len(reviews),
+            "next_review_due_at": _iso(next_review.due_at) if next_review else None,
+            "next_review_stage": int(next_review.stage) if next_review else None,
         })
     except Exception as exc:
         logger.error("assess_knowledge failed: %s", exc)
@@ -130,47 +237,38 @@ def assess_knowledge(zettel_id: int) -> str:
 
 
 @tool
-def generate_quiz(topic: str | None = None, difficulty: str = "medium", count: int = 5) -> str:
-    """Generate quiz questions from zettel cards. Difficulty: easy, medium, hard."""
-    svc = _get_zettel_service()
+def generate_quiz(
+    topic_id: int | None = None,
+    topic: str | None = None,
+    difficulty: str = "medium",
+    count: int = 5,
+) -> str:
+    """Generate quiz questions for a learning topic. Difficulty is advisory metadata."""
     try:
-        # Get cards for the topic
-        cards = svc.list_cards(topic=topic, limit=count * 2)
-        if not cards:
-            return json.dumps({"error": "No cards found for quiz generation"})
+        with _learning_context() as (svc, session):
+            learning_topic = _find_topic(session, topic_id=topic_id, topic_name=topic)
+            if not learning_topic:
+                identifier = topic_id if topic_id is not None else topic
+                return json.dumps({"error": f"Topic {identifier} not found"})
 
-        from alfred.core.llm_factory import get_chat_model
-
-        model = get_chat_model()
-
-        # Build context from cards
-        card_context = "\n\n".join([
-            f"Card {i+1}: {card.title}\n{card.content or card.summary or ''}"
-            for i, card in enumerate(cards[:count])
-        ])
-
-        system_prompt = (
-            f"Generate {count} {difficulty} quiz questions from these knowledge cards. "
-            "Return ONLY valid JSON array: [{\"question\": \"...\", \"answer\": \"...\", \"card_id\": N}]"
-        )
-
-        response = model.invoke([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": card_context},
-        ])
-        result_text = response.content if hasattr(response, "content") else str(response)
-
-        # Parse JSON
-        import re
-        json_match = re.search(r'\[.*\]', result_text, re.DOTALL)
-        if json_match:
-            questions = json.loads(json_match.group())
-        else:
-            questions = []
+            quiz = svc.generate_quiz(
+                topic=learning_topic,
+                question_count=count,
+            )
+            questions = [
+                {
+                    "question": item.get("question"),
+                    "answer": item.get("answer"),
+                }
+                for item in quiz.items
+                if item.get("question")
+            ]
 
         return json.dumps({
-            "topic": topic,
+            "topic_id": learning_topic.id,
+            "topic": learning_topic.name,
             "difficulty": difficulty,
+            "quiz_id": quiz.id,
             "questions": questions[:count],
         })
     except Exception as exc:
@@ -179,13 +277,30 @@ def generate_quiz(topic: str | None = None, difficulty: str = "medium", count: i
 
 
 @tool
-def feynman_check(zettel_id: int, explanation: str) -> str:
-    """Check an explanation using Feynman technique. Detects gaps and complexity."""
-    svc = _get_zettel_service()
+def feynman_check(
+    explanation: str,
+    topic_id: int | None = None,
+    topic: str | None = None,
+    zettel_id: int | None = None,
+) -> str:
+    """Check a learning-topic explanation using the Feynman technique."""
     try:
-        card = svc.get_card(zettel_id)
-        if not card:
-            return json.dumps({"error": f"Zettel {zettel_id} not found"})
+        effective_topic_id = topic_id if topic_id is not None else zettel_id
+        with _learning_context() as (svc, session):
+            learning_topic = _find_topic(
+                session,
+                topic_id=effective_topic_id,
+                topic_name=topic,
+            )
+            if not learning_topic:
+                identifier = effective_topic_id if effective_topic_id is not None else topic
+                return json.dumps({"error": f"Topic {identifier} not found"})
+
+            resources = svc.list_resources(topic_id=learning_topic.id or 0)
+            resource_context = "\n".join(
+                f"- {resource.title or 'Untitled'}: {resource.notes or ''}"
+                for resource in resources[:5]
+            )
 
         from alfred.core.llm_factory import get_chat_model
 
@@ -200,7 +315,9 @@ def feynman_check(zettel_id: int, explanation: str) -> str:
         )
 
         user_prompt = (
-            f"Original concept: {card.title}\n{card.content or ''}\n\n"
+            f"Learning topic: {learning_topic.name}\n"
+            f"Description: {learning_topic.description or ''}\n"
+            f"Resources:\n{resource_context}\n\n"
             f"User's explanation: {explanation}"
         )
 
@@ -219,7 +336,8 @@ def feynman_check(zettel_id: int, explanation: str) -> str:
             analysis = {"error": "Failed to parse analysis"}
 
         return json.dumps({
-            "zettel_id": zettel_id,
+            "topic_id": learning_topic.id,
+            "topic": learning_topic.name,
             "analysis": analysis,
         })
     except Exception as exc:

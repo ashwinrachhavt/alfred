@@ -9,6 +9,10 @@ export const apiRoutes = {
     deepResearch: "/api/research/",
     reportsRecent: "/api/research/reports/recent",
     reportById: (reportId: string) => `/api/research/reports/${reportId}`,
+    run: "/api/research/run",
+    agents: "/api/research/agents",
+    agentById: (id: number) => `/api/research/agents/${id}`,
+    agentsCatalog: "/api/research/agents/catalog",
   },
   documents: {
     explorer: "/api/documents/explorer",

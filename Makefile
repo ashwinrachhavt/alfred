@@ -72,3 +72,7 @@ alembic-autogen:
 
 alembic-upgrade:
 	$(LOAD_ENV) PYTHONPATH=apps $(RUN) alembic upgrade head
+
+.PHONY: seed-research-agents
+seed-research-agents:
+	$(LOAD_ENV) PYTHONPATH=apps $(RUN) python -m alfred.services.deep_research.seed

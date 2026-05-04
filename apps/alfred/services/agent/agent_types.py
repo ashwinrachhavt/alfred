@@ -121,7 +121,7 @@ LEARNING_AGENT = AgentType(
     name="learning",
     description=(
         "Run quizzes, spaced repetition reviews, knowledge assessments, and Feynman checks. "
-        "Use when the user wants to test their knowledge, review cards, "
+        "Use when the user wants to test their knowledge, review learning topics, "
         "or assess their understanding of a topic."
     ),
     system_prompt=(
