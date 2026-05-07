@@ -108,6 +108,66 @@ if _NEO4J_AVAILABLE:
             """
             self._run(query, {"topic_id": topic_id, "name": name})
 
+        # --- Zettel projection -------------------------------------------------
+        def upsert_zettel(
+            self,
+            *,
+            card_id: int,
+            title: str,
+            topic: str | None,
+            tags: list[str],
+            bloom_level: int,
+            cluster_id: int | None,
+        ) -> None:
+            """Idempotently upsert a zettel node."""
+            query = """
+            MERGE (z:Zettel {card_id: $card_id})
+            SET z.title = $title,
+                z.topic = $topic,
+                z.tags = $tags,
+                z.bloom_level = $bloom_level,
+                z.cluster_id = $cluster_id,
+                z.updated_at = timestamp()
+            """
+            self._run(query, {
+                "card_id": int(card_id),
+                "title": title,
+                "topic": topic,
+                "tags": tags or [],
+                "bloom_level": int(bloom_level),
+                "cluster_id": cluster_id,
+            })
+
+        def link_zettels(
+            self, *, from_id: int, to_id: int, type_: str, bidirectional: bool = False,
+        ) -> None:
+            """Idempotently create a typed :LINK edge between two zettels."""
+            query = """
+            MATCH (a:Zettel {card_id: $from_id}), (b:Zettel {card_id: $to_id})
+            MERGE (a)-[r:LINK {type: $type_}]->(b)
+            ON CREATE SET r.created_at = timestamp()
+            SET r.bidirectional = $bidirectional
+            """
+            self._run(query, {
+                "from_id": int(from_id), "to_id": int(to_id),
+                "type_": type_, "bidirectional": bool(bidirectional),
+            })
+
+        def delete_zettel(self, *, card_id: int) -> None:
+            self._run(
+                "MATCH (z:Zettel {card_id: $card_id}) DETACH DELETE z",
+                {"card_id": int(card_id)},
+            )
+
+        def delete_zettel_link(self, *, from_id: int, to_id: int, type_: str) -> None:
+            self._run(
+                """
+                MATCH (a:Zettel {card_id: $from_id})-[r:LINK {type: $type_}]->(b:Zettel {card_id: $to_id})
+                DELETE r
+                """,
+                {"from_id": int(from_id), "to_id": int(to_id), "type_": type_},
+            )
+
         def fetch_topic_subgraph(self, *, topic_id: str, limit: int = 200) -> dict[str, Any]:
             query = """
             MATCH (t:Topic {topic_id: $topic_id})
@@ -197,6 +257,18 @@ else:
         def link_topic_to_entity(
             self, *, topic_id: str, name: str, rel_type: str = "COVERS"
         ) -> None:
+            return
+
+        def upsert_zettel(self, **_: object) -> None:
+            return
+
+        def link_zettels(self, **_: object) -> None:
+            return
+
+        def delete_zettel(self, **_: object) -> None:
+            return
+
+        def delete_zettel_link(self, **_: object) -> None:
             return
 
         def fetch_topic_subgraph(self, *, topic_id: str, limit: int = 200) -> dict[str, Any]:
