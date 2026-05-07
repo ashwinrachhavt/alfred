@@ -58,7 +58,12 @@ def client(db_session: Session, gs: GraphService) -> TestClient:
     app = FastAPI()
     app.include_router(zettels_router)
     app.dependency_overrides[get_db_session] = lambda: db_session
-    app.dependency_overrides[get_graph_service] = lambda: gs
+    # NOTE: dependency_overrides[get_graph_service] has no effect here —
+    # the Neo4j hooks call get_graph_service() directly, not via Depends.
+    # The lru_cache is cleared in the `gs` fixture so the real
+    # get_graph_service() builds a driver pointing at the same NEO4J_URI
+    # as our test fixture. The `gs` fixture exists purely to manage the
+    # Zettel subgraph lifecycle, not to inject a driver.
     return TestClient(app)
 
 
@@ -124,3 +129,19 @@ def test_delete_link_removes_edge_from_neo4j(client: TestClient, gs: GraphServic
         {"from": a["id"], "to": b["id"]},
     )
     assert rows[0]["n"] == 0
+
+
+def test_create_card_returns_201_when_neo4j_absent(db_session: Session, monkeypatch) -> None:
+    """Silent-failure contract: HTTP still succeeds when Neo4j is unavailable."""
+    import alfred.core.dependencies as core_deps
+
+    core_deps.get_graph_service.cache_clear()
+    monkeypatch.setattr(core_deps, "get_graph_service", lambda: None)
+
+    app = FastAPI()
+    app.include_router(zettels_router)
+    app.dependency_overrides[get_db_session] = lambda: db_session
+    absent_client = TestClient(app)
+
+    r = absent_client.post("/api/zettels/cards", json={"title": "NoNeo4j", "tags": []})
+    assert r.status_code == 201

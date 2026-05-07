@@ -91,6 +91,18 @@ class ZettelCreationStream(SSEStreamOrchestrator):
             # Invalidate caches immediately so card appears in UI
             self._invalidate_caches()
 
+            # Best-effort Neo4j projection so the nexus view stays current.
+            # Silent on failure — Postgres remains the source of truth.
+            try:
+                from alfred.core.dependencies import get_graph_service
+                from alfred.services.zettel_graph_sync import ZettelGraphSync
+
+                gs = get_graph_service()
+                if gs is not None and card.id is not None:
+                    ZettelGraphSync(session=session, graph=gs).upsert_card(card.id)
+            except Exception:  # noqa: BLE001
+                logger.debug("Neo4j upsert failed for streamed card %s", card.id, exc_info=True)
+
             return {"id": card.id, "title": card.title, "status": card.status}
         finally:
             # Only close if we created the session (default factory).
@@ -165,6 +177,7 @@ class ZettelCreationStream(SSEStreamOrchestrator):
 
                 # Step 3: Auto-create links above threshold
                 auto_linked: list[dict[str, Any]] = []
+                created_link_ids: list[int] = []
                 for s in suggestions:
                     if s.scores.composite_score >= AUTO_LINK_THRESHOLD:
                         links = await asyncio.to_thread(
@@ -184,8 +197,29 @@ class ZettelCreationStream(SSEStreamOrchestrator):
                                     "type": link.type,
                                 }
                             )
+                            if link.id is not None:
+                                created_link_ids.append(link.id)
                 if auto_linked:
                     yield self._sse("links_created", {"links": auto_linked})
+
+                # Best-effort Neo4j projection of auto-created links.
+                # Silent on failure — Postgres remains the source of truth.
+                if created_link_ids:
+                    try:
+                        from alfred.core.dependencies import get_graph_service
+                        from alfred.services.zettel_graph_sync import ZettelGraphSync
+
+                        gs = get_graph_service()
+                        if gs is not None:
+                            sync = ZettelGraphSync(session=session, graph=gs)
+                            for lid in created_link_ids:
+                                sync.upsert_link(lid)
+                    except Exception:  # noqa: BLE001
+                        logger.debug(
+                            "Neo4j link-upsert failed for streamed links %s",
+                            created_link_ids,
+                            exc_info=True,
+                        )
 
             finally:
                 if self._uses_default_factory:

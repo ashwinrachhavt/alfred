@@ -10,9 +10,10 @@ from sqlmodel import Session, select
 
 from alfred.api.dependencies import get_db_session
 from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
+from alfred.core.dependencies import get_graph_service
 from alfred.core.exceptions import ServiceUnavailableError
 from alfred.core.redis_client import get_redis_client
-from alfred.models.zettel import ZettelCard, ZettelReview
+from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview
 
 _log = logging.getLogger(__name__)
 _TOPICS_CACHE_KEY = "zettel:topics"
@@ -54,6 +55,7 @@ from alfred.services.session_service import (
 )
 from alfred.services.zettel_creation_stream import ZettelCreationStream
 from alfred.services.zettel_decompose_stream import ZettelDecomposeStream
+from alfred.services.zettel_graph_sync import ZettelGraphSync
 from alfred.services.zettelkasten_service import ZettelkastenService
 
 router = APIRouter(prefix="/api/zettels", tags=["zettels"])
@@ -298,9 +300,6 @@ def _neo4j_upsert_card(card_id: int | None, session: Session) -> None:
     if card_id is None:
         return
     try:
-        from alfred.core.dependencies import get_graph_service
-        from alfred.services.zettel_graph_sync import ZettelGraphSync
-
         gs = get_graph_service()
         if gs is None:
             return
@@ -313,13 +312,11 @@ def _neo4j_delete_card(card_id: int | None) -> None:
     if card_id is None:
         return
     try:
-        from alfred.core.dependencies import get_graph_service
-
         gs = get_graph_service()
         if gs is None:
             return
         gs.delete_zettel(card_id=card_id)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _log.debug("Neo4j delete failed for card %s", card_id, exc_info=True)
 
 
@@ -328,16 +325,13 @@ def _neo4j_upsert_links(link_ids: list[int], session: Session) -> None:
     if not link_ids:
         return
     try:
-        from alfred.core.dependencies import get_graph_service
-        from alfred.services.zettel_graph_sync import ZettelGraphSync
-
         gs = get_graph_service()
         if gs is None:
             return
         sync = ZettelGraphSync(session=session, graph=gs)
         for lid in link_ids:
             sync.upsert_link(lid)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _log.debug("Neo4j link-upsert failed (ids=%s)", link_ids, exc_info=True)
 
 
@@ -346,14 +340,12 @@ def _neo4j_delete_edges(pairs: list[tuple[int, int, str]]) -> None:
     if not pairs:
         return
     try:
-        from alfred.core.dependencies import get_graph_service
-
         gs = get_graph_service()
         if gs is None:
             return
         for from_id, to_id, type_ in pairs:
             gs.delete_zettel_link(from_id=from_id, to_id=to_id, type_=type_)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _log.debug("Neo4j edge-delete failed", exc_info=True)
 
 
@@ -434,6 +426,11 @@ def bulk_create_cards(
     session: Session = Depends(get_db_session),
 ) -> list[ZettelCardOut]:
     """Create multiple cards in one call (batch insert, max 50)."""
+    # NOTE: bulk operations do NOT project to Neo4j incrementally.
+    # Callers should POST /api/nexus/sync after a bulk batch to refresh
+    # the nexus view. Per-row projection would 2x the write cost for
+    # use cases (e.g., decomposition) that already run against a live
+    # workspace and can tolerate a stale-until-resync window.
     _MAX_BATCH = 50
     if len(payload) > _MAX_BATCH:
         raise HTTPException(status_code=400, detail="Maximum 50 cards per batch")
@@ -451,6 +448,11 @@ def bulk_update_cards(
     payload: list[ZettelCardPatch],
     session: Session = Depends(get_db_session),
 ) -> BulkUpdateResult:
+    # NOTE: bulk operations do NOT project to Neo4j incrementally.
+    # Callers should POST /api/nexus/sync after a bulk batch to refresh
+    # the nexus view. Per-row projection would 2x the write cost for
+    # use cases (e.g., decomposition) that already run against a live
+    # workspace and can tolerate a stale-until-resync window.
     svc = ZettelkastenService(session)
     updated: list[int] = []
     missing: list[int] = []
@@ -665,8 +667,6 @@ def delete_link(
 ) -> dict:
     svc = ZettelkastenService(session)
     # Capture link details for Neo4j projection BEFORE deleting.
-    from alfred.models.zettel import ZettelLink
-
     link = session.get(ZettelLink, link_id)
     if not link:
         raise HTTPException(status_code=404, detail="Link not found")
@@ -691,6 +691,15 @@ def update_link(
     session: Session = Depends(get_db_session),
 ) -> ZettelLinkOut:
     svc = ZettelkastenService(session)
+    # Snapshot the pre-update edge so we can tell Neo4j to delete the stale
+    # typed edge if type/bidirectional changed.
+    pre = session.get(ZettelLink, link_id)
+    stale_pairs: list[tuple[int, int, str]] = []
+    if pre is not None:
+        stale_pairs.append((pre.from_card_id, pre.to_card_id, pre.type))
+        if pre.bidirectional:
+            stale_pairs.append((pre.to_card_id, pre.from_card_id, pre.type))
+
     try:
         updated = svc.update_link(link_id, **payload.model_dump(exclude_unset=True))
     except ValueError as exc:
@@ -698,6 +707,12 @@ def update_link(
     if not updated:
         raise HTTPException(status_code=404, detail="Link not found")
     _invalidate_graph_cache()
+
+    # Delete the stale edges (will no-op if they already match the new state)
+    # then re-upsert to write the new edge(s).
+    _neo4j_delete_edges(stale_pairs)
+    _neo4j_upsert_links([updated.id] if updated.id is not None else [], session)
+
     return _link_out(updated)
 
 
@@ -980,6 +995,11 @@ def bulk_from_decomposition(
     ``bloom_source='ai_inferred'`` and the user-adjusted Bloom level;
     sibling links are ``type='decomposition_sibling'`` and bidirectional.
     """
+    # NOTE: bulk operations do NOT project to Neo4j incrementally.
+    # Callers should POST /api/nexus/sync after a bulk batch to refresh
+    # the nexus view. Per-row projection would 2x the write cost for
+    # use cases (e.g., decomposition) that already run against a live
+    # workspace and can tolerate a stale-until-resync window.
     _MAX_BATCH = 50
     if len(payload.candidates) == 0:
         raise HTTPException(status_code=400, detail="No candidates provided")
