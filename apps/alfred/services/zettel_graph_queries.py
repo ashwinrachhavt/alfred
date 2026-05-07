@@ -16,6 +16,9 @@ from alfred.services.graph_service import GraphService
 
 logger = logging.getLogger(__name__)
 
+_MAX_PATH_HOPS = 10
+_MAX_NEIGHBORHOOD_DEPTH = 3
+
 
 @dataclass
 class ZettelGraphQueries:
@@ -34,7 +37,7 @@ class ZettelGraphQueries:
         Traverses :LINK edges in either direction. Cap hops to avoid runaway
         queries on dense graphs.
         """
-        hops = max(1, min(int(max_hops), 10))
+        hops = max(1, min(int(max_hops), _MAX_PATH_HOPS))
         query = f"""
         MATCH (a:Zettel {{card_id: $from_id}}), (b:Zettel {{card_id: $to_id}})
         MATCH p = shortestPath((a)-[:LINK*..{hops}]-(b))
@@ -54,9 +57,15 @@ class ZettelGraphQueries:
     def neighborhood(self, *, card_id: int, depth: int = 1) -> dict[str, Any]:
         """Return nodes and edges within `depth` hops of `card_id`.
 
-        Depth is clamped to [1, 3] to bound query cost.
+        Depth is clamped to [1, _MAX_NEIGHBORHOOD_DEPTH] to bound query cost.
+
+        Note: nodes and edges are fetched in two separate Cypher reads. Each
+        result is individually consistent, but a concurrent write between
+        the queries may cause an edge to reference a node absent from the
+        node list (or vice versa). Callers should tolerate this; the
+        projection is already eventually consistent with Postgres.
         """
-        depth = max(1, min(int(depth), 3))
+        depth = max(1, min(int(depth), _MAX_NEIGHBORHOOD_DEPTH))
         node_query = f"""
         MATCH (c:Zettel {{card_id: $card_id}})-[:LINK*1..{depth}]-(n:Zettel)
         WITH collect(DISTINCT c) + collect(DISTINCT n) AS ns

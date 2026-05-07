@@ -81,3 +81,25 @@ def test_bridges_returns_high_score_nodes(queries):
 def test_bridges_honours_limit(queries):
     result = queries.bridges(limit=1)
     assert len(result) <= 1
+
+
+def test_bridges_orders_by_score_desc(queries):
+    """Add an extra inbound edge to node 2 so its score exceeds node 3's.
+
+    Diamond so far: 1→2, 2→4, 1→3, 3→4 (fixture).
+    Adding 3→2 gives node 2 in_deg=2 (from 1 and 3), out_deg=1 (to 4) => score=2.
+    Node 3 still has in_deg=1, out_deg=2 (to 4 and now to 2) => score=2 as well.
+
+    Pick a different edge that breaks the tie cleanly: also add 4→2, giving
+    node 2 in_deg=3 (from 1, 3, 4), out_deg=1 => score=3. Node 3 unchanged
+    at in_deg=1, out_deg=2 (to 2, to 4) => score=2. Node 4 now out_deg=1,
+    in_deg=2 => score=2.
+
+    So node 2 should be first.
+    """
+    queries.graph.link_zettels(from_id=3, to_id=2, type_="ref", bidirectional=False)
+    queries.graph.link_zettels(from_id=4, to_id=2, type_="ref", bidirectional=False)
+    result = queries.bridges(limit=10)
+    assert len(result) >= 1
+    assert result[0]["card_id"] == 2
+    assert result[0]["score"] == 3
