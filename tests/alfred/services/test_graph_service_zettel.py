@@ -39,8 +39,11 @@ def test_upsert_zettel_creates_node(gs):
 def test_upsert_zettel_is_idempotent(gs):
     gs.upsert_zettel(card_id=1, title="A", topic=None, tags=[], bloom_level=1, cluster_id=None)
     gs.upsert_zettel(card_id=1, title="B", topic=None, tags=[], bloom_level=1, cluster_id=None)
-    rows = gs._run("MATCH (z:Zettel {card_id: 1}) RETURN count(z) AS n")
+    rows = gs._run(
+        "MATCH (z:Zettel {card_id: 1}) RETURN count(z) AS n, collect(z.title) AS titles"
+    )
     assert rows[0]["n"] == 1
+    assert rows[0]["titles"] == ["B"]
 
 
 def test_link_zettels_creates_typed_edge(gs):
@@ -60,3 +63,16 @@ def test_delete_zettel_removes_node_and_edges(gs):
     gs.delete_zettel(card_id=1)
     rows = gs._run("MATCH (z:Zettel {card_id: 1}) RETURN count(z) AS n")
     assert rows[0]["n"] == 0
+
+
+def test_delete_zettel_link_removes_only_matching_type(gs):
+    gs.upsert_zettel(card_id=1, title="A", topic=None, tags=[], bloom_level=1, cluster_id=None)
+    gs.upsert_zettel(card_id=2, title="B", topic=None, tags=[], bloom_level=1, cluster_id=None)
+    gs.link_zettels(from_id=1, to_id=2, type_="ref", bidirectional=False)
+    gs.link_zettels(from_id=1, to_id=2, type_="extends", bidirectional=False)
+    gs.delete_zettel_link(from_id=1, to_id=2, type_="ref")
+    rows = gs._run(
+        "MATCH (a:Zettel {card_id: 1})-[r:LINK]->(b:Zettel {card_id: 2}) "
+        "RETURN collect(r.type) AS types"
+    )
+    assert rows[0]["types"] == ["extends"]

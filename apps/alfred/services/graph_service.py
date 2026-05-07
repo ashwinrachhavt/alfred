@@ -259,17 +259,33 @@ else:
         ) -> None:
             return
 
-        def upsert_zettel(self, **_: object) -> None:
-            return
+        def upsert_zettel(
+            self,
+            *,
+            card_id: int,
+            title: str,
+            topic: str | None,
+            tags: list[str],
+            bloom_level: int,
+            cluster_id: int | None,
+        ) -> None:
+            return None
 
-        def link_zettels(self, **_: object) -> None:
-            return
+        def link_zettels(
+            self,
+            *,
+            from_id: int,
+            to_id: int,
+            type_: str,
+            bidirectional: bool = False,
+        ) -> None:
+            return None
 
-        def delete_zettel(self, **_: object) -> None:
-            return
+        def delete_zettel(self, *, card_id: int) -> None:
+            return None
 
-        def delete_zettel_link(self, **_: object) -> None:
-            return
+        def delete_zettel_link(self, *, from_id: int, to_id: int, type_: str) -> None:
+            return None
 
         def fetch_topic_subgraph(self, *, topic_id: str, limit: int = 200) -> dict[str, Any]:
             return {"nodes": [], "edges": []}
