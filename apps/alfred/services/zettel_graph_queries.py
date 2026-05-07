@@ -52,6 +52,34 @@ class ZettelGraphQueries:
         return [int(x) for x in rows[0]["ids"]]
 
     # ------------------------------------------------------------------
+    # Full graph dump
+    # ------------------------------------------------------------------
+    def all_nodes_and_edges(self, *, limit: int = 5000) -> dict[str, Any]:
+        """Return every :Zettel node and every :LINK edge, up to `limit` nodes.
+
+        The caller owns serialization to API DTOs. Large graphs truncate at
+        `limit` nodes (but edges for truncated nodes are still included —
+        fast-follow: filter edges by surviving node set).
+        """
+        node_rows = self.graph._run(
+            """
+            MATCH (z:Zettel)
+            RETURN z.card_id AS card_id, z.title AS title, z.topic AS topic,
+                   z.tags AS tags, z.bloom_level AS bloom_level,
+                   z.cluster_id AS cluster_id
+            LIMIT $limit
+            """,
+            {"limit": int(limit)},
+        )
+        edge_rows = self.graph._run(
+            """
+            MATCH (a:Zettel)-[r:LINK]->(b:Zettel)
+            RETURN a.card_id AS source, b.card_id AS target, r.type AS type
+            """
+        )
+        return {"nodes": node_rows, "edges": edge_rows}
+
+    # ------------------------------------------------------------------
     # Neighborhood (ego graph)
     # ------------------------------------------------------------------
     def neighborhood(self, *, card_id: int, depth: int = 1) -> dict[str, Any]:

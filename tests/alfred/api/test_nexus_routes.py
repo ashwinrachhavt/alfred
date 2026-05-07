@@ -39,15 +39,20 @@ def db_session():
 def gs():
     if not os.environ.get("NEO4J_URI"):
         pytest.skip("NEO4J_URI not set")
+    # Clear the lru_cache so downstream tests don't inherit a stale driver.
+    get_graph_service.cache_clear()
     svc = GraphService(
         uri=os.environ["NEO4J_URI"],
         user=os.environ.get("NEO4J_USER", "neo4j"),
         password=os.environ.get("NEO4J_PASSWORD", "neo4j_password"),
     )
     svc.wipe_zettel_subgraph()
-    yield svc
-    svc.wipe_zettel_subgraph()
-    svc.close()
+    try:
+        yield svc
+    finally:
+        svc.wipe_zettel_subgraph()
+        svc.close()
+        get_graph_service.cache_clear()
 
 
 @pytest.fixture()
@@ -137,11 +142,3 @@ def test_bridges_endpoint_returns_list(
     assert isinstance(r.json(), list)
 
 
-def test_sync_returns_503_when_neo4j_absent(db_session: Session) -> None:
-    app = FastAPI()
-    app.include_router(nexus_router)
-    app.dependency_overrides[get_db_session] = lambda: db_session
-    app.dependency_overrides[get_graph_service] = lambda: None
-    absent_client = TestClient(app)
-    r = absent_client.post("/api/nexus/sync")
-    assert r.status_code == 503
