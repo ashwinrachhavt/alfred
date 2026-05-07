@@ -13,7 +13,7 @@ def test_base_personality_no_forced_search(_mock):
     builder = SystemPromptBuilder()
     prompt = builder.build()
 
-    assert "Alfred" in prompt
+    assert "Polymath" in prompt
     assert "ALWAYS search first" not in prompt
     assert "NEVER answer from memory" not in prompt
     assert "Default to searching" not in prompt
@@ -80,7 +80,7 @@ def test_composition_order(_mock):
     )
 
     # All sections present
-    assert "Alfred" in prompt
+    assert "Polymath" in prompt
     assert "search_kb" in prompt
     assert "Response style" in prompt
     assert "Stoic" in prompt
@@ -113,7 +113,7 @@ def test_notification_failure_silent(mock_notif):
     prompt = builder.build()
 
     # Should still have the base prompt
-    assert "Alfred" in prompt
+    assert "Polymath" in prompt
     assert "New Knowledge" not in prompt  # Notification section absent
 
 
