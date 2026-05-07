@@ -21,34 +21,45 @@ vi.mock("@/lib/api/routes", () => ({
   },
 }));
 
-import { useAgentStore, selectOrderedMessages, type NoteContext } from "../agent-store";
+import {
+  useAgentStore,
+  selectOrderedMessages,
+  type AgentMessage,
+  type NoteContext,
+} from "../agent-store";
+import { streamSSE } from "@/lib/api/sse";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-type MsgInput = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  artifacts?: any[];
-  relatedCards?: any[];
-  gaps?: any[];
-  toolCalls?: any[];
-  timestamp?: number;
-};
+type MsgInput = Pick<AgentMessage, "id" | "role" | "content"> &
+  Partial<
+    Pick<
+      AgentMessage,
+      | "artifacts"
+      | "relatedCards"
+      | "gaps"
+      | "toolCalls"
+      | "plan"
+      | "pendingApprovals"
+      | "parts"
+      | "timestamp"
+    >
+  >;
 
 function normalize(msgs: MsgInput[]) {
-  const messagesById: Record<string, any> = {};
+  const messagesById: Record<string, AgentMessage> = {};
   const messageOrder: string[] = [];
   for (const m of msgs) {
-    const msg = {
+    const msg: AgentMessage = {
       artifacts: [],
       relatedCards: [],
       gaps: [],
       toolCalls: [],
       plan: [],
       pendingApprovals: [],
+      parts: [],
       timestamp: Date.now(),
       ...m,
     };
@@ -78,6 +89,7 @@ function resetStore() {
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
+  vi.clearAllMocks();
   resetStore();
 });
 
@@ -230,5 +242,50 @@ describe("cancelStream", () => {
     // Should not throw
     useAgentStore.getState().cancelStream();
     expect(useAgentStore.getState().isStreaming).toBe(false);
+  });
+});
+
+describe("sendMessage", () => {
+  it("stores image parts and forwards attachments to the stream request", async () => {
+    vi.mocked(streamSSE).mockImplementation(async (_url, _body, onEvent) => {
+      onEvent("done", {});
+    });
+
+    const attachment = {
+      id: "img-1",
+      kind: "image" as const,
+      name: "screenshot.png",
+      mimeType: "image/png",
+      size: 12,
+      dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+    };
+
+    await useAgentStore.getState().sendMessage("Describe this", {
+      attachments: [attachment],
+    });
+
+    const [, body] = vi.mocked(streamSSE).mock.calls[0];
+    expect(body.attachments).toEqual([
+      {
+        kind: "image",
+        name: "screenshot.png",
+        mime_type: "image/png",
+        size: 12,
+        data_url: "data:image/png;base64,iVBORw0KGgo=",
+      },
+    ]);
+
+    const [userMessage] = selectOrderedMessages(useAgentStore.getState());
+    expect(userMessage.parts).toEqual([
+      { type: "text", text: "Describe this", state: "done" },
+      {
+        type: "image",
+        url: "data:image/png;base64,iVBORw0KGgo=",
+        mimeType: "image/png",
+        name: "screenshot.png",
+        size: 12,
+        state: "done",
+      },
+    ]);
   });
 });

@@ -121,15 +121,16 @@ def query_web(query: str, max_results: int = 5) -> str:
     try:
         from alfred.connectors.web_connector import WebConnector
 
-        conn = WebConnector()
-        results = conn.search(query=query, max_results=max_results)
+        conn = WebConnector(searx_k=max_results)
+        response = conn.search(query=query, num_results=max_results)
         output = [
             {
-                "title": r.get("title"),
-                "url": r.get("url"),
-                "snippet": r.get("snippet", "")[:200],
+                "title": hit.title,
+                "url": hit.url,
+                "snippet": (hit.snippet or "")[:200],
+                "source": hit.source,
             }
-            for r in results[:max_results]
+            for hit in response.hits[:max_results]
         ]
         return json.dumps(output)
     except Exception as exc:
@@ -216,9 +217,9 @@ def query_linear(query: str, team_id: str | None = None, limit: int = 10) -> str
 def query_semantic_scholar(query: str, limit: int = 5) -> str:
     """Search Semantic Scholar for academic papers. Returns titles, authors, abstracts, and citation counts."""
     try:
-        from alfred.connectors.semantic_scholar_connector import search_by_keyword
+        from alfred.connectors.semantic_scholar_connector import SemanticScholarClient
 
-        papers = search_by_keyword(query=query, limit=limit)
+        papers = SemanticScholarClient().search_by_keyword(keyword=query, limit=limit)
         output = [
             {
                 "title": p.get("title"),

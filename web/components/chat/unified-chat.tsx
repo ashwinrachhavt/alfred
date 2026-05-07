@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import NextImage from "next/image";
 import dynamic from "next/dynamic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -10,6 +11,7 @@ import {
   Brain,
   ChevronDown,
   FileText,
+  ImageIcon,
   Loader2,
   Maximize2,
   Minimize2,
@@ -21,6 +23,7 @@ import {
   Square,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "@/components/ui/button";
@@ -35,6 +38,8 @@ import {
   PHILOSOPHICAL_LENSES,
   type AgentMessage,
   type ArtifactCard,
+  type ChatImageAttachment,
+  type NoteContext,
 } from "@/lib/stores/agent-store";
 import { useShellStore, type ChatMode } from "@/lib/stores/shell-store";
 import {
@@ -100,11 +105,68 @@ type AttachedChatContext =
       topics: unknown;
     };
 
+const CHAT_IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const MAX_CHAT_IMAGE_ATTACHMENTS = 4;
+const MAX_CHAT_IMAGE_BYTES = 10 * 1024 * 1024;
+
 type OmniboxMentionMatch = {
   query: string;
   start: number;
   end: number;
 };
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Failed to read image."));
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.readAsDataURL(file);
+  });
+}
+
+function imageFilesFromDataTransfer(dataTransfer: DataTransfer | null | undefined): File[] {
+  if (!dataTransfer) return [];
+
+  const byNameAndSize = new Map<string, File>();
+  for (const file of Array.from(dataTransfer.files ?? [])) {
+    if (file.type.startsWith("image/")) {
+      byNameAndSize.set(`${file.name}:${file.size}:${file.type}`, file);
+    }
+  }
+
+  for (const item of Array.from(dataTransfer.items ?? [])) {
+    if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
+    const file = item.getAsFile();
+    if (file) {
+      byNameAndSize.set(`${file.name}:${file.size}:${file.type}`, file);
+    }
+  }
+
+  return Array.from(byNameAndSize.values());
+}
+
+async function fileToChatImageAttachment(file: File): Promise<ChatImageAttachment> {
+  const mimeType = file.type || "application/octet-stream";
+  if (!CHAT_IMAGE_MIME_TYPES.has(mimeType)) {
+    throw new Error("Use PNG, JPEG, WebP, or GIF images.");
+  }
+  if (file.size > MAX_CHAT_IMAGE_BYTES) {
+    throw new Error("Images must be 10 MB or smaller.");
+  }
+  const dataUrl = await fileToDataUrl(file);
+  const randomId =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+  return {
+    id: `${file.name || "image"}-${file.size}-${file.lastModified}-${randomId}`,
+    kind: "image",
+    name: file.name || "pasted-image",
+    mimeType,
+    size: file.size,
+    dataUrl,
+  };
+}
 
 function buildResponseCommentsStorageKey(threadId: number | null): string {
   return `alfred:chat:response-comments:${threadId ?? "draft"}`;
@@ -294,6 +356,7 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
   const [showThreads, setShowThreads] = useState(false);
   const [editingZettelId, setEditingZettelId] = useState<number | null>(null);
   const [attachedContext, setAttachedContext] = useState<AttachedChatContext[]>([]);
+  const [imageAttachments, setImageAttachments] = useState<ChatImageAttachment[]>([]);
   const [dismissedOmniboxToken, setDismissedOmniboxToken] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastThreadLoadRef = useRef(0);
@@ -437,6 +500,36 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
     );
   }, []);
 
+  const handleAttachImages = useCallback(
+    async (files: File[]) => {
+      const images = files.filter((file) => file.type.startsWith("image/"));
+      if (!images.length) return;
+
+      const remainingSlots = MAX_CHAT_IMAGE_ATTACHMENTS - imageAttachments.length;
+      if (remainingSlots <= 0) {
+        toast.error(`Attach up to ${MAX_CHAT_IMAGE_ATTACHMENTS} images per message.`);
+        return;
+      }
+
+      const selected = images.slice(0, remainingSlots);
+      if (images.length > selected.length) {
+        toast.message(`Only the first ${remainingSlots} image(s) were attached.`);
+      }
+
+      try {
+        const nextAttachments = await Promise.all(selected.map(fileToChatImageAttachment));
+        setImageAttachments((current) => [...current, ...nextAttachments]);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to attach image.");
+      }
+    },
+    [imageAttachments.length],
+  );
+
+  const handleRemoveImageAttachment = useCallback((attachmentId: string) => {
+    setImageAttachments((current) => current.filter((item) => item.id !== attachmentId));
+  }, []);
+
   // Load threads on mount/open
   useEffect(() => {
     if (isSidebar && !aiPanelOpen) return;
@@ -462,18 +555,33 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    if (!text) return;
+    if (!text && imageAttachments.length === 0) return;
+
+    const imagesToSend = imageAttachments;
+    const promptText = text || "Analyze the attached image(s).";
 
     setInput("");
+    setImageAttachments([]);
     setAttachedContext([]);
     setDismissedOmniboxToken(null);
     scrollToBottom("smooth");
 
     if (!activeThreadId) {
-      await createThread(text.slice(0, 60));
+      await createThread((text || "Image analysis").slice(0, 60));
     }
-    await sendMessage(buildChatContextPrompt(text, attachedContext), { displayText: text });
-  }, [input, activeThreadId, attachedContext, createThread, scrollToBottom, sendMessage]);
+    await sendMessage(buildChatContextPrompt(promptText, attachedContext), {
+      displayText: text || "Analyze attached image(s).",
+      attachments: imagesToSend,
+    });
+  }, [
+    input,
+    imageAttachments,
+    activeThreadId,
+    attachedContext,
+    createThread,
+    scrollToBottom,
+    sendMessage,
+  ]);
 
   const handleAddResponseComment = useCallback(
     (messageId: string, body: string, target: ResponseCommentTarget) => {
@@ -558,6 +666,7 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
     : "What would you like to explore?";
 
   const activeThread = threads.find((t) => t.id === activeThreadId);
+  const canSend = input.trim().length > 0 || imageAttachments.length > 0;
 
   // --- Sidebar: hide when panel is closed ---
   if (isSidebar && !aiPanelOpen) return null;
@@ -718,6 +827,7 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
             setInput={handleInputChange}
             isStreaming={isStreaming}
             activeModel={activeModel}
+            imageAttachments={imageAttachments}
             isOnNotes={!!isOnNotes}
             noteContext={noteContext}
             attachedContext={attachedContext}
@@ -727,9 +837,12 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
             onSelectOmniboxResult={handleSelectOmniboxResult}
             onCloseOmnibox={handleCloseOmnibox}
             onRemoveAttachedContext={handleRemoveAttachedContext}
+            onAttachImages={handleAttachImages}
+            onRemoveImageAttachment={handleRemoveImageAttachment}
             showSettings={showSettings}
             onToggleSettings={() => setShowSettings(!showSettings)}
             onSend={handleSend}
+            canSend={canSend}
             onCancel={cancelStream}
             onKeyDown={handleKeyDown}
             onModelChange={setModel}
@@ -741,6 +854,7 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
             setInput={handleInputChange}
             isStreaming={isStreaming}
             activeModel={activeModel}
+            imageAttachments={imageAttachments}
             attachedContext={attachedContext}
             omniboxRows={omniboxRows}
             isOmniboxOpen={isOmniboxQueryEnabled}
@@ -748,9 +862,12 @@ export function UnifiedChat({ mode }: { mode: ChatMode }) {
             onSelectOmniboxResult={handleSelectOmniboxResult}
             onCloseOmnibox={handleCloseOmnibox}
             onRemoveAttachedContext={handleRemoveAttachedContext}
+            onAttachImages={handleAttachImages}
+            onRemoveImageAttachment={handleRemoveImageAttachment}
             showSettings={showSettings}
             onToggleSettings={() => setShowSettings(!showSettings)}
             onSend={handleSend}
+            canSend={canSend}
             onCancel={cancelStream}
             onKeyDown={handleKeyDown}
             onModelChange={setModel}
@@ -952,14 +1069,13 @@ function EmptyState({
 
 // --- Input components ---
 
-import { forwardRef } from "react";
-import type { NoteContext } from "@/lib/stores/agent-store";
-
 type InputProps = {
   input: string;
   setInput: (v: string) => void;
   isStreaming: boolean;
+  canSend: boolean;
   activeModel: string;
+  imageAttachments: ChatImageAttachment[];
   attachedContext: AttachedChatContext[];
   omniboxRows: OmniboxResult[];
   isOmniboxOpen: boolean;
@@ -968,6 +1084,8 @@ type InputProps = {
   onSelectOmniboxResult: (row: OmniboxResult) => void | Promise<void>;
   onCloseOmnibox: () => void;
   onRemoveAttachedContext: (contextKey: string) => void;
+  onAttachImages: (files: File[]) => void | Promise<void>;
+  onRemoveImageAttachment: (attachmentId: string) => void;
   onToggleSettings: () => void;
   onSend: () => void;
   onCancel: () => void;
@@ -1017,6 +1135,54 @@ function ChatContextChips({
             <X className="size-3" />
           </button>
         </span>
+      ))}
+    </div>
+  );
+}
+
+function formatBytes(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function ChatImageAttachments({
+  attachments,
+  onRemove,
+}: {
+  attachments: ChatImageAttachment[];
+  onRemove: (attachmentId: string) => void;
+}) {
+  if (attachments.length === 0) return null;
+
+  return (
+    <div className="mb-2 flex flex-wrap gap-2">
+      {attachments.map((attachment) => (
+        <div
+          key={attachment.id}
+          className="group relative flex max-w-[150px] items-center gap-2 rounded-md border border-[var(--border-strong)] bg-secondary/70 p-1.5"
+        >
+          <NextImage
+            src={attachment.dataUrl}
+            alt={attachment.name}
+            width={40}
+            height={40}
+            unoptimized
+            className="h-10 w-10 shrink-0 rounded object-cover"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[11px] text-foreground">{attachment.name}</p>
+            <p className="text-[10px] text-muted-foreground">{formatBytes(attachment.size)}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onRemove(attachment.id)}
+            className="absolute -top-1.5 -right-1.5 rounded-full border border-[var(--border-strong)] bg-card p-0.5 text-muted-foreground opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:text-foreground focus:opacity-100"
+            aria-label={`Remove ${attachment.name}`}
+          >
+            <X className="size-3" />
+          </button>
+        </div>
       ))}
     </div>
   );
@@ -1103,7 +1269,9 @@ const SidebarInput = forwardRef<
     input,
     setInput,
     isStreaming,
+    canSend,
     activeModel,
+    imageAttachments,
     isOnNotes,
     noteContext,
     attachedContext,
@@ -1116,11 +1284,15 @@ const SidebarInput = forwardRef<
     onSelectOmniboxResult,
     onCloseOmnibox,
     onRemoveAttachedContext,
+    onAttachImages,
+    onRemoveImageAttachment,
     onModelChange,
     onToggleSettings,
   },
   ref,
 ) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const handleInputKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === "Escape" && isOmniboxOpen) {
       event.preventDefault();
@@ -1135,11 +1307,29 @@ const SidebarInput = forwardRef<
     onKeyDown(event);
   };
 
+  const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const images = imageFilesFromDataTransfer(event.clipboardData);
+    if (!images.length) return;
+    event.preventDefault();
+    void onAttachImages(images);
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLTextAreaElement>) => {
+    const images = imageFilesFromDataTransfer(event.dataTransfer);
+    if (!images.length) return;
+    event.preventDefault();
+    void onAttachImages(images);
+  };
+
   return (
     <div className="border-t p-3">
       <ChatContextChips
         attachedContext={attachedContext}
         onRemove={onRemoveAttachedContext}
+      />
+      <ChatImageAttachments
+        attachments={imageAttachments}
+        onRemove={onRemoveImageAttachment}
       />
       <div className="relative flex gap-2">
         <OmniboxPicker
@@ -1154,6 +1344,8 @@ const SidebarInput = forwardRef<
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleInputKeyDown}
+          onPaste={handlePaste}
+          onDrop={handleDrop}
           aria-autocomplete="list"
           aria-controls={isOmniboxOpen ? "polymath-omnibox-listbox" : undefined}
           aria-expanded={isOmniboxOpen}
@@ -1164,7 +1356,7 @@ const SidebarInput = forwardRef<
               : "Ask about your knowledge..."
           }
           rows={1}
-          className="bg-secondary flex-1 resize-none rounded-sm border border-[var(--border-strong)] px-3 py-2 text-sm transition-colors outline-none placeholder:text-[var(--alfred-text-tertiary)] focus:border-[var(--accent)]"
+          className="bg-secondary flex-1 resize-none rounded-sm border border-[var(--border-strong)] px-3 py-2 text-[15px] leading-relaxed transition-colors outline-none placeholder:text-[var(--alfred-text-tertiary)] focus:border-[var(--accent)]"
           disabled={isStreaming}
         />
         <div className="flex flex-col gap-1">
@@ -1183,12 +1375,33 @@ const SidebarInput = forwardRef<
               size="icon"
               className="size-8"
               onClick={onSend}
-              disabled={!input.trim()}
+              disabled={!canSend}
               aria-label="Send message"
             >
               <Send className="size-4" />
             </Button>
           )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            multiple
+            className="hidden"
+            onChange={(event) => {
+              const files = Array.from(event.currentTarget.files ?? []);
+              event.currentTarget.value = "";
+              void onAttachImages(files);
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="text-muted-foreground hover:text-foreground rounded p-1 transition-colors"
+            aria-label="Attach image"
+            disabled={isStreaming}
+          >
+            <ImageIcon className="size-3.5" />
+          </button>
           <button
             onClick={onToggleSettings}
             className="text-muted-foreground hover:text-foreground rounded p-1 transition-colors"
@@ -1221,7 +1434,9 @@ const ExpandedInput = forwardRef<HTMLTextAreaElement, InputProps>(function Expan
     input,
     setInput,
     isStreaming,
+    canSend,
     activeModel,
+    imageAttachments,
     attachedContext,
     omniboxRows,
     isOmniboxOpen,
@@ -1232,11 +1447,15 @@ const ExpandedInput = forwardRef<HTMLTextAreaElement, InputProps>(function Expan
     onSelectOmniboxResult,
     onCloseOmnibox,
     onRemoveAttachedContext,
+    onAttachImages,
+    onRemoveImageAttachment,
     onModelChange,
     onToggleSettings,
   },
   ref,
 ) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const handleInputKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === "Escape" && isOmniboxOpen) {
       event.preventDefault();
@@ -1251,12 +1470,30 @@ const ExpandedInput = forwardRef<HTMLTextAreaElement, InputProps>(function Expan
     onKeyDown(event);
   };
 
+  const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const images = imageFilesFromDataTransfer(event.clipboardData);
+    if (!images.length) return;
+    event.preventDefault();
+    void onAttachImages(images);
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLTextAreaElement>) => {
+    const images = imageFilesFromDataTransfer(event.dataTransfer);
+    if (!images.length) return;
+    event.preventDefault();
+    void onAttachImages(images);
+  };
+
   return (
     <div className="border-t">
       <div className="mx-auto max-w-3xl px-6 py-4">
         <ChatContextChips
           attachedContext={attachedContext}
           onRemove={onRemoveAttachedContext}
+        />
+        <ChatImageAttachments
+          attachments={imageAttachments}
+          onRemove={onRemoveImageAttachment}
         />
         <div className="bg-card focus-within:border-primary relative flex items-end gap-0 rounded-xl border shadow-sm transition-colors">
           <OmniboxPicker
@@ -1271,15 +1508,38 @@ const ExpandedInput = forwardRef<HTMLTextAreaElement, InputProps>(function Expan
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleInputKeyDown}
+            onPaste={handlePaste}
+            onDrop={handleDrop}
             aria-autocomplete="list"
             aria-controls={isOmniboxOpen ? "polymath-omnibox-listbox" : undefined}
             aria-expanded={isOmniboxOpen}
             aria-haspopup="listbox"
             placeholder="Do anything with AI..."
             rows={1}
-            className="placeholder:text-muted-foreground flex-1 resize-none bg-transparent px-4 py-3 text-sm outline-none"
+            className="placeholder:text-muted-foreground flex-1 resize-none bg-transparent px-4 py-3 text-[15px] leading-relaxed outline-none"
           />
           <div className="flex items-center gap-1 px-2 py-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                const files = Array.from(event.currentTarget.files ?? []);
+                event.currentTarget.value = "";
+                void onAttachImages(files);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="text-muted-foreground hover:text-foreground rounded-md p-1.5 transition-colors"
+              disabled={isStreaming}
+              aria-label="Attach image"
+            >
+              <ImageIcon className="size-4" />
+            </button>
             <button
               onClick={onToggleSettings}
               className="text-muted-foreground hover:text-foreground rounded-md p-1.5 transition-colors"
@@ -1310,10 +1570,10 @@ const ExpandedInput = forwardRef<HTMLTextAreaElement, InputProps>(function Expan
             ) : (
               <button
                 onClick={onSend}
-                disabled={!input.trim()}
+                disabled={!canSend}
                 className={cn(
                   "rounded-md p-1.5 transition-colors",
-                  input.trim()
+                  canSend
                     ? "text-primary hover:bg-[var(--alfred-accent-subtle)]"
                     : "text-muted-foreground/40 cursor-not-allowed",
                 )}

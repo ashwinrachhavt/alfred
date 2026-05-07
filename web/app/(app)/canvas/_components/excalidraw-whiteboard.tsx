@@ -117,9 +117,9 @@ export function ExcalidrawWhiteboard({
       const api = apiRef.current;
       if (!api || !canvas) return;
 
-      const elements = (api.getSceneElements() as Array<Record<string, unknown>>).filter(
-        (element) => !element.isDeleted,
-      );
+      const elements = (
+        api.getSceneElements() as unknown as Array<Record<string, unknown>>
+      ).filter((element) => !element.isDeleted);
       const appState = api.getAppState();
       onSaveScene({
         elements,

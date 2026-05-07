@@ -154,6 +154,15 @@ export type SourcePart = {
   title?: string;
 };
 
+export type ImagePart = {
+  type: "image";
+  url: string;
+  mimeType?: string;
+  name?: string;
+  size?: number;
+  state?: "done";
+};
+
 export type MessagePart =
   | TextPart
   | ReasoningPart
@@ -165,7 +174,17 @@ export type MessagePart =
   | FirecrawlScrapePart
   | UnknownToolPart
   | StepPart
-  | SourcePart;
+  | SourcePart
+  | ImagePart;
+
+export type ChatImageAttachment = {
+  id: string;
+  kind: "image";
+  name: string;
+  mimeType: string;
+  size: number;
+  dataUrl: string;
+};
 
 export type AgentMessage = {
   id: string;
@@ -357,7 +376,12 @@ type AgentState = {
   // Actions
   sendMessage: (
     text: string,
-    opts?: { intent?: string; intentArgs?: Record<string, unknown>; displayText?: string },
+    opts?: {
+      intent?: string;
+      intentArgs?: Record<string, unknown>;
+      displayText?: string;
+      attachments?: ChatImageAttachment[];
+    },
   ) => Promise<void>;
   cancelStream: () => void;
   setLens: (lens: string | null) => void;
@@ -414,9 +438,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   sendMessage: async (
     text: string,
-    opts?: { intent?: string; intentArgs?: Record<string, unknown>; displayText?: string },
+    opts?: {
+      intent?: string;
+      intentArgs?: Record<string, unknown>;
+      displayText?: string;
+      attachments?: ChatImageAttachment[];
+    },
   ) => {
     const state = get();
+    const attachments = opts?.attachments ?? [];
+    const displayText = opts?.displayText ?? text;
 
     // Cancel existing stream if active (cancel + send behavior)
     if (state.isStreaming && state.abortController) {
@@ -426,14 +457,26 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const userMsg: AgentMessage = {
       id: `user-${Date.now()}`,
       role: "user",
-      content: opts?.displayText ?? text,
+      content: displayText,
       artifacts: [],
       relatedCards: [],
       gaps: [],
       toolCalls: [],
       plan: [],
       pendingApprovals: [],
-      parts: [],
+      parts: [
+        ...(displayText
+          ? [{ type: "text" as const, text: displayText, state: "done" as const }]
+          : []),
+        ...attachments.map((attachment) => ({
+          type: "image" as const,
+          url: attachment.dataUrl,
+          mimeType: attachment.mimeType,
+          name: attachment.name,
+          size: attachment.size,
+          state: "done" as const,
+        })),
+      ],
       lens: state.activeLens ?? undefined,
       model: state.activeModel,
       timestamp: Date.now(),
@@ -501,6 +544,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             : undefined,
           lens: state.activeLens,
           model: state.activeModel,
+          attachments: attachments.map((attachment) => ({
+            kind: attachment.kind,
+            name: attachment.name,
+            mime_type: attachment.mimeType,
+            size: attachment.size,
+            data_url: attachment.dataUrl,
+          })),
           // Only send history if no thread (backend loads from DB when thread exists)
           history: state.activeThreadId
             ? undefined

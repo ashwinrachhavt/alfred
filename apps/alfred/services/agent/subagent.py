@@ -149,8 +149,10 @@ class SubAgentRunner:
 
         # Flat tool-calling loop — same pattern as main agent
         final_content = ""
+        rounds_used = 0
 
         for _round in range(agent_type.max_iterations):
+            rounds_used = _round + 1
             try:
                 response = await self._call_model(messages, tool_schemas)
             except (APITimeoutError, APIError, RateLimitError) as exc:
@@ -206,11 +208,33 @@ class SubAgentRunner:
                         "content": result_str,
                     }
                 )
+        else:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "You have reached the tool-call budget. Stop calling tools. "
+                        "Synthesize the evidence already gathered into the requested final answer. "
+                        "If some searches failed, say which ones failed and use the successful "
+                        "results instead of returning an empty response."
+                    ),
+                }
+            )
+            try:
+                final_response = await self._call_model(messages, None)
+            except (APITimeoutError, APIError, RateLimitError) as exc:
+                logger.error("Sub-agent [%s] finalization API error: %s", agent_type.name, exc)
+                if final_content:
+                    return final_content
+                return f"Sub-agent gathered tool results but failed to synthesize them: {exc!s}"
+            final_text = final_response.get("content", "")
+            if final_text:
+                final_content = final_text
 
         logger.info(
             "Sub-agent [%s] completed in %d rounds, response: %d chars",
             agent_type.name,
-            _round + 1,
+            rounds_used,
             len(final_content),
         )
 
@@ -219,7 +243,7 @@ class SubAgentRunner:
     async def _call_model(
         self,
         messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
     ) -> dict[str, Any]:
         """Make a single (non-streaming) call to the model.
 
@@ -230,8 +254,9 @@ class SubAgentRunner:
         kwargs: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
-            "tools": tools,
         }
+        if tools:
+            kwargs["tools"] = tools
 
         if uses_max_completion_tokens(self.model):
             kwargs["max_completion_tokens"] = 4096

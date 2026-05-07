@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useMemo, useState } from "react";
+import NextImage from "next/image";
 
 import {
   AlertCircle,
@@ -43,6 +44,7 @@ import { copyTextToClipboard } from "@/lib/clipboard";
 import type {
   AgentMessage,
   ArtifactCard,
+  ImagePart,
   MessagePart,
   StepPart,
 } from "@/lib/stores/agent-store";
@@ -908,6 +910,10 @@ function renderNonTextPart(entry: GroupedEntry, index: number) {
   return null;
 }
 
+function isImagePart(part: MessagePart): part is ImagePart {
+  return part.type === "image";
+}
+
 export const MessageBubble = memo(function MessageBubble({
   message,
   mode,
@@ -963,17 +969,51 @@ export const MessageBubble = memo(function MessageBubble({
     }
     return grouped;
   }, [fallbackCommentBlockId, responseComments]);
+  const userImageParts = useMemo(
+    () => (message.role === "user" ? (message.parts ?? []).filter(isImagePart) : []),
+    [message.parts, message.role],
+  );
 
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
         <div
           className={cn(
-            "bg-secondary text-foreground rounded-lg text-sm",
+            "bg-secondary text-foreground rounded-lg text-[15px] leading-relaxed",
             isSidebar ? "max-w-[85%] px-3 py-2" : "max-w-[80%] rounded-2xl px-4 py-2.5",
           )}
         >
-          {message.content}
+          {userImageParts.length > 0 ? (
+            <div
+              className={cn(
+                "mb-2 grid gap-2",
+                userImageParts.length === 1 ? "grid-cols-1" : "grid-cols-2",
+              )}
+            >
+              {userImageParts.map((part, index) => (
+                <a
+                  key={`${part.name ?? "image"}-${index}`}
+                  href={part.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block overflow-hidden rounded-md border border-border/60 bg-background/40"
+                >
+                  <NextImage
+                    src={part.url}
+                    alt={part.name ?? "Attached image"}
+                    width={640}
+                    height={360}
+                    unoptimized
+                    className={cn(
+                      "w-full object-cover",
+                      userImageParts.length === 1 ? "max-h-64" : "h-28",
+                    )}
+                  />
+                </a>
+              ))}
+            </div>
+          ) : null}
+          {message.content ? <p className="whitespace-pre-wrap">{message.content}</p> : null}
         </div>
       </div>
     );

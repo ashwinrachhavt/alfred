@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool
-from sqlmodel import Session, create_engine
+from sqlmodel import Session, create_engine, select
 
 from alfred.api.agent.routes import router as agent_router
 from alfred.api.dependencies import get_db_session
@@ -62,8 +62,6 @@ def test_stream_request_accepts_note_context(app_and_client):
     """POST /api/agent/stream with note_context returns a streaming response (200)."""
     app, client, _ = app_and_client
 
-    from unittest.mock import MagicMock
-
     async def _fake_stream_turn(**kwargs):
         yield ("token", {"content": "Note-aware response"}, 'event: token\ndata: {"content": "Note-aware response"}\n\n')
         yield ("done", {"thread_id": "1", "reasoning": None, "tool_calls": None, "artifacts": None}, 'event: done\ndata: {"thread_id": "1"}\n\n')
@@ -87,6 +85,78 @@ def test_stream_request_accepts_note_context(app_and_client):
 
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/event-stream")
+
+
+def test_stream_persists_and_forwards_image_attachments(app_and_client):
+    """Image attachments are saved on the user message and passed to the agent service."""
+    _, client, session = app_and_client
+    captured: dict = {}
+    data_url = "data:image/png;base64,iVBORw0KGgo="
+
+    async def _fake_stream_turn(**kwargs):
+        captured.update(kwargs)
+        yield ("done", {"thread_id": "1", "reasoning": None, "tool_calls": None, "artifacts": None}, 'event: done\ndata: {"thread_id": "1"}\n\n')
+
+    with patch("alfred.api.agent.routes.AgentService") as MockService:
+        instance = MagicMock()
+        instance.stream_turn = _fake_stream_turn
+        MockService.return_value = instance
+
+        resp = client.post(
+            "/api/agent/stream",
+            json={
+                "message": "What is in this screenshot?",
+                "attachments": [
+                    {
+                        "kind": "image",
+                        "name": "screen.png",
+                        "mime_type": "image/png",
+                        "size": 12,
+                        "data_url": data_url,
+                    }
+                ],
+            },
+        )
+
+    assert resp.status_code == 200
+    assert captured["image_attachments"][0]["data_url"] == data_url
+
+    messages = session.exec(select(AgentMessageRow)).all()
+    user_message = next(message for message in messages if message.role == "user")
+    assert user_message.parts == [
+        {"type": "text", "text": "What is in this screenshot?", "state": "done"},
+        {
+            "type": "image",
+            "url": data_url,
+            "mimeType": "image/png",
+            "name": "screen.png",
+            "size": 12,
+            "state": "done",
+        },
+    ]
+
+
+def test_stream_rejects_unsupported_image_type(app_and_client):
+    """Only browser-safe image attachments are accepted."""
+    _, client, _ = app_and_client
+
+    resp = client.post(
+        "/api/agent/stream",
+        json={
+            "message": "Analyze this",
+            "attachments": [
+                {
+                    "kind": "image",
+                    "name": "vector.svg",
+                    "mime_type": "image/svg+xml",
+                    "size": 12,
+                    "data_url": "data:image/svg+xml;base64,PHN2Zy8+",
+                }
+            ],
+        },
+    )
+
+    assert resp.status_code == 415
 
 
 def test_threads_filter_by_note_id(app_and_client):

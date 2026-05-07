@@ -184,6 +184,7 @@ async def run_deep_research(
             agent=agent,
             topic=body.topic,
             thread_id=body.thread_id,
+            model_name=getattr(spec, "model_name", None),
         ):
             if await request.is_disconnected():
                 return

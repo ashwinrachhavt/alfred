@@ -7,8 +7,9 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from sqlmodel import Session, SQLModel, create_engine, select
 
-from alfred.schemas.research_agent import ResearchAgentSpecCreate, SubAgentSpec
+from alfred.models.company import ResearchReportRow
 from alfred.services.deep_research import DeepResearchService, get_tool_registry
 
 
@@ -151,6 +152,59 @@ async def test_stream_run_emits_file_write_and_done() -> None:
     assert file_events[0][1]["bytes"] == len("Hello")
     assert len(done_events) == 1
     assert done_events[0][1]["final_files"] == {"/final_report.md": "Hello"}
+
+
+@pytest.mark.asyncio
+async def test_stream_run_persists_streamed_main_output_when_file_missing() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+
+    chunks = [
+        {
+            "type": "messages",
+            "ns": [],
+            "data": (FakeToken(content="# Report\n\nDirect streamed synthesis."), {}),
+        },
+    ]
+
+    with Session(engine) as db:
+        svc = DeepResearchService(db)
+        fake = _make_fake_agent(chunks)
+        events = await _collect(svc.stream_run(agent=fake, topic="direct output"))
+
+        done_event = next(e for e in events if e[0] == "done")
+        assert done_event[1]["report_id"] is not None
+        assert done_event[1]["final_files"] == {
+            "/final_report.md": "# Report\n\nDirect streamed synthesis.",
+        }
+
+        row = db.exec(select(ResearchReportRow)).one()
+        assert row.payload["markdown"] == "# Report\n\nDirect streamed synthesis."
+
+
+def test_persist_final_report_writes_research_report_row() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        svc = DeepResearchService(db)
+        report_id = svc._persist_final_report(
+            topic="Polymath portals",
+            final_files={
+                "/final_report.md": "# Report\n\nA portal for philosophers and polymaths.",
+            },
+            model_name="openai:gpt-test",
+        )
+
+        assert report_id is not None
+        row = db.exec(select(ResearchReportRow)).one()
+        assert str(row.id) == report_id
+        assert row.topic == "Polymath portals"
+        assert row.model_name == "openai:gpt-test"
+        assert row.payload["markdown"].startswith("# Report")
+        assert row.payload["report"]["executive_summary"] == (
+            "A portal for philosophers and polymaths."
+        )
 
 
 @pytest.mark.asyncio

@@ -2,51 +2,20 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import Graph from "graphology";
-import louvain from "graphology-communities-louvain";
-import forceAtlas2 from "graphology-layout-forceatlas2";
 import Sigma from "sigma";
 
+import {
+  DEFAULT_EDGE_COLOR,
+  DIMMED_EDGE_COLOR,
+  EDGE_TYPE_COLORS,
+  PATH_EDGE_COLOR,
+  buildNexusGraph,
+  sizeForBloom,
+} from "@/features/nexus/graph-adapter";
 import type { NexusGraph as NexusGraphData } from "@/features/nexus/types";
 import { useNexusStore } from "@/lib/stores/nexus-store";
 
 import { ClusterHullLayer } from "./cluster-hull-layer";
-
-/* ------------------------------------------------------------------ */
-/*  Visual constants                                                   */
-/* ------------------------------------------------------------------ */
-
-const EDGE_TYPE_COLORS: Record<string, string> = {
-  reference: "#6b7280",
-  extends: "#c47a5a",
-  contradicts: "#e8590c",
-  supports: "#7a9e7e",
-  elaborates: "#8b7ec8",
-};
-
-const DEFAULT_EDGE_COLOR = "#4b5563";
-const DIMMED_EDGE_COLOR = "#1f2937";
-const PATH_EDGE_COLOR = "#e8590c";
-
-// Warm nebula palette (kept in sync with apps/alfred/services/clustering_service.py)
-const CLUSTER_PALETTE = [
-  "#c47a5a", "#7a9e7e", "#8b7ec8", "#c2956b", "#6b9eb8",
-  "#b87a8f", "#9bb86b", "#c4855a", "#6b7eb8", "#b8a06b",
-];
-
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
-
-function sizeForBloom(bloom: number): number {
-  // Bloom 1..6 → 5.5 .. 13 px
-  return 4 + Math.max(1, Math.min(bloom, 6)) * 1.5;
-}
-
-function colorForCluster(cluster: number | null | undefined): string {
-  if (cluster == null) return "#9ca3af";
-  return CLUSTER_PALETTE[cluster % CLUSTER_PALETTE.length];
-}
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -75,65 +44,7 @@ export function NexusGraph({ data }: Props): React.ReactElement {
   /* ---------------------------------------------------------------- */
   /*  Build the graphology graph from the backend payload              */
   /* ---------------------------------------------------------------- */
-  const graph = useMemo(() => {
-    const g = new Graph({ type: "undirected", multi: false });
-
-    for (const node of data.nodes) {
-      g.addNode(String(node.card_id), {
-        label: node.title,
-        size: sizeForBloom(node.bloom_level),
-        x: Math.random(),
-        y: Math.random(),
-        color: "#9ca3af", // temporary; louvain recolors
-        bloom: node.bloom_level,
-        topic: node.topic,
-        tags: node.tags,
-        cluster_id: node.cluster_id,
-      });
-    }
-
-    for (const edge of data.edges) {
-      const s = String(edge.source);
-      const t = String(edge.target);
-      if (!g.hasNode(s) || !g.hasNode(t)) continue;
-      // Simple dedupe: one undirected edge per (source,target). Losing
-      // type distinction is fine at this zoom level.
-      if (!g.hasEdge(s, t)) {
-        g.addEdgeWithKey(`${s}->${t}:${edge.type}`, s, t, {
-          type: edge.type,
-          color: EDGE_TYPE_COLORS[edge.type] ?? DEFAULT_EDGE_COLOR,
-          size: 1,
-        });
-      }
-    }
-
-    // Louvain community detection (trivial graphs can fail; fall back gracefully)
-    if (g.order > 1 && g.size > 0) {
-      try {
-        louvain.assign(g, { nodeCommunityAttribute: "community" });
-        g.forEachNode((id, attrs) => {
-          const c = attrs.community as number | undefined;
-          g.setNodeAttribute(id, "color", colorForCluster(c));
-        });
-      } catch {
-        /* keep default color */
-      }
-    }
-
-    // Seed a force-directed layout
-    if (g.order > 0) {
-      try {
-        forceAtlas2.assign(g, {
-          iterations: 100,
-          settings: forceAtlas2.inferSettings(g),
-        });
-      } catch {
-        /* layout can fail on degenerate graphs — ignore */
-      }
-    }
-
-    return g;
-  }, [data]);
+  const graph = useMemo(() => buildNexusGraph(data), [data]);
 
   /* ---------------------------------------------------------------- */
   /*  Mount / unmount Sigma                                            */
@@ -208,7 +119,7 @@ export function NexusGraph({ data }: Props): React.ReactElement {
         g.setEdgeAttribute(id, "color", inPath ? PATH_EDGE_COLOR : DIMMED_EDGE_COLOR);
         g.setEdgeAttribute(id, "size", inPath ? 3 : 0.5);
       } else {
-        const type = (attrs.type as string | undefined) ?? "reference";
+        const type = (attrs.relationType as string | undefined) ?? "reference";
         const hidden = activeEdgeTypes.size > 0 && !activeEdgeTypes.has(type);
         g.setEdgeAttribute(
           id,
