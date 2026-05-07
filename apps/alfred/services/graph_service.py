@@ -22,7 +22,24 @@ if _NEO4J_AVAILABLE:
 
         def __post_init__(self) -> None:
             self._driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
+            try:
+                self.ensure_constraints()
+            except Exception:
+                logger.warning("Failed to ensure Neo4j constraints", exc_info=True)
             logger.debug("GraphService connected to Neo4j at %s", self.uri)
+
+        def ensure_constraints(self) -> None:
+            """Idempotently create uniqueness constraints used by zettel projection.
+
+            Running this every time a new GraphService is constructed keeps
+            the schema self-healing: a fresh Neo4j volume is fine, an
+            existing one is untouched. ``CREATE CONSTRAINT IF NOT EXISTS``
+            is parser-level idempotent.
+            """
+            self._run(
+                "CREATE CONSTRAINT zettel_card_id_unique IF NOT EXISTS "
+                "FOR (z:Zettel) REQUIRE z.card_id IS UNIQUE"
+            )
 
         # --- internals ---
         def _run(self, query: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -232,6 +249,9 @@ else:
 
         def __post_init__(self) -> None:  # pragma: no cover - environment dependent
             logger.info("Neo4j not installed; GraphService will no-op.")
+
+        def ensure_constraints(self) -> None:
+            return None
 
         def _run(self, query: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
             return []
