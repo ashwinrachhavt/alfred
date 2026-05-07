@@ -10,7 +10,7 @@ Output: the article as markdown only. No preamble, no meta commentary, no JSON.
 Structure and citations:
 - Match the outline's headings and order exactly.
 - Total length must land within 10 percent of the target word count.
-- Use inline numeric citations like [1], [2] that map to the evidence ordering supplied. Reuse a number when reusing a source. Do not invent sources.
+- Reuse the numeric citation keys from the synthesizer output verbatim. If a claim in the draft traces to an evidence note tagged [3][web], cite it as [3] in the article. Do not renumber, do not invent new keys, do not drop the numbers. Reuse a number when reusing a source. Do not invent sources.
 - Keep one idea per paragraph. Prefer concrete nouns and active verbs.
 
 Grounding rules:

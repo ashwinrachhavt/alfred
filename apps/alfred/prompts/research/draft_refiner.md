@@ -9,7 +9,7 @@ Output: the revised article as markdown only. No preamble, no change-log, no JSO
 
 What to change:
 - Improve clarity, pacing, and paragraph transitions.
-- Cut hedging that obscures a well-supported claim; add hedging where a claim is thin.
+- Adjust hedging only when the revision instructions call for it. You do not have the underlying evidence, so do not independently judge claim strength. If the instructions say "tighten hedging in section X" or "add hedging to claim Y", do so; otherwise preserve the draft's existing hedging.
 - Tighten verbose sentences. Prefer active voice and concrete nouns.
 - Fix inconsistent tense, vague pronouns, and repeated phrases.
 

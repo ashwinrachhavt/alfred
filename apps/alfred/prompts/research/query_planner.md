@@ -15,3 +15,4 @@ Rules:
 - If the question is vague, pick the most defensible reading and proceed; do not ask for clarification.
 - If the topic has no future-looking angle, skip it rather than inventing speculation.
 - Output JSON only. Any text outside the JSON object breaks the downstream parser.
+- Escape embedded newlines and double quotes in string values per JSON spec. No trailing commas.
