@@ -59,6 +59,9 @@ type ResearchState = {
   // Files written by the agent (virtual filesystem)
   files: Record<string, FileArtifact>;
 
+  // Persisted research_reports row id, emitted once the stream is saved.
+  reportId: string | null;
+
   // Abort control
   abort: AbortController | null;
 };
@@ -77,6 +80,7 @@ const initialState: ResearchState = {
   mainToolCalls: [],
   subagents: {},
   files: {},
+  reportId: null,
   abort: null,
 };
 
@@ -234,6 +238,7 @@ function handleEvent(
 
     case "done": {
       const finalFiles = (data.final_files as Record<string, string>) ?? {};
+      const reportId = typeof data.report_id === "string" ? data.report_id : null;
       set((s) => {
         const merged = { ...s.files };
         for (const [path, content] of Object.entries(finalFiles)) {
@@ -244,7 +249,7 @@ function handleEvent(
             updatedAt: Date.now(),
           };
         }
-        return { files: merged, runState: "done", abort: null };
+        return { files: merged, reportId, runState: "done", abort: null };
       });
       return;
     }
@@ -295,6 +300,10 @@ export function useResearchSubagents() {
 
 export function useResearchFiles() {
   return useResearchStore((s) => s.files);
+}
+
+export function useResearchReportId() {
+  return useResearchStore((s) => s.reportId);
 }
 
 export function useResearchActions() {

@@ -9,6 +9,12 @@ export const ACCENT_THEMES = [
   { id: "crimson", label: "Crimson", color: "#B83A3A" },
   { id: "indigo", label: "Indigo", color: "#5B6ABF" },
   { id: "copper", label: "Copper", color: "#B87343" },
+  { id: "ocean", label: "Ocean", color: "#1F6FA8" },
+  { id: "moss", label: "Moss", color: "#4A7856" },
+  { id: "plum", label: "Plum", color: "#7A4B7A" },
+  { id: "rose", label: "Rose", color: "#C85A7A" },
+  { id: "teal", label: "Teal", color: "#2C7A7B" },
+  { id: "slate", label: "Slate", color: "#5C6873" },
 ] as const;
 
 export type AccentThemeId = (typeof ACCENT_THEMES)[number]["id"];

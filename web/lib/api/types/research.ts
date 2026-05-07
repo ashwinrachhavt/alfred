@@ -54,4 +54,7 @@ export type ResearchReportSummary = {
 
 export type ResearchReportPayloadResponse = ResearchPayload & {
   id: string;
+  markdown?: string;
+  final_files?: Record<string, string>;
+  source?: string;
 };

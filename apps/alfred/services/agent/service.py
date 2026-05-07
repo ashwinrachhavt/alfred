@@ -99,6 +99,7 @@ class AgentService:
         history: list[dict[str, str]] | None = None,
         lens: str | None = None,
         model: str | None = None,
+        image_attachments: list[dict[str, Any]] | None = None,
         note_context: dict | None = None,
         is_disconnected: Callable[[], Any] | None = None,
         intent: str | None = None,
@@ -131,7 +132,12 @@ class AgentService:
                     if role in ("user", "assistant", "system"):
                         messages.append({"role": role, "content": content})
 
-            messages.append({"role": "user", "content": message})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": self._build_user_content(message, image_attachments or []),
+                }
+            )
 
             # Flat agent loop: stream → tools → re-stream → done
             all_tool_calls: list[dict[str, Any]] = []
@@ -368,6 +374,30 @@ class AgentService:
         )
 
         return kwargs
+
+    def _build_user_content(
+        self,
+        message: str,
+        image_attachments: list[dict[str, Any]],
+    ) -> str | list[dict[str, Any]]:
+        """Build OpenAI chat content, using multimodal parts when images exist."""
+        if not image_attachments:
+            return message
+
+        content: list[dict[str, Any]] = [
+            {"type": "text", "text": message or "Analyze the attached image(s)."}
+        ]
+        for attachment in image_attachments:
+            data_url = attachment.get("data_url")
+            if not isinstance(data_url, str) or not data_url:
+                continue
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": data_url},
+                }
+            )
+        return content
 
     # _stream_tokens replaces the old _stream_response — tokens yield in real-time
     # instead of being collected then returned as a batch.

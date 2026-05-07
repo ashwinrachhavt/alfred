@@ -329,6 +329,144 @@
   --alfred-accent-muted: rgba(184, 115, 67, 0.2);
 }
 
+/* --- Ocean (#1F6FA8) --- */
+[data-accent="ocean"] {
+  --primary: #1F6FA8;
+  --primary-foreground: #FAF8F5;
+  --ring: #1F6FA8;
+  --chart-1: #1F6FA8;
+  --sidebar-primary: #1F6FA8;
+  --sidebar-ring: #1F6FA8;
+  --alfred-accent-subtle: rgba(31, 111, 168, 0.08);
+  --alfred-accent-muted: rgba(31, 111, 168, 0.15);
+}
+[data-accent="ocean"].dark,
+.dark[data-accent="ocean"] {
+  --primary: #3B8BC4;
+  --ring: #3B8BC4;
+  --destructive: #3B8BC4;
+  --chart-1: #3B8BC4;
+  --sidebar-primary: #3B8BC4;
+  --sidebar-ring: #3B8BC4;
+  --alfred-accent-subtle: rgba(31, 111, 168, 0.1);
+  --alfred-accent-muted: rgba(31, 111, 168, 0.2);
+}
+
+/* --- Moss (#4A7856) --- */
+[data-accent="moss"] {
+  --primary: #4A7856;
+  --primary-foreground: #FAF8F5;
+  --ring: #4A7856;
+  --chart-1: #4A7856;
+  --sidebar-primary: #4A7856;
+  --sidebar-ring: #4A7856;
+  --alfred-accent-subtle: rgba(74, 120, 86, 0.08);
+  --alfred-accent-muted: rgba(74, 120, 86, 0.15);
+}
+[data-accent="moss"].dark,
+.dark[data-accent="moss"] {
+  --primary: #5A8E68;
+  --ring: #5A8E68;
+  --destructive: #5A8E68;
+  --chart-1: #5A8E68;
+  --sidebar-primary: #5A8E68;
+  --sidebar-ring: #5A8E68;
+  --alfred-accent-subtle: rgba(74, 120, 86, 0.1);
+  --alfred-accent-muted: rgba(74, 120, 86, 0.2);
+}
+
+/* --- Plum (#7A4B7A) --- */
+[data-accent="plum"] {
+  --primary: #7A4B7A;
+  --primary-foreground: #FAF8F5;
+  --ring: #7A4B7A;
+  --chart-1: #7A4B7A;
+  --sidebar-primary: #7A4B7A;
+  --sidebar-ring: #7A4B7A;
+  --alfred-accent-subtle: rgba(122, 75, 122, 0.08);
+  --alfred-accent-muted: rgba(122, 75, 122, 0.15);
+}
+[data-accent="plum"].dark,
+.dark[data-accent="plum"] {
+  --primary: #94608F;
+  --ring: #94608F;
+  --destructive: #94608F;
+  --chart-1: #94608F;
+  --sidebar-primary: #94608F;
+  --sidebar-ring: #94608F;
+  --alfred-accent-subtle: rgba(122, 75, 122, 0.1);
+  --alfred-accent-muted: rgba(122, 75, 122, 0.2);
+}
+
+/* --- Rose (#C85A7A) --- */
+[data-accent="rose"] {
+  --primary: #C85A7A;
+  --primary-foreground: #FAF8F5;
+  --ring: #C85A7A;
+  --chart-1: #C85A7A;
+  --sidebar-primary: #C85A7A;
+  --sidebar-ring: #C85A7A;
+  --alfred-accent-subtle: rgba(200, 90, 122, 0.08);
+  --alfred-accent-muted: rgba(200, 90, 122, 0.15);
+}
+[data-accent="rose"].dark,
+.dark[data-accent="rose"] {
+  --primary: #D87490;
+  --ring: #D87490;
+  --destructive: #D87490;
+  --chart-1: #D87490;
+  --sidebar-primary: #D87490;
+  --sidebar-ring: #D87490;
+  --alfred-accent-subtle: rgba(200, 90, 122, 0.1);
+  --alfred-accent-muted: rgba(200, 90, 122, 0.2);
+}
+
+/* --- Teal (#2C7A7B) --- */
+[data-accent="teal"] {
+  --primary: #2C7A7B;
+  --primary-foreground: #FAF8F5;
+  --ring: #2C7A7B;
+  --chart-1: #2C7A7B;
+  --sidebar-primary: #2C7A7B;
+  --sidebar-ring: #2C7A7B;
+  --alfred-accent-subtle: rgba(44, 122, 123, 0.08);
+  --alfred-accent-muted: rgba(44, 122, 123, 0.15);
+}
+[data-accent="teal"].dark,
+.dark[data-accent="teal"] {
+  --primary: #409C9D;
+  --ring: #409C9D;
+  --destructive: #409C9D;
+  --chart-1: #409C9D;
+  --sidebar-primary: #409C9D;
+  --sidebar-ring: #409C9D;
+  --alfred-accent-subtle: rgba(44, 122, 123, 0.1);
+  --alfred-accent-muted: rgba(44, 122, 123, 0.2);
+}
+
+/* --- Slate (#5C6873) --- */
+[data-accent="slate"] {
+  --primary: #5C6873;
+  --primary-foreground: #FAF8F5;
+  --ring: #5C6873;
+  --chart-1: #5C6873;
+  --sidebar-primary: #5C6873;
+  --sidebar-ring: #5C6873;
+  --alfred-accent-subtle: rgba(92, 104, 115, 0.08);
+  --alfred-accent-muted: rgba(92, 104, 115, 0.15);
+}
+[data-accent="slate"].dark,
+.dark[data-accent="slate"] {
+  --primary: #7A8691;
+  --ring: #7A8691;
+  --destructive: #7A8691;
+  --chart-1: #7A8691;
+  --sidebar-primary: #7A8691;
+  --sidebar-ring: #7A8691;
+  --alfred-accent-subtle: rgba(92, 104, 115, 0.1);
+  --alfred-accent-muted: rgba(92, 104, 115, 0.2);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -448,6 +586,21 @@ body::before {
 .tiptap hr {
   border-color: var(--alfred-ruled-line);
   margin: 1.5em 0;
+}
+
+.tiptap img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  display: block;
+  margin: 1rem 0;
+}
+
+.tiptap .ProseMirror-selectednode,
+.tiptap img.ProseMirror-selectednode {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 /* TipTap task list — Notion-style checkboxes */

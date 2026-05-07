@@ -34,6 +34,9 @@ x-api-env: &api-env
   DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/alfred
   ALFRED_WRITER_CHECKPOINT_DSN: postgresql://postgres:postgres@postgres:5432/alfred
   REDIS_URL: redis://redis:6379/0
+  NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
+  NEO4J_USER: ${NEO4J_USER:-neo4j}
+  NEO4J_PASSWORD: ${NEO4J_PASSWORD:-neo4j_password}
   QDRANT_URL: http://qdrant:6333
   QDRANT_LOCAL_URL: http://qdrant:6333
   QDRANT_PREFER_LOCAL: "true"
@@ -90,6 +93,60 @@ services:
       - "${QDRANT_HTTP_PORT:-6333}:6333"
       - "${QDRANT_GRPC_PORT:-6334}:6334"
 
+  meilisearch:
+    image: getmeili/meilisearch:latest
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-local-dev-master-key}
+      MEILI_ENV: development
+      MEILI_LOG_LEVEL: INFO
+    volumes:
+      - meilisearchdata:/meili_data
+    ports:
+      - "${MEILISEARCH_PORT:-7700}:7700"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:7700/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  tika:
+    image: apache/tika:latest
+    ports:
+      - "${TIKA_PORT:-9998}:9998"
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-local-dev-master-key}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    volumes:
+      - ./infra/litellm/config.yaml:/app/config.yaml:ro
+    ports:
+      - "${LITELLM_PORT:-4000}:4000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  gotenberg:
+    image: gotenberg/gotenberg:latest
+    ports:
+      - "${GOTENBERG_PORT:-3030}:3000"
+
+  n8n:
+    image: n8nio/n8n:latest
+    environment:
+      N8N_BASIC_AUTH_ACTIVE: "false"
+      WEBHOOK_URL: "http://localhost:${N8N_PORT:-5678}/"
+      N8N_HOST: 0.0.0.0
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: http
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-America/Los_Angeles}
+    volumes:
+      - n8ndata:/home/node/.n8n
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+
   searxng:
     image: searxng/searxng:latest
     environment:
@@ -119,6 +176,12 @@ services:
     volumes:
       - firecrawl_redisdata:/data
     command: redis-server --bind 0.0.0.0
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
 
   firecrawl-rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -139,10 +202,16 @@ services:
       POSTGRES_PASSWORD: postgres
     volumes:
       - firecrawl_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
   firecrawl:
     image: ${FIRECRAWL_IMAGE:-ghcr.io/firecrawl/firecrawl:latest}
-    env_file: *alfred-env-files
+    restart: unless-stopped
     environment:
       HOST: 0.0.0.0
       PORT: "3002"
@@ -160,12 +229,17 @@ services:
       POSTGRES_DB: postgres
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+      NUQ_DATABASE_URL: postgresql://postgres:postgres@firecrawl-postgres:5432/postgres
       BULL_AUTH_KEY: ${FIRECRAWL_BULL_AUTH_KEY:-alfred-dev}
       NUM_WORKERS_PER_QUEUE: ${FIRECRAWL_NUM_WORKERS_PER_QUEUE:-2}
       CRAWL_CONCURRENT_REQUESTS: ${FIRECRAWL_CRAWL_CONCURRENT_REQUESTS:-4}
       MAX_CONCURRENT_JOBS: ${FIRECRAWL_MAX_CONCURRENT_JOBS:-2}
       BROWSER_POOL_SIZE: ${FIRECRAWL_BROWSER_POOL_SIZE:-2}
+      MAX_CPU: ${FIRECRAWL_MAX_CPU:-0.95}
+      MAX_RAM: ${FIRECRAWL_MAX_RAM:-0.95}
       SEARXNG_ENDPOINT: http://searxng:8080
+      HARNESS_STARTUP_TIMEOUT_MS: ${FIRECRAWL_HARNESS_STARTUP_TIMEOUT_MS:-120000}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     command: node dist/src/harness.js --start-docker
     ports:
       - "${FIRECRAWL_PORT:-3002}:3002"
@@ -173,12 +247,51 @@ services:
       firecrawl-playwright:
         condition: service_started
       firecrawl-redis:
-        condition: service_started
+        condition: service_healthy
       firecrawl-rabbitmq:
         condition: service_healthy
       firecrawl-postgres:
+        condition: service_healthy
+      searxng:
+        condition: service_started
+
+  search-gateway:
+    build: *api-build
+    env_file: *alfred-env-files
+    environment:
+      <<: *api-env
+      SEARCH_GATEWAY_FIRECRAWL_URL: http://firecrawl:3002/v1
+      SEARCH_GATEWAY_SEARXNG_URL: http://searxng:8080
+      SEARCH_GATEWAY_QDRANT_URL: http://qdrant:6333
+      SEARCH_GATEWAY_MEILISEARCH_URL: http://meilisearch:7700
+      SEARCH_GATEWAY_TIKA_URL: http://tika:9998
+      SEARCH_GATEWAY_LITELLM_URL: http://litellm:4000
+      SEARCH_GATEWAY_LITELLM_KEY: ${LITELLM_MASTER_KEY:-local-dev-master-key}
+      SEARCH_GATEWAY_GOTENBERG_URL: http://gotenberg:3000
+      SEARCH_GATEWAY_N8N_URL: http://n8n:5678
+    command: >
+      uvicorn alfred.search_gateway:app
+        --host 0.0.0.0
+        --port 8010
+        --reload
+        --reload-dir /app/apps/alfred
+    volumes: *api-volumes
+    ports:
+      - "${SEARCH_GATEWAY_PORT:-8010}:8010"
+    depends_on:
+      qdrant:
+        condition: service_started
+      meilisearch:
+        condition: service_healthy
+      tika:
+        condition: service_started
+      litellm:
+        condition: service_started
+      gotenberg:
         condition: service_started
       searxng:
+        condition: service_started
+      firecrawl:
         condition: service_started
 
   # Alfred backend
@@ -293,8 +406,8 @@ services:
     volumes:
       - neo4jdata:/data
     ports:
-      - "${NEO4J_HTTP_PORT:-7474}:7474"
-      - "${NEO4J_BOLT_PORT:-7687}:7687"
+      - "${NEO4J_HTTP_PORT:-17474}:7474"
+      - "${NEO4J_BOLT_PORT:-17687}:7687"
     healthcheck:
       test: ["CMD-SHELL", "cypher-shell -u neo4j -p neo4j_password 'RETURN 1' || exit 1"]
       interval: 10s
@@ -305,6 +418,8 @@ volumes:
   pgdata:
   redisdata:
   qdrantdata:
+  meilisearchdata:
+  n8ndata:
   firecrawl_pgdata:
   firecrawl_redisdata:
   firecrawl_rabbitmqdata:

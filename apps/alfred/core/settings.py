@@ -6,10 +6,11 @@ import sys
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from dotenv import load_dotenv
 from pydantic import AliasChoices, AnyHttpUrl, Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Explicitly load .env from project root so Celery workers find it regardless of CWD
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]  # apps/alfred/core/settings.py -> repo root
@@ -201,7 +202,7 @@ class Settings(BaseSettings):
     # MCP / tools
     enable_mcp: bool = True
     mcp_filesystem_path: str = "./data"
-    notes_filesystem_roots: list[str] = Field(
+    notes_filesystem_roots: Annotated[list[str], NoDecode] = Field(
         default=[],
         alias="ALFRED_NOTES_FILESYSTEM_ROOTS",
         description="Additional local roots the Notes filesystem browser/importer may read.",
@@ -286,6 +287,46 @@ class Settings(BaseSettings):
     # Firecrawl
     firecrawl_base_url: str = Field(default="http://localhost:3002/v1", alias="FIRECRAWL_BASE_URL")
     firecrawl_timeout: int = Field(default=30, alias="FIRECRAWL_TIMEOUT")
+    search_gateway_firecrawl_url: str | None = Field(
+        default=None,
+        alias="SEARCH_GATEWAY_FIRECRAWL_URL",
+    )
+    search_gateway_searxng_url: str | None = Field(
+        default=None,
+        alias="SEARCH_GATEWAY_SEARXNG_URL",
+    )
+    search_gateway_qdrant_url: str | None = Field(
+        default=None,
+        alias="SEARCH_GATEWAY_QDRANT_URL",
+    )
+    search_gateway_meilisearch_url: str | None = Field(
+        default=None,
+        alias="SEARCH_GATEWAY_MEILISEARCH_URL",
+    )
+    search_gateway_meilisearch_key: str = Field(
+        default="local-dev-master-key",
+        alias="SEARCH_GATEWAY_MEILISEARCH_KEY",
+    )
+    search_gateway_tika_url: str | None = Field(
+        default=None,
+        alias="SEARCH_GATEWAY_TIKA_URL",
+    )
+    search_gateway_litellm_url: str | None = Field(
+        default=None,
+        alias="SEARCH_GATEWAY_LITELLM_URL",
+    )
+    search_gateway_litellm_key: str | None = Field(
+        default=None,
+        alias="SEARCH_GATEWAY_LITELLM_KEY",
+    )
+    search_gateway_gotenberg_url: str | None = Field(
+        default=None,
+        alias="SEARCH_GATEWAY_GOTENBERG_URL",
+    )
+    search_gateway_n8n_url: str | None = Field(
+        default=None,
+        alias="SEARCH_GATEWAY_N8N_URL",
+    )
 
     # Research
     company_research_model: str = Field(default="gpt-5.1", alias="COMPANY_RESEARCH_MODEL")

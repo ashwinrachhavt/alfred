@@ -17,6 +17,7 @@ from fastapi import (
 from sqlmodel import Session
 
 from alfred.api.dependencies import get_db_session
+from alfred.api.http_headers import inline_content_disposition
 from alfred.schemas.notes import (
     NoteAssetResponse,
     NoteCreateRequest,
@@ -502,7 +503,7 @@ def get_note_asset(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     headers = {
-        "Content-Disposition": f'inline; filename="{row.file_name}"',
+        "Content-Disposition": inline_content_disposition(row.file_name),
         "Cache-Control": "public, max-age=31536000, immutable",
     }
     return Response(content=row.data, media_type=row.mime_type, headers=headers)

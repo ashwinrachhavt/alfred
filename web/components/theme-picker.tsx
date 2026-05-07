@@ -46,7 +46,7 @@ export function ThemePicker() {
           <Palette className="size-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-[220px]">
+      <DropdownMenuContent align="end" className="w-[260px]">
         {/* Mode toggle */}
         <DropdownMenuLabel className="font-mono text-[9px] uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
           Mode
@@ -84,7 +84,7 @@ export function ThemePicker() {
         <DropdownMenuLabel className="font-mono text-[9px] uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
           Accent
         </DropdownMenuLabel>
-        <div className="grid grid-cols-3 gap-1.5 p-2">
+        <div className="grid grid-cols-4 gap-1.5 p-2">
           {ACCENT_THEMES.map((theme) => (
             <button
               key={theme.id}

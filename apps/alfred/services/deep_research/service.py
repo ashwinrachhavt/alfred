@@ -26,12 +26,16 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
+from datetime import datetime
 from typing import Any
 
+import sqlalchemy as sa
 from langchain.chat_models import init_chat_model
 from sqlmodel import Session, select
 
 from alfred.core.settings import settings
+from alfred.core.utils import utcnow as _utcnow
+from alfred.models.company import ResearchReportRow
 from alfred.models.research_agent import ResearchAgentSpecRow
 from alfred.schemas.research_agent import (
     ResearchAgentSpecCreate,
@@ -107,11 +111,14 @@ class DeepResearchService:
         agent: Any,
         topic: str,
         thread_id: int | None = None,
+        model_name: str | None = None,
     ) -> AsyncIterator[tuple[str, dict[str, Any], str]]:
         """Stream a research run as (event_name, data, sse_string) tuples."""
         run_id = f"run_{uuid.uuid4().hex[:12]}"
         final_files: dict[str, str] = {}
         last_todos: list[dict[str, Any]] = []
+        main_tokens: list[str] = []
+        had_error = False
         # deepagents namespaces each sub-agent with a UUID (`tools:<uuid>`).
         # We learn the human name from messages tagged with `name=` on the
         # sub-agent's model output, then decorate subsequent events.
@@ -129,19 +136,173 @@ class DeepResearchService:
                 async for translated in self._translate_chunk(
                     chunk, last_todos, final_files, subagent_names
                 ):
+                    event_name, data, _sse_str = translated
+                    if event_name == "token":
+                        content = data.get("content")
+                        if isinstance(content, str):
+                            main_tokens.append(content)
                     yield translated
 
         except Exception as exc:
+            had_error = True
             logger.exception("DeepResearchService.stream_run failed")
             err = {"message": f"{type(exc).__name__}: {exc!s}"}
             yield ("error", err, _sse("error", err))
 
+        if not had_error:
+            self._ensure_final_report_file(final_files, "".join(main_tokens))
+
+        report_id = self._persist_final_report(
+            topic=topic,
+            final_files=final_files,
+            model_name=model_name,
+        )
         done = {
             "run_id": run_id,
             "thread_id": str(thread_id or ""),
             "final_files": final_files,
+            "report_id": report_id,
         }
         yield ("done", done, _sse("done", done))
+
+    def _ensure_final_report_file(
+        self,
+        final_files: dict[str, str],
+        fallback_markdown: str,
+    ) -> None:
+        """Guarantee a persistable final report when the model streamed text directly."""
+        if self._final_report_markdown(final_files):
+            return
+        markdown = fallback_markdown.strip()
+        if not markdown:
+            return
+        final_files["/final_report.md"] = markdown
+
+    def _final_report_markdown(self, final_files: dict[str, str]) -> str:
+        return (
+            final_files.get("/final_report.md")
+            or final_files.get("final_report.md")
+            or ""
+        ).strip()
+
+    def _persist_final_report(
+        self,
+        *,
+        topic: str,
+        final_files: dict[str, str],
+        model_name: str | None = None,
+    ) -> str | None:
+        """Persist the streamed `/final_report.md` into the research reports table."""
+        report_markdown = self._final_report_markdown(final_files)
+        topic = (topic or "").strip()
+        if not topic or not report_markdown or not isinstance(self.db, Session):
+            return None
+
+        payload = self._markdown_report_payload(
+            topic=topic,
+            markdown=report_markdown,
+            final_files=final_files,
+        )
+        key = topic.lower()
+        now = _utcnow()
+
+        try:
+            row = self.db.exec(
+                select(ResearchReportRow).where(ResearchReportRow.topic_key == key)
+            ).first()
+
+            if row is None:
+                row = ResearchReportRow(
+                    topic_key=key,
+                    topic=topic,
+                    payload=payload,
+                    model_name=model_name,
+                    generated_at=now,
+                    created_at=now,
+                    updated_at=now,
+                )
+                self.db.add(row)
+            else:
+                row.topic = topic
+                row.payload = payload
+                row.model_name = model_name
+                row.generated_at = now
+                row.updated_at = now
+                self.db.add(row)
+
+            try:
+                self.db.commit()
+            except sa.exc.IntegrityError:
+                self.db.rollback()
+                row = self.db.exec(
+                    select(ResearchReportRow).where(ResearchReportRow.topic_key == key)
+                ).first()
+                if row is None:
+                    raise
+                row.topic = topic
+                row.payload = payload
+                row.model_name = model_name
+                row.generated_at = now
+                row.updated_at = now
+                self.db.add(row)
+                self.db.commit()
+
+            self.db.refresh(row)
+            return str(row.id)
+        except Exception:
+            logger.exception("Failed to persist streamed deep research report")
+            try:
+                self.db.rollback()
+            except Exception:
+                logger.debug("Rollback failed after research report persist error", exc_info=True)
+            return None
+
+    def _markdown_report_payload(
+        self,
+        *,
+        topic: str,
+        markdown: str,
+        final_files: dict[str, str],
+    ) -> dict[str, Any]:
+        now = datetime.now().astimezone().isoformat()
+        summary = self._extract_markdown_summary(markdown)
+        return {
+            "topic": topic,
+            "model": "deep-research-agent",
+            "generated_at": now,
+            "report": {
+                "topic": topic,
+                "executive_summary": summary,
+                "sections": [],
+                "risks": [],
+                "opportunities": [],
+                "recommended_actions": [],
+                "references": [],
+            },
+            "sources": [],
+            "markdown": markdown,
+            "final_files": final_files,
+            "source": "deep_research_stream",
+        }
+
+    def _extract_markdown_summary(self, markdown: str) -> str:
+        lines = [line.strip() for line in markdown.splitlines()]
+        paragraphs: list[str] = []
+        current: list[str] = []
+        for line in lines:
+            if not line:
+                if current:
+                    paragraphs.append(" ".join(current).strip())
+                    current = []
+                continue
+            if line.startswith(("#", "-", "*", "|", ">")):
+                continue
+            current.append(line)
+            if len(" ".join(current)) > 240:
+                break
+        if current:
+            paragraphs.append(" ".join(current).strip())
+        return paragraphs[0][:700] if paragraphs else markdown[:700].strip()
 
     async def _translate_chunk(
         self,

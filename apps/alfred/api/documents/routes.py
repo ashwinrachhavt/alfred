@@ -7,6 +7,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from alfred.api.http_headers import inline_content_disposition
 from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
 from alfred.core.dependencies import get_doc_storage_service
 from alfred.core.exceptions import AlfredException, ServiceUnavailableError
@@ -592,7 +593,7 @@ def get_document_asset(doc_id: str, asset_id: str) -> Response:
             media_type=asset.mime_type,
             headers={
                 "Cache-Control": "public, max-age=86400",
-                "Content-Disposition": f'inline; filename="{asset.file_name}"',
+                "Content-Disposition": inline_content_disposition(asset.file_name),
             },
         )
     finally:

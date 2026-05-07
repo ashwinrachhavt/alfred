@@ -10,7 +10,7 @@ import json
 import logging
 import time
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
@@ -36,13 +36,22 @@ router = APIRouter(prefix="/api/agent", tags=["agent"])
 logger = logging.getLogger(__name__)
 
 
+class AgentImageAttachment(BaseModel):
+    kind: Literal["image"] = "image"
+    name: str | None = None
+    mime_type: str
+    size: int | None = None
+    data_url: str
+
+
 class AgentStreamRequest(BaseModel):
-    message: str
+    message: str = ""
     thread_id: int | None = None
     note_context: dict | None = None  # {note_id, title, content_preview}
     history: list[dict[str, str]] | None = None
     lens: str | None = None
     model: str | None = None
+    attachments: list[AgentImageAttachment] | None = None
     intent: str | None = None
     intent_args: dict | None = None
     max_iterations: int = 10
@@ -84,6 +93,58 @@ class MessageOut(BaseModel):
     active_lens: str | None = None
     model_used: str | None = None
     created_at: Any = None
+
+
+ALLOWED_AGENT_IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+MAX_AGENT_IMAGE_ATTACHMENTS = 4
+MAX_AGENT_IMAGE_BYTES = 10 * 1024 * 1024
+
+
+def _validate_image_attachments(attachments: list[AgentImageAttachment]) -> None:
+    if len(attachments) > MAX_AGENT_IMAGE_ATTACHMENTS:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Attach up to {MAX_AGENT_IMAGE_ATTACHMENTS} images per message.",
+        )
+
+    for attachment in attachments:
+        if attachment.mime_type not in ALLOWED_AGENT_IMAGE_MIME_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=f"Unsupported image type: {attachment.mime_type}",
+            )
+        expected_prefix = f"data:{attachment.mime_type};base64,"
+        if not attachment.data_url.startswith(expected_prefix):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Image attachment must be a matching base64 data URL.",
+            )
+        encoded = attachment.data_url[len(expected_prefix) :]
+        approx_bytes = (len(encoded.rstrip("=")) * 3) // 4
+        reported_size = attachment.size or 0
+        if max(reported_size, approx_bytes) > MAX_AGENT_IMAGE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"Image too large. Max is {MAX_AGENT_IMAGE_BYTES} bytes.",
+            )
+
+
+def _user_message_parts(message: str, attachments: list[AgentImageAttachment]) -> list[dict[str, Any]] | None:
+    parts: list[dict[str, Any]] = []
+    if message:
+        parts.append({"type": "text", "text": message, "state": "done"})
+    for attachment in attachments:
+        parts.append(
+            {
+                "type": "image",
+                "url": attachment.data_url,
+                "mimeType": attachment.mime_type,
+                "name": attachment.name,
+                "size": attachment.size,
+                "state": "done",
+            }
+        )
+    return parts or None
 
 
 def _get_or_create_thread(
@@ -229,15 +290,24 @@ async def agent_stream(
     Routes owns: thread lifecycle, message persistence, history loading.
     AgentService owns: streaming, tool calls, SSE event formatting.
     """
-    # Validate: need either a message or an intent
-    if not (body.message and body.message.strip()) and not body.intent:
+    attachments = body.attachments or []
+    _validate_image_attachments(attachments)
+
+    # Validate: need a message, an intent, or image attachments to analyze.
+    if not (body.message and body.message.strip()) and not body.intent and not attachments:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Either message or intent is required.",
+            detail="Either message, intent, or image attachment is required.",
         )
 
     # Use message text or synthesize from intent for thread creation
-    message_text = body.message or f"[intent: {body.intent}]"
+    message_text = (
+        body.message.strip()
+        if body.message and body.message.strip()
+        else "Analyze the attached image(s)."
+        if attachments
+        else f"[intent: {body.intent}]"
+    )
 
     # Auto-create thread if needed
     thread_id = _get_or_create_thread(
@@ -262,7 +332,15 @@ async def agent_stream(
         history = [{"role": m.role, "content": m.content} for m in reversed(db_messages)]
 
     # Persist user message immediately
-    _persist_message(db, thread_id, "user", message_text, lens=body.lens, model=body.model)
+    _persist_message(
+        db,
+        thread_id,
+        "user",
+        message_text,
+        parts=_user_message_parts(message_text, attachments),
+        lens=body.lens,
+        model=body.model,
+    )
 
     async def event_stream():
         yield _sse_event("thread_created", {"thread_id": thread_id})
@@ -278,6 +356,7 @@ async def agent_stream(
             history=history,
             lens=body.lens,
             model=body.model,
+            image_attachments=[attachment.model_dump() for attachment in attachments],
             note_context=body.note_context,
             is_disconnected=request.is_disconnected,
             intent=body.intent,

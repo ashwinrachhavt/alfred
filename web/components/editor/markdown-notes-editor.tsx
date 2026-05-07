@@ -175,6 +175,27 @@ async function fileToDataUrl(file: File): Promise<string> {
   return dataUrl;
 }
 
+function imageFilesFromDataTransfer(dataTransfer: DataTransfer | null | undefined): File[] {
+  if (!dataTransfer) return [];
+
+  const byNameAndSize = new Map<string, File>();
+  for (const file of Array.from(dataTransfer.files ?? [])) {
+    if (file.type.startsWith("image/")) {
+      byNameAndSize.set(`${file.name}:${file.size}:${file.type}`, file);
+    }
+  }
+
+  for (const item of Array.from(dataTransfer.items ?? [])) {
+    if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
+    const file = item.getAsFile();
+    if (file) {
+      byNameAndSize.set(`${file.name}:${file.size}:${file.type}`, file);
+    }
+  }
+
+  return Array.from(byNameAndSize.values());
+}
+
 export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, MarkdownNotesEditorProps>(
   function MarkdownNotesEditorImpl(
     {
@@ -1097,8 +1118,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
 
       const onPaste = (event: ClipboardEvent) => {
         if (readOnly) return;
-        const files = Array.from(event.clipboardData?.files ?? []);
-        const image = files.find((file) => file.type.startsWith("image/"));
+        const image = imageFilesFromDataTransfer(event.clipboardData)[0];
         if (!image) return;
 
         event.preventDefault();
@@ -1115,8 +1135,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
 
       const onDrop = (event: DragEvent) => {
         if (readOnly) return;
-        const files = Array.from(event.dataTransfer?.files ?? []);
-        const images = files.filter((file) => file.type.startsWith("image/"));
+        const images = imageFilesFromDataTransfer(event.dataTransfer);
         if (!images.length) return;
 
         event.preventDefault();
