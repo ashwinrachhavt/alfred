@@ -100,6 +100,7 @@ def create_card(
     card = svc.create_card(**payload.model_dump())
     _invalidate_topic_tag_cache()
     _invalidate_graph_cache()
+    _neo4j_upsert_card(card.id, session)
     return _card_out(card)
 
 
@@ -285,6 +286,77 @@ def _invalidate_graph_cache() -> None:
     ClusteringService.invalidate_cache()
 
 
+# ---------------------------------------------------------------------------
+# Neo4j projection hooks — best-effort, silent on failure.
+# Postgres is SOT; Neo4j is a read model. These let incremental edits reach
+# the nexus view without requiring a full /api/nexus/sync.
+# ---------------------------------------------------------------------------
+
+
+def _neo4j_upsert_card(card_id: int | None, session: Session) -> None:
+    """Project a card to Neo4j. No-op if id is None or Neo4j isn't configured."""
+    if card_id is None:
+        return
+    try:
+        from alfred.core.dependencies import get_graph_service
+        from alfred.services.zettel_graph_sync import ZettelGraphSync
+
+        gs = get_graph_service()
+        if gs is None:
+            return
+        ZettelGraphSync(session=session, graph=gs).upsert_card(card_id)
+    except Exception:  # noqa: BLE001
+        _log.debug("Neo4j upsert failed for card %s", card_id, exc_info=True)
+
+
+def _neo4j_delete_card(card_id: int | None) -> None:
+    if card_id is None:
+        return
+    try:
+        from alfred.core.dependencies import get_graph_service
+
+        gs = get_graph_service()
+        if gs is None:
+            return
+        gs.delete_zettel(card_id=card_id)
+    except Exception:
+        _log.debug("Neo4j delete failed for card %s", card_id, exc_info=True)
+
+
+def _neo4j_upsert_links(link_ids: list[int], session: Session) -> None:
+    """Project a batch of links to Neo4j. Handles bidirectional pairs."""
+    if not link_ids:
+        return
+    try:
+        from alfred.core.dependencies import get_graph_service
+        from alfred.services.zettel_graph_sync import ZettelGraphSync
+
+        gs = get_graph_service()
+        if gs is None:
+            return
+        sync = ZettelGraphSync(session=session, graph=gs)
+        for lid in link_ids:
+            sync.upsert_link(lid)
+    except Exception:
+        _log.debug("Neo4j link-upsert failed (ids=%s)", link_ids, exc_info=True)
+
+
+def _neo4j_delete_edges(pairs: list[tuple[int, int, str]]) -> None:
+    """Delete Neo4j edges given a list of (from_id, to_id, type) tuples."""
+    if not pairs:
+        return
+    try:
+        from alfred.core.dependencies import get_graph_service
+
+        gs = get_graph_service()
+        if gs is None:
+            return
+        for from_id, to_id, type_ in pairs:
+            gs.delete_zettel_link(from_id=from_id, to_id=to_id, type_=type_)
+    except Exception:
+        _log.debug("Neo4j edge-delete failed", exc_info=True)
+
+
 def _set_cache_headers(response: Response, max_age: int = 30) -> None:
     response.headers["Cache-Control"] = f"private, max-age={max_age}"
 
@@ -447,6 +519,7 @@ def update_card(
     updated = svc.update_card(card, **data)
     _invalidate_topic_tag_cache()
     _invalidate_graph_cache()
+    _neo4j_upsert_card(updated.id, session)
     return _card_out(updated)
 
 
@@ -462,6 +535,7 @@ def delete_card(
     svc.archive_card(card, remove_links=True)
     _invalidate_topic_tag_cache()
     _invalidate_graph_cache()
+    _neo4j_delete_card(card_id)
     return {"status": "archived", "id": card_id}
 
 
@@ -571,6 +645,7 @@ def link_card(
         bidirectional=payload.bidirectional,
     )
     _invalidate_graph_cache()
+    _neo4j_upsert_links([link.id for link in links if link.id is not None], session)
     return [_link_out(link) for link in links]
 
 
@@ -589,10 +664,23 @@ def delete_link(
     session: Session = Depends(get_db_session),
 ) -> dict:
     svc = ZettelkastenService(session)
+    # Capture link details for Neo4j projection BEFORE deleting.
+    from alfred.models.zettel import ZettelLink
+
+    link = session.get(ZettelLink, link_id)
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+    pairs_to_delete: list[tuple[int, int, str]] = [
+        (link.from_card_id, link.to_card_id, link.type)
+    ]
+    if link.bidirectional:
+        pairs_to_delete.append((link.to_card_id, link.from_card_id, link.type))
+
     deleted = svc.delete_link(link_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Link not found")
     _invalidate_graph_cache()
+    _neo4j_delete_edges(pairs_to_delete)
     return {"status": "deleted", "id": link_id}
 
 
