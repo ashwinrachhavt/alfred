@@ -168,6 +168,15 @@ if _NEO4J_AVAILABLE:
                 {"from_id": int(from_id), "to_id": int(to_id), "type_": type_},
             )
 
+        def wipe_zettel_subgraph(self) -> None:
+            """Remove all :Zettel nodes and their edges.
+
+            Used by full-rebuild flows where the caller wants to repopulate
+            from scratch. Not wrapped in a transaction with the subsequent
+            rebuild — callers must accept a brief empty-read window.
+            """
+            self._run("MATCH (z:Zettel) DETACH DELETE z")
+
         def fetch_topic_subgraph(self, *, topic_id: str, limit: int = 200) -> dict[str, Any]:
             query = """
             MATCH (t:Topic {topic_id: $topic_id})
@@ -285,6 +294,9 @@ else:
             return None
 
         def delete_zettel_link(self, *, from_id: int, to_id: int, type_: str) -> None:
+            return None
+
+        def wipe_zettel_subgraph(self) -> None:
             return None
 
         def fetch_topic_subgraph(self, *, topic_id: str, limit: int = 200) -> dict[str, Any]:
