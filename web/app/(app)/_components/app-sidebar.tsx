@@ -22,6 +22,7 @@ import {
   Plug,
   Search,
   Settings,
+  Waypoints,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -62,6 +63,7 @@ const navSections: NavSection[] = [
       { label: "Sitting", href: "/knowledge/session/new", icon: PenLine, shortcut: "5" },
       { label: "Review", href: "/knowledge?view=review", icon: Brain },
       { label: "Universe", href: "/universe", icon: Orbit },
+      { label: "Nexus", href: "/nexus", icon: Waypoints },
       { label: "Dictionary", href: "/dictionary", icon: BookA },
     ],
   },

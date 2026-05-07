@@ -22,7 +22,24 @@ if _NEO4J_AVAILABLE:
 
         def __post_init__(self) -> None:
             self._driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
+            try:
+                self.ensure_constraints()
+            except Exception:
+                logger.warning("Failed to ensure Neo4j constraints", exc_info=True)
             logger.debug("GraphService connected to Neo4j at %s", self.uri)
+
+        def ensure_constraints(self) -> None:
+            """Idempotently create uniqueness constraints used by zettel projection.
+
+            Running this every time a new GraphService is constructed keeps
+            the schema self-healing: a fresh Neo4j volume is fine, an
+            existing one is untouched. ``CREATE CONSTRAINT IF NOT EXISTS``
+            is parser-level idempotent.
+            """
+            self._run(
+                "CREATE CONSTRAINT zettel_card_id_unique IF NOT EXISTS "
+                "FOR (z:Zettel) REQUIRE z.card_id IS UNIQUE"
+            )
 
         # --- internals ---
         def _run(self, query: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -108,6 +125,75 @@ if _NEO4J_AVAILABLE:
             """
             self._run(query, {"topic_id": topic_id, "name": name})
 
+        # --- Zettel projection -------------------------------------------------
+        def upsert_zettel(
+            self,
+            *,
+            card_id: int,
+            title: str,
+            topic: str | None,
+            tags: list[str],
+            bloom_level: int,
+            cluster_id: int | None,
+        ) -> None:
+            """Idempotently upsert a zettel node."""
+            query = """
+            MERGE (z:Zettel {card_id: $card_id})
+            SET z.title = $title,
+                z.topic = $topic,
+                z.tags = $tags,
+                z.bloom_level = $bloom_level,
+                z.cluster_id = $cluster_id,
+                z.updated_at = timestamp()
+            """
+            self._run(query, {
+                "card_id": int(card_id),
+                "title": title,
+                "topic": topic,
+                "tags": tags or [],
+                "bloom_level": int(bloom_level),
+                "cluster_id": cluster_id,
+            })
+
+        def link_zettels(
+            self, *, from_id: int, to_id: int, type_: str, bidirectional: bool = False,
+        ) -> None:
+            """Idempotently create a typed :LINK edge between two zettels."""
+            query = """
+            MATCH (a:Zettel {card_id: $from_id}), (b:Zettel {card_id: $to_id})
+            MERGE (a)-[r:LINK {type: $type_}]->(b)
+            ON CREATE SET r.created_at = timestamp()
+            SET r.bidirectional = $bidirectional
+            """
+            self._run(query, {
+                "from_id": int(from_id), "to_id": int(to_id),
+                "type_": type_, "bidirectional": bool(bidirectional),
+            })
+
+        def delete_zettel(self, *, card_id: int) -> None:
+            self._run(
+                "MATCH (z:Zettel {card_id: $card_id}) DETACH DELETE z",
+                {"card_id": int(card_id)},
+            )
+
+        def delete_zettel_link(self, *, from_id: int, to_id: int, type_: str) -> None:
+            self._run(
+                """
+                MATCH (a:Zettel {card_id: $from_id})-[r:LINK {type: $type_}]->(b:Zettel {card_id: $to_id})
+                DELETE r
+                """,
+                {"from_id": int(from_id), "to_id": int(to_id), "type_": type_},
+            )
+
+        def wipe_zettel_subgraph(self) -> None:
+            """Remove all :Zettel nodes and their edges.
+
+            Used by full-rebuild flows where the caller wants to repopulate
+            from scratch. Not wrapped in a transaction with the subsequent
+            rebuild — callers must accept a brief empty-read window.
+            """
+            self._run("MATCH (z:Zettel) DETACH DELETE z")
+
         def fetch_topic_subgraph(self, *, topic_id: str, limit: int = 200) -> dict[str, Any]:
             query = """
             MATCH (t:Topic {topic_id: $topic_id})
@@ -164,6 +250,9 @@ else:
         def __post_init__(self) -> None:  # pragma: no cover - environment dependent
             logger.info("Neo4j not installed; GraphService will no-op.")
 
+        def ensure_constraints(self) -> None:
+            return None
+
         def _run(self, query: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
             return []
 
@@ -198,6 +287,37 @@ else:
             self, *, topic_id: str, name: str, rel_type: str = "COVERS"
         ) -> None:
             return
+
+        def upsert_zettel(
+            self,
+            *,
+            card_id: int,
+            title: str,
+            topic: str | None,
+            tags: list[str],
+            bloom_level: int,
+            cluster_id: int | None,
+        ) -> None:
+            return None
+
+        def link_zettels(
+            self,
+            *,
+            from_id: int,
+            to_id: int,
+            type_: str,
+            bidirectional: bool = False,
+        ) -> None:
+            return None
+
+        def delete_zettel(self, *, card_id: int) -> None:
+            return None
+
+        def delete_zettel_link(self, *, from_id: int, to_id: int, type_: str) -> None:
+            return None
+
+        def wipe_zettel_subgraph(self) -> None:
+            return None
 
         def fetch_topic_subgraph(self, *, topic_id: str, limit: int = 200) -> dict[str, Any]:
             return {"nodes": [], "edges": []}

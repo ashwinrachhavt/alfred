@@ -109,6 +109,12 @@ export const apiRoutes = {
     reviewsDue: "/api/learning/reviews/due",
     gaps: "/api/learning/gaps",
   },
+  nexus: {
+    sync: "/api/nexus/sync",
+    graph: "/api/nexus/graph",
+    path: "/api/nexus/path",
+    bridges: "/api/nexus/bridges",
+  },
   writing: {
     compose: "/api/writing/compose",
     composeStream: "/api/writing/compose/stream",
