@@ -52,7 +52,7 @@ KNOWLEDGE_AGENT = AgentType(
         "or reading their stored documents."
     ),
     system_prompt=(
-        "You are the knowledge specialist for Alfred's zettelkasten and documents.\n"
+        "You are the knowledge specialist for the user's zettelkasten and documents.\n"
         "\n"
         "INPUT: a delegated task string from the parent agent, plus any context it quoted.\n"
         "\n"

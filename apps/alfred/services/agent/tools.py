@@ -274,7 +274,7 @@ CORE_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "Import a server-visible local file or folder into Alfred Notes. "
                 "Use when the user asks to import notes, a folder, an export, or local "
                 "text files into Notes. The path must exist on the backend machine and "
-                "must be within Alfred's allowed filesystem roots. If workspace_id is "
+                "must be within the allowed filesystem roots. If workspace_id is "
                 "omitted, imports into the default Personal workspace."
             ),
             "parameters": {
