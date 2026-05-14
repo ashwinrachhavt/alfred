@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 
@@ -51,10 +51,7 @@ export function SidebarNotesTree({ isOpen, selectedNoteId }: SidebarNotesTreePro
   const treeQuery = useNoteTree(workspaceId);
   const createChild = useCreateChildNote(workspaceId);
 
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  useEffect(() => {
-    setCollapsed(loadCollapsed());
-  }, []);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => loadCollapsed());
 
   const nodes = useMemo<TreeNode[]>(() => treeQuery.data?.items ?? [], [treeQuery.data]);
 
