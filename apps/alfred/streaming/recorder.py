@@ -149,6 +149,16 @@ class RunRecorder:
                 logger.exception("consumer.on_event failed during replay")
         self._consumers.append(consumer)
 
+    @property
+    def recorded_events(self) -> tuple[AnyRunEvent, ...]:
+        """Events recorded so far, including lifecycle events.
+
+        Routes use this to send recorder-owned lifecycle events (run.started
+        and terminal events) through the same wire projector as producer
+        events.
+        """
+        return tuple(self._all_events)
+
     async def emit_message_started(self, *, message_id: UUID) -> MessageStarted:
         evt = MessageStarted(
             run_id=self.run_id, seq=self._next_seq(), emitted_at=_utcnow(),
@@ -239,6 +249,7 @@ class RunRecorder:
 
     def _emit_terminal(self, event: AnyRunEvent) -> None:
         self._buffer.append(event)
+        self._all_events.append(event)
         for c in self._consumers:
             try:
                 c.on_event(event)

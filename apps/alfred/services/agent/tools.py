@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from langchain_core.tools import BaseTool
@@ -298,6 +299,68 @@ CORE_TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_note",
+            "description": (
+                "Create a new note in Alfred Notes (a Notion-style page). "
+                "Use when the user asks to draft, compose, or save freeform writing. "
+                "Wiki-links of the form [[card title]] in content_markdown are "
+                "auto-resolved and persisted as edges to existing zettels."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Note title.",
+                    },
+                    "content_markdown": {
+                        "type": "string",
+                        "description": "Markdown body. May include [[wiki links]].",
+                    },
+                    "workspace_id": {
+                        "type": "string",
+                        "description": "Optional workspace UUID. Defaults to Personal.",
+                    },
+                    "parent_id": {
+                        "type": "string",
+                        "description": "Optional parent note UUID for nesting.",
+                    },
+                    "icon": {
+                        "type": "string",
+                        "description": "Optional emoji icon.",
+                    },
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_note",
+            "description": (
+                "Edit an existing note's title, content, or icon. Wiki-links in "
+                "the new content_markdown are re-resolved and synced (links to "
+                "removed targets are dropped, new ones inserted)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "note_id": {
+                        "type": "string",
+                        "description": "Note UUID to update.",
+                    },
+                    "title": {"type": "string"},
+                    "content_markdown": {"type": "string"},
+                    "icon": {"type": "string"},
+                },
+                "required": ["note_id"],
             },
         },
     },
@@ -598,6 +661,121 @@ async def _import_notes_from_filesystem(args: dict[str, Any], db: Session) -> di
     }
 
 
+_WIKI_LINK_RE = re.compile(r"\[\[([^\[\]\|\n]{1,200})(?:\|[^\[\]\n]*)?\]\]")
+
+
+def _extract_wiki_link_titles(markdown: str | None) -> list[str]:
+    if not markdown:
+        return []
+    seen: set[str] = set()
+    titles: list[str] = []
+    for match in _WIKI_LINK_RE.finditer(markdown):
+        title = (match.group(1) or "").strip()
+        if not title:
+            continue
+        key = title.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        titles.append(title)
+    return titles
+
+
+def _sync_note_wiki_links(
+    db: Session, *, note_id: str, content_markdown: str | None
+) -> int:
+    """Resolve [[X]] tokens and persist wiki_links rows. Returns count synced."""
+    titles = _extract_wiki_link_titles(content_markdown)
+    zk = ZettelkastenService(db)
+    target_ids = zk.resolve_wiki_link_titles(titles) if titles else []
+    zk.sync_wiki_links(
+        source_type="note",
+        source_id=note_id,
+        target_card_ids=target_ids,
+    )
+    return len(target_ids)
+
+
+async def _create_note(args: dict[str, Any], db: Session) -> dict[str, Any]:
+    title = (args.get("title") or "").strip()
+    if not title:
+        return {"error": "title is required"}
+
+    content_markdown = args.get("content_markdown") or ""
+    workspace_id = args.get("workspace_id") or None
+    parent_id = args.get("parent_id") or None
+    icon = args.get("icon") or None
+
+    notes = NotesService(db)
+    try:
+        row = notes.create_note(
+            workspace_id=workspace_id,
+            parent_id=parent_id,
+            title=title,
+            icon=icon,
+            content_markdown=content_markdown,
+        )
+    except (WorkspaceNotFoundError, NoteNotFoundError, ValueError) as exc:
+        return {"error": str(exc)}
+
+    try:
+        wiki_link_count = _sync_note_wiki_links(
+            db, note_id=str(row.id), content_markdown=content_markdown
+        )
+    except Exception:
+        logger.exception("create_note: wiki-link sync failed for %s", row.id)
+        wiki_link_count = 0
+
+    return {
+        "action": "created",
+        "note_id": str(row.id),
+        "title": row.title,
+        "workspace_id": str(row.workspace_id),
+        "wiki_link_count": wiki_link_count,
+    }
+
+
+async def _update_note(args: dict[str, Any], db: Session) -> dict[str, Any]:
+    note_id = args.get("note_id")
+    if not note_id:
+        return {"error": "note_id is required"}
+
+    notes = NotesService(db)
+    fields: dict[str, Any] = {}
+    if "title" in args and args["title"] is not None:
+        fields["title"] = args["title"]
+    if "content_markdown" in args and args["content_markdown"] is not None:
+        fields["content_markdown"] = args["content_markdown"]
+    if "icon" in args and args["icon"] is not None:
+        fields["icon"] = args["icon"]
+
+    try:
+        row = notes.update_note(note_id, **fields)
+    except NoteNotFoundError as exc:
+        return {"error": str(exc)}
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    # Re-sync wiki-links from the *updated* content. If content_markdown was
+    # not in the patch, fall back to the row's current value so we never
+    # silently desync the edge set.
+    content_for_sync = fields.get("content_markdown", row.content_markdown)
+    try:
+        wiki_link_count = _sync_note_wiki_links(
+            db, note_id=str(row.id), content_markdown=content_for_sync
+        )
+    except Exception:
+        logger.exception("update_note: wiki-link sync failed for %s", row.id)
+        wiki_link_count = 0
+
+    return {
+        "action": "updated",
+        "note_id": str(row.id),
+        "title": row.title,
+        "wiki_link_count": wiki_link_count,
+    }
+
+
 async def _web_search_searxng(args: dict[str, Any], db: Session) -> dict[str, Any]:
     """Search the web using local SearXNG metasearch."""
     import httpx
@@ -717,6 +895,8 @@ _CORE_EXECUTORS: dict[str, Any] = {
     "update_zettel": _update_zettel,
     "list_recent_cards": _list_recent_cards,
     "import_notes_from_filesystem": _import_notes_from_filesystem,
+    "create_note": _create_note,
+    "update_note": _update_note,
     "web_search_searxng": _web_search_searxng,
     "firecrawl_search": _firecrawl_search,
     "firecrawl_scrape": _firecrawl_scrape,

@@ -494,8 +494,8 @@ class Settings(BaseSettings):
 
     # Streaming v2 (AG-UI dual-write)
     streaming_v2_enabled: bool = Field(
-        default=False,
-        description="If True, enable the /api/agent/stream/v2 route (AG-UI dual-write path). Phase 1 of streaming revamp.",
+        default=True,
+        description="If True, enable the /api/agent/stream/v2 route (AG-UI dual-write path).",
     )
 
     # --- LLM unified ---

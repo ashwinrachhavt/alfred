@@ -663,7 +663,7 @@ class ZettelkastenService:
             raw_clusters = clustering_svc.detect_clusters(cards)
             if raw_clusters:
                 cards_by_id = {c.id: c for c in cards}
-                raw_clusters = clustering_svc.generate_cluster_names(raw_clusters, cards_by_id)
+                raw_clusters = clustering_svc.name_clusters_from_cards(raw_clusters, cards_by_id)
                 for cluster in raw_clusters:
                     for cid in cluster["card_ids"]:
                         cluster_id_by_card[cid] = cluster["id"]
@@ -912,6 +912,39 @@ class ZettelkastenService:
                 )
 
         self.session.commit()
+
+    def resolve_wiki_link_titles(self, titles: list[str]) -> list[int]:
+        """Resolve [[X]] target titles to active zettel card IDs.
+
+        Case-insensitive exact match. Multiple matches resolve to the most
+        recently updated card. Archived cards are excluded. Empty input
+        returns [] without a query.
+        """
+        cleaned = [t.strip() for t in titles if t and t.strip()]
+        if not cleaned:
+            return []
+
+        lowered = {t.lower() for t in cleaned}
+        rows = list(
+            self.session.exec(
+                select(ZettelCard)
+                .where(ZettelCard.status != "archived")
+                .where(func.lower(ZettelCard.title).in_(lowered))
+                .order_by(ZettelCard.updated_at.desc())
+            )
+        )
+
+        seen: set[str] = set()
+        resolved: list[int] = []
+        for card in rows:
+            if card.id is None:
+                continue
+            key = (card.title or "").lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            resolved.append(card.id)
+        return resolved
 
     # ---------------
     # Embeddings / link suggestions

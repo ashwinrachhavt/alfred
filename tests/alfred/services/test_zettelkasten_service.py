@@ -9,6 +9,7 @@ from sqlalchemy import create_engine
 from sqlmodel import Session, SQLModel
 
 from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview
+from alfred.services.clustering_service import ClusteringService
 from alfred.services.zettelkasten_service import ZettelkastenService
 
 try:  # avoid ImportError when sqlmodel.select is unavailable in minimal envs
@@ -169,6 +170,35 @@ def test_extended_graph_summary_gaps() -> None:
     assert gap["id"] == stub.id
     assert gap["title"] == "Stub card"
     assert gap["inbound_link_count"] == 1
+
+
+def test_extended_graph_summary_clusters_do_not_call_llm_namer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cluster labels for graph pages stay local and deterministic."""
+    session = _session()
+    svc = ZettelkastenService(session)
+    for idx in range(12):
+        card = ZettelCard(
+            title=f"Agent workflow pattern {idx}",
+            topic="AI Agents",
+            tags=["workflow"],
+            embedding=[
+                float(idx < 6),
+                float(idx >= 6),
+                float(idx) / 100,
+            ],
+        )
+        session.add(card)
+    session.commit()
+
+    def fail_llm_namer(*_args: object, **_kwargs: object) -> list[dict]:
+        raise AssertionError("LLM cluster naming should not run during graph summary")
+
+    monkeypatch.setattr(ClusteringService, "generate_cluster_names", fail_llm_namer)
+
+    result = svc.extended_graph_summary(include_clusters=True)
+
+    assert result["clusters"]
+    assert {cluster["name"] for cluster in result["clusters"]} == {"AI Agents / Workflow"}
 
 
 # ---------------------------------------------------------------------------
@@ -433,3 +463,70 @@ def test_create_card_survives_ensure_embedding_failure(
         "ensure_embedding failed" in rec.getMessage() and "qdrant offline" in rec.getMessage()
         for rec in warnings
     )
+
+
+def test_resolve_wiki_link_titles_empty_input_returns_empty() -> None:
+    session = _session()
+    svc = ZettelkastenService(session)
+    assert svc.resolve_wiki_link_titles([]) == []
+    assert svc.resolve_wiki_link_titles(["", "   "]) == []
+
+
+def test_resolve_wiki_link_titles_exact_case_insensitive_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _session()
+    svc = ZettelkastenService(session)
+    monkeypatch.setattr(svc, "ensure_embedding", MagicMock(side_effect=lambda card: card))
+
+    a = svc.create_card(title="Heisenberg uncertainty")
+    svc.create_card(title="Other thing")
+
+    resolved = svc.resolve_wiki_link_titles(["heisenberg uncertainty"])
+    assert resolved == [a.id]
+
+
+def test_resolve_wiki_link_titles_skips_archived(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _session()
+    svc = ZettelkastenService(session)
+    monkeypatch.setattr(svc, "ensure_embedding", MagicMock(side_effect=lambda card: card))
+
+    keep = svc.create_card(title="Active card")
+    gone = svc.create_card(title="Archived card")
+    svc.archive_card(gone, remove_links=False)
+
+    resolved = svc.resolve_wiki_link_titles(["Active card", "Archived card"])
+    assert resolved == [keep.id]
+
+
+def test_resolve_wiki_link_titles_multiple_matches_picks_most_recent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _session()
+    svc = ZettelkastenService(session)
+    monkeypatch.setattr(svc, "ensure_embedding", MagicMock(side_effect=lambda card: card))
+
+    older = svc.create_card(title="Duplicate")
+    newer = svc.create_card(title="Duplicate")
+
+    older.updated_at = datetime(2026, 1, 1)
+    newer.updated_at = datetime(2026, 5, 1)
+    session.add(older)
+    session.add(newer)
+    session.commit()
+
+    resolved = svc.resolve_wiki_link_titles(["Duplicate"])
+    assert resolved == [newer.id]
+
+
+def test_resolve_wiki_link_titles_no_match_returns_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _session()
+    svc = ZettelkastenService(session)
+    monkeypatch.setattr(svc, "ensure_embedding", MagicMock(side_effect=lambda card: card))
+    svc.create_card(title="One thing")
+
+    assert svc.resolve_wiki_link_titles(["A totally absent title"]) == []

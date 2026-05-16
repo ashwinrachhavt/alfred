@@ -64,3 +64,27 @@ def test_create_stream_endpoint_has_sse_headers(client: TestClient) -> None:
 
     assert response.headers.get("cache-control") == "no-cache"
     assert response.headers.get("x-accel-buffering") == "no"
+
+
+def test_create_stream_v2_wraps_legacy_events_as_agui_custom_frames(client: TestClient) -> None:
+    """POST to /api/zettels/cards/create-stream/v2 should return AG-UI data frames."""
+
+    async def _fake_run(self):
+        yield _sse("card_saved", {"id": 1, "title": "Test", "status": "active"})
+        yield _sse("done", {"card": {"id": 1, "title": "Test"}, "stats": {"card_id": 1}})
+
+    with patch(
+        "alfred.api.zettels.routes.ZettelCreationStream.run",
+        _fake_run,
+    ):
+        response = client.post(
+            "/api/zettels/cards/create-stream/v2",
+            json={"title": "Stream Test Card", "content": "Content for streaming"},
+        )
+
+    assert response.status_code == 200
+    assert "text/event-stream" in response.headers["content-type"]
+    assert 'data: {"type":"RUN_STARTED"' in response.text
+    assert '"type":"CUSTOM","name":"alfred.zettel.card_saved"' in response.text
+    assert '"type":"CUSTOM","name":"alfred.zettel.done"' in response.text
+    assert 'data: {"type":"RUN_FINISHED"' in response.text

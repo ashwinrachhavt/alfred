@@ -21,7 +21,7 @@ export function EdgeTypeLegend({ availableTypes }: Props): React.ReactElement | 
   if (shown.length === 0) return null;
   return (
     <div className="space-y-1">
-      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+      <div className="text-[10px] uppercase tracking-wide text-white/35">
         Edge Types
       </div>
       {shown.map((l) => {
@@ -31,7 +31,7 @@ export function EdgeTypeLegend({ availableTypes }: Props): React.ReactElement | 
             key={l.type}
             type="button"
             onClick={() => toggle(l.type)}
-            className={`flex w-full items-center gap-2 rounded-sm px-1 py-0.5 text-left text-xs hover:bg-accent ${
+            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-white/65 hover:bg-white/[0.06] hover:text-white ${
               isDim ? "opacity-40" : ""
             }`}
           >

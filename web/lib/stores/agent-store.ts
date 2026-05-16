@@ -5,6 +5,8 @@ import { apiFetch } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
 import { streamSSE } from "@/lib/api/sse";
 import { DEFAULT_AI_MODEL } from "@/lib/constants/ai";
+import { createAguiEventProjector } from "@/lib/streaming/agui-runtime";
+import { notifyStreamCacheEvent } from "@/lib/streaming/reactive-cache";
 
 // --- Types ---
 
@@ -530,40 +532,62 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         composedSignal = shared.signal;
       }
 
-      await streamSSE(
-        apiRoutes.agent.stream,
-        {
-          message: text,
-          thread_id: state.activeThreadId,  // null is fine — backend auto-creates
-          note_context: state.noteContext
-            ? {
-                note_id: state.noteContext.noteId,
-                title: state.noteContext.title,
-                content_preview: state.noteContext.contentPreview,
-              }
-            : undefined,
-          lens: state.activeLens,
-          model: state.activeModel,
-          attachments: attachments.map((attachment) => ({
-            kind: attachment.kind,
-            name: attachment.name,
-            mime_type: attachment.mimeType,
-            size: attachment.size,
-            data_url: attachment.dataUrl,
-          })),
-          // Only send history if no thread (backend loads from DB when thread exists)
-          history: state.activeThreadId
-            ? undefined
-            : selectOrderedMessages(state).slice(-20).map((m) => ({
-                role: m.role,
-                content: m.content,
-              })),
-          intent: opts?.intent,
-          intent_args: opts?.intentArgs,
-        },
-        (event, data) => _handleSSEEvent(event, data, set),
-        composedSignal,
-      );
+      const streamPayload = {
+        message: text,
+        thread_id: state.activeThreadId,  // null is fine — backend auto-creates
+        note_context: state.noteContext
+          ? {
+              note_id: state.noteContext.noteId,
+              title: state.noteContext.title,
+              content_preview: state.noteContext.contentPreview,
+            }
+          : undefined,
+        lens: state.activeLens,
+        model: state.activeModel,
+        attachments: attachments.map((attachment) => ({
+          kind: attachment.kind,
+          name: attachment.name,
+          mime_type: attachment.mimeType,
+          size: attachment.size,
+          data_url: attachment.dataUrl,
+        })),
+        // Only send history if no thread (backend loads from DB when thread exists)
+        history: state.activeThreadId
+          ? undefined
+          : selectOrderedMessages(state).slice(-20).map((m) => ({
+              role: m.role,
+              content: m.content,
+            })),
+        intent: opts?.intent,
+        intent_args: opts?.intentArgs,
+      };
+
+      const aguiProjector = createAguiEventProjector();
+      const handleAguiOrLegacyEvent = (
+        event: string,
+        data: Record<string, unknown>,
+      ) => {
+        for (const projected of aguiProjector.project(event, data)) {
+          _handleSSEEvent(projected.event, projected.data, set);
+        }
+      };
+
+      try {
+        await streamSSE(
+          apiRoutes.agent.streamV2,
+          streamPayload,
+          handleAguiOrLegacyEvent,
+          composedSignal,
+        );
+      } catch (streamErr) {
+        if (!isStreamV2Unavailable(streamErr)) throw streamErr;
+        await streamSSE(
+          apiRoutes.agent.stream,
+          streamPayload,
+          (event, data) => _handleSSEEvent(event, data, set),
+          composedSignal,
+        );
+      }
 
       clearTimeout(timeoutId);
     } catch (err: unknown) {
@@ -724,6 +748,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 }));
 
+function isStreamV2Unavailable(err: unknown): boolean {
+  return err instanceof Error && /Stream failed:\s*404/.test(err.message);
+}
+
 // --- SSE event handler ---
 
 function _handleSSEEvent(
@@ -731,6 +759,8 @@ function _handleSSEEvent(
   data: Record<string, unknown>,
   set: (fn: (s: AgentState) => Partial<AgentState>) => void,
 ) {
+  notifyStreamCacheEvent(event, data);
+
   switch (event) {
     case "reasoning": {
       // Collapsible reasoning trace for o3/o4 models.

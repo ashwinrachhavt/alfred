@@ -39,20 +39,24 @@ async function readSSE(
       if (!block.trim()) continue;
 
       let eventType = "";
-      let dataPayload = "";
+      const dataLines: string[] = [];
 
       for (const line of block.split("\n")) {
-        if (line.startsWith("event: ")) {
-          eventType = line.slice(7).trim();
-        } else if (line.startsWith("data: ")) {
-          dataPayload = line.slice(6);
+        if (line.startsWith("event:")) {
+          eventType = line.slice(6).trim();
+        } else if (line.startsWith("data:")) {
+          dataLines.push(line.slice(5).trimStart());
         }
       }
 
-      if (eventType && dataPayload) {
+      const dataPayload = dataLines.join("\n");
+      if (dataPayload) {
         try {
           const data = JSON.parse(dataPayload);
-          onEvent(eventType, data);
+          const resolvedEvent =
+            eventType ||
+            (data && typeof data.type === "string" ? data.type : "");
+          if (resolvedEvent) onEvent(resolvedEvent, data);
         } catch {
           // Skip malformed JSON
         }

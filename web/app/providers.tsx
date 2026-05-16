@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -9,6 +9,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { TaskCenterSheet } from "@/components/task-center-sheet";
 import { Toaster } from "@/components/ui/sonner";
 import { TaskTrackerProvider } from "@/features/tasks/task-tracker-provider";
+import { bindStreamingQueryClient } from "@/lib/streaming/reactive-cache";
 
 export function createQueryClient(): QueryClient {
   return new QueryClient({
@@ -25,6 +26,8 @@ export function createQueryClient(): QueryClient {
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => createQueryClient());
+
+  useEffect(() => bindStreamingQueryClient(queryClient), [queryClient]);
 
   return (
     <ThemeProvider

@@ -23,6 +23,7 @@ from alfred.schemas.today import (
     TodayCaptureItem,
     TodayConnectionItem,
     TodayGapItem,
+    TodayNoteItem,
     TodayReviewItem,
     TodayStoredCardItem,
 )
@@ -47,6 +48,7 @@ def test_briefing_response_top_level_shape_unchanged() -> None:
         "connections",
         "reviews",
         "gaps",
+        "notes",
         "stats",
     }
 
@@ -58,6 +60,7 @@ def test_briefing_response_nested_model_types_unchanged() -> None:
     assert hints["connections"] == list[TodayConnectionItem]
     assert hints["reviews"] == list[TodayReviewItem]
     assert hints["gaps"] == list[TodayGapItem]
+    assert hints["notes"] == list[TodayNoteItem]
     assert hints["stats"] is TodayBriefingStats
 
 
@@ -72,6 +75,17 @@ def test_briefing_stats_shape_unchanged() -> None:
         "total_events",
         "total_cards",
         "total_links",
+        "total_notes_touched",
+    }
+
+
+def test_note_item_shape_unchanged() -> None:
+    assert _field_names(TodayNoteItem) == {
+        "note_id",
+        "title",
+        "icon",
+        "workspace_id",
+        "updated_at",
     }
 
 

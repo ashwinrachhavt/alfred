@@ -3,49 +3,67 @@
 import Link from "next/link";
 import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
 
+import { addDays, format, isSameMonth, isToday, isYesterday, parseISO, startOfDay } from "date-fns";
 import {
-  addDays,
-  endOfMonth,
-  endOfWeek,
-  format,
-  isSameMonth,
-  isToday,
-  isYesterday,
-  parseISO,
-  startOfDay,
-  startOfMonth,
-  startOfWeek,
-} from "date-fns";
-import {
+  ArrowRight,
   Brain,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
+  FileEdit,
   FileText,
   GitBranch,
+  ListFilter,
+  Menu,
+  Network,
   NotebookPen,
   Sparkles,
+  type LucideIcon,
 } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { type TodayCalendarDay } from "@/lib/api/today";
+import type {
+  TodayCalendarDay,
+  TodayCaptureItem,
+  TodayConnectionItem,
+  TodayGapItem,
+  TodayReviewItem,
+  TodayStoredCardItem,
+} from "@/lib/api/today";
 import { useBrowserTimeZone } from "@/lib/hooks/use-browser-timezone";
 import {
   TODAY_AUDIT_KINDS,
+  buildTodayBriefingLines,
+  buildTodayInsightCards,
+  buildTodayNextActions,
+  buildTodayThreads,
+  buildTodayTimeline,
+  getTodayConnectionDebt,
+  getTodayReviewDebt,
+  makeCalendarDayMap,
+  type TodayAction,
   type TodayAuditEvent,
   type TodayAuditEventKind,
-  buildTodayTimeline,
-  getBriefingCountForKind,
-  getCalendarDayCountForKind,
-  getCalendarDayTotalForKinds,
-  makeCalendarDayMap,
+  type TodayInsightCard,
+  type TodayInsightTone,
+  type TodayThread,
 } from "@/features/today/utils";
-import { useTodayBriefing, useTodayCalendar, toIsoDay } from "@/features/today/queries";
+import { toIsoDay, useTodayBriefing, useTodayCalendar } from "@/features/today/queries";
 import { cn } from "@/lib/utils";
-
-type TodayAuditScope = "day" | "week" | "month";
 
 const AUDIT_KIND_LABELS: Record<TodayAuditEventKind, string> = {
   capture: "Captures",
@@ -53,6 +71,15 @@ const AUDIT_KIND_LABELS: Record<TodayAuditEventKind, string> = {
   connection: "Links",
   review: "Reviews",
   gap: "Gaps",
+};
+
+const INSIGHT_ICONS: Record<TodayInsightCard["id"], LucideIcon> = {
+  capture: FileText,
+  stored: NotebookPen,
+  connection: Network,
+  review: Brain,
+  gap: Sparkles,
+  notes: FileEdit,
 };
 
 function formatSelectedDateLabel(value: Date): string {
@@ -74,73 +101,48 @@ function formatCountLabel(value: number, noun: string): string {
   return `${value} ${noun}${value === 1 ? "" : "s"}`;
 }
 
-function formatAuditScopeLabel(
-  scope: TodayAuditScope,
-  selectedDate: Date,
-  scopeStart: Date,
-  scopeEnd: Date,
-): string {
-  switch (scope) {
-    case "day":
-      return format(selectedDate, "MMMM d, yyyy");
-    case "week":
-      return `${format(scopeStart, "MMM d")} to ${format(scopeEnd, "MMM d, yyyy")}`;
-    case "month":
-      return format(selectedDate, "MMMM yyyy");
+function getToneClasses(tone: TodayInsightTone): string {
+  switch (tone) {
+    case "accent":
+      return "border-[var(--alfred-accent-muted)] bg-[var(--alfred-accent-subtle)]";
+    case "warning":
+      return "border-[var(--warning)]/30 bg-[var(--warning)]/10";
+    case "success":
+      return "border-[var(--success)]/25 bg-[var(--success)]/10";
+    case "neutral":
+      return "border-border bg-card";
   }
 }
 
-function describeCollapsedDay(
-  day: TodayCalendarDay,
-  selectedKinds: Set<TodayAuditEventKind>,
-): string {
-  const parts = TODAY_AUDIT_KINDS.flatMap((kind) => {
-    if (!selectedKinds.has(kind)) return [];
+function getDominantCalendarSignal(day: TodayCalendarDay | undefined): string {
+  if (!day || day.total_events === 0) return "quiet";
 
-    const count = getCalendarDayCountForKind(day, kind);
-    if (count === 0) return [];
+  const signals = [
+    { label: "capture", value: day.captures },
+    { label: "distillation", value: day.stored_cards },
+    { label: "connections", value: day.connections },
+    { label: "reviews", value: day.reviews_due },
+    { label: "gaps", value: day.gaps },
+  ].sort((left, right) => right.value - left.value);
 
-    return `${count} ${AUDIT_KIND_LABELS[kind].toLowerCase()}`;
-  });
-
-  if (parts.length > 0) {
-    return parts.join(" · ");
-  }
-
-  if (day.total_events > 0) {
-    return "Activity exists here, but none of it matches the current filters.";
-  }
-
-  return "Quiet day";
+  return signals[0]?.value ? signals[0].label : "mixed activity";
 }
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  meta,
-}: {
-  icon: typeof FileText;
-  label: string;
-  value: number;
-  meta?: string;
-}) {
-  return (
-    <div className="bg-card min-w-0 rounded-xl border p-4">
-      <div className="flex min-w-0 items-center gap-2 text-[10px] tracking-[0.16em] text-[var(--alfred-text-tertiary)] uppercase">
-        <Icon className="size-3.5" />
-        <span className="truncate font-mono">{label}</span>
-      </div>
-      <div className="mt-3 space-y-1">
-        <p className="font-serif text-4xl leading-none tabular-nums">{value}</p>
-        {meta ? (
-          <span className="block truncate font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
-            {meta}
-          </span>
-        ) : null}
-      </div>
-    </div>
-  );
+function describeCalendarDay(day: TodayCalendarDay | undefined): string {
+  if (!day || day.total_events === 0) {
+    return "No recorded activity. Use the day for reviews, connection passes, or capture.";
+  }
+
+  const connectionDebt =
+    day.stored_cards > day.connections ? day.stored_cards - day.connections : 0;
+  const reviewDebt =
+    day.reviews_due > day.reviews_completed ? day.reviews_due - day.reviews_completed : 0;
+  const debt =
+    connectionDebt > 0 ? "connection debt high" : reviewDebt > 0 ? "reviews due" : "balanced";
+
+  return `${formatCountLabel(day.total_events, "event")} / main signal: ${getDominantCalendarSignal(
+    day,
+  )} / ${debt}.`;
 }
 
 function PanelHeader({
@@ -181,107 +183,546 @@ function SectionCard({
   children: ReactNode;
 }) {
   return (
-    <section className="bg-card rounded-xl border p-5">
+    <section className="bg-card rounded-lg border p-5">
       <PanelHeader title={title} subtitle={subtitle} count={count} />
       <div className="mt-4">{children}</div>
     </section>
   );
 }
 
+function EmptyPanel({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="rounded-lg border border-dashed p-6 text-center">
+      <p className="font-serif text-xl">{title}</p>
+      <p className="text-muted-foreground mt-2 text-sm">{body}</p>
+    </div>
+  );
+}
+
 const TimelineItem = memo(function TimelineItem({ event }: { event: TodayAuditEvent }) {
-  const kindMeta = {
+  const kindMeta: Record<TodayAuditEventKind, { icon: LucideIcon; label: string }> = {
     capture: { icon: FileText, label: "Captured" },
     stored: { icon: NotebookPen, label: "Stored" },
     connection: { icon: GitBranch, label: "Connected" },
     review: { icon: Brain, label: "Review" },
     gap: { icon: Sparkles, label: "Gap" },
-  } as const;
+  };
 
   const meta = kindMeta[event.kind];
+  const Icon = meta.icon;
 
   return (
-    <div className="grid gap-3 rounded-lg border px-4 py-3 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center">
-      <div className="text-primary flex size-9 items-center justify-center rounded-full bg-[var(--alfred-accent-subtle)]">
-        <meta.icon className="size-4" />
+    <div className="grid gap-3 rounded-lg border px-3 py-3 md:grid-cols-[auto_minmax(0,1fr)]">
+      <div className="text-primary flex size-8 items-center justify-center rounded-sm bg-[var(--alfred-accent-subtle)]">
+        <Icon className="size-4" />
       </div>
       <div className="min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-2">
           <span className="font-mono text-[10px] tracking-[0.16em] text-[var(--alfred-text-tertiary)] uppercase">
             {meta.label}
           </span>
-          {event.status ? (
-            <span className="bg-muted rounded-sm px-1.5 py-0.5 font-mono text-[10px] tracking-[0.1em] text-[var(--alfred-text-tertiary)] uppercase">
-              {event.status}
-            </span>
-          ) : null}
+          <span className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+            {formatTimestamp(event.timestamp)}
+          </span>
         </div>
         <Link href={event.href} className="hover:text-primary mt-1 block truncate text-sm">
           {event.title}
         </Link>
         <p className="text-muted-foreground mt-1 text-xs">{event.meta}</p>
       </div>
-      <div className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
-        {formatTimestamp(event.timestamp)}
+    </div>
+  );
+});
+
+const InsightCard = memo(function InsightCard({ insight }: { insight: TodayInsightCard }) {
+  const Icon = INSIGHT_ICONS[insight.id];
+
+  return (
+    <Card className={cn("gap-4 rounded-lg py-5 shadow-none", getToneClasses(insight.tone))}>
+      <CardHeader className="px-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="font-mono text-[10px] tracking-[0.16em] text-[var(--alfred-text-tertiary)] uppercase">
+            {insight.label}
+          </div>
+          <Icon className="size-4 text-[var(--alfred-text-tertiary)]" />
+        </div>
+        <CardTitle className="font-serif text-3xl leading-none font-normal tabular-nums">
+          {insight.value}
+        </CardTitle>
+        <CardDescription className="font-mono text-[10px] tracking-[0.12em] uppercase">
+          {insight.metric}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="px-5">
+        <p className="text-muted-foreground text-sm">{insight.body}</p>
+      </CardContent>
+    </Card>
+  );
+});
+
+const ActionCard = memo(function ActionCard({ action }: { action: TodayAction }) {
+  return (
+    <Card className={cn("rounded-lg py-5 shadow-none", getToneClasses(action.tone))}>
+      <CardHeader className="gap-3 px-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle className="text-base leading-snug font-medium">{action.title}</CardTitle>
+            <CardDescription className="mt-2">{action.body}</CardDescription>
+          </div>
+          <ArrowRight className="mt-0.5 size-4 shrink-0 text-[var(--alfred-text-tertiary)]" />
+        </div>
+      </CardHeader>
+      <CardContent className="px-5">
+        <Button asChild size="sm" variant={action.tone === "warning" ? "default" : "outline"}>
+          <Link href={action.href}>{action.cta}</Link>
+        </Button>
+      </CardContent>
+    </Card>
+  );
+});
+
+const ThreadRow = memo(function ThreadRow({ thread }: { thread: TodayThread }) {
+  return (
+    <div className="rounded-lg border px-4 py-3">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium">{thread.name}</p>
+          <p className="text-muted-foreground mt-1 text-xs">
+            {formatCountLabel(thread.cards, "card")} / {formatCountLabel(thread.links, "link")} /{" "}
+            {formatCountLabel(thread.reviews, "review")}
+          </p>
+        </div>
+        <Badge
+          variant="outline"
+          className="rounded-sm font-mono text-[10px] tracking-[0.1em] uppercase"
+        >
+          {thread.status}
+        </Badge>
       </div>
     </div>
   );
 });
 
-const CollapsedAuditRow = memo(function CollapsedAuditRow({
+const MonthDayButton = memo(function MonthDayButton({
   day,
   isSelected,
-  selectedKinds,
-  onSelectDay,
+  onSelectDate,
 }: {
   day: TodayCalendarDay;
   isSelected: boolean;
-  selectedKinds: Set<TodayAuditEventKind>;
-  onSelectDay: (isoDate: string) => void;
+  onSelectDate: (date: Date) => void;
 }) {
-  const filteredTotal = getCalendarDayTotalForKinds(day, selectedKinds);
+  const handleClick = useCallback(() => {
+    onSelectDate(parseISO(day.date));
+  }, [day.date, onSelectDate]);
 
   return (
     <button
       type="button"
-      onClick={() => onSelectDay(day.date)}
+      onClick={handleClick}
       className={cn(
-        "w-full rounded-lg border px-4 py-3 text-left transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--alfred-accent-subtle)]",
+        "w-full rounded-lg border px-3 py-3 text-left transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--alfred-accent-subtle)]",
         isSelected && "border-[var(--border-strong)] bg-[var(--alfred-accent-subtle)]",
       )}
     >
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-medium">
-              {format(parseISO(day.date), "EEE, MMM d")}
-            </span>
-            {isSelected ? (
-              <span className="rounded-sm border px-1.5 py-0.5 font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
-                selected day
-              </span>
-            ) : null}
-          </div>
-          <p className="text-muted-foreground mt-2 text-xs">
-            {describeCollapsedDay(day, selectedKinds)}
-          </p>
-        </div>
-        <div className="text-right">
-          <div className="font-serif text-2xl leading-none tabular-nums">{filteredTotal}</div>
-          <div className="mt-1 font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
-            {formatCountLabel(filteredTotal, "filtered event")}
-          </div>
-        </div>
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-medium">{format(parseISO(day.date), "EEE, MMM d")}</span>
+        <span className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+          {day.total_events} events
+        </span>
       </div>
+      <p className="text-muted-foreground mt-2 text-xs">{describeCalendarDay(day)}</p>
     </button>
   );
 });
 
-function EmptyPanel({ title, body }: { title: string; body: string }) {
+const CaptureItem = memo(function CaptureItem({ capture }: { capture: TodayCaptureItem }) {
   return (
-    <div className="rounded-xl border border-dashed p-6 text-center">
-      <p className="font-serif text-xl">{title}</p>
-      <p className="text-muted-foreground mt-2 text-sm">{body}</p>
+    <Link
+      href={`/documents/${capture.id}`}
+      className="block rounded-lg border px-4 py-3 transition-colors hover:bg-[var(--alfred-accent-subtle)]"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm">{capture.title}</p>
+          <p className="text-muted-foreground mt-1 text-xs">
+            {capture.content_type ?? "capture"} / {formatTimestamp(capture.created_at)}
+          </p>
+        </div>
+        <Badge variant="outline" className="rounded-sm font-mono text-[10px] uppercase">
+          {capture.pipeline_status}
+        </Badge>
+      </div>
+    </Link>
+  );
+});
+
+const StoredCardItem = memo(function StoredCardItem({ card }: { card: TodayStoredCardItem }) {
+  return (
+    <Link
+      href={`/knowledge/${card.card_id}`}
+      className="block rounded-lg border px-4 py-3 transition-colors hover:bg-[var(--alfred-accent-subtle)]"
+    >
+      <p className="truncate text-sm">{card.title}</p>
+      <p className="text-muted-foreground mt-1 text-xs">
+        {card.topic ?? "Untopiced"} / {card.tags.length > 0 ? card.tags.join(" / ") : "No tags"} /{" "}
+        {formatTimestamp(card.created_at)}
+      </p>
+    </Link>
+  );
+});
+
+const ConnectionItem = memo(function ConnectionItem({
+  connection,
+}: {
+  connection: TodayConnectionItem;
+}) {
+  return (
+    <div className="rounded-lg border px-4 py-3">
+      <div className="flex items-center gap-2 text-sm">
+        <Link
+          href={`/knowledge/${connection.from_card_id}`}
+          className="hover:text-primary truncate"
+        >
+          {connection.from_title}
+        </Link>
+        <span className="text-[var(--alfred-text-tertiary)]">-&gt;</span>
+        <Link href={`/knowledge/${connection.to_card_id}`} className="hover:text-primary truncate">
+          {connection.to_title}
+        </Link>
+      </div>
+      <p className="text-muted-foreground mt-1 text-xs">
+        {connection.type} / {formatTimestamp(connection.created_at)}
+      </p>
     </div>
+  );
+});
+
+const ReviewItem = memo(function ReviewItem({ review }: { review: TodayReviewItem }) {
+  return (
+    <Link
+      href={`/knowledge/${review.card_id}`}
+      className="block rounded-lg border px-4 py-3 transition-colors hover:bg-[var(--alfred-accent-subtle)]"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm">{review.card_title}</p>
+          <p className="text-muted-foreground mt-1 text-xs">
+            Stage {review.stage} / due {formatTimestamp(review.due_at)}
+          </p>
+        </div>
+        <Badge variant="outline" className="rounded-sm font-mono text-[10px] uppercase">
+          {review.status}
+        </Badge>
+      </div>
+    </Link>
+  );
+});
+
+const GapItem = memo(function GapItem({ gap }: { gap: TodayGapItem }) {
+  return (
+    <Link
+      href={`/knowledge/${gap.card_id}`}
+      className="block rounded-lg border border-dashed px-4 py-3 transition-colors hover:bg-[var(--alfred-accent-subtle)]"
+    >
+      <p className="truncate text-sm">{gap.title}</p>
+      <p className="text-muted-foreground mt-1 text-xs">
+        Stub card / {formatTimestamp(gap.created_at)}
+      </p>
+    </Link>
+  );
+});
+
+function AuditRail({
+  filteredTimeline,
+  selectedKinds,
+  onKindsChange,
+  onResetKinds,
+  isShowingAllKinds,
+  hasDayActivity,
+  isLoading,
+  selectedDate,
+}: {
+  filteredTimeline: TodayAuditEvent[];
+  selectedKinds: TodayAuditEventKind[];
+  onKindsChange: (value: string[]) => void;
+  onResetKinds: () => void;
+  isShowingAllKinds: boolean;
+  hasDayActivity: boolean;
+  isLoading: boolean;
+  selectedDate: Date;
+}) {
+  return (
+    <section className="bg-card flex max-h-[calc(100vh-7rem)] flex-col rounded-lg border">
+      <div className="border-b p-4">
+        <PanelHeader
+          title="Audit Trail"
+          subtitle={`${format(selectedDate, "MMMM d, yyyy")} / ${formatCountLabel(
+            filteredTimeline.length,
+            "visible event",
+          )}`}
+        />
+
+        <div className="mt-4">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+              <ListFilter className="size-3.5" />
+              Filters
+            </div>
+            {!isShowingAllKinds ? (
+              <Button variant="ghost" size="sm" onClick={onResetKinds}>
+                Show all
+              </Button>
+            ) : null}
+          </div>
+          <ToggleGroup
+            type="multiple"
+            value={selectedKinds}
+            onValueChange={onKindsChange}
+            variant="outline"
+            size="sm"
+            spacing={1}
+            className="w-full flex-wrap justify-start"
+          >
+            {TODAY_AUDIT_KINDS.map((kind) => (
+              <ToggleGroupItem key={kind} value={kind} className="min-w-[6.75rem] justify-center">
+                {AUDIT_KIND_LABELS[kind]}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="space-y-3">
+          {isLoading ? (
+            Array.from({ length: 5 }).map((_, index) => (
+              <Skeleton key={index} className="h-24 w-full rounded-lg" />
+            ))
+          ) : filteredTimeline.length > 0 ? (
+            filteredTimeline.map((event) => <TimelineItem key={event.id} event={event} />)
+          ) : (
+            <EmptyPanel
+              title={hasDayActivity ? "Nothing matched" : "Quiet day"}
+              body={
+                hasDayActivity
+                  ? "This date has activity, but none of it matches the selected filters."
+                  : "No documents, cards, links, reviews, or gaps were recorded for this date."
+              }
+            />
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CalendarAside({
+  activityByDay,
+  monthAuditDays,
+  monthTotals,
+  selectedDate,
+  selectedDayKey,
+  selectedDaySummary,
+  timeZone,
+  today,
+  visibleMonth,
+  onMonthChange,
+  onSelectDate,
+}: {
+  activityByDay: Map<string, TodayCalendarDay>;
+  monthAuditDays: TodayCalendarDay[];
+  monthTotals: {
+    active_days: number;
+    total_events: number;
+  };
+  selectedDate: Date;
+  selectedDayKey: string;
+  selectedDaySummary: TodayCalendarDay | undefined;
+  timeZone: string;
+  today: Date;
+  visibleMonth: Date;
+  onMonthChange: (date: Date) => void;
+  onSelectDate: (date: Date) => void;
+}) {
+  return (
+    <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
+      <section className="bg-card rounded-lg border p-4">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <div className="font-mono text-[10px] tracking-[0.16em] text-[var(--alfred-text-tertiary)] uppercase">
+              Calendar
+            </div>
+            <p className="text-muted-foreground mt-2 text-sm">
+              Select a day to see what matters about it.
+            </p>
+          </div>
+          <div className="rounded-sm border px-2 py-1 font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+            {timeZone}
+          </div>
+        </div>
+
+        <Calendar
+          mode="single"
+          month={visibleMonth}
+          onMonthChange={onMonthChange}
+          selected={selectedDate}
+          onSelect={(value) => {
+            if (!value) return;
+            onSelectDate(value);
+          }}
+          disabled={{ after: today }}
+          modifiers={{
+            low: (date) => {
+              const total = activityByDay.get(toIsoDay(date))?.total_events ?? 0;
+              return total >= 1 && total <= 2;
+            },
+            medium: (date) => {
+              const total = activityByDay.get(toIsoDay(date))?.total_events ?? 0;
+              return total >= 3 && total <= 5;
+            },
+            high: (date) => (activityByDay.get(toIsoDay(date))?.total_events ?? 0) >= 6,
+            reviewHeavy: (date) => (activityByDay.get(toIsoDay(date))?.reviews_due ?? 0) > 0,
+          }}
+          modifiersClassNames={{
+            low: "bg-primary/5 text-foreground",
+            medium: "border border-primary/20 bg-primary/10 text-foreground",
+            high: "border border-primary/30 bg-primary/15 text-primary",
+            reviewHeavy: "ring-1 ring-[var(--warning)]/30",
+          }}
+          className="bg-background w-full rounded-lg border p-2"
+        />
+
+        <div className="mt-4 rounded-lg border bg-[var(--alfred-accent-subtle)] p-3">
+          <div className="flex items-center gap-2 font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+            <CalendarDays className="size-3.5" />
+            Why this day matters
+          </div>
+          <p className="mt-2 text-sm">{format(selectedDate, "MMM d")}</p>
+          <p className="text-muted-foreground mt-1 text-xs">
+            {describeCalendarDay(selectedDaySummary)}
+          </p>
+        </div>
+
+        <div className="text-muted-foreground mt-4 grid grid-cols-2 gap-2 text-xs">
+          <div className="rounded-lg border px-3 py-2">
+            <div className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+              Active days
+            </div>
+            <div className="mt-2 font-serif text-2xl leading-none">{monthTotals.active_days}</div>
+          </div>
+          <div className="rounded-lg border px-3 py-2">
+            <div className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+              Month events
+            </div>
+            <div className="mt-2 font-serif text-2xl leading-none">{monthTotals.total_events}</div>
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-card rounded-lg border p-4">
+        <PanelHeader
+          title="Month Signals"
+          subtitle={format(visibleMonth, "MMMM yyyy")}
+          count={monthAuditDays.length}
+        />
+        <div className="mt-4 space-y-2">
+          {monthAuditDays.length > 0 ? (
+            monthAuditDays.map((day) => (
+              <MonthDayButton
+                key={day.date}
+                day={day}
+                isSelected={selectedDayKey === day.date}
+                onSelectDate={onSelectDate}
+              />
+            ))
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              No recorded learning activity in this month yet.
+            </p>
+          )}
+        </div>
+      </section>
+    </aside>
+  );
+}
+
+function ReviewQueuePanel({
+  reviews,
+  reviewDebt,
+  date,
+}: {
+  reviews: TodayReviewItem[];
+  reviewDebt: number;
+  date: string;
+}) {
+  return (
+    <section className="bg-card rounded-lg border p-5">
+      <PanelHeader
+        title="Due Reviews"
+        subtitle={
+          reviewDebt > 0
+            ? `${formatCountLabel(reviewDebt, "card")} need attention.`
+            : "No review debt remains for this date."
+        }
+        count={reviews.length}
+      />
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button asChild size="sm">
+          <Link href={`/today?view=table&date=${date}`}>Start review session</Link>
+        </Button>
+        <Button asChild size="sm" variant="outline">
+          <Link href="/knowledge">Open knowledge</Link>
+        </Button>
+      </div>
+      <div className="mt-4 space-y-2">
+        {reviews.length > 0 ? (
+          reviews.map((review) => <ReviewItem key={review.review_id} review={review} />)
+        ) : (
+          <EmptyPanel
+            title="No reviews due"
+            body="Use the time for a connection pass or a synthesis pass on recent cards."
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ConnectionDebtPanel({
+  cards,
+  connectionDebt,
+}: {
+  cards: TodayStoredCardItem[];
+  connectionDebt: number;
+}) {
+  return (
+    <section className="bg-card rounded-lg border p-5">
+      <PanelHeader
+        title="Unconnected Knowledge"
+        subtitle={
+          connectionDebt > 0
+            ? `${formatCountLabel(connectionDebt, "new card")} need a connection pass.`
+            : "New cards have matching link activity."
+        }
+        count={connectionDebt}
+      />
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button asChild size="sm" variant={connectionDebt > 0 ? "default" : "outline"}>
+          <Link href="/knowledge">Open connection pass</Link>
+        </Button>
+      </div>
+      <div className="mt-4 space-y-2">
+        {cards.length > 0 ? (
+          cards.slice(0, 5).map((card) => <StoredCardItem key={card.card_id} card={card} />)
+        ) : (
+          <EmptyPanel
+            title="No new cards"
+            body="There is nothing new to connect from this selected day."
+          />
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -289,7 +730,6 @@ export function TodayDashboard() {
   const today = startOfDay(new Date());
   const [selectedDate, setSelectedDate] = useState(today);
   const [visibleMonth, setVisibleMonth] = useState(today);
-  const [auditScope, setAuditScope] = useState<TodayAuditScope>("day");
   const [selectedKinds, setSelectedKinds] = useState<TodayAuditEventKind[]>(TODAY_AUDIT_KINDS);
   const timeZone = useBrowserTimeZone();
 
@@ -297,11 +737,6 @@ export function TodayDashboard() {
     const normalized = startOfDay(value);
     setSelectedDate(normalized);
     setVisibleMonth(normalized);
-  }, []);
-
-  const handleScopeChange = useCallback((value: string) => {
-    if (!value) return;
-    setAuditScope(value as TodayAuditScope);
   }, []);
 
   const handleKindsChange = useCallback((value: string[]) => {
@@ -312,14 +747,6 @@ export function TodayDashboard() {
   const handleResetKinds = useCallback(() => {
     setSelectedKinds(TODAY_AUDIT_KINDS);
   }, []);
-
-  const handleDrillIntoDay = useCallback(
-    (isoDate: string) => {
-      setAuditScope("day");
-      selectDate(parseISO(isoDate));
-    },
-    [selectDate],
-  );
 
   const goToPreviousDay = useCallback(() => {
     selectDate(addDays(selectedDate, -1));
@@ -353,45 +780,6 @@ export function TodayDashboard() {
     () => new Set<TodayAuditEventKind>(selectedKinds),
     [selectedKinds],
   );
-
-  const scopeStart = useMemo(() => {
-    switch (auditScope) {
-      case "day":
-        return selectedDate;
-      case "week":
-        return startOfWeek(selectedDate, { weekStartsOn: 1 });
-      case "month":
-        return startOfMonth(selectedDate);
-    }
-  }, [auditScope, selectedDate]);
-
-  const scopeEnd = useMemo(() => {
-    switch (auditScope) {
-      case "day":
-        return selectedDate;
-      case "week":
-        return endOfWeek(selectedDate, { weekStartsOn: 1 });
-      case "month":
-        return endOfMonth(selectedDate);
-    }
-  }, [auditScope, selectedDate]);
-
-  const scopeCalendarDays = useMemo(() => {
-    const startKey = toIsoDay(scopeStart);
-    const endKey = toIsoDay(scopeEnd);
-
-    return (calendarQuery.data?.days ?? [])
-      .filter((day) => day.date >= startKey && day.date <= endKey)
-      .sort((left, right) => right.date.localeCompare(left.date));
-  }, [calendarQuery.data?.days, scopeEnd, scopeStart]);
-
-  const collapsedAuditDays = useMemo(() => {
-    if (auditScope === "day") return [];
-    if (auditScope === "week") return scopeCalendarDays;
-
-    return scopeCalendarDays.filter((day) => day.total_events > 0 || day.date === selectedDayKey);
-  }, [auditScope, scopeCalendarDays, selectedDayKey]);
-
   const filteredTimeline = useMemo(
     () => timeline.filter((event) => selectedKindSet.has(event.kind)),
     [selectedKindSet, timeline],
@@ -414,88 +802,32 @@ export function TodayDashboard() {
       .filter((day) => isSameMonth(parseISO(day.date), visibleMonth))
       .reduce(
         (acc, day) => {
-          acc.captures += day.captures;
-          acc.stored_cards += day.stored_cards;
-          acc.connections += day.connections;
-          acc.reviews_due += day.reviews_due;
-          acc.gaps += day.gaps;
           acc.total_events += day.total_events;
           if (day.total_events > 0) acc.active_days += 1;
           return acc;
         },
         {
-          captures: 0,
-          stored_cards: 0,
-          connections: 0,
-          reviews_due: 0,
-          gaps: 0,
-          total_events: 0,
           active_days: 0,
+          total_events: 0,
         },
       );
   }, [calendarQuery.data?.days, visibleMonth]);
 
-  const scopeKindCounts = useMemo(() => {
-    const counts: Record<TodayAuditEventKind, number> = {
-      capture: 0,
-      stored: 0,
-      connection: 0,
-      review: 0,
-      gap: 0,
-    };
-
-    if (auditScope === "day" && briefingQuery.data) {
-      for (const kind of TODAY_AUDIT_KINDS) {
-        counts[kind] = getBriefingCountForKind(briefingQuery.data, kind);
-      }
-      return counts;
-    }
-
-    for (const day of scopeCalendarDays) {
-      for (const kind of TODAY_AUDIT_KINDS) {
-        counts[kind] += getCalendarDayCountForKind(day, kind);
-      }
-    }
-
-    return counts;
-  }, [auditScope, briefingQuery.data, scopeCalendarDays]);
-
-  const scopeTotals = useMemo(() => {
-    return scopeCalendarDays.reduce(
-      (acc, day) => {
-        const filteredTotal = getCalendarDayTotalForKinds(day, selectedKindSet);
-
-        acc.captures += day.captures;
-        acc.stored_cards += day.stored_cards;
-        acc.connections += day.connections;
-        acc.reviews_due += day.reviews_due;
-        acc.reviews_completed += day.reviews_completed;
-        acc.gaps += day.gaps;
-        acc.total_events += day.total_events;
-        acc.filtered_total_events += filteredTotal;
-
-        if (day.total_events > 0) acc.active_days += 1;
-        if (filteredTotal > 0) acc.filtered_active_days += 1;
-
-        return acc;
-      },
-      {
-        captures: 0,
-        stored_cards: 0,
-        connections: 0,
-        reviews_due: 0,
-        reviews_completed: 0,
-        gaps: 0,
-        total_events: 0,
-        filtered_total_events: 0,
-        active_days: 0,
-        filtered_active_days: 0,
-      },
-    );
-  }, [scopeCalendarDays, selectedKindSet]);
+  const briefing = briefingQuery.data;
+  const briefingLines = useMemo(
+    () => (briefing ? buildTodayBriefingLines(briefing) : []),
+    [briefing],
+  );
+  const insights = useMemo(() => (briefing ? buildTodayInsightCards(briefing) : []), [briefing]);
+  const nextActions = useMemo(() => (briefing ? buildTodayNextActions(briefing) : []), [briefing]);
+  const threads = useMemo(() => (briefing ? buildTodayThreads(briefing) : []), [briefing]);
+  const connectionDebt = briefing ? getTodayConnectionDebt(briefing) : 0;
+  const reviewDebt = briefing ? getTodayReviewDebt(briefing) : 0;
 
   const isInitialLoading = !calendarQuery.data && calendarQuery.isLoading;
-  const isBriefingLoading = !briefingQuery.data && briefingQuery.isLoading;
+  const isBriefingLoading = !briefing && briefingQuery.isLoading;
+  const hasDayActivity = (briefing?.stats.total_events ?? 0) > 0;
+  const isShowingAllKinds = selectedKinds.length === TODAY_AUDIT_KINDS.length;
 
   if (isInitialLoading) {
     return (
@@ -505,16 +837,17 @@ export function TodayDashboard() {
           <Skeleton className="h-12 w-80" />
           <Skeleton className="h-5 w-[32rem]" />
         </div>
-        <div className="grid gap-8 xl:grid-cols-[320px_minmax(0,1fr)]">
-          <Skeleton className="h-[30rem] w-full rounded-xl" />
+        <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)_340px]">
+          <Skeleton className="h-[32rem] w-full rounded-lg" />
           <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              {Array.from({ length: 5 }).map((_, index) => (
-                <Skeleton key={index} className="h-28 w-full rounded-xl" />
+            <Skeleton className="h-[14rem] w-full rounded-lg" />
+            <div className="grid gap-3 md:grid-cols-2">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <Skeleton key={index} className="h-32 w-full rounded-lg" />
               ))}
             </div>
-            <Skeleton className="h-[20rem] w-full rounded-xl" />
           </div>
+          <Skeleton className="hidden h-[32rem] w-full rounded-lg xl:block" />
         </div>
       </div>
     );
@@ -534,37 +867,35 @@ export function TodayDashboard() {
     );
   }
 
-  const briefing = briefingQuery.data;
-  const hasDayActivity = (briefing?.stats.total_events ?? 0) > 0;
-  const hiddenQuietMonthDays =
-    auditScope === "month" ? Math.max(scopeCalendarDays.length - collapsedAuditDays.length, 0) : 0;
-  const scopeLabel = formatAuditScopeLabel(auditScope, selectedDate, scopeStart, scopeEnd);
-  const isShowingAllKinds = selectedKinds.length === TODAY_AUDIT_KINDS.length;
-
   return (
     <div className="space-y-8">
       <header className="border-b pb-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-3">
             <div className="font-mono text-[10px] tracking-[0.18em] text-[var(--alfred-text-tertiary)] uppercase">
-              Daily Audit
+              Daily Briefing
             </div>
             <div>
-              <h1 className="font-serif text-4xl tracking-tight">
-                {formatSelectedDateLabel(selectedDate)}
-              </h1>
-              <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
-                Explore what you captured, distilled, connected, and still owe yourself on{" "}
-                {format(selectedDate, "MMMM d, yyyy")}. Polymath keeps the ledger by day so your
-                learning stays inspectable.
-              </p>
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h1 className="font-serif text-4xl tracking-tight">Today</h1>
+                <span className="font-mono text-[11px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+                  {formatSelectedDateLabel(selectedDate)} / {format(selectedDate, "MMMM d, yyyy")}
+                </span>
+              </div>
+              <div className="text-muted-foreground mt-3 max-w-3xl space-y-1 text-sm">
+                {briefingLines.length > 0 ? (
+                  briefingLines.map((line) => <p key={line}>{line}</p>)
+                ) : (
+                  <p>Loading the daily briefing for {format(selectedDate, "MMMM d, yyyy")}.</p>
+                )}
+              </div>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={goToPreviousDay}>
               <ChevronLeft className="size-4" />
-              Previous day
+              Previous
             </Button>
             <Button
               variant="outline"
@@ -572,168 +903,74 @@ export function TodayDashboard() {
               onClick={goToNextDay}
               disabled={selectedDate >= today}
             >
-              Next day
+              Next
               <ChevronRight className="size-4" />
             </Button>
             <Button size="sm" onClick={goToToday}>
               Jump to today
             </Button>
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="sm" className="xl:hidden">
+                  <Menu className="size-4" />
+                  Audit
+                </Button>
+              </SheetTrigger>
+              <SheetContent className="w-[min(92vw,28rem)] p-0 sm:max-w-md">
+                <SheetHeader className="border-b">
+                  <SheetTitle>Audit Trail</SheetTitle>
+                  <SheetDescription>
+                    Filter and inspect the raw events for this day.
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="min-h-0 flex-1 p-4">
+                  <AuditRail
+                    filteredTimeline={filteredTimeline}
+                    selectedKinds={selectedKinds}
+                    onKindsChange={handleKindsChange}
+                    onResetKinds={handleResetKinds}
+                    isShowingAllKinds={isShowingAllKinds}
+                    hasDayActivity={hasDayActivity}
+                    isLoading={isBriefingLoading}
+                    selectedDate={selectedDate}
+                  />
+                </div>
+              </SheetContent>
+            </Sheet>
           </div>
         </div>
       </header>
 
-      <div className="grid gap-8 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-          <section className="bg-card rounded-xl border p-4">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <div className="font-mono text-[10px] tracking-[0.16em] text-[var(--alfred-text-tertiary)] uppercase">
-                  Calendar
-                </div>
-                <p className="text-muted-foreground mt-2 text-sm">
-                  Select any day to audit what landed in Polymath.
-                </p>
-              </div>
-              <div className="rounded-sm border px-2 py-1 font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
-                {timeZone}
-              </div>
-            </div>
+      <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)_340px]">
+        <CalendarAside
+          activityByDay={activityByDay}
+          monthAuditDays={monthAuditDays}
+          monthTotals={monthTotals}
+          selectedDate={selectedDate}
+          selectedDayKey={selectedDayKey}
+          selectedDaySummary={selectedDaySummary}
+          timeZone={timeZone}
+          today={today}
+          visibleMonth={visibleMonth}
+          onMonthChange={setVisibleMonth}
+          onSelectDate={selectDate}
+        />
 
-            <Calendar
-              mode="single"
-              month={visibleMonth}
-              onMonthChange={setVisibleMonth}
-              selected={selectedDate}
-              onSelect={(value) => {
-                if (!value) return;
-                selectDate(value);
-              }}
-              disabled={{ after: today }}
-              modifiers={{
-                low: (date) => {
-                  const total = activityByDay.get(toIsoDay(date))?.total_events ?? 0;
-                  return total >= 1 && total <= 2;
-                },
-                medium: (date) => {
-                  const total = activityByDay.get(toIsoDay(date))?.total_events ?? 0;
-                  return total >= 3 && total <= 5;
-                },
-                high: (date) => (activityByDay.get(toIsoDay(date))?.total_events ?? 0) >= 6,
-                reviewHeavy: (date) => (activityByDay.get(toIsoDay(date))?.reviews_due ?? 0) > 0,
-              }}
-              modifiersClassNames={{
-                low: "bg-primary/5 text-foreground",
-                medium: "border border-primary/20 bg-primary/10 text-foreground",
-                high: "border border-primary/30 bg-primary/15 text-primary",
-                reviewHeavy: "ring-1 ring-[var(--warning)]/30",
-              }}
-              className="bg-background w-full rounded-lg border p-2"
-            />
-
-            <div className="text-muted-foreground mt-4 grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded-lg border px-3 py-2">
-                <div className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
-                  Active days
-                </div>
-                <div className="mt-2 font-serif text-2xl leading-none">
-                  {monthTotals.active_days}
-                </div>
-              </div>
-              <div className="rounded-lg border px-3 py-2">
-                <div className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
-                  Month events
-                </div>
-                <div className="mt-2 font-serif text-2xl leading-none">
-                  {monthTotals.total_events}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 border-t pt-4">
-              <div className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
-                Heatmap legend
-              </div>
-              <div className="text-muted-foreground mt-3 grid grid-cols-2 gap-2 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="bg-background size-3 rounded-sm border" />
-                  Quiet
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="bg-primary/5 size-3 rounded-sm" />
-                  1-2 events
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="border-primary/20 bg-primary/10 size-3 rounded-sm border" />
-                  3-5 events
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="border-primary/30 bg-primary/15 size-3 rounded-sm border" />
-                  6+ events
-                </div>
-              </div>
-              <p className="text-muted-foreground mt-3 text-xs">
-                Amber rings mark days with reviews due.
-              </p>
-            </div>
-          </section>
-
-          <section className="bg-card rounded-xl border p-4">
-            <PanelHeader
-              title="Month At A Glance"
-              subtitle={format(visibleMonth, "MMMM yyyy")}
-              count={monthAuditDays.length}
-            />
-            <div className="mt-4 space-y-2">
-              {monthAuditDays.length > 0 ? (
-                monthAuditDays.map((day) => (
-                  <button
-                    key={day.date}
-                    type="button"
-                    onClick={() => selectDate(parseISO(day.date))}
-                    className={cn(
-                      "w-full rounded-lg border px-3 py-3 text-left transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--alfred-accent-subtle)]",
-                      selectedDayKey === day.date &&
-                        "border-[var(--border-strong)] bg-[var(--alfred-accent-subtle)]",
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium">
-                        {format(parseISO(day.date), "EEE, MMM d")}
-                      </span>
-                      <span className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
-                        {day.total_events} events
-                      </span>
-                    </div>
-                    <p className="text-muted-foreground mt-2 text-xs">
-                      {day.captures} captures · {day.stored_cards} cards · {day.connections} links ·{" "}
-                      {day.reviews_due} reviews
-                    </p>
-                  </button>
-                ))
-              ) : (
-                <p className="text-muted-foreground text-sm">
-                  No recorded learning activity in this month yet.
-                </p>
-              )}
-            </div>
-          </section>
-        </aside>
-
-        <main className="space-y-6">
+        <main className="min-w-0 space-y-6">
           {isBriefingLoading ? (
             <div className="space-y-4">
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3">
-                {Array.from({ length: 5 }).map((_, index) => (
-                  <Skeleton key={index} className="h-28 w-full rounded-xl" />
+              <Skeleton className="h-[14rem] w-full rounded-lg" />
+              <div className="grid gap-3 md:grid-cols-2">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <Skeleton key={index} className="h-32 w-full rounded-lg" />
                 ))}
               </div>
-              <Skeleton className="h-[18rem] w-full rounded-xl" />
             </div>
           ) : briefingQuery.isError || !briefing ? (
-            <div className="bg-card rounded-xl border p-6">
+            <div className="bg-card rounded-lg border p-6">
               <p className="font-serif text-2xl">Could not load this day</p>
               <p className="text-muted-foreground mt-2 text-sm">
-                Polymath could not build the audit for {format(selectedDate, "MMMM d, yyyy")}.
+                Alfred could not build the briefing for {format(selectedDate, "MMMM d, yyyy")}.
               </p>
               <Button
                 variant="outline"
@@ -744,316 +981,190 @@ export function TodayDashboard() {
               </Button>
             </div>
           ) : (
-            <>
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3">
-                <StatCard
-                  icon={FileText}
-                  label="Captured"
-                  value={briefing.stats.total_captures}
-                  meta="documents"
-                />
-                <StatCard
-                  icon={NotebookPen}
-                  label="Stored"
-                  value={briefing.stats.total_cards_created}
-                  meta="cards"
-                />
-                <StatCard
-                  icon={GitBranch}
-                  label="Connected"
-                  value={briefing.stats.total_connections}
-                  meta="links"
-                />
-                <StatCard
-                  icon={Brain}
-                  label="Reviews"
-                  value={briefing.stats.total_reviews_due}
-                  meta={`${briefing.stats.total_reviews_completed} cleared`}
-                />
-                <StatCard
-                  icon={Sparkles}
-                  label="Gaps"
-                  value={briefing.stats.total_gaps}
-                  meta="stubs"
-                />
-              </div>
+            <Tabs defaultValue="briefing" className="space-y-6">
+              <TabsList className="rounded-sm">
+                <TabsTrigger value="briefing">Briefing</TabsTrigger>
+                <TabsTrigger value="review">Review Queue</TabsTrigger>
+                <TabsTrigger value="ledger">Ledger</TabsTrigger>
+              </TabsList>
 
-              <section className="bg-card rounded-xl border p-5">
-                <PanelHeader
-                  title="Audit Controls"
-                  subtitle="Switch between a day ledger and collapsed range summaries, then focus the record on the kinds of learning you want to inspect."
-                />
-                <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-                  <div>
-                    <div className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
-                      Scope
-                    </div>
-                    <ToggleGroup
-                      type="single"
-                      value={auditScope}
-                      onValueChange={handleScopeChange}
-                      variant="outline"
-                      size="sm"
-                      spacing={1}
-                      className="mt-2 w-full flex-wrap"
-                    >
-                      <ToggleGroupItem value="day" className="min-w-20 justify-center">
-                        Day
-                      </ToggleGroupItem>
-                      <ToggleGroupItem value="week" className="min-w-20 justify-center">
-                        Week
-                      </ToggleGroupItem>
-                      <ToggleGroupItem value="month" className="min-w-20 justify-center">
-                        Month
-                      </ToggleGroupItem>
-                    </ToggleGroup>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
-                        Event filters
-                      </div>
-                      {!isShowingAllKinds ? (
-                        <Button variant="ghost" size="sm" onClick={handleResetKinds}>
-                          Show all
-                        </Button>
-                      ) : null}
-                    </div>
-                    <ToggleGroup
-                      type="multiple"
-                      value={selectedKinds}
-                      onValueChange={handleKindsChange}
-                      variant="outline"
-                      size="sm"
-                      spacing={1}
-                      className="mt-2 w-full flex-wrap"
-                    >
-                      {TODAY_AUDIT_KINDS.map((kind) => (
-                        <ToggleGroupItem
-                          key={kind}
-                          value={kind}
-                          className="min-w-[8.75rem] justify-between gap-3"
-                        >
-                          <span>{AUDIT_KIND_LABELS[kind]}</span>
-                          <span className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
-                            {scopeKindCounts[kind]}
-                          </span>
-                        </ToggleGroupItem>
-                      ))}
-                    </ToggleGroup>
-                  </div>
-                </div>
-              </section>
-
-              <section className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
-                <div className="bg-card rounded-xl border p-5">
+              <TabsContent value="briefing" className="space-y-6">
+                <section className="space-y-3">
                   <PanelHeader
-                    title="Audit Trail"
-                    subtitle={
-                      auditScope === "day"
-                        ? `A single ledger for ${scopeLabel}`
-                        : `Collapsed by day for ${scopeLabel}`
-                    }
-                    count={
-                      auditScope === "day"
-                        ? formatCountLabel(filteredTimeline.length, "event")
-                        : formatCountLabel(scopeTotals.filtered_active_days, "active day")
-                    }
+                    title="Next Best Actions"
+                    subtitle="The highest-leverage work Alfred sees from this day."
+                    count={nextActions.length}
                   />
-                  <div className="mt-4 space-y-3">
-                    {auditScope === "day" ? (
-                      filteredTimeline.length > 0 ? (
-                        filteredTimeline.map((event) => (
-                          <TimelineItem key={event.id} event={event} />
-                        ))
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {nextActions.map((action) => (
+                      <ActionCard key={action.id} action={action} />
+                    ))}
+                  </div>
+                </section>
+
+                <section className="space-y-3">
+                  <PanelHeader
+                    title="Interpreted Signals"
+                    subtitle="The numbers with their product meaning attached."
+                  />
+                  <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+                    {insights.map((insight) => (
+                      <InsightCard key={insight.id} insight={insight} />
+                    ))}
+                  </div>
+                </section>
+
+                <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.8fr)]">
+                  <div className="bg-card rounded-lg border p-5">
+                    <PanelHeader
+                      title="Knowledge Threads"
+                      subtitle="Themes from the selected day's cards, links, reviews, and gaps."
+                      count={threads.length}
+                    />
+                    <div className="mt-4 space-y-2">
+                      {threads.length > 0 ? (
+                        threads.map((thread) => <ThreadRow key={thread.id} thread={thread} />)
                       ) : (
                         <EmptyPanel
-                          title={hasDayActivity ? "Nothing matched these filters" : "Quiet day"}
-                          body={
-                            hasDayActivity
-                              ? "This date has activity in Polymath, but none of it falls inside the selected categories."
-                              : "No documents, cards, connections, reviews, or gaps were recorded for this date."
-                          }
+                          title="No thread signal yet"
+                          body="Capture, distill, or connect a few cards to give Alfred something to cluster."
                         />
-                      )
-                    ) : collapsedAuditDays.length > 0 ? (
-                      <>
-                        {collapsedAuditDays.map((day) => (
-                          <CollapsedAuditRow
-                            key={day.date}
-                            day={day}
-                            isSelected={day.date === selectedDayKey}
-                            selectedKinds={selectedKindSet}
-                            onSelectDay={handleDrillIntoDay}
-                          />
-                        ))}
-                        {hiddenQuietMonthDays > 0 ? (
-                          <p className="text-muted-foreground text-xs">
-                            {formatCountLabel(hiddenQuietMonthDays, "quiet day")} stay visible in
-                            the heatmap above.
-                          </p>
-                        ) : null}
-                      </>
-                    ) : (
-                      <EmptyPanel
-                        title={
-                          scopeTotals.total_events > 0 ? "No matching days" : "No recorded activity"
-                        }
-                        body={
-                          scopeTotals.total_events > 0
-                            ? "This range has activity in Polymath, but none of it matches the selected filters."
-                            : "Nothing was captured, stored, connected, reviewed, or surfaced in this range."
-                        }
-                      />
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <section className="bg-card rounded-xl border p-5">
-                    <PanelHeader
-                      title={auditScope === "day" ? "Day Snapshot" : "Range Snapshot"}
-                      subtitle={`${briefing.stats.total_cards} cards in the library · ${briefing.stats.total_links} total links`}
-                    />
-                    <div className="text-muted-foreground mt-4 space-y-3 text-sm">
-                      {auditScope === "day" ? (
-                        <>
-                          <p>
-                            {briefing.stats.total_events > 0
-                              ? `${formatSelectedDateLabel(selectedDate)} recorded ${briefing.stats.total_events} auditable events across capture, storage, connection, review, and gap discovery.`
-                              : `${formatSelectedDateLabel(selectedDate)} did not create new audit entries.`}
-                          </p>
-                          <p>
-                            {selectedDaySummary && selectedDaySummary.reviews_due > 0
-                              ? `${selectedDaySummary.reviews_due} reviews came due on this date, with ${selectedDaySummary.reviews_completed} already cleared.`
-                              : "No review debt was scheduled for this date."}
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <p>
-                            {scopeTotals.filtered_total_events > 0
-                              ? `${scopeLabel} recorded ${scopeTotals.filtered_total_events} events in the selected categories across ${scopeTotals.filtered_active_days} active days.`
-                              : `${scopeLabel} did not record anything inside the current filters.`}
-                          </p>
-                          <p>
-                            {scopeTotals.reviews_due > 0
-                              ? `${scopeTotals.reviews_due} reviews came due in this range, with ${scopeTotals.reviews_completed} already cleared.`
-                              : "No review debt was scheduled in this range."}
-                          </p>
-                          <p>
-                            Detailed artifact lists below stay pinned to{" "}
-                            {format(selectedDate, "MMMM d, yyyy")}. Click any collapsed row to
-                            inspect another day.
-                          </p>
-                        </>
                       )}
-                      <p className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
-                        Generated{" "}
-                        {format(parseISO(briefing.generated_at), "MMM d, yyyy 'at' h:mm a")}
-                      </p>
                     </div>
-                  </section>
+                  </div>
 
-                  <section className="bg-card rounded-xl border p-5">
-                    <PanelHeader
-                      title="Explore Next"
-                      subtitle="Jump directly into the artifacts behind the day."
-                    />
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <Button asChild variant="outline" size="sm">
-                        <Link href="/documents">Browse documents</Link>
-                      </Button>
-                      <Button asChild variant="outline" size="sm">
-                        <Link href="/knowledge">Browse knowledge</Link>
-                      </Button>
-                      <Button asChild variant="outline" size="sm">
-                        <Link href="/research">Open research</Link>
-                      </Button>
-                    </div>
-                  </section>
-                </div>
-              </section>
+                  <div className="space-y-4">
+                    <Card
+                      className={cn(
+                        "rounded-lg py-5 shadow-none",
+                        getToneClasses(connectionDebt > 0 ? "warning" : "success"),
+                      )}
+                    >
+                      <CardHeader className="px-5">
+                        <CardTitle className="font-serif text-2xl font-normal">
+                          Connection Debt
+                        </CardTitle>
+                        <CardDescription>
+                          {connectionDebt > 0
+                            ? `${formatCountLabel(
+                                connectionDebt,
+                                "card",
+                              )} need stronger graph placement.`
+                            : "New cards have matching link activity."}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="px-5">
+                        <Button
+                          asChild
+                          size="sm"
+                          variant={connectionDebt > 0 ? "default" : "outline"}
+                        >
+                          <Link href="/knowledge">Open connection pass</Link>
+                        </Button>
+                      </CardContent>
+                    </Card>
 
-              {auditScope !== "day" ? (
-                <section className="text-muted-foreground rounded-xl border border-dashed px-4 py-3 text-sm">
-                  The detailed sections below remain scoped to{" "}
-                  {format(selectedDate, "MMMM d, yyyy")}. Use the collapsed audit trail above to
-                  drill into another day.
+                    <Card
+                      className={cn(
+                        "rounded-lg py-5 shadow-none",
+                        getToneClasses(reviewDebt > 0 ? "warning" : "success"),
+                      )}
+                    >
+                      <CardHeader className="px-5">
+                        <CardTitle className="font-serif text-2xl font-normal">
+                          Review Queue
+                        </CardTitle>
+                        <CardDescription>
+                          {reviewDebt > 0
+                            ? `${formatCountLabel(reviewDebt, "review")} still need attention.`
+                            : "Nothing is waiting in the review lane."}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="px-5">
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/today?view=table&date=${briefing.date}`}>Open reviews</Link>
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  </div>
                 </section>
-              ) : null}
+              </TabsContent>
 
-              <div className="grid gap-4 xl:grid-cols-2">
-                {selectedKindSet.has("capture") ? (
+              <TabsContent value="review" className="space-y-6">
+                <ReviewQueuePanel
+                  reviews={briefing.reviews}
+                  reviewDebt={reviewDebt}
+                  date={briefing.date}
+                />
+                <ConnectionDebtPanel
+                  cards={briefing.stored_cards}
+                  connectionDebt={connectionDebt}
+                />
+                <SectionCard
+                  title="Gaps To Fill"
+                  subtitle="Placeholder cards that still need real thought"
+                  count={briefing.gaps.length}
+                >
+                  {briefing.gaps.length > 0 ? (
+                    <div className="space-y-2">
+                      {briefing.gaps.map((gap) => (
+                        <GapItem key={gap.card_id} gap={gap} />
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyPanel
+                      title="No surfaced gaps"
+                      body="The selected day did not create any stub cards."
+                    />
+                  )}
+                </SectionCard>
+              </TabsContent>
+
+              <TabsContent value="ledger" className="space-y-6">
+                <div className="text-muted-foreground rounded-lg border border-dashed px-4 py-3 text-sm">
+                  Raw artifact lists stay available here. The audit trail remains in the side rail
+                  so this tab can focus on the underlying objects.
+                </div>
+
+                <div className="grid gap-4 2xl:grid-cols-2">
                   <SectionCard
                     title="Captured Documents"
-                    subtitle="Source material Polymath ingested that day"
+                    subtitle="Source material Alfred ingested that day"
                     count={briefing.captures.length}
                   >
                     {briefing.captures.length > 0 ? (
                       <div className="space-y-2">
                         {briefing.captures.map((capture) => (
-                          <Link
-                            key={capture.id}
-                            href={`/documents/${capture.id}`}
-                            className="block rounded-lg border px-4 py-3 transition-colors hover:bg-[var(--alfred-accent-subtle)]"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm">{capture.title}</p>
-                                <p className="text-muted-foreground mt-1 text-xs">
-                                  {capture.content_type ?? "capture"} ·{" "}
-                                  {formatTimestamp(capture.created_at)}
-                                </p>
-                              </div>
-                              <span className="bg-muted rounded-sm px-1.5 py-0.5 font-mono text-[10px] tracking-[0.1em] text-[var(--alfred-text-tertiary)] uppercase">
-                                {capture.pipeline_status}
-                              </span>
-                            </div>
-                          </Link>
+                          <CaptureItem key={capture.id} capture={capture} />
                         ))}
                       </div>
                     ) : (
-                      <p className="text-muted-foreground text-sm">
-                        No documents were captured on this date.
-                      </p>
+                      <EmptyPanel
+                        title="No documents captured"
+                        body="No source material was captured on this date."
+                      />
                     )}
                   </SectionCard>
-                ) : null}
 
-                {selectedKindSet.has("stored") ? (
                   <SectionCard
                     title="Stored Cards"
-                    subtitle="Knowledge you distilled into durable cards"
+                    subtitle="Knowledge distilled into durable cards"
                     count={briefing.stored_cards.length}
                   >
                     {briefing.stored_cards.length > 0 ? (
                       <div className="space-y-2">
                         {briefing.stored_cards.map((card) => (
-                          <Link
-                            key={card.card_id}
-                            href={`/knowledge/${card.card_id}`}
-                            className="block rounded-lg border px-4 py-3 transition-colors hover:bg-[var(--alfred-accent-subtle)]"
-                          >
-                            <p className="truncate text-sm">{card.title}</p>
-                            <p className="text-muted-foreground mt-1 text-xs">
-                              {card.topic ?? "Untopiced"} ·{" "}
-                              {card.tags.length > 0 ? card.tags.join(" · ") : "No tags"} ·{" "}
-                              {formatTimestamp(card.created_at)}
-                            </p>
-                          </Link>
+                          <StoredCardItem key={card.card_id} card={card} />
                         ))}
                       </div>
                     ) : (
-                      <p className="text-muted-foreground text-sm">
-                        No new knowledge cards were stored on this date.
-                      </p>
+                      <EmptyPanel
+                        title="No cards stored"
+                        body="No new knowledge cards were stored on this date."
+                      />
                     )}
                   </SectionCard>
-                ) : null}
 
-                {selectedKindSet.has("connection") ? (
                   <SectionCard
                     title="Connections Made"
                     subtitle="Links added between ideas on this date"
@@ -1062,73 +1173,36 @@ export function TodayDashboard() {
                     {briefing.connections.length > 0 ? (
                       <div className="space-y-2">
                         {briefing.connections.map((connection) => (
-                          <div key={connection.link_id} className="rounded-lg border px-4 py-3">
-                            <div className="flex items-center gap-2 text-sm">
-                              <Link
-                                href={`/knowledge/${connection.from_card_id}`}
-                                className="hover:text-primary truncate"
-                              >
-                                {connection.from_title}
-                              </Link>
-                              <span className="text-[var(--alfred-text-tertiary)]">→</span>
-                              <Link
-                                href={`/knowledge/${connection.to_card_id}`}
-                                className="hover:text-primary truncate"
-                              >
-                                {connection.to_title}
-                              </Link>
-                            </div>
-                            <p className="text-muted-foreground mt-1 text-xs">
-                              {connection.type} · {formatTimestamp(connection.created_at)}
-                            </p>
-                          </div>
+                          <ConnectionItem key={connection.link_id} connection={connection} />
                         ))}
                       </div>
                     ) : (
-                      <p className="text-muted-foreground text-sm">
-                        No new links were created on this date.
-                      </p>
+                      <EmptyPanel
+                        title="No links created"
+                        body="This is the clearest signal for a connection pass."
+                      />
                     )}
                   </SectionCard>
-                ) : null}
 
-                {selectedKindSet.has("review") ? (
                   <SectionCard
                     title="Reviews Scheduled"
-                    subtitle="Cards Polymath expected you to revisit that day"
+                    subtitle="Cards Alfred expected you to revisit that day"
                     count={briefing.reviews.length}
                   >
                     {briefing.reviews.length > 0 ? (
                       <div className="space-y-2">
                         {briefing.reviews.map((review) => (
-                          <Link
-                            key={review.review_id}
-                            href={`/knowledge/${review.card_id}`}
-                            className="block rounded-lg border px-4 py-3 transition-colors hover:bg-[var(--alfred-accent-subtle)]"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm">{review.card_title}</p>
-                                <p className="text-muted-foreground mt-1 text-xs">
-                                  Stage {review.stage} · due {formatTimestamp(review.due_at)}
-                                </p>
-                              </div>
-                              <span className="bg-muted rounded-sm px-1.5 py-0.5 font-mono text-[10px] tracking-[0.1em] text-[var(--alfred-text-tertiary)] uppercase">
-                                {review.status}
-                              </span>
-                            </div>
-                          </Link>
+                          <ReviewItem key={review.review_id} review={review} />
                         ))}
                       </div>
                     ) : (
-                      <p className="text-muted-foreground text-sm">
-                        No review queue was scheduled for this date.
-                      </p>
+                      <EmptyPanel
+                        title="No review queue"
+                        body="No review queue was scheduled for this date."
+                      />
                     )}
                   </SectionCard>
-                ) : null}
 
-                {selectedKindSet.has("gap") ? (
                   <SectionCard
                     title="Gaps Surfaced"
                     subtitle="Placeholder cards that still need real thought"
@@ -1137,29 +1211,34 @@ export function TodayDashboard() {
                     {briefing.gaps.length > 0 ? (
                       <div className="space-y-2">
                         {briefing.gaps.map((gap) => (
-                          <Link
-                            key={gap.card_id}
-                            href={`/knowledge/${gap.card_id}`}
-                            className="block rounded-lg border border-dashed px-4 py-3 transition-colors hover:bg-[var(--alfred-accent-subtle)]"
-                          >
-                            <p className="truncate text-sm">{gap.title}</p>
-                            <p className="text-muted-foreground mt-1 text-xs">
-                              Stub card · {formatTimestamp(gap.created_at)}
-                            </p>
-                          </Link>
+                          <GapItem key={gap.card_id} gap={gap} />
                         ))}
                       </div>
                     ) : (
-                      <p className="text-muted-foreground text-sm">
-                        No new gaps were surfaced on this date.
-                      </p>
+                      <EmptyPanel
+                        title="No gaps surfaced"
+                        body="No new stub cards were created on this date."
+                      />
                     )}
                   </SectionCard>
-                ) : null}
-              </div>
-            </>
+                </div>
+              </TabsContent>
+            </Tabs>
           )}
         </main>
+
+        <aside className="hidden xl:sticky xl:top-6 xl:block xl:self-start">
+          <AuditRail
+            filteredTimeline={filteredTimeline}
+            selectedKinds={selectedKinds}
+            onKindsChange={handleKindsChange}
+            onResetKinds={handleResetKinds}
+            isShowingAllKinds={isShowingAllKinds}
+            hasDayActivity={hasDayActivity}
+            isLoading={isBriefingLoading}
+            selectedDate={selectedDate}
+          />
+        </aside>
       </div>
     </div>
   );

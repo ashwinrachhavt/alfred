@@ -9,36 +9,48 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any
 
+from dotenv import load_dotenv
 from langchain_core.tools import tool
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 
 @tool
 def query_notion(query: str | None = None, page_size: int = 10) -> str:
-    """Fetch pages from Notion workspace. Returns page titles, content previews, and URLs."""
+    """Fetch pages from Notion workspace. Returns page titles and last-edited timestamps.
+
+    The optional ``query`` filters pages whose title contains the term (case-insensitive)
+    after fetching, since the underlying connector lists pages rather than searching.
+    """
     try:
         import asyncio
 
         from alfred.connectors.notion_history import NotionHistoryConnector
 
-        async def _fetch():
+        async def _fetch() -> list[dict[str, Any]]:
             async with NotionHistoryConnector(page_size=page_size) as conn:
-                pages = []
-                async for page in conn.search_pages(query=query or ""):
-                    pages.append({
-                        "id": page.get("id"),
-                        "title": page.get("title", "Untitled"),
-                        "url": page.get("url"),
-                        "last_edited": page.get("last_edited_time"),
-                    })
-                    if len(pages) >= page_size:
-                        break
-                return pages
+                # Over-fetch a bit so client-side filtering still produces ~page_size results
+                fetch_limit = page_size * 5 if query else page_size
+                return await conn.get_all_pages(limit=fetch_limit, include_content=False)
 
-        result = asyncio.run(_fetch())
-        return json.dumps(result[:page_size])
+        pages = asyncio.run(_fetch())
+        if query:
+            q = query.lower()
+            pages = [p for p in pages if q in (p.get("title") or "").lower()]
+
+        output = [
+            {
+                "id": p.get("page_id"),
+                "title": p.get("title") or "Untitled",
+                "last_edited": p.get("last_edited_time"),
+            }
+            for p in pages[:page_size]
+        ]
+        return json.dumps(output)
     except Exception as exc:
         logger.warning("query_notion failed: %s", exc)
         return json.dumps({"error": str(exc), "hint": "Check NOTION_TOKEN is set"})
@@ -96,15 +108,15 @@ def query_arxiv(query: str, max_results: int = 5) -> str:
 def query_rss(feed_url: str, limit: int = 10) -> str:
     """Fetch entries from an RSS/Atom feed. Returns titles, links, and summaries."""
     try:
-        from alfred.connectors.rss_connector import RSSConnector
+        from alfred.connectors.rss_connector import RSSClient
 
-        conn = RSSConnector()
-        entries = conn.fetch_feed(feed_url)
+        feed = RSSClient().fetch_feed(feed_url)
+        entries = feed.get("entries", []) if isinstance(feed, dict) else []
         output = [
             {
                 "title": e.get("title"),
                 "link": e.get("link"),
-                "summary": e.get("summary", "")[:200],
+                "summary": (e.get("summary") or "")[:200],
                 "published": e.get("published"),
             }
             for e in entries[:limit]
@@ -142,16 +154,17 @@ def query_web(query: str, max_results: int = 5) -> str:
 def query_wikipedia(query: str, max_results: int = 3) -> str:
     """Search Wikipedia for articles. Returns page titles, summaries, and URLs."""
     try:
-        from alfred.connectors.wikipedia_connector import search
+        from alfred.connectors.wikipedia_connector import WikipediaClient
 
-        docs = search(query=query, max_results=max_results)
+        client = WikipediaClient(top_k_results=max_results)
+        docs = client.search(query)
         output = [
             {
                 "title": doc.metadata.get("title"),
-                "summary": doc.page_content[:300] if doc.page_content else "",
+                "summary": (doc.page_content or "")[:300],
                 "source": doc.metadata.get("source"),
             }
-            for doc in docs
+            for doc in docs[:max_results]
         ]
         return json.dumps(output)
     except Exception as exc:
@@ -161,27 +174,42 @@ def query_wikipedia(query: str, max_results: int = 3) -> str:
 
 @tool
 def query_github(query: str, repo: str | None = None, limit: int = 5) -> str:
-    """Search GitHub issues, PRs, or code. Optionally filter by repo (owner/name)."""
-    try:
-        from alfred.connectors.github_connector import GitHubConnector
+    """List GitHub issues for a repo and filter client-side by query.
 
-        conn = GitHubConnector()
-        if repo:
-            # Search within a specific repo
-            results = conn.search_repo_issues(repo=repo, query=query, limit=limit)
-        else:
-            # Global search (requires more specific implementation)
-            results = []
-            logger.warning("Global GitHub search not yet implemented, specify repo")
+    ``repo`` must be in ``owner/name`` form. Global cross-repo search is not yet
+    supported by the underlying connector.
+    """
+    try:
+        from alfred.connectors.github_connector import GitHubClient
+
+        if not repo or "/" not in repo:
+            return json.dumps({
+                "error": "query_github requires repo='owner/name'",
+                "hint": "Cross-repo GitHub search is not yet implemented.",
+            })
+        owner, name = repo.split("/", 1)
+
+        client = GitHubClient()
+        # list_issues paginates fully; cap to a reasonable window before filtering
+        issues = client.list_issues(owner, name, state="all", per_page=100)
+
+        q = (query or "").lower().strip()
+        if q:
+            issues = [
+                i
+                for i in issues
+                if q in (i.get("title") or "").lower()
+                or q in (i.get("body") or "").lower()
+            ]
 
         output = [
             {
-                "title": r.get("title"),
-                "url": r.get("html_url"),
-                "state": r.get("state"),
-                "created_at": r.get("created_at"),
+                "title": i.get("title"),
+                "url": i.get("html_url"),
+                "state": i.get("state"),
+                "created_at": i.get("created_at"),
             }
-            for r in results[:limit]
+            for i in issues[:limit]
         ]
         return json.dumps(output)
     except Exception as exc:
@@ -191,18 +219,47 @@ def query_github(query: str, repo: str | None = None, limit: int = 5) -> str:
 
 @tool
 def query_linear(query: str, team_id: str | None = None, limit: int = 10) -> str:
-    """Search Linear issues. Optionally filter by team ID."""
+    """List Linear issues and filter client-side by query / team.
+
+    The Linear connector does not yet support server-side keyword search, so we
+    fetch a recent window of issues and filter in Python.
+    """
     try:
         from alfred.connectors.linear_connector import LinearConnector
+        from alfred.core.settings import settings
 
-        conn = LinearConnector()
-        issues = conn.search_issues(query=query, team_id=team_id, limit=limit)
+        token = (
+            settings.linear_api_key.get_secret_value() if settings.linear_api_key else None
+        )
+        if not token:
+            return json.dumps({
+                "error": "LINEAR_API_KEY is not configured",
+                "hint": "Set LINEAR_API_KEY to enable Linear queries.",
+            })
+
+        conn = LinearConnector(token=token)
+        # Over-fetch so client-side filtering still produces ~limit results
+        issues = conn.get_all_issues(include_comments=False, limit=max(limit * 5, 50))
+
+        q = (query or "").lower().strip()
+        if q:
+            issues = [
+                i
+                for i in issues
+                if q in (i.get("title") or "").lower()
+                or q in (i.get("description") or "").lower()
+            ]
+        if team_id:
+            issues = [
+                i for i in issues if (i.get("team") or {}).get("id") == team_id
+            ]
+
         output = [
             {
                 "id": i.get("id"),
                 "title": i.get("title"),
                 "identifier": i.get("identifier"),
-                "state": i.get("state", {}).get("name"),
+                "state": (i.get("state") or {}).get("name"),
                 "url": i.get("url"),
             }
             for i in issues[:limit]
