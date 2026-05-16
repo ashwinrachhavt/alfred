@@ -50,6 +50,14 @@ class TodayGapItem(BaseModel):
     created_at: str | None = None
 
 
+class TodayNoteItem(BaseModel):
+    note_id: str
+    title: str
+    icon: str | None = None
+    workspace_id: str
+    updated_at: str | None = None
+
+
 class TodayBriefingStats(BaseModel):
     total_captures: int = 0
     total_cards_created: int = 0
@@ -60,6 +68,7 @@ class TodayBriefingStats(BaseModel):
     total_events: int = 0
     total_cards: int = 0
     total_links: int = 0
+    total_notes_touched: int = 0
 
 
 class TodayBriefingResponse(BaseModel):
@@ -71,6 +80,7 @@ class TodayBriefingResponse(BaseModel):
     connections: list[TodayConnectionItem] = Field(default_factory=list)
     reviews: list[TodayReviewItem] = Field(default_factory=list)
     gaps: list[TodayGapItem] = Field(default_factory=list)
+    notes: list[TodayNoteItem] = Field(default_factory=list)
     stats: TodayBriefingStats
 
 

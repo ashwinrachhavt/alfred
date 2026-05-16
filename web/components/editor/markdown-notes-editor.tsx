@@ -760,29 +760,30 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
       shouldRerenderOnTransaction: false,
       editorProps: {
         attributes: {
+          spellcheck: "false",
           class: cn(
-            "prose prose-sm dark:prose-invert max-w-none min-h-[220px] px-2 py-1 text-[15px] leading-[1.72] text-foreground focus:outline-none [text-wrap:pretty]",
-            // Headings: Inter (sans)
-            "prose-headings:mt-6 prose-headings:mb-2 prose-headings:font-sans prose-headings:font-semibold",
-            "prose-h1:text-[2rem] prose-h2:text-[1.65rem] prose-h3:text-[1.4rem]",
-            // Body: DM Sans (inherits from font-sans)
-            "prose-p:my-2 prose-p:leading-[1.78] prose-p:text-left",
-            // Code: JetBrains Mono
-            "prose-code:font-mono prose-code:text-[13px] prose-code:bg-secondary prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-sm prose-code:before:content-none prose-code:after:content-none",
-            "prose-pre:bg-secondary prose-pre:text-foreground prose-pre:font-mono prose-pre:text-[13px] prose-pre:rounded-md",
-            // Blockquote: accent left border
-            "prose-blockquote:my-3 prose-blockquote:border-l-primary prose-blockquote:bg-[var(--alfred-accent-subtle)] prose-blockquote:px-4 prose-blockquote:py-1 prose-blockquote:not-italic prose-blockquote:rounded-r-md prose-blockquote:text-left",
+            "alfred-note-prose prose dark:prose-invert max-w-none min-h-[220px] px-1 py-1 text-[16px] leading-[1.62] text-foreground focus:outline-none [text-wrap:pretty]",
+            // Headings: editorial, not terminal-like.
+            "prose-headings:mt-7 prose-headings:mb-2.5 prose-headings:font-sans prose-headings:font-medium prose-headings:tracking-[-0.015em]",
+            "prose-h1:text-[1.85rem] prose-h2:text-[1.45rem] prose-h3:text-[1.15rem]",
+            // Body: tighter scan rhythm for dense technical notes.
+            "prose-p:my-3 prose-p:leading-[1.62] prose-p:text-left",
+            // Code: subdued system voice.
+            "prose-code:font-mono prose-code:text-[0.86em] prose-code:bg-secondary/80 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-sm prose-code:before:content-none prose-code:after:content-none",
+            "prose-pre:border prose-pre:border-[var(--alfred-ruled-line)] prose-pre:bg-card/70 prose-pre:text-foreground prose-pre:font-mono prose-pre:text-[13px] prose-pre:leading-relaxed prose-pre:rounded-md prose-pre:shadow-none",
+            // Blockquote: semantic callout rather than markdown quote.
+            "prose-blockquote:my-5 prose-blockquote:border-l-[3px] prose-blockquote:border-l-primary prose-blockquote:bg-[var(--alfred-accent-subtle)] prose-blockquote:px-4 prose-blockquote:py-3 prose-blockquote:not-italic prose-blockquote:rounded-r-md prose-blockquote:text-left",
             // Images
             "prose-img:rounded-lg prose-img:border prose-img:shadow-sm",
             // Links: accent color
             "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
             // HR: ruled line
-            "prose-hr:my-6 prose-hr:border-[var(--alfred-ruled-line)]",
+            "prose-hr:my-7 prose-hr:border-[var(--alfred-ruled-line)]",
             // Lists
-            "prose-ul:my-3 prose-ol:my-3 prose-li:my-0.5 prose-li:text-left",
+            "prose-ul:my-4 prose-ol:my-4 prose-li:my-1 prose-li:text-left prose-li:leading-[1.62]",
             // Task list: checkbox styling
             "[&_ul[data-type=taskList]]:list-none [&_ul[data-type=taskList]]:pl-2",
-            "[&_li[data-type=taskItem]]:flex [&_li[data-type=taskItem]]:items-start [&_li[data-type=taskItem]]:gap-2 [&_li[data-type=taskItem]]:my-1",
+            "[&_li[data-type=taskItem]]:flex [&_li[data-type=taskItem]]:items-start [&_li[data-type=taskItem]]:gap-2 [&_li[data-type=taskItem]]:my-1.5",
             "[&_li[data-type=taskItem]>label]:flex [&_li[data-type=taskItem]>label]:items-center [&_li[data-type=taskItem]>label]:mt-0.5 [&_li[data-type=taskItem]>label]:shrink-0",
             "[&_li[data-type=taskItem]>label>input]:size-4 [&_li[data-type=taskItem]>label>input]:accent-[#E8590C] [&_li[data-type=taskItem]>label>input]:cursor-pointer",
             "[&_li[data-type=taskItem]>div]:flex-1 [&_li[data-type=taskItem]>div]:min-w-0",
@@ -1246,8 +1247,8 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
     return (
       <div
         className={cn(
-          "bg-background relative flex h-full w-full flex-col overflow-hidden rounded-lg border transition-colors duration-200",
-          isFocused && !readOnly && "border-[var(--alfred-accent-muted)]",
+          "relative flex h-full w-full flex-col overflow-visible bg-transparent transition-colors duration-200",
+          isFocused && !readOnly && "",
           readOnly && "opacity-80",
           className,
         )}
@@ -1406,7 +1407,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
         )}
 
         <div
-          className="flex-1 scroll-py-24 overflow-y-auto"
+          className="flex-1 scroll-py-24 pb-24"
           onClick={() => editor.chain().focus().run()}
         >
           <EditorContent editor={editor} />

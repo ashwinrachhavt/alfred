@@ -8,6 +8,8 @@ generates human-readable cluster names via LLM, and detects knowledge gaps
 from __future__ import annotations
 
 import logging
+import re
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
@@ -21,6 +23,56 @@ logger = logging.getLogger(__name__)
 
 _CACHE_KEY = "zettel:graph:clusters"
 _MIN_CARDS_FOR_CLUSTERING = 10
+_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9+#/-]*")
+_TITLE_STOP_WORDS = {
+    "about",
+    "after",
+    "against",
+    "alongside",
+    "also",
+    "and",
+    "are",
+    "before",
+    "between",
+    "but",
+    "can",
+    "card",
+    "create",
+    "from",
+    "have",
+    "into",
+    "its",
+    "more",
+    "need",
+    "needs",
+    "not",
+    "over",
+    "that",
+    "the",
+    "their",
+    "this",
+    "through",
+    "using",
+    "when",
+    "with",
+    "without",
+}
+_ACRONYMS = {
+    "ag-ui",
+    "ag",
+    "ai",
+    "api",
+    "css",
+    "html",
+    "llm",
+    "mcp",
+    "nlp",
+    "pkm",
+    "rag",
+    "sql",
+    "ui",
+    "ux",
+}
 
 
 @dataclass
@@ -135,6 +187,51 @@ class ClusteringService:
 
         return named
 
+    def name_clusters_from_cards(
+        self,
+        clusters: list[dict[str, Any]],
+        cards_by_id: dict[int, Any],
+    ) -> list[dict[str, Any]]:
+        """Assign stable cluster names from local card metadata.
+
+        This is intentionally deterministic and network-free so graph pages can
+        render quickly. The LLM-based ``generate_cluster_names`` method remains
+        available for explicit background enrichment, not page-load paths.
+        """
+        named: list[dict[str, Any]] = []
+        for cluster in clusters:
+            topical_labels: Counter[str] = Counter()
+            title_keywords: Counter[str] = Counter()
+
+            for card_id in cluster["card_ids"]:
+                card = cards_by_id.get(card_id)
+                if card is None:
+                    continue
+
+                topic = getattr(card, "topic", None)
+                if isinstance(topic, str) and topic.strip():
+                    topical_labels[self._display_label(topic)] += 4
+
+                tags = getattr(card, "tags", None) or []
+                if isinstance(tags, list | tuple | set):
+                    for tag in tags:
+                        if isinstance(tag, str) and tag.strip():
+                            topical_labels[self._display_label(tag)] += 2
+
+                title = getattr(card, "title", "")
+                if isinstance(title, str):
+                    for keyword in self._title_keywords(title):
+                        title_keywords[keyword] += 1
+
+            name = self._cluster_name_from_counts(
+                topical_labels=topical_labels,
+                title_keywords=title_keywords,
+                fallback=str(cluster.get("name") or f"Cluster {cluster['id']}"),
+            )
+            named.append({**cluster, "name": name})
+
+        return named
+
     def detect_knowledge_gaps(
         self,
         cards: list[Any],
@@ -229,3 +326,60 @@ class ClusteringService:
         """
         palette = ClusteringService._NEBULA_PALETTE
         return palette[idx % len(palette)]
+
+    @classmethod
+    def _cluster_name_from_counts(
+        cls,
+        *,
+        topical_labels: Counter[str],
+        title_keywords: Counter[str],
+        fallback: str,
+    ) -> str:
+        if topical_labels:
+            ranked = topical_labels.most_common(2)
+            top_count = ranked[0][1]
+            labels = [
+                label
+                for label, count in ranked
+                if count >= top_count * 0.5
+            ]
+            return " / ".join(labels)
+
+        if title_keywords:
+            words = [word for word, _ in title_keywords.most_common(3)]
+            return cls._display_label(" ".join(words))
+
+        return fallback
+
+    @staticmethod
+    def _title_keywords(title: str) -> list[str]:
+        keywords: list[str] = []
+        for match in _TOKEN_RE.finditer(title):
+            token = match.group(0).strip("-_/").lower()
+            if len(token) < 3 or token in _TITLE_STOP_WORDS:
+                continue
+            keywords.append(ClusteringService._display_token(token))
+        return keywords
+
+    @staticmethod
+    def _display_label(value: str) -> str:
+        tokens = [_token.group(0).strip("-_/") for _token in _TOKEN_RE.finditer(value)]
+        rendered = [
+            ClusteringService._display_token(token.lower())
+            for token in tokens
+            if token and token.lower() not in _TITLE_STOP_WORDS
+        ]
+        return " ".join(rendered[:4]) or value.strip().title()
+
+    @staticmethod
+    def _display_token(token: str) -> str:
+        if token in _ACRONYMS:
+            return token.upper()
+        if any(separator in token for separator in ("-", "/", "#")):
+            parts = re.split(r"[-/#]+", token)
+            return " ".join(
+                ClusteringService._display_token(part)
+                for part in parts
+                if part
+            )
+        return token[:1].upper() + token[1:]

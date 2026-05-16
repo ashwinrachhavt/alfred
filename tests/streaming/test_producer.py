@@ -100,6 +100,35 @@ async def test_producer_stable_tool_uuid_across_start_and_result() -> None:
 
 
 @pytest.mark.asyncio
+async def test_producer_wraps_sequence_tool_result_without_crashing() -> None:
+    fake = FakeAgentService([
+        ("tool_start", {"call_id": "c1", "tool": "query_wikipedia", "args": {"query": "zettel"}}, ""),
+        (
+            "tool_result",
+            {
+                "call_id": "c1",
+                "result": [
+                    {"title": "Zettelkasten", "summary": "A note-taking method.", "source": "wiki"}
+                ],
+                "status": "ok",
+            },
+            "",
+        ),
+        ("done", {}, ""),
+    ])
+    producer = AgentProducer(
+        service=fake, message="x", thread_id=1, model="gpt-5.4-mini", lens=None,
+    )
+
+    events = await _collect(producer)
+
+    result = next(e for e in events if isinstance(e, ToolResult))
+    assert result.result_json == {
+        "items": [{"title": "Zettelkasten", "summary": "A note-taking method.", "source": "wiki"}]
+    }
+
+
+@pytest.mark.asyncio
 async def test_producer_maps_artifact_to_state_delta_append() -> None:
     fake = FakeAgentService([
         (

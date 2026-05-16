@@ -16,7 +16,7 @@ export default async function TodayPage({
 
   if (!view) {
     return (
-      <div className="mx-auto max-w-4xl px-8 py-8">
+      <div className="mx-auto max-w-[96rem] px-8 py-8">
         <TodayDashboard />
       </div>
     );

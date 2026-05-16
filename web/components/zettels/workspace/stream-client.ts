@@ -4,10 +4,12 @@
  * Exposes two async generators that each yield `{event, data}` records so the
  * caller can drive the UI however it likes (setState, dispatch, store action).
  *
- * We bypass Next.js rewrites and hit the backend directly — Next rewrites buffer
- * responses, which breaks SSE (see lib/api/sse.ts for the legacy pattern).
+ * Uses the shared SSE helper so workspace streams follow the same AG-UI +
+ * legacy fallback behavior as the main agent chat.
  */
 import { apiRoutes } from "@/lib/api/routes";
+import { streamSSE } from "@/lib/api/sse";
+import { createAguiEventProjector } from "@/lib/streaming/agui-runtime";
 
 export type SSEEvent = {
   event: string;
@@ -30,70 +32,61 @@ export type StreamDecomposePayload = {
   source_url?: string;
 };
 
-function directBackendUrl(path: string): string {
-  const base =
-    process.env.NEXT_PUBLIC_API_URL ||
-    (typeof window !== "undefined" ? "http://localhost:8000" : "");
-  return `${base}${path}`;
-}
-
 async function* streamSSEGenerator(
-  url: string,
+  urls: string[],
   body: Record<string, unknown>,
   signal: AbortSignal,
 ): AsyncGenerator<SSEEvent, void, unknown> {
-  const response = await fetch(directBackendUrl(url), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal,
-  });
+  const projector = createAguiEventProjector();
+  const queue: SSEEvent[] = [];
+  const wakeups: Array<() => void> = [];
+  let done = false;
+  let error: unknown = null;
 
-  if (!response.ok || !response.body) {
-    throw new Error(`Stream failed: ${response.status}`);
+  function wake() {
+    while (wakeups.length > 0) wakeups.shift()?.();
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
+  function push(event: string, data: Record<string, unknown>) {
+    for (const projected of projector.project(event, data)) {
+      queue.push(projected);
+    }
+    wake();
+  }
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-
-    // SSE events are separated by blank lines (\n\n).
-    const blocks = buffer.split("\n\n");
-    buffer = blocks.pop() || "";
-
-    for (const block of blocks) {
-      if (!block.trim()) continue;
-
-      let eventType = "";
-      let dataPayload = "";
-
-      for (const line of block.split("\n")) {
-        if (line.startsWith("event: ")) {
-          eventType = line.slice(7).trim();
-        } else if (line.startsWith("data: ")) {
-          dataPayload = line.slice(6);
+  const pump = (async () => {
+    try {
+      for (const url of urls) {
+        try {
+          await streamSSE(url, body, push, signal);
+          return;
+        } catch (err) {
+          const canFallback =
+            err instanceof Error &&
+            /Stream failed:\s*404/.test(err.message) &&
+            url !== urls[urls.length - 1];
+          if (!canFallback) throw err;
         }
       }
-
-      if (!eventType || !dataPayload) continue;
-
-      let parsed: Record<string, unknown> | null = null;
-      try {
-        parsed = JSON.parse(dataPayload) as Record<string, unknown>;
-      } catch {
-        parsed = null;
-      }
-      if (!parsed) continue;
-
-      yield { event: eventType, data: parsed };
+    } catch (err) {
+      error = err;
+    } finally {
+      done = true;
+      wake();
     }
+  })();
+
+  while (!done || queue.length > 0) {
+    if (queue.length === 0) {
+      await new Promise<void>((resolve) => wakeups.push(resolve));
+      continue;
+    }
+    const next = queue.shift();
+    if (next) yield next;
   }
+
+  await pump;
+  if (error) throw error;
 }
 
 export function streamCreationEvents(
@@ -101,7 +94,7 @@ export function streamCreationEvents(
   signal: AbortSignal,
 ): AsyncGenerator<SSEEvent, void, unknown> {
   return streamSSEGenerator(
-    apiRoutes.zettels.createStream,
+    [apiRoutes.zettels.createStreamV2, apiRoutes.zettels.createStream],
     payload as unknown as Record<string, unknown>,
     signal,
   );
@@ -112,7 +105,7 @@ export function streamDecomposeEvents(
   signal: AbortSignal,
 ): AsyncGenerator<SSEEvent, void, unknown> {
   return streamSSEGenerator(
-    apiRoutes.zettels.decomposeStream,
+    [apiRoutes.zettels.decomposeStream],
     payload as unknown as Record<string, unknown>,
     signal,
   );

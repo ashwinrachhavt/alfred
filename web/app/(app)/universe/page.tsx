@@ -1,13 +1,17 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useExtendedGraph } from "@/features/universe/queries";
 import { WebGLErrorBoundary } from "./_components/webgl-error-boundary";
 
 const KnowledgeUniverse = dynamic(
   () => import("./_components/knowledge-universe").then((m) => m.KnowledgeUniverse),
-  { ssr: false }
+  {
+    ssr: false,
+    loading: () => <UniverseLoadingShell />,
+  },
 );
 
 // Scene overrides the app theme: the universe is always a dark immersive
@@ -15,13 +19,23 @@ const KnowledgeUniverse = dynamic(
 const SCENE_CLASS = "bg-[var(--alfred-scene-bg)]";
 const PRIMARY_BUTTON_CLASS = "bg-primary text-primary-foreground";
 
+function UniverseLoadingShell() {
+  return (
+    <div className={`scene-container flex h-full items-center justify-center ${SCENE_CLASS}`}>
+      <div className="h-3 w-3 animate-pulse rounded-full bg-primary" />
+      <span className="ml-3 font-mono text-base text-white/40">Loading your universe...</span>
+    </div>
+  );
+}
+
 export default function UniversePage() {
   const { data, isLoading, error, refetch } = useExtendedGraph();
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
+  );
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
-    setIsMobile(mq.matches);
     const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
@@ -29,7 +43,7 @@ export default function UniversePage() {
 
   if (isMobile) {
     return (
-      <div className={`flex h-full items-center justify-center ${SCENE_CLASS} text-white/60`}>
+      <div className={`scene-container flex h-full items-center justify-center ${SCENE_CLASS} text-white/60`}>
         <p className="max-w-xs text-center font-sans text-base">
           The Knowledge Universe is best experienced on desktop.
         </p>
@@ -39,7 +53,7 @@ export default function UniversePage() {
 
   if (error) {
     return (
-      <div className={`flex h-full flex-col items-center justify-center gap-3 ${SCENE_CLASS}`}>
+      <div className={`scene-container flex h-full flex-col items-center justify-center gap-3 ${SCENE_CLASS}`}>
         <p className="font-sans text-base text-white/60">Couldn&apos;t load your universe.</p>
         <button
           onClick={() => refetch()}
@@ -52,33 +66,28 @@ export default function UniversePage() {
   }
 
   if (isLoading || !data) {
-    return (
-      <div className={`flex h-full items-center justify-center ${SCENE_CLASS}`}>
-        <div className="h-3 w-3 animate-pulse rounded-full bg-primary" />
-        <span className="ml-3 font-mono text-base text-white/40">Loading your universe...</span>
-      </div>
-    );
+    return <UniverseLoadingShell />;
   }
 
   if (data.nodes.length === 0) {
     return (
-      <div className={`flex h-full flex-col items-center justify-center gap-4 ${SCENE_CLASS}`}>
+      <div className={`scene-container flex h-full flex-col items-center justify-center gap-4 ${SCENE_CLASS}`}>
         <p className="font-sans text-base text-white/60">Your universe is empty.</p>
         <p className="font-sans text-base text-white/30">
           Start by creating your first knowledge card.
         </p>
-        <a
+        <Link
           href="/knowledge"
           className={`rounded-md ${PRIMARY_BUTTON_CLASS} px-4 py-2 font-sans text-base`}
         >
           Go to Knowledge Hub
-        </a>
+        </Link>
       </div>
     );
   }
 
   return (
-    <div className={`relative h-full w-full ${SCENE_CLASS}`}>
+    <div className={`scene-container relative h-full w-full ${SCENE_CLASS}`}>
       <WebGLErrorBoundary>
         <KnowledgeUniverse data={data} />
       </WebGLErrorBoundary>

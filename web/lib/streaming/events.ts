@@ -86,6 +86,7 @@ export interface ToolArgsFinished extends EventBase {
 export interface ToolResult extends EventBase {
   event_type: "tool.result";
   tool_call_id: UUIDString;
+  message_id: UUIDString | null;
   result_json: Record<string, unknown>;
   duration_ms: number;
   status: ToolResultStatus;

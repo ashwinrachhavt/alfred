@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 
 import { streamSSE } from "@/lib/api/sse";
+import { notifyStreamCacheEvent } from "@/lib/streaming/reactive-cache";
 
 // --- Types ---------------------------------------------------------------
 
@@ -136,6 +137,8 @@ function handleEvent(
   event: string,
   data: Record<string, unknown>,
 ): void {
+  notifyStreamCacheEvent(event, data);
+
   switch (event) {
     case "plan": {
       const todos = (data.todos as Todo[]) ?? [];

@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, BookOpen, Layers, Link2, Loader2, Play, Plus, RefreshCw, Sparkles as SparklesIcon } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { PaginationControls } from "@/components/ui/pagination-controls";
@@ -27,6 +29,18 @@ const ZettelGraph = dynamic(
   () => import("./zettel-graph").then((m) => m.ZettelGraph),
   { ssr: false }
 );
+
+type WorkflowResult = {
+ task_id?: string;
+ taskIds?: string[];
+ message?: string;
+ emptyMessage?: string;
+};
+
+type ReplayBatchResponse = {
+ queued: number;
+ tasks: { doc_id: string; task_id: string }[];
+};
 
 function EmptyState({ onCreateClick, onAIClick }: { onCreateClick: () => void; onAIClick: () => void }) {
  return (
@@ -80,6 +94,7 @@ export function KnowledgeHub() {
  const [showAIGenerate, setShowAIGenerate] = useState(false);
  const [workflowLoading, setWorkflowLoading] = useState<string | null>(null);
  const router = useRouter();
+ const queryClient = useQueryClient();
 
  // The workspace owns both the single-card and multi-card paths now.
  // Bulk is reached by pasting into the workspace; we still keep a direct
@@ -92,7 +107,7 @@ export function KnowledgeHub() {
  [router],
  );
 
- const { trackTask } = useTaskTrackerActions();
+ const { trackTask, setTaskCenterOpen } = useTaskTrackerActions();
  const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
  // Server-side allZettels data with pagination
@@ -167,20 +182,38 @@ export function KnowledgeHub() {
  [activeView, allZettels, selectedId, handleSelectZettel],
  );
 
- const triggerWorkflow = useCallback(async (key: string, label: string, fn: () => Promise<{ task_id: string }>) => {
+ const invalidateKnowledgeSurfaces = useCallback(() => {
+   void queryClient.invalidateQueries({ queryKey: ["zettels"] });
+   void queryClient.invalidateQueries({ queryKey: ["zettel-topics"] });
+   void queryClient.invalidateQueries({ queryKey: ["zettel-tags"] });
+   void queryClient.invalidateQueries({ queryKey: ["zettel-graph-extended"] });
+   void queryClient.invalidateQueries({ queryKey: ["nexus"] });
+ }, [queryClient]);
+
+ const triggerWorkflow = useCallback(async (key: string, label: string, fn: () => Promise<WorkflowResult>) => {
    if (workflowLoading) return;
    setWorkflowLoading(key);
    try {
      const res = await fn();
-     if (res.task_id) {
-       trackTask({ id: res.task_id, label, source: "generic" });
+     const taskIds = res.taskIds ?? (res.task_id ? [res.task_id] : []);
+     if (taskIds.length > 0) {
+       for (const taskId of taskIds) {
+         trackTask({ id: taskId, label, source: "generic" });
+       }
+       setTaskCenterOpen(true);
+       toast.success(res.message ?? `${label} queued`);
+       invalidateKnowledgeSurfaces();
+     } else {
+       toast.info(res.emptyMessage ?? `${label} had nothing to run`);
      }
-   } catch {
-     // silently fail — toast from task tracker will handle errors
+   } catch (error) {
+     toast.error(`${label} failed`, {
+       description: error instanceof Error ? error.message : "Unknown error",
+     });
    } finally {
      setWorkflowLoading(null);
    }
- }, [workflowLoading, trackTask]);
+ }, [invalidateKnowledgeSurfaces, setTaskCenterOpen, trackTask, workflowLoading]);
 
  const handleReclassifyAll = useCallback(() => {
    triggerWorkflow("reclassify", "Reclassify All", () =>
@@ -196,12 +229,15 @@ export function KnowledgeHub() {
 
  const handleReplayBatch = useCallback(() => {
    triggerWorkflow("enrich", "Bulk Enrich", async () => {
-     const res = await apiPostJson<{ queued: number; tasks: { doc_id: string; task_id: string }[] }, Record<string, never>>(
+     const res = await apiPostJson<ReplayBatchResponse, Record<string, never>>(
        apiRoutes.pipeline.replayBatch, {}
      );
-     // Track the first task as a representative
-     const firstTask = res.tasks?.[0];
-     return { task_id: firstTask?.task_id ?? "" };
+     const taskIds = res.tasks.map((task) => task.task_id).filter(Boolean);
+     return {
+       taskIds,
+       message: `Queued ${res.queued} enrichment ${res.queued === 1 ? "task" : "tasks"}`,
+       emptyMessage: "No documents need enrichment right now",
+     };
    });
  }, [triggerWorkflow]);
 
@@ -227,7 +263,7 @@ export function KnowledgeHub() {
  variant="ghost"
  className="gap-1.5 text-xs text-muted-foreground"
  onClick={handleBatchLink}
- disabled={workflowLoading === "batchLink"}
+ disabled={workflowLoading !== null}
  >
  {workflowLoading === "batchLink" ? <Loader2 className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}
  Batch Link
@@ -237,7 +273,7 @@ export function KnowledgeHub() {
  variant="ghost"
  className="gap-1.5 text-xs text-muted-foreground"
  onClick={handleReplayBatch}
- disabled={workflowLoading === "enrich"}
+ disabled={workflowLoading !== null}
  >
  {workflowLoading === "enrich" ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
  Bulk Enrich
@@ -247,7 +283,7 @@ export function KnowledgeHub() {
  variant="ghost"
  className="gap-1.5 text-xs text-muted-foreground"
  onClick={handleReclassifyAll}
- disabled={workflowLoading === "reclassify"}
+ disabled={workflowLoading !== null}
  >
  {workflowLoading === "reclassify" ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
  Reclassify

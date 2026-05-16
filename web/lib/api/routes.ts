@@ -66,6 +66,7 @@ export const apiRoutes = {
     generatePreview: "/api/zettels/cards/generate/preview",
     generatePreviewStream: "/api/zettels/cards/generate/preview-stream",
     createStream: "/api/zettels/cards/create-stream",
+    createStreamV2: "/api/zettels/cards/create-stream/v2",
     decomposeStream: "/api/zettels/decompose-stream",
     suggestTags: "/api/zettels/suggest-tags",
     graph: "/api/zettels/graph",
@@ -125,6 +126,7 @@ export const apiRoutes = {
   },
   agent: {
     stream: "/api/agent/stream",
+    streamV2: "/api/agent/stream/v2",
     threads: "/api/agent/threads",
     threadById: (id: number) => `/api/agent/threads/${id}`,
   },

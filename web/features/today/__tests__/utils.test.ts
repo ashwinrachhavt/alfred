@@ -3,10 +3,16 @@ import { describe, expect, it } from "vitest";
 import type { TodayBriefingResponse } from "@/lib/api/today";
 import {
   TODAY_AUDIT_KINDS,
+  buildTodayBriefingLines,
+  buildTodayInsightCards,
+  buildTodayNextActions,
   buildTodayTimeline,
+  buildTodayThreads,
   getBriefingCountForKind,
   getCalendarDayCountForKind,
   getCalendarDayTotalForKinds,
+  getTodayConnectionDebt,
+  getTodayReviewDebt,
   makeCalendarDayMap,
 } from "@/features/today/utils";
 
@@ -63,6 +69,7 @@ const briefing: TodayBriefingResponse = {
       created_at: "2026-04-10T07:30:00Z",
     },
   ],
+  notes: [],
   stats: {
     total_captures: 1,
     total_cards_created: 1,
@@ -73,6 +80,7 @@ const briefing: TodayBriefingResponse = {
     total_events: 5,
     total_cards: 10,
     total_links: 12,
+    total_notes_touched: 0,
   },
 };
 
@@ -110,11 +118,7 @@ describe("today utils", () => {
 
   it("counts events by kind for a briefing", () => {
     expect(TODAY_AUDIT_KINDS.map((kind) => getBriefingCountForKind(briefing, kind))).toEqual([
-      1,
-      1,
-      1,
-      1,
-      1,
+      1, 1, 1, 1, 1,
     ]);
   });
 
@@ -132,5 +136,85 @@ describe("today utils", () => {
 
     expect(getCalendarDayCountForKind(day, "connection")).toBe(3);
     expect(getCalendarDayTotalForKinds(day, ["capture", "review", "gap"])).toBe(7);
+  });
+
+  it("derives briefing lines from the action-oriented day state", () => {
+    const lines = buildTodayBriefingLines(briefing);
+
+    expect(lines[0]).toContain("captured 1 source");
+    expect(lines[0]).toContain("created 1 card");
+    expect(lines[1]).toContain("AI");
+    expect(lines[1]).toContain("reviews");
+  });
+
+  it("builds insight cards with interpreted debt", () => {
+    const debtBriefing: TodayBriefingResponse = {
+      ...briefing,
+      connections: [],
+      stats: {
+        ...briefing.stats,
+        total_connections: 0,
+        total_cards_created: 3,
+        total_reviews_due: 4,
+        total_reviews_completed: 1,
+      },
+    };
+
+    expect(getTodayConnectionDebt(debtBriefing)).toBe(3);
+    expect(getTodayReviewDebt(debtBriefing)).toBe(3);
+
+    const insightCards = buildTodayInsightCards(debtBriefing);
+    expect(insightCards.find((card) => card.id === "connection")?.tone).toBe("warning");
+    expect(insightCards.find((card) => card.id === "review")?.metric).toBe("1 cleared of 4");
+  });
+
+  it("groups knowledge threads from cards and linked activity", () => {
+    const multiThreadBriefing: TodayBriefingResponse = {
+      ...briefing,
+      stored_cards: [
+        ...briefing.stored_cards,
+        {
+          card_id: 43,
+          title: "Agent memory",
+          topic: "AI",
+          status: "active",
+          tags: ["memory"],
+          created_at: "2026-04-10T12:00:00Z",
+        },
+        {
+          card_id: 44,
+          title: "Stoic reading",
+          topic: "Philosophy",
+          status: "active",
+          tags: [],
+          created_at: "2026-04-10T12:30:00Z",
+        },
+      ],
+    };
+
+    const threads = buildTodayThreads(multiThreadBriefing);
+
+    expect(threads[0]?.name).toBe("AI");
+    expect(threads[0]?.cards).toBe(2);
+    expect(threads.some((thread) => thread.name === "Knowledge gaps")).toBe(true);
+  });
+
+  it("prioritizes review and connection actions", () => {
+    const actionBriefing: TodayBriefingResponse = {
+      ...briefing,
+      connections: [],
+      stats: {
+        ...briefing.stats,
+        total_connections: 0,
+        total_cards_created: 4,
+        total_reviews_due: 3,
+        total_reviews_completed: 0,
+      },
+    };
+
+    const actions = buildTodayNextActions(actionBriefing);
+
+    expect(actions[0]?.id).toBe("review-due");
+    expect(actions[1]?.id).toBe("connect-new-knowledge");
   });
 });

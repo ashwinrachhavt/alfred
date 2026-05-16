@@ -442,13 +442,22 @@ async def agent_stream_v2(
     if not settings.streaming_v2_enabled:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="streaming v2 disabled")
 
-    if not (body.message and body.message.strip()) and not body.intent:
+    attachments = body.attachments or []
+    _validate_image_attachments(attachments)
+
+    if not (body.message and body.message.strip()) and not body.intent and not attachments:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Either message or intent is required.",
+            detail="Either message, intent, or image attachment is required.",
         )
 
-    message_text = body.message or f"[intent: {body.intent}]"
+    message_text = (
+        body.message.strip()
+        if body.message and body.message.strip()
+        else "Analyze the attached image(s)."
+        if attachments
+        else f"[intent: {body.intent}]"
+    )
 
     thread_id = _get_or_create_thread(
         db, body.thread_id, body.note_context, message_text,
@@ -468,7 +477,15 @@ async def agent_stream_v2(
         history = [{"role": m.role, "content": m.content} for m in reversed(db_messages)]
 
     # Persist user message immediately — same contract as v1.
-    _persist_message(db, thread_id, "user", message_text, lens=body.lens, model=body.model)
+    _persist_message(
+        db,
+        thread_id,
+        "user",
+        message_text,
+        parts=_user_message_parts(message_text, attachments),
+        lens=body.lens,
+        model=body.model,
+    )
 
     service = AgentService(db)
     producer = AgentProducer(
@@ -479,6 +496,7 @@ async def agent_stream_v2(
         lens=body.lens,
         history=history,
         note_context=body.note_context,
+        image_attachments=[attachment.model_dump() for attachment in attachments],
         intent=body.intent,
         intent_args=body.intent_args,
         max_iterations=body.max_iterations,
@@ -497,16 +515,36 @@ async def agent_stream_v2(
     recorder.attach(snapshot_projector)
 
     async def event_stream():
+        last_sent_seq = -1
+
+        def pending_wire_frames() -> list[tuple[int, dict[str, Any]]]:
+            nonlocal last_sent_seq
+            pending: list[tuple[int, dict[str, Any]]] = []
+            for recorded_event in recorder.recorded_events:
+                if recorded_event.seq <= last_sent_seq:
+                    continue
+                for frame in wire.frames_for(recorded_event):
+                    pending.append((recorded_event.seq, frame))
+                last_sent_seq = recorded_event.seq
+            return pending
+
         try:
+            for seq, frame in pending_wire_frames():
+                yield _format_agui_sse(frame, seq)
+
             async with recorder:
                 async for evt in producer.stream():
                     recorded = await recorder.emit_raw(evt)
                     for frame in wire.frames_for(recorded):
                         yield _format_agui_sse(frame, recorded.seq)
+                    last_sent_seq = max(last_sent_seq, recorded.seq)
                     if await request.is_disconnected():
                         break
         except Exception:
             logger.exception("v2 stream failed")
+        finally:
+            for seq, frame in pending_wire_frames():
+                yield _format_agui_sse(frame, seq)
 
         # Update thread timestamp — same tail as v1.
         try:
@@ -530,9 +568,9 @@ async def agent_stream_v2(
 
 
 def _format_agui_sse(frame: dict, seq: int) -> str:
-    """Format an AG-UI frame as an SSE event line per spec section 7.1."""
-    payload = json.dumps(frame.get("data", {}), separators=(",", ":"), default=str)
-    return f"event: {frame['event']}\nid: {seq}\ndata: {payload}\n\n"
+    """Format a canonical AG-UI event object as an SSE data frame."""
+    payload = json.dumps(frame, separators=(",", ":"), default=str)
+    return f"id: {seq}\ndata: {payload}\n\n"
 
 
 @router.post("/threads", status_code=status.HTTP_201_CREATED)

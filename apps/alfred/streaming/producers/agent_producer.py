@@ -17,7 +17,7 @@ same call share a ``tool_call_id``.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import UUID, uuid4
@@ -25,10 +25,12 @@ from uuid import UUID, uuid4
 from alfred.streaming.events import (
     AnyRunEvent,
     MessageDelta,
+    MessageFinished,
     MessageStarted,
     RunErrored,
     StateDelta,
     ThinkingDelta,
+    ThinkingFinished,
     ToolResult,
     ToolStarted,
 )
@@ -38,6 +40,26 @@ _PLACEHOLDER_RUN_ID: UUID = UUID("00000000-0000-0000-0000-000000000000")
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+def _as_args_preview(value: Any) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return dict(value)
+    return {}
+
+
+def _as_tool_result_json(value: Any, *, status: str) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return dict(value)
+    if value is None:
+        return {}
+    if status == "error":
+        return {"error": str(value)}
+    if isinstance(value, list):
+        return {"items": value}
+    if isinstance(value, tuple):
+        return {"items": list(value)}
+    return {"content": value if isinstance(value, str | int | float | bool) else str(value)}
 
 
 class _AgentServiceProtocol(Protocol):
@@ -60,6 +82,7 @@ class AgentProducer:
         lens: str | None,
         history: list | None = None,
         note_context: dict | None = None,
+        image_attachments: list[dict[str, Any]] | None = None,
         intent: str | None = None,
         intent_args: dict | None = None,
         max_iterations: int | None = None,
@@ -71,6 +94,7 @@ class AgentProducer:
         self.lens = lens
         self.history = history
         self.note_context = note_context
+        self.image_attachments = image_attachments
         self.intent = intent
         self.intent_args = intent_args
         self.max_iterations = max_iterations
@@ -97,6 +121,8 @@ class AgentProducer:
             kwargs["history"] = self.history
         if self.note_context is not None:
             kwargs["note_context"] = self.note_context
+        if self.image_attachments is not None:
+            kwargs["image_attachments"] = self.image_attachments
         if self.intent is not None:
             kwargs["intent"] = self.intent
         if self.intent_args is not None:
@@ -105,6 +131,8 @@ class AgentProducer:
             kwargs["max_iterations"] = self.max_iterations
 
         first_token_emitted = False
+        content_parts: list[str] = []
+        thinking_parts: list[str] = []
 
         async for event_name, data, _sse_str in self.service.stream_turn(**kwargs):
             if event_name == "token":
@@ -115,16 +143,20 @@ class AgentProducer:
                         message_id=mid,
                     )
                     first_token_emitted = True
+                content = str(data.get("content", ""))
+                content_parts.append(content)
                 yield MessageDelta(
                     run_id=_PLACEHOLDER_RUN_ID, seq=0, emitted_at=_utcnow(),
                     message_id=self._ensure_message_id(),
-                    delta_text=str(data.get("content", "")),
+                    delta_text=content,
                 )
             elif event_name == "reasoning":
+                content = str(data.get("content", ""))
+                thinking_parts.append(content)
                 yield ThinkingDelta(
                     run_id=_PLACEHOLDER_RUN_ID, seq=0, emitted_at=_utcnow(),
                     message_id=self._ensure_message_id(),
-                    delta_text=str(data.get("content", "")),
+                    delta_text=content,
                 )
             elif event_name == "tool_start":
                 call_id = str(data.get("call_id", ""))
@@ -132,7 +164,8 @@ class AgentProducer:
                     run_id=_PLACEHOLDER_RUN_ID, seq=0, emitted_at=_utcnow(),
                     tool_call_id=call_id,
                     tool_name=str(data.get("tool", "unknown")),
-                    args_preview=dict(data.get("args") or {}),
+                    parent_message_id=self._ensure_message_id(),
+                    args_preview=_as_args_preview(data.get("args")),
                 )
             elif event_name == "tool_result":
                 call_id = str(data.get("call_id", ""))
@@ -142,7 +175,8 @@ class AgentProducer:
                 yield ToolResult(
                     run_id=_PLACEHOLDER_RUN_ID, seq=0, emitted_at=_utcnow(),
                     tool_call_id=call_id,
-                    result_json=dict(data.get("result") or {}),
+                    message_id=self._ensure_message_id(),
+                    result_json=_as_tool_result_json(data.get("result"), status=status),
                     duration_ms=int(data.get("duration_ms") or 0),
                     status=status,  # type: ignore[arg-type]
                 )
@@ -159,6 +193,19 @@ class AgentProducer:
                 )
                 return
             elif event_name == "done":
+                if thinking_parts:
+                    yield ThinkingFinished(
+                        run_id=_PLACEHOLDER_RUN_ID, seq=0, emitted_at=_utcnow(),
+                        message_id=self._ensure_message_id(),
+                        full_text="".join(thinking_parts),
+                    )
+                if first_token_emitted:
+                    yield MessageFinished(
+                        run_id=_PLACEHOLDER_RUN_ID, seq=0, emitted_at=_utcnow(),
+                        message_id=self._ensure_message_id(),
+                        final_text="".join(content_parts),
+                        token_count=None,
+                    )
                 return
 
 

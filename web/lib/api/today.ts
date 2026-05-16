@@ -55,6 +55,14 @@ export type TodayGapItem = {
   created_at: string | null;
 };
 
+export type TodayNoteItem = {
+  note_id: string;
+  title: string;
+  icon: string | null;
+  workspace_id: string;
+  updated_at: string | null;
+};
+
 export type TodayBriefingStats = {
   total_captures: number;
   total_cards_created: number;
@@ -65,6 +73,7 @@ export type TodayBriefingStats = {
   total_events: number;
   total_cards: number;
   total_links: number;
+  total_notes_touched: number;
 };
 
 export type TodayBriefingResponse = {
@@ -76,6 +85,7 @@ export type TodayBriefingResponse = {
   connections: TodayConnectionItem[];
   reviews: TodayReviewItem[];
   gaps: TodayGapItem[];
+  notes: TodayNoteItem[];
   stats: TodayBriefingStats;
 };
 

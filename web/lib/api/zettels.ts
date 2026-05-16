@@ -1,6 +1,7 @@
 import { apiFetch, apiPatchJson, apiPostJson } from "@/lib/api/client";
 import { apiRoutes } from "@/lib/api/routes";
 import { streamSSE } from "@/lib/api/sse";
+import { createAguiEventProjector } from "@/lib/streaming/agui-runtime";
 
 // --------------- Types ---------------
 
@@ -410,5 +411,17 @@ export async function createZettelStream(
   onEvent: (event: string, data: Record<string, unknown>) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  return streamSSE(apiRoutes.zettels.createStream, payload, onEvent, signal);
+  const projector = createAguiEventProjector();
+  const handleEvent = (event: string, data: Record<string, unknown>) => {
+    for (const projected of projector.project(event, data)) {
+      onEvent(projected.event, projected.data);
+    }
+  };
+
+  try {
+    return await streamSSE(apiRoutes.zettels.createStreamV2, payload, handleEvent, signal);
+  } catch (err) {
+    if (!(err instanceof Error) || !/Stream failed:\s*404/.test(err.message)) throw err;
+    return streamSSE(apiRoutes.zettels.createStream, payload, onEvent, signal);
+  }
 }
