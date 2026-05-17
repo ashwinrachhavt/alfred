@@ -59,6 +59,32 @@ class ImportStats:
         self.errors: list[dict[str, str]] = []
         self.documents: list[dict[str, str]] = []
 
+    def add_error(
+        self,
+        *,
+        source: str,
+        operation: str,
+        error: Exception | str,
+        item_id: str | None = None,
+        **context: Any,
+    ) -> None:
+        """Append a normalized import error payload."""
+
+        error_message = str(error)
+        error_type = type(error).__name__ if isinstance(error, Exception) else "Error"
+        payload = {
+            "source": source,
+            "operation": operation,
+            "error": error_message,
+            "error_type": error_type,
+        }
+        if item_id is not None:
+            payload["id"] = str(item_id)
+        for key, value in context.items():
+            if value is not None:
+                payload[key] = str(value)
+        self.errors.append(payload)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "ok": True,

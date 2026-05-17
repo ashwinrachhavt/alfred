@@ -17,7 +17,7 @@ import logging
 import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from notion_client import Client
 from notion_client.errors import APIResponseError
@@ -168,7 +168,13 @@ class NotionPageImporter:
                 stats.documents.append({"page_id": page_id, "document_id": doc_id})
             except Exception as exc:  # pragma: no cover - network/runtime dependent
                 logger.exception("Notion import failed for %s", page_id)
-                stats.errors.append({"page_id": str(page_id), "error": str(exc)})
+                stats.add_error(
+                    source="notion",
+                    operation="upsert",
+                    error=exc,
+                    item_id=str(page_id),
+                    page_id=str(page_id),
+                )
 
         return stats.to_dict()
 
@@ -183,7 +189,7 @@ class NotionPageImporter:
     @retry(wait=wait_exponential_jitter(1, 5), stop=stop_after_attempt(5))
     def _search(self, **payload: Any) -> dict[str, Any]:
         self._sleep()
-        return self.client.search(**payload)
+        return cast(dict[str, Any], self.client.search(**payload))
 
     @retry(wait=wait_exponential_jitter(1, 5), stop=stop_after_attempt(5))
     def _list_children(self, *, block_id: str, start_cursor: str | None = None) -> dict[str, Any]:
@@ -191,7 +197,7 @@ class NotionPageImporter:
         kwargs: dict[str, Any] = {"block_id": block_id, "page_size": 100}
         if start_cursor:
             kwargs["start_cursor"] = start_cursor
-        return self.client.blocks.children.list(**kwargs)
+        return cast(dict[str, Any], self.client.blocks.children.list(**kwargs))
 
     def _iter_pages(
         self,

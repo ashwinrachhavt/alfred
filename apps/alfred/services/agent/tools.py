@@ -17,11 +17,14 @@ import json
 import logging
 import re
 from typing import Any
+from uuid import UUID
 
 from langchain_core.tools import BaseTool
 from sqlmodel import Session
 
 from alfred.core.settings import settings
+from alfred.models.doc_storage import DocumentRow
+from alfred.services.knowledge import KnowledgeService
 from alfred.services.notes_filesystem_service import (
     FilesystemPathNotAllowedError,
     FilesystemPathNotFoundError,
@@ -522,7 +525,7 @@ CORE_TOOL_SCHEMAS: list[dict[str, Any]] = [
 
 
 async def _search_kb(args: dict[str, Any], db: Session) -> dict[str, Any]:
-    """Search zettels with text, topic, and tag-aware matching."""
+    """Search zettels with metadata-aware matching and documents via Qdrant."""
     query = str(args.get("query") or "").strip()
     domain_filter = args.get("domain_filter") or args.get("topic")
     tags = args.get("tags") or args.get("tag_filter")
@@ -535,6 +538,9 @@ async def _search_kb(args: dict[str, Any], db: Session) -> dict[str, Any]:
     except (TypeError, ValueError):
         limit = 10
 
+    if not query and not domain_filter and not tags:
+        return {"results": [], "count": 0}
+
     svc = ZettelkastenService(db)
     matches = svc.search_cards(
         query=query,
@@ -544,7 +550,7 @@ async def _search_kb(args: dict[str, Any], db: Session) -> dict[str, Any]:
         search_mode=search_mode,
     )
 
-    results = []
+    results: list[dict[str, Any]] = []
     for match in matches:
         card = match.card
         results.append(
@@ -560,8 +566,50 @@ async def _search_kb(args: dict[str, Any], db: Session) -> dict[str, Any]:
             }
         )
 
-    if not query and not domain_filter and not tags:
-        return {"results": [], "count": 0}
+    if query and len(results) < limit and search_mode != "metadata":
+        seen_docs: set[str] = set()
+        try:
+            doc_hits = KnowledgeService().search(query, limit=limit)
+        except Exception as exc:  # pragma: no cover - external vector service availability
+            logger.info("Document KB search unavailable: %s", exc)
+            doc_hits = []
+
+        for hit in doc_hits:
+            payload = hit.get("payload") or hit
+            meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+            doc_id = payload.get("doc_id") or meta.get("doc_id") or hit.get("doc_id")
+            if not doc_id:
+                continue
+
+            doc_id_str = str(doc_id)
+            if doc_id_str in seen_docs:
+                continue
+            seen_docs.add(doc_id_str)
+
+            try:
+                doc = db.get(DocumentRow, UUID(doc_id_str))
+            except (TypeError, ValueError):
+                doc = None
+
+            summary = ""
+            if doc and isinstance(doc.summary, dict):
+                summary = str(doc.summary.get("short") or doc.summary.get("summary") or "")
+            if not summary:
+                summary = str(hit.get("text") or payload.get("text") or "")[:200]
+
+            results.append(
+                {
+                    "type": "document",
+                    "document_id": doc_id_str,
+                    "title": doc.title if doc and doc.title else "Untitled document",
+                    "summary": summary,
+                    "source_url": doc.source_url if doc else None,
+                    "tags": doc.tags if doc else [],
+                    "score": float(hit.get("score") or 0.0),
+                }
+            )
+            if len(results) >= limit:
+                break
 
     return {
         "results": results,

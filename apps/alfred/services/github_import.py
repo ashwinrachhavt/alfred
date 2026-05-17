@@ -136,7 +136,13 @@ def import_readmes(
             stats.documents.append({"repo": slug, "document_id": doc_id})
         except Exception as exc:
             logger.exception("GitHub README import failed for %s", slug)
-            stats.errors.append({"repo": slug, "error": str(exc)})
+            stats.add_error(
+                source="github",
+                operation="readme_import",
+                error=exc,
+                item_id=slug,
+                repo=slug,
+            )
 
     result = stats.to_dict()
     result["type"] = "github_readme"
@@ -213,7 +219,13 @@ def import_issues(
                 stats.documents.append({"repo": slug, "issue": number, "document_id": doc_id})
         except Exception as exc:
             logger.exception("GitHub issue import failed for %s", slug)
-            stats.errors.append({"repo": slug, "error": str(exc)})
+            stats.add_error(
+                source="github",
+                operation="issue_import",
+                error=exc,
+                item_id=slug,
+                repo=slug,
+            )
 
     result = stats.to_dict()
     result["type"] = "github_issue"
@@ -371,7 +383,13 @@ def import_starred(
             stats.documents.append({"repo": slug, "document_id": doc_id})
         except Exception as exc:
             logger.exception("GitHub starred import failed for %s", slug)
-            stats.errors.append({"repo": slug, "error": str(exc)})
+            stats.add_error(
+                source="github",
+                operation="starred_import",
+                error=exc,
+                item_id=slug,
+                repo=slug,
+            )
 
     result = stats.to_dict()
     result["type"] = "github_starred"
@@ -448,7 +466,13 @@ def import_gists(
             stats.documents.append({"gist_id": gist_id, "document_id": doc_id})
         except Exception as exc:
             logger.exception("GitHub gist import failed for %s", gist_id)
-            stats.errors.append({"gist_id": gist_id, "error": str(exc)})
+            stats.add_error(
+                source="github",
+                operation="gist_import",
+                error=exc,
+                item_id=gist_id,
+                gist_id=gist_id,
+            )
 
     result = stats.to_dict()
     result["type"] = "github_gist"
@@ -532,7 +556,13 @@ def import_discussions(
                 stats.documents.append({"repo": slug, "discussion": number, "document_id": doc_id})
         except Exception as exc:
             logger.exception("GitHub discussion import failed for %s", slug)
-            stats.errors.append({"repo": slug, "error": str(exc)})
+            stats.add_error(
+                source="github",
+                operation="discussion_import",
+                error=exc,
+                item_id=slug,
+                repo=slug,
+            )
 
     result = stats.to_dict()
     result["type"] = "github_discussion"

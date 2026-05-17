@@ -137,13 +137,6 @@ export const apiRoutes = {
     status: (name: string) => `/api/${name}/status`,
     statusAll: "/api/connectors/status-all",
   },
-  thinking: {
-    sessions: "/api/thinking/sessions",
-    sessionById: (id: number) => `/api/thinking/sessions/${id}`,
-    archive: (id: number) => `/api/thinking/sessions/${id}/archive`,
-    fork: (id: number) => `/api/thinking/sessions/${id}/fork`,
-    decompose: "/api/thinking/decompose",
-  },
   dictionary: {
     lookup: "/api/dictionary/lookup",
     lookupStream: "/api/dictionary/lookup/stream",

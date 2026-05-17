@@ -4,11 +4,7 @@ from __future__ import annotations
 
 import json
 
-from alfred.services.excalidraw_agent import (
-    auto_layout,
-    build_diagram_prompt,
-    parse_diagram_response,
-)
+from alfred.services.excalidraw_agent import build_diagram_prompt, parse_diagram_response
 
 
 class TestBuildDiagramPrompt:
@@ -24,16 +20,15 @@ class TestBuildDiagramPrompt:
         assert "authentication" in prompt.lower()
 
     def test_prompt_includes_element_schema(self):
-        """Prompt should explain the Excalidraw element format."""
+        """Prompt should explain the structured diagram format."""
         prompt = build_diagram_prompt("draw a simple diagram")
 
-        # Check for key Excalidraw concepts
-        assert "rectangle" in prompt.lower()
-        assert "arrow" in prompt.lower()
-        assert "text" in prompt.lower()
-        assert "x" in prompt and "y" in prompt  # coordinates
-        assert "width" in prompt.lower() and "height" in prompt.lower()
-        assert "strokeColor" in prompt or "stroke" in prompt.lower()
+        assert '"diagram_type"' in prompt
+        assert '"layout"' in prompt
+        assert '"nodes"' in prompt
+        assert '"edges"' in prompt
+        assert "flowchart" in prompt.lower()
+        assert "mindmap" in prompt.lower()
 
     def test_prompt_includes_canvas_context(self):
         """Prompt should include canvas context when provided."""
@@ -49,7 +44,7 @@ class TestParseDiagramResponse:
     """Test parsing LLM responses into Excalidraw elements."""
 
     def test_parses_valid_elements(self):
-        """Should parse valid JSON with rectangle, text, and arrow elements."""
+        """Should parse valid legacy JSON with rectangle, text, and arrow elements."""
         response = json.dumps({
             "elements": [
                 {
@@ -94,7 +89,10 @@ class TestParseDiagramResponse:
         assert len(result["elements"]) == 3
         assert result["elements"][0]["type"] == "rectangle"
         assert result["elements"][1]["type"] == "text"
+        assert result["elements"][1]["label"]["text"] == "Start"
         assert result["elements"][2]["type"] == "arrow"
+        assert result["elements"][2]["start"]["id"] == "rect1"
+        assert result["elements"][2]["end"]["id"] == "rect2"
         assert result["description"] == "A simple flowchart showing the start state."
 
     def test_assigns_missing_ids(self):
@@ -148,8 +146,8 @@ class TestParseDiagramResponse:
         assert result["elements"] == []
         assert result["description"] == "Some text"
 
-    def test_auto_layouts_zero_coords(self):
-        """Elements at (0,0) should get grid-layout positions."""
+    def test_layouts_zero_coordinate_legacy_elements(self):
+        """Legacy elements at (0,0) should get generated positions."""
         response = json.dumps({
             "elements": [
                 {"id": "a", "type": "rectangle", "x": 0, "y": 0, "width": 100, "height": 80},
@@ -161,19 +159,9 @@ class TestParseDiagramResponse:
 
         result = parse_diagram_response(response)
 
-        # All elements should have non-zero positions after auto-layout
         for elem in result["elements"]:
             if elem["type"] not in ("arrow", "line"):
                 assert elem["x"] > 0 or elem["y"] > 0, f"Element {elem['id']} still at (0,0)"
-
-        # Check they're laid out in a grid pattern
-        # First element should be at start position (100, 100)
-        assert result["elements"][0]["x"] == 100
-        assert result["elements"][0]["y"] == 100
-
-        # Second element should be in next column (100 + 250, 100)
-        assert result["elements"][1]["x"] == 350
-        assert result["elements"][1]["y"] == 100
 
     def test_preserves_explicit_coordinates(self):
         """Elements with explicit coordinates should not be modified."""
@@ -191,57 +179,3 @@ class TestParseDiagramResponse:
         assert result["elements"][0]["y"] == 75
         assert result["elements"][1]["x"] == 200
         assert result["elements"][1]["y"] == 300
-
-
-class TestAutoLayout:
-    """Test the auto-layout helper function."""
-
-    def test_layouts_elements_in_grid(self):
-        """Should arrange elements in a grid pattern."""
-        elements = [
-            {"id": "a", "type": "rectangle", "x": 0, "y": 0},
-            {"id": "b", "type": "rectangle", "x": 0, "y": 0},
-            {"id": "c", "type": "rectangle", "x": 0, "y": 0},
-            {"id": "d", "type": "rectangle", "x": 0, "y": 0},
-        ]
-
-        result = auto_layout(elements, start_x=100, start_y=100, col_width=250, row_height=150, cols=3)
-
-        # First row: 3 elements
-        assert result[0]["x"] == 100 and result[0]["y"] == 100
-        assert result[1]["x"] == 350 and result[1]["y"] == 100
-        assert result[2]["x"] == 600 and result[2]["y"] == 100
-        # Second row: 1 element
-        assert result[3]["x"] == 100 and result[3]["y"] == 250
-
-    def test_skips_arrows_and_lines(self):
-        """Should not reposition arrows and lines."""
-        elements = [
-            {"id": "a", "type": "rectangle", "x": 0, "y": 0},
-            {"id": "arrow1", "type": "arrow", "x": 0, "y": 0},
-            {"id": "b", "type": "rectangle", "x": 0, "y": 0},
-            {"id": "line1", "type": "line", "x": 0, "y": 0},
-        ]
-
-        result = auto_layout(elements)
-
-        # Rectangles should be repositioned
-        assert result[0]["x"] > 0
-        assert result[2]["x"] > 0
-        # Arrow and line should stay at (0, 0)
-        assert result[1]["x"] == 0 and result[1]["y"] == 0
-        assert result[3]["x"] == 0 and result[3]["y"] == 0
-
-    def test_preserves_non_zero_coordinates(self):
-        """Should not modify elements that already have positions."""
-        elements = [
-            {"id": "a", "type": "rectangle", "x": 50, "y": 75},
-            {"id": "b", "type": "rectangle", "x": 0, "y": 0},
-        ]
-
-        result = auto_layout(elements)
-
-        # First element should keep its position
-        assert result[0]["x"] == 50 and result[0]["y"] == 75
-        # Second element should get laid out
-        assert result[1]["x"] > 0 and result[1]["y"] > 0

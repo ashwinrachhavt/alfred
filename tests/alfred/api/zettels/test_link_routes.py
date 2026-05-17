@@ -37,9 +37,8 @@ def client(session: Session, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     app.dependency_overrides[get_db_session] = lambda: session
 
     monkeypatch.setattr(zettel_routes, "_cache_get", lambda _key: None)
-    monkeypatch.setattr(zettel_routes, "_cache_set", lambda _k, _v: None)
+    monkeypatch.setattr(zettel_routes, "_cache_set", lambda _k, _v, **_kwargs: None)
     monkeypatch.setattr(zettel_routes, "_invalidate_graph_cache", lambda: None)
-    monkeypatch.setattr(zettel_routes, "get_redis_client", lambda: None)
     return TestClient(app)
 
 

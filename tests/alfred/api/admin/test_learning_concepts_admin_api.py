@@ -72,16 +72,13 @@ def test_admin_enqueue_learning_concepts_batch(monkeypatch) -> None:
         def __init__(self, task_id: str) -> None:
             self.id = task_id
 
-    class _FakeCelery:
-        def __init__(self) -> None:
-            self.calls: list[dict] = []
+    calls: list[dict] = []
 
-        def send_task(self, name: str, *, kwargs: dict) -> _FakeAsyncResult:
-            self.calls.append({"name": name, "kwargs": kwargs})
-            return _FakeAsyncResult("task-abc")
+    def _fake_dispatch_task(name: str, *, kwargs: dict) -> _FakeAsyncResult:
+        calls.append({"name": name, "kwargs": kwargs})
+        return _FakeAsyncResult("task-abc")
 
-    fake_celery = _FakeCelery()
-    monkeypatch.setattr(admin_routes, "get_celery_client", lambda: fake_celery)
+    monkeypatch.setattr(admin_routes, "dispatch_task", _fake_dispatch_task)
 
     resp = client.post(
         "/api/admin/learning/concepts/extract/batch/async",
@@ -92,7 +89,7 @@ def test_admin_enqueue_learning_concepts_batch(monkeypatch) -> None:
     assert data["status"] == "queued"
     assert data["task_id"] == "task-abc"
     assert data["status_url"] == "/tasks/task-abc"
-    assert fake_celery.calls == [
+    assert calls == [
         {
             "name": "alfred.tasks.learning_concepts.batch_extract",
             "kwargs": {

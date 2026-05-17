@@ -10,19 +10,11 @@ from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
 from alfred.api.dependencies import get_db_session
+from alfred.api.zettels import cache as zettel_cache
+from alfred.api.zettels import graph_projection
 from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
-from alfred.core.dependencies import get_graph_service
 from alfred.core.exceptions import ServiceUnavailableError
-from alfred.core.redis_client import get_redis_client
 from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview
-
-_log = logging.getLogger(__name__)
-_TOPICS_CACHE_KEY = "zettel:topics"
-_TAGS_CACHE_KEY = "zettel:tags"
-_LINK_TYPES_CACHE_KEY = "zettel:link_types"
-_GRAPH_EXT_CACHE_KEY = "zettel:graph:extended"
-_CACHE_TTL_SECONDS = 300  # 5 minutes
-_GRAPH_EXT_CACHE_TTL = 3600  # 1 hour
 from alfred.schemas.zettel import (
     AIZettelGenerateRequest,
     BacklinkResponse,
@@ -56,8 +48,27 @@ from alfred.services.session_service import (
 )
 from alfred.services.zettel_creation_stream import ZettelCreationStream
 from alfred.services.zettel_decompose_stream import ZettelDecomposeStream
-from alfred.services.zettel_graph_sync import ZettelGraphSync
+from alfred.services.zettel_decomposition_commit import (
+    ZettelDecompositionCommitError,
+    ZettelDecompositionCommitService,
+)
 from alfred.services.zettelkasten_service import ZettelkastenService
+
+_log = logging.getLogger(__name__)
+_TOPICS_CACHE_KEY = zettel_cache.TOPICS_CACHE_KEY
+_TAGS_CACHE_KEY = zettel_cache.TAGS_CACHE_KEY
+_LINK_TYPES_CACHE_KEY = zettel_cache.LINK_TYPES_CACHE_KEY
+_GRAPH_EXT_CACHE_KEY = zettel_cache.GRAPH_EXT_CACHE_KEY
+_GRAPH_EXT_CACHE_TTL = zettel_cache.GRAPH_EXT_CACHE_TTL
+_cache_get = zettel_cache.cache_get
+_cache_set = zettel_cache.cache_set
+_invalidate_topic_tag_cache = zettel_cache.invalidate_topic_tag_cache
+_invalidate_graph_cache = zettel_cache.invalidate_graph_cache
+_set_cache_headers = zettel_cache.set_cache_headers
+_neo4j_upsert_card = graph_projection.upsert_card
+_neo4j_delete_card = graph_projection.delete_card
+_neo4j_upsert_links = graph_projection.upsert_links
+_neo4j_delete_edges = graph_projection.delete_edges
 
 router = APIRouter(prefix="/api/zettels", tags=["zettels"])
 
@@ -299,131 +310,6 @@ def count_cards(
     return {"total": total}
 
 
-def _cache_get(key: str) -> list[str] | None:
-    """Try to read a cached JSON list from Redis; return None on miss."""
-    redis = get_redis_client()
-    if not redis:
-        return None
-    try:
-        raw = redis.get(key)
-        return _json.loads(raw) if raw else None
-    except Exception:
-        return None
-
-
-def _cache_set(key: str, value: list[str]) -> None:
-    """Best-effort write to Redis cache."""
-    redis = get_redis_client()
-    if not redis:
-        return
-    try:
-        redis.set(key, _json.dumps(value), ex=_CACHE_TTL_SECONDS)
-    except Exception:
-        pass
-
-
-def _invalidate_topic_tag_cache() -> None:
-    """Bust topics/tags cache on card mutations."""
-    redis = get_redis_client()
-    if not redis:
-        return
-    try:
-        redis.delete(_TOPICS_CACHE_KEY, _TAGS_CACHE_KEY)
-    except Exception:
-        pass
-
-
-def _cache_delete_prefix(prefix: str) -> None:
-    """Best-effort delete all Redis keys matching a prefix."""
-    redis = get_redis_client()
-    if not redis:
-        return
-    try:
-        for key in redis.scan_iter(f"{prefix}*"):
-            redis.delete(key)
-    except Exception:
-        pass
-
-
-def _invalidate_graph_cache() -> None:
-    """Bust extended graph, clustering, and link-type caches on mutation."""
-    from alfred.services.clustering_service import ClusteringService
-
-    _cache_delete_prefix(_GRAPH_EXT_CACHE_KEY)
-    redis = get_redis_client()
-    if redis:
-        try:
-            redis.delete(_LINK_TYPES_CACHE_KEY)
-        except Exception:
-            pass
-    ClusteringService.invalidate_cache()
-
-
-# ---------------------------------------------------------------------------
-# Neo4j projection hooks — best-effort, silent on failure.
-# Postgres is SOT; Neo4j is a read model. These let incremental edits reach
-# the nexus view without requiring a full /api/nexus/sync.
-# ---------------------------------------------------------------------------
-
-
-def _neo4j_upsert_card(card_id: int | None, session: Session) -> None:
-    """Project a card to Neo4j. No-op if id is None or Neo4j isn't configured."""
-    if card_id is None:
-        return
-    try:
-        gs = get_graph_service()
-        if gs is None:
-            return
-        ZettelGraphSync(session=session, graph=gs).upsert_card(card_id)
-    except Exception:
-        _log.debug("Neo4j upsert failed for card %s", card_id, exc_info=True)
-
-
-def _neo4j_delete_card(card_id: int | None) -> None:
-    if card_id is None:
-        return
-    try:
-        gs = get_graph_service()
-        if gs is None:
-            return
-        gs.delete_zettel(card_id=card_id)
-    except Exception:
-        _log.debug("Neo4j delete failed for card %s", card_id, exc_info=True)
-
-
-def _neo4j_upsert_links(link_ids: list[int], session: Session) -> None:
-    """Project a batch of links to Neo4j. Handles bidirectional pairs."""
-    if not link_ids:
-        return
-    try:
-        gs = get_graph_service()
-        if gs is None:
-            return
-        sync = ZettelGraphSync(session=session, graph=gs)
-        for lid in link_ids:
-            sync.upsert_link(lid)
-    except Exception:
-        _log.debug("Neo4j link-upsert failed (ids=%s)", link_ids, exc_info=True)
-
-
-def _neo4j_delete_edges(pairs: list[tuple[int, int, str]]) -> None:
-    """Delete Neo4j edges given a list of (from_id, to_id, type) tuples."""
-    if not pairs:
-        return
-    try:
-        gs = get_graph_service()
-        if gs is None:
-            return
-        for from_id, to_id, type_ in pairs:
-            gs.delete_zettel_link(from_id=from_id, to_id=to_id, type_=type_)
-    except Exception:
-        _log.debug("Neo4j edge-delete failed", exc_info=True)
-
-
-def _set_cache_headers(response: Response, max_age: int = 30) -> None:
-    response.headers["Cache-Control"] = f"private, max-age={max_age}"
-
-
 @router.get("/topics", response_model=list[str])
 def get_topics(session: Session = Depends(get_db_session), response: Response = None) -> list[str]:
     _set_cache_headers(response)
@@ -462,12 +348,7 @@ def get_link_types(
         .order_by(func.count(ZettelLink.id).desc())
     ).all()
     result = [{"type": r[0], "count": r[1]} for r in rows]
-    redis = get_redis_client()
-    if redis:
-        try:
-            redis.set(_LINK_TYPES_CACHE_KEY, _json.dumps(result), ex=_CACHE_TTL_SECONDS)
-        except Exception:
-            pass
+    _cache_set(_LINK_TYPES_CACHE_KEY, result)
     return result
 
 
@@ -923,13 +804,7 @@ def graph(
             include_clusters="clusters" in includes,
             include_gaps="gaps" in includes,
         )
-        # Cache the extended graph result with a longer TTL
-        redis = get_redis_client()
-        if redis:
-            try:
-                redis.set(cache_key, _json.dumps(result), ex=_GRAPH_EXT_CACHE_TTL)
-            except Exception:
-                pass
+        _cache_set(cache_key, result, ttl_seconds=_GRAPH_EXT_CACHE_TTL)
         return result
     return svc.graph_summary()
 
@@ -1066,88 +941,11 @@ def bulk_from_decomposition(
     ``bloom_source='ai_inferred'`` and the user-adjusted Bloom level;
     sibling links are ``type='decomposition_sibling'`` and bidirectional.
     """
-    # NOTE: bulk operations do NOT project to Neo4j incrementally.
-    # Callers should POST /api/nexus/sync after a bulk batch to refresh
-    # the nexus view. Per-row projection would 2x the write cost for
-    # use cases (e.g., decomposition) that already run against a live
-    # workspace and can tolerate a stale-until-resync window.
-    _MAX_BATCH = 50
-    if len(payload.candidates) == 0:
-        raise HTTPException(status_code=400, detail="No candidates provided")
-    if len(payload.candidates) > _MAX_BATCH:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Maximum {_MAX_BATCH} candidates per commit",
-        )
-
-    # Session validation: only refuse to write into an *ended* session.
-    if payload.session_id is not None:
-        from alfred.models.zettel import ZettelSession
-
-        sess = session.get(ZettelSession, payload.session_id)
-        if sess is None:
-            raise HTTPException(status_code=400, detail="Session not found")
-        if sess.ended_at is not None:
-            raise HTTPException(status_code=400, detail="Session has already ended")
-
-    svc = ZettelkastenService(session)
-    cards_data: list[dict] = []
-    for c in payload.candidates:
-        cards_data.append(
-            {
-                "title": c.title,
-                "content": c.content,
-                "bloom_level": c.bloom_level,
-                "bloom_source": "ai_inferred",
-                "tags": c.tags or [],
-                "topic": payload.shared_topic,
-                "source_url": payload.source_url,
-                "session_id": payload.session_id,
-            }
-        )
-
-    cards = svc.create_cards_batch(cards_data)
-    card_ids = [int(c.id) for c in cards if c.id is not None]
-
-    # Sibling links. Tolerant of invalid indexes (LLM noise that
-    # slipped through the frontend) — silently drop instead of 400.
-    n = len(payload.candidates)
-    link_count = 0
-    for i, c in enumerate(payload.candidates):
-        raw_targets = c.links_to_siblings or []
-        seen: set[int] = set()
-        for j in raw_targets:
-            if not isinstance(j, int):
-                continue
-            if j < 0 or j >= n or j == i:
-                continue
-            if j in seen:
-                continue
-            seen.add(j)
-            svc.create_link(
-                from_card_id=card_ids[i],
-                to_card_id=card_ids[j],
-                type="decomposition_sibling",
-                bidirectional=True,
-            )
-            link_count += 1
-
-    # Bump session.updated_at so the T8 abandon-stale-sessions beat
-    # treats this bulk write as live activity (prevents a user who
-    # imports a decomposition and walks away for 24h from having the
-    # session abandoned mid-sitting).
-    if payload.session_id is not None:
-        try:
-            from alfred.services.session_service import SessionService
-
-            SessionService(session).touch(payload.session_id)
-        except Exception:  # pragma: no cover - defensive
-            pass
+    try:
+        result = ZettelDecompositionCommitService(session).commit(payload)
+    except ZettelDecompositionCommitError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     _invalidate_topic_tag_cache()
     _invalidate_graph_cache()
-
-    return BulkFromDecompositionResponse(
-        created_card_ids=card_ids,
-        link_count=link_count,
-    )
+    return result

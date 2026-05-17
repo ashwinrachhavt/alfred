@@ -156,7 +156,13 @@ def import_slack_channels(
             stats.documents.append({"channel": channel_name, "document_id": doc_id})
         except Exception as exc:
             logger.exception("Slack channel import failed for %s", channel_id)
-            stats.errors.append({"channel": channel_id, "error": str(exc)})
+            stats.add_error(
+                source="slack",
+                operation="channel_import",
+                error=exc,
+                item_id=channel_id,
+                channel=channel_id,
+            )
 
     result = stats.to_dict()
     result["type"] = "slack_channel"
@@ -263,7 +269,13 @@ def import_slack_bookmarks(
                 })
         except Exception as exc:
             logger.exception("Slack bookmark import failed for channel %s", channel_id)
-            stats.errors.append({"channel": channel_id, "error": str(exc)})
+            stats.add_error(
+                source="slack",
+                operation="bookmark_import",
+                error=exc,
+                item_id=channel_id,
+                channel=channel_id,
+            )
 
     result = stats.to_dict()
     result["type"] = "slack_bookmark"

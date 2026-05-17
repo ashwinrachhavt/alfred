@@ -25,12 +25,17 @@ from alfred.core.utils import utcnow_naive as _utcnow
 from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview
 from alfred.schemas.zettel import LinkQuality, LinkSuggestion
 from alfred.services.spaced_repetition import compute_next_review_schedule
+from alfred.services.zettel_graph_summary import ZettelGraphSummaryService
+from alfred.services.zettel_links import (
+    UNSET as _UNSET,
+)
+from alfred.services.zettel_links import (
+    LinkContextPatch,
+    ZettelLinkService,
+)
+from alfred.services.zettel_wiki_links import ZettelWikiLinkService
 
 log = logging.getLogger(__name__)
-
-# Sentinel for "field not provided" on optional patch kwargs where the None
-# value itself carries meaning (e.g. "clear context" vs "don't touch context").
-_UNSET: object = object()
 
 
 def _cosine_similarity(a: Iterable[float], b: Iterable[float]) -> float:
@@ -623,90 +628,27 @@ class ZettelkastenService:
         context: str | None = None,
         bidirectional: bool = True,
     ) -> list[ZettelLink]:
-        # Normalize here (not just at the route layer) so callers outside the
-        # HTTP boundary (Celery batch-linking, AI accept, direct service use)
-        # can't introduce mixed-case types that break update_link's collision
-        # detection.
-        normalized = type.strip().lower()
-        if not normalized:
-            raise ValueError("Link type cannot be empty")
-        type = normalized
-        links: list[ZettelLink] = []
-        existing = self.session.exec(
-            select(ZettelLink).where(
-                (ZettelLink.from_card_id == from_card_id)
-                & (ZettelLink.to_card_id == to_card_id)
-                & (ZettelLink.type == type)
-            )
-        ).first()
-        if not existing:
-            links.append(
-                ZettelLink(
-                    from_card_id=from_card_id,
-                    to_card_id=to_card_id,
-                    type=type,
-                    context=context,
-                    bidirectional=bidirectional,
-                )
-            )
-
-        if bidirectional:
-            reverse_exists = self.session.exec(
-                select(ZettelLink).where(
-                    (ZettelLink.from_card_id == to_card_id)
-                    & (ZettelLink.to_card_id == from_card_id)
-                    & (ZettelLink.type == type)
-                )
-            ).first()
-            if not reverse_exists:
-                links.append(
-                    ZettelLink(
-                        from_card_id=to_card_id,
-                        to_card_id=from_card_id,
-                        type=type,
-                        context=context,
-                        bidirectional=bidirectional,
-                    )
-                )
-        for link in links:
-            self.session.add(link)
-        self.session.commit()
-        for link in links:
-            self.session.refresh(link)
-        return links
+        return ZettelLinkService(self.session).create_link(
+            from_card_id=from_card_id,
+            to_card_id=to_card_id,
+            type=type,
+            context=context,
+            bidirectional=bidirectional,
+        )
 
     def list_links(self, *, card_id: int) -> list[ZettelLink]:
-        stmt = select(ZettelLink).where(
-            (ZettelLink.from_card_id == card_id) | (ZettelLink.to_card_id == card_id)
-        )
-        return list(self.session.exec(stmt))
+        return ZettelLinkService(self.session).list_links(card_id=card_id)
 
     def delete_link(self, link_id: int) -> bool:
         """Delete a link by ID. Returns True if deleted, False if not found."""
-        link = self.session.get(ZettelLink, link_id)
-        if not link:
-            return False
-        # Also delete the reverse link if it exists (bidirectional)
-        if link.bidirectional:
-            reverse = self.session.exec(
-                select(ZettelLink).where(
-                    (ZettelLink.from_card_id == link.to_card_id)
-                    & (ZettelLink.to_card_id == link.from_card_id)
-                    & (ZettelLink.type == link.type)
-                )
-            ).first()
-            if reverse:
-                self.session.delete(reverse)
-        self.session.delete(link)
-        self.session.commit()
-        return True
+        return ZettelLinkService(self.session).delete_link(link_id)
 
     def update_link(
         self,
         link_id: int,
         *,
         type: str | None = None,
-        context: str | None = _UNSET,
+        context: LinkContextPatch = _UNSET,
         bidirectional: bool | None = None,
     ) -> ZettelLink | None:
         """Patch a link and synchronize the reverse row.
@@ -727,83 +669,12 @@ class ZettelkastenService:
         Returns the updated forward link, or None if not found. Raises
         ValueError if `type` normalizes to the empty string.
         """
-        link = self.session.get(ZettelLink, link_id)
-        if not link:
-            return None
-
-        normalized_type: str | None = None
-        if type is not None:
-            normalized_type = type.strip().lower()
-            if not normalized_type:
-                raise ValueError("Link type cannot be empty")
-
-        # The reverse-row lookup MUST run before the type UPDATE below — it
-        # keys on the CURRENT link.type so we can find the paired row before
-        # renaming either side.
-        reverse = self.session.exec(
-            select(ZettelLink).where(
-                (ZettelLink.from_card_id == link.to_card_id)
-                & (ZettelLink.to_card_id == link.from_card_id)
-                & (ZettelLink.type == link.type)
-            )
-        ).first()
-
-        if normalized_type is not None and normalized_type != link.type:
-            collision = self.session.exec(
-                select(ZettelLink).where(
-                    (ZettelLink.from_card_id == link.from_card_id)
-                    & (ZettelLink.to_card_id == link.to_card_id)
-                    & (ZettelLink.type == normalized_type)
-                    & (ZettelLink.id != link.id)
-                )
-            ).first()
-            if collision:
-                self.session.delete(collision)
-            reverse_collision = None
-            if reverse:
-                reverse_collision = self.session.exec(
-                    select(ZettelLink).where(
-                        (ZettelLink.from_card_id == reverse.from_card_id)
-                        & (ZettelLink.to_card_id == reverse.to_card_id)
-                        & (ZettelLink.type == normalized_type)
-                        & (ZettelLink.id != reverse.id)
-                    )
-                ).first()
-                if reverse_collision:
-                    self.session.delete(reverse_collision)
-            # Flush deletes before the type UPDATE so ix_zettel_links_unique
-            # does not fire on stale colliding rows.
-            if collision or reverse_collision:
-                self.session.flush()
-            link.type = normalized_type
-            if reverse:
-                reverse.type = normalized_type
-
-        if context is not _UNSET:
-            link.context = context
-            if reverse:
-                reverse.context = context
-
-        if bidirectional is not None and bidirectional != link.bidirectional:
-            link.bidirectional = bidirectional
-            if reverse:
-                reverse.bidirectional = bidirectional
-            if bidirectional and reverse is None:
-                self.session.add(
-                    ZettelLink(
-                        from_card_id=link.to_card_id,
-                        to_card_id=link.from_card_id,
-                        type=link.type,
-                        context=link.context,
-                        bidirectional=True,
-                    )
-                )
-            elif not bidirectional and reverse is not None:
-                self.session.delete(reverse)
-
-        self.session.commit()
-        self.session.refresh(link)
-        return link
+        return ZettelLinkService(self.session).update_link(
+            link_id,
+            type=type,
+            context=context,
+            bidirectional=bidirectional,
+        )
 
     # ---------------
     # Reviews (spaced repetition)
@@ -879,40 +750,7 @@ class ZettelkastenService:
     # Graph summary
     # ---------------
     def graph_summary(self) -> dict:
-        nodes = []
-        edges: list[dict] = []
-
-        cards: list[ZettelCard] = list(self.session.exec(select(ZettelCard)))
-        links: list[ZettelLink] = list(self.session.exec(select(ZettelLink)))
-
-        degree: dict[int, int] = {}
-        for link in links:
-            degree[link.from_card_id] = degree.get(link.from_card_id, 0) + 1
-            degree[link.to_card_id] = degree.get(link.to_card_id, 0) + 1
-
-        for card in cards:
-            nodes.append(
-                {
-                    "id": card.id,
-                    "title": card.title,
-                    "topic": card.topic,
-                    "tags": card.tags or [],
-                    "importance": card.importance,
-                    "status": card.status,
-                    "degree": degree.get(card.id or 0, 0),
-                }
-            )
-        for link in links:
-            edges.append(
-                {
-                    "id": link.id,
-                    "from": link.from_card_id,
-                    "to": link.to_card_id,
-                    "type": link.type,
-                    "bidirectional": link.bidirectional,
-                }
-            )
-        return {"nodes": nodes, "edges": edges}
+        return ZettelGraphSummaryService(self.session).graph_summary()
 
     def extended_graph_summary(
         self,
@@ -920,95 +758,10 @@ class ZettelkastenService:
         include_gaps: bool = False,
     ) -> dict:
         """Extended graph summary with clusters, gaps, review due dates, and metadata."""
-        from alfred.services.clustering_service import ClusteringService
-
-        cards: list[ZettelCard] = list(self.session.exec(select(ZettelCard)))
-        links: list[ZettelLink] = list(self.session.exec(select(ZettelLink)))
-
-        # Degree computation
-        degree: dict[int, int] = {}
-        for link in links:
-            degree[link.from_card_id] = degree.get(link.from_card_id, 0) + 1
-            degree[link.to_card_id] = degree.get(link.to_card_id, 0) + 1
-
-        # LEFT JOIN ZettelReview for due_at (open reviews only)
-        open_reviews = self.session.exec(
-            select(ZettelReview).where(ZettelReview.completed_at.is_(None))  # type: ignore[union-attr]
+        return ZettelGraphSummaryService(self.session).extended_graph_summary(
+            include_clusters=include_clusters,
+            include_gaps=include_gaps,
         )
-        due_by_card: dict[int, str] = {}
-        for review in open_reviews:
-            # Keep the earliest due_at per card
-            iso = review.due_at.isoformat() if review.due_at else None
-            if iso and (review.card_id not in due_by_card or iso < due_by_card[review.card_id]):
-                due_by_card[review.card_id] = iso
-
-        # Clustering (optional)
-        cluster_id_by_card: dict[int, int] = {}
-        clusters_out: list[dict] = []
-        if include_clusters:
-            clustering_svc = ClusteringService()
-            raw_clusters = clustering_svc.detect_clusters(cards)
-            if raw_clusters:
-                cards_by_id = {c.id: c for c in cards}
-                raw_clusters = clustering_svc.name_clusters_from_cards(raw_clusters, cards_by_id)
-                for cluster in raw_clusters:
-                    for cid in cluster["card_ids"]:
-                        cluster_id_by_card[cid] = cluster["id"]
-                clusters_out = raw_clusters
-
-        # Build nodes
-        nodes = []
-        for card in cards:
-            nodes.append(
-                {
-                    "id": card.id,
-                    "title": card.title,
-                    "topic": card.topic,
-                    "tags": card.tags or [],
-                    "degree": degree.get(card.id or 0, 0),
-                    "status": card.status,
-                    "cluster_id": cluster_id_by_card.get(card.id),  # type: ignore[arg-type]
-                    "created_at": card.created_at.isoformat() if card.created_at else None,
-                    "updated_at": card.updated_at.isoformat() if card.updated_at else None,
-                    "due_at": due_by_card.get(card.id),  # type: ignore[arg-type]
-                    "importance": card.importance,
-                }
-            )
-
-        # Build edges (source/target for react-force-graph)
-        edges = []
-        for link in links:
-            edges.append(
-                {
-                    "source": link.from_card_id,
-                    "target": link.to_card_id,
-                    "type": link.type,
-                }
-            )
-
-        # Knowledge gaps (optional)
-        gaps_out: list[dict] = []
-        if include_gaps:
-            clustering_svc = ClusteringService()
-            gaps_out = clustering_svc.detect_knowledge_gaps(cards, links)
-
-        # Embedding coverage
-        embedded_count = sum(1 for c in cards if getattr(c, "embedding", None))
-        total_cards = len(cards)
-        coverage_pct = round((embedded_count / total_cards * 100) if total_cards else 0.0, 1)
-
-        return {
-            "nodes": nodes,
-            "edges": edges,
-            "clusters": clusters_out,
-            "gaps": gaps_out,
-            "meta": {
-                "total_cards": total_cards,
-                "total_edges": len(edges),
-                "embedding_coverage_pct": coverage_pct,
-                "cluster_count": len(clusters_out),
-            },
-        }
 
     # ---------------
     # Wiki-link search & backlinks
@@ -1069,94 +822,30 @@ class ZettelkastenService:
 
         return {"text_matches": text_matches, "ai_suggestions": ai_suggestions}
 
+    def semantic_search_cards(
+        self,
+        query: str,
+        *,
+        topic: str | None = None,
+        limit: int = 10,
+    ) -> list[tuple[ZettelCard, float]]:
+        """Return scored card matches for agent KB search.
+
+        This uses the local text search path as a deterministic fallback. The
+        score is intentionally coarse because callers only need ordering and a
+        common result shape for merging with document search hits.
+        """
+
+        cards = self.list_cards(q=query, topic=topic, limit=limit)
+        return [(card, 1.0) for card in cards]
+
     def list_backlinks(self, card_id: int) -> list[dict]:
         """Return all wiki-links pointing TO the given card.
 
         Queries the wiki_links table and joins to source titles.
         Also includes incoming ZettelLinks (from the graph link system).
         """
-        import uuid as _uuid
-
-        from alfred.models.notes import NoteRow
-        from alfred.models.zettel import WikiLink
-
-        backlinks: list[dict] = []
-
-        # Wiki-links (from notes/zettels)
-        wiki_rows = list(
-            self.session.exec(select(WikiLink).where(WikiLink.target_card_id == card_id))
-        )
-
-        # Batch-fetch source titles to avoid N+1
-        zettel_source_ids = [int(wl.source_id) for wl in wiki_rows if wl.source_type == "zettel"]
-        note_source_ids = [wl.source_id for wl in wiki_rows if wl.source_type == "note"]
-
-        zettel_titles: dict[int, str] = {}
-        if zettel_source_ids:
-            cards = self.session.exec(
-                select(ZettelCard).where(ZettelCard.id.in_(zettel_source_ids))
-            )
-            zettel_titles = {c.id: c.title for c in cards if c.id is not None}
-
-        note_titles: dict[str, str] = {}
-        if note_source_ids:
-            note_uuids = []
-            for sid in note_source_ids:
-                try:
-                    note_uuids.append(_uuid.UUID(sid))
-                except (ValueError, TypeError):
-                    pass
-            if note_uuids:
-                notes = self.session.exec(select(NoteRow).where(NoteRow.id.in_(note_uuids)))
-                note_titles = {str(n.id): n.title for n in notes}
-
-        for wl in wiki_rows:
-            if wl.source_type == "zettel":
-                source_title = zettel_titles.get(int(wl.source_id), "Unknown")
-            elif wl.source_type == "note":
-                source_title = note_titles.get(wl.source_id, "Unknown")
-            else:
-                source_title = "Unknown"
-            backlinks.append(
-                {
-                    "source_type": wl.source_type,
-                    "source_id": wl.source_id,
-                    "source_title": source_title,
-                    "created_at": wl.created_at,
-                }
-            )
-
-        # Also include incoming ZettelLinks (graph-created links)
-        incoming = list(
-            self.session.exec(select(ZettelLink).where(ZettelLink.to_card_id == card_id))
-        )
-        seen_card_ids = {int(bl["source_id"]) for bl in backlinks if bl["source_type"] == "zettel"}
-        # Batch-fetch source cards for incoming ZettelLinks
-        incoming_card_ids = [
-            link.from_card_id for link in incoming if link.from_card_id not in seen_card_ids
-        ]
-        incoming_titles: dict[int, str] = {}
-        if incoming_card_ids:
-            cards = self.session.exec(
-                select(ZettelCard).where(ZettelCard.id.in_(incoming_card_ids))
-            )
-            incoming_titles = {c.id: c.title for c in cards if c.id is not None}
-
-        for link in incoming:
-            if link.from_card_id in seen_card_ids:
-                continue
-            title = incoming_titles.get(link.from_card_id)
-            if title:
-                backlinks.append(
-                    {
-                        "source_type": "zettel",
-                        "source_id": str(link.from_card_id),
-                        "source_title": title,
-                        "created_at": link.created_at,
-                    }
-                )
-
-        return backlinks
+        return ZettelWikiLinkService(self.session).list_backlinks(card_id)
 
     def sync_wiki_links(
         self,
@@ -1170,35 +859,11 @@ class ZettelkastenService:
         Diffs the provided card IDs against existing wiki_links rows.
         Creates missing links, deletes removed links.
         """
-        from alfred.models.zettel import WikiLink
-
-        existing = list(
-            self.session.exec(
-                select(WikiLink).where(
-                    (WikiLink.source_type == source_type) & (WikiLink.source_id == source_id)
-                )
-            )
+        ZettelWikiLinkService(self.session).sync_wiki_links(
+            source_type=source_type,
+            source_id=source_id,
+            target_card_ids=target_card_ids,
         )
-        existing_targets = {wl.target_card_id: wl for wl in existing}
-        desired_targets = set(target_card_ids)
-
-        # Delete removed
-        for target_id, wl in existing_targets.items():
-            if target_id not in desired_targets:
-                self.session.delete(wl)
-
-        # Create new
-        for target_id in desired_targets:
-            if target_id not in existing_targets:
-                self.session.add(
-                    WikiLink(
-                        source_type=source_type,
-                        source_id=source_id,
-                        target_card_id=target_id,
-                    )
-                )
-
-        self.session.commit()
 
     def resolve_wiki_link_titles(self, titles: list[str]) -> list[int]:
         """Resolve [[X]] target titles to active zettel card IDs.

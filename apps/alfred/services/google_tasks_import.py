@@ -172,7 +172,13 @@ class GoogleTasksImporter:
                     show_hidden=include_completed,
                 )
                 if task_error:
-                    stats.errors.append({"tasklist_id": tasklist_id, "error": task_error})
+                    stats.add_error(
+                        source="google_tasks",
+                        operation="list_tasks",
+                        error=task_error,
+                        item_id=tasklist_id,
+                        tasklist_id=tasklist_id,
+                    )
                     continue
 
                 if not tasks:
@@ -230,7 +236,13 @@ class GoogleTasksImporter:
 
             except Exception as exc:
                 logger.exception("Google Tasks import failed for list %s", tasklist_id)
-                stats.errors.append({"tasklist_id": str(tasklist_id), "error": str(exc)})
+                stats.add_error(
+                    source="google_tasks",
+                    operation="upsert",
+                    error=exc,
+                    item_id=str(tasklist_id),
+                    tasklist_id=str(tasklist_id),
+                )
 
         return stats.to_dict()
 

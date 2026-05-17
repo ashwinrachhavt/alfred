@@ -1,6 +1,6 @@
 line-length = 100
 target-version = "py311"
-src = ["apps", "tests"]
+src = ["apps", "tests", "scripts"]
 exclude = [
   "notebooks/",
 ]

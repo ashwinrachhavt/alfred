@@ -53,9 +53,11 @@ def test_full_rebuild_syncs_all_active_cards(db_session: Session, gs):
     arch = ZettelCard(title="Old", status="archived", bloom_level=1, bloom_source="backfill")
     db_session.add_all([a, b, arch])
     db_session.commit()
-    db_session.refresh(a); db_session.refresh(b)
+    db_session.refresh(a)
+    db_session.refresh(b)
     link = ZettelLink(from_card_id=a.id, to_card_id=b.id, type="reference", bidirectional=False)
-    db_session.add(link); db_session.commit()
+    db_session.add(link)
+    db_session.commit()
 
     sync = ZettelGraphSync(session=db_session, graph=gs)
     result = sync.full_rebuild()
@@ -70,7 +72,9 @@ def test_full_rebuild_syncs_all_active_cards(db_session: Session, gs):
 
 def test_upsert_card_projects_single_node(db_session: Session, gs):
     card = ZettelCard(title="A", status="active", bloom_level=1, bloom_source="backfill")
-    db_session.add(card); db_session.commit(); db_session.refresh(card)
+    db_session.add(card)
+    db_session.commit()
+    db_session.refresh(card)
     sync = ZettelGraphSync(session=db_session, graph=gs)
     sync.upsert_card(card.id)
     rows = gs._run("MATCH (z:Zettel {card_id: $id}) RETURN z.title AS t", {"id": card.id})
@@ -79,7 +83,9 @@ def test_upsert_card_projects_single_node(db_session: Session, gs):
 
 def test_delete_card_removes_projection(db_session: Session, gs):
     card = ZettelCard(title="Gone", status="active", bloom_level=1, bloom_source="backfill")
-    db_session.add(card); db_session.commit(); db_session.refresh(card)
+    db_session.add(card)
+    db_session.commit()
+    db_session.refresh(card)
     sync = ZettelGraphSync(session=db_session, graph=gs)
     sync.upsert_card(card.id)
     sync.delete_card(card.id)
@@ -89,12 +95,15 @@ def test_delete_card_removes_projection(db_session: Session, gs):
 
 def test_upsert_card_with_archived_status_removes_projection(db_session: Session, gs):
     card = ZettelCard(title="A", status="active", bloom_level=1, bloom_source="backfill")
-    db_session.add(card); db_session.commit(); db_session.refresh(card)
+    db_session.add(card)
+    db_session.commit()
+    db_session.refresh(card)
     sync = ZettelGraphSync(session=db_session, graph=gs)
     sync.upsert_card(card.id)
     # Now archive it and re-sync
     card.status = "archived"
-    db_session.add(card); db_session.commit()
+    db_session.add(card)
+    db_session.commit()
     sync.upsert_card(card.id)
     rows = gs._run("MATCH (z:Zettel {card_id: $id}) RETURN count(z) AS n", {"id": card.id})
     assert rows[0]["n"] == 0

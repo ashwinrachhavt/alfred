@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlmodel import Session, select
 
 from alfred.api.dependencies import get_db_session
+from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
+from alfred.core.exceptions import ServiceUnavailableError
 from alfred.models.today import DailyReflectionRow
 from alfred.models.zettel import ZettelCard
 from alfred.schemas.today import (
@@ -23,7 +25,6 @@ from alfred.schemas.today import (
     TodayThreadSynthesisRequest,
     TodayThreadSynthesisResponse,
 )
-from alfred.services.zettelkasten_service import ZettelkastenService
 from alfred.services.today.entry_service import (
     ARTIFACT_KIND,
     VALID_KINDS,
@@ -31,6 +32,7 @@ from alfred.services.today.entry_service import (
     EntryService,
 )
 from alfred.services.today.reflection_service import ReflectionService
+from alfred.services.zettelkasten_service import ZettelkastenService
 
 router = APIRouter(prefix="/api/today", tags=["today"])
 
@@ -431,17 +433,20 @@ def trigger_pipeline(body: PipelineRunRequest) -> PipelineRunResponse:
     body. ``enqueue=False`` runs synchronously in-process (dev / small
     deployments); ``enqueue=True`` dispatches to Celery.
     """
-    # Inline imports so the route module doesn't force celery/app-context
-    # at import time during unit tests.
     from alfred.tasks.today_pipeline import _run
-    from alfred.tasks.today_pipeline import run_for_date as _run_for_date_task
 
     if body.enqueue:
-        async_result = _run_for_date_task.delay(
-            entry_date=body.entry_date.isoformat(),
-            tz_name=body.tz,
-            user_id=body.user_id,
-        )
+        try:
+            async_result = dispatch_task(
+                "alfred.tasks.today_pipeline.run_for_date",
+                kwargs={
+                    "entry_date": body.entry_date.isoformat(),
+                    "tz_name": body.tz,
+                    "user_id": body.user_id,
+                },
+            )
+        except BrokerUnavailableError as exc:
+            raise ServiceUnavailableError("Background worker unavailable") from exc
         return PipelineRunResponse(dispatched=True, task_id=async_result.id)
 
     result = _run(body.entry_date, body.tz, body.user_id)

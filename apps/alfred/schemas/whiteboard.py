@@ -5,6 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+APPLIED_PROMPT_MAX_LENGTH = 100_000
+
 
 class WhiteboardCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
@@ -14,7 +16,7 @@ class WhiteboardCreate(BaseModel):
     template_id: str | None = Field(default=None, max_length=128)
     initial_scene: dict[str, Any] | None = None
     ai_context: dict[str, Any] | None = None
-    applied_prompt: str | None = Field(default=None, max_length=2048)
+    applied_prompt: str | None = Field(default=None, max_length=APPLIED_PROMPT_MAX_LENGTH)
 
 
 class WhiteboardUpdate(BaseModel):
@@ -41,7 +43,7 @@ class WhiteboardOut(BaseModel):
 class WhiteboardRevisionCreate(BaseModel):
     scene_json: dict[str, Any] = Field(default_factory=dict)
     ai_context: dict[str, Any] | None = None
-    applied_prompt: str | None = Field(default=None, max_length=2048)
+    applied_prompt: str | None = Field(default=None, max_length=APPLIED_PROMPT_MAX_LENGTH)
     created_by: str | None = Field(default=None, max_length=255)
 
 

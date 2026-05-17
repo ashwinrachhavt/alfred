@@ -177,7 +177,13 @@ def import_semantic_scholar(
 
         except Exception as exc:
             logger.exception("Semantic Scholar import failed for paper %s", paper_id)
-            stats.errors.append({"paper_id": str(paper_id), "error": str(exc)})
+            stats.add_error(
+                source="semantic_scholar",
+                operation="upsert",
+                error=exc,
+                item_id=str(paper_id),
+                paper_id=str(paper_id),
+            )
 
     return stats.to_dict()
 

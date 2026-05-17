@@ -1,11 +1,12 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 
 # Environment is loaded by Pydantic Settings (see alfred.core.settings).
-from alfred.admin import mount_admin
 from alfred.api import register_routes
 from alfred.core.exceptions import register_exception_handlers
 from alfred.core.logging import setup_logging
@@ -18,26 +19,8 @@ logger = logging.getLogger(__name__)
 # Initialize logging early so all modules inherit the handlers/level
 setup_logging()
 
-app = FastAPI(title="Alfred API")
-register_exception_handlers(app)
 
-cors_origins = settings.cors_allow_origins
-cors_allow_credentials = "*" not in cors_origins
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=cors_allow_credentials,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-app.add_middleware(GZipMiddleware, minimum_size=1000)
-
-register_routes(app)
-mount_admin(app)
-
-
-@app.on_event("shutdown")
-def _shutdown() -> None:
+def _close_external_clients() -> None:
     """Best-effort cleanup for long-lived external clients."""
 
     try:
@@ -59,5 +42,27 @@ def _shutdown() -> None:
     except Exception:
         logger.debug("Best-effort shutdown: failed to close Redis client", exc_info=True)
 
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
+    yield
+    _close_external_clients()
+
+
+app = FastAPI(title="Alfred API", lifespan=_lifespan)
+register_exception_handlers(app)
+
+cors_origins = settings.cors_allow_origins
+cors_allow_credentials = "*" not in cors_origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=cors_allow_credentials,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+register_routes(app)
 
 logger.info("Alfred API initialized")

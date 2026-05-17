@@ -23,7 +23,6 @@ def register_routes(app: FastAPI) -> None:
         app.router.dependencies.append(Depends(get_current_user))
 
     # Import routers only when registering to avoid heavy side effects during import.
-    from alfred.api.admin import router as admin_router
     from alfred.api.agent import router as agent_router
 
     # Knowledge import routers
@@ -56,6 +55,8 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.research import router as research_router
     from alfred.api.research_agents import (
         router as research_agents_router,
+    )
+    from alfred.api.research_agents import (
         run_router as research_run_router,
     )
     from alfred.api.rss import router as rss_router
@@ -66,7 +67,6 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.tasks import router as tasks_router
     from alfred.api.tasks_status import router as tasks_status_router
     from alfred.api.taxonomy import router as taxonomy_router
-    from alfred.api.thinking import router as thinking_router
     from alfred.api.today import router as today_router
     from alfred.api.todoist import router as todoist_router
     from alfred.api.tools import router as tools_router
@@ -78,7 +78,6 @@ def register_routes(app: FastAPI) -> None:
 
     routers = [
         system_router,
-        admin_router,
         capture_router,
         chat_router,
         today_router,
@@ -112,7 +111,6 @@ def register_routes(app: FastAPI) -> None:
         writing_router,
         reading_router,
         agent_router,
-        thinking_router,
         taxonomy_router,
         # Knowledge import routers
         readwise_router,
