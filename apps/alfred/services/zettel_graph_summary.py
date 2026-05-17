@@ -64,7 +64,7 @@ class ZettelGraphSummaryService:
             raw_clusters = clustering_svc.detect_clusters(cards)
             if raw_clusters:
                 cards_by_id = {c.id: c for c in cards if c.id is not None}
-                clusters_out = clustering_svc.generate_cluster_names(raw_clusters, cards_by_id)
+                clusters_out = clustering_svc.name_clusters_from_cards(raw_clusters, cards_by_id)
                 for cluster in clusters_out:
                     for cid in cluster["card_ids"]:
                         cluster_id_by_card[cid] = cluster["id"]
