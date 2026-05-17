@@ -38,6 +38,63 @@ export type SemanticMapResponse = {
   points: SemanticMapPoint[];
 };
 
+export type SourceCaptureHeading = {
+  level: number;
+  text: string;
+};
+
+export type SourceCaptureImage = {
+  url: string;
+  local_url?: string;
+  alt?: string;
+  position?: number;
+};
+
+export type SourceCaptureLink = {
+  url: string;
+  text?: string;
+  position?: number;
+};
+
+export type SourceCapture = {
+  kind?: string | null;
+  platform?: string | null;
+  title?: string | null;
+  subtitle?: string | null;
+  author?: string | null;
+  published_at?: string | null;
+  canonical_url?: string | null;
+  cover_image_url?: string | null;
+  headings?: SourceCaptureHeading[];
+  images?: SourceCaptureImage[];
+  links?: SourceCaptureLink[];
+  firecrawl?: Record<string, unknown>;
+};
+
+export type SourceAnalysis = {
+  kind?: string | null;
+  platform?: string | null;
+  author?: string | null;
+  thesis?: string | null;
+  argument_flow?: string[];
+  audience?: string | null;
+  structure?: string[];
+};
+
+export type DocumentMetadata = Record<string, unknown> & {
+  source_capture?: SourceCapture;
+  capture?: {
+    source?: string;
+    mode?: string;
+    rich_capture_status?: string;
+    local_quality?: string;
+  };
+};
+
+export type DocumentEnrichment = Record<string, unknown> & {
+  source_analysis?: SourceAnalysis;
+};
+
 export type DocumentDetailsResponse = {
   id: string;
   source_url: string;
@@ -59,6 +116,6 @@ export type DocumentDetailsResponse = {
   created_at: string;
   updated_at: string;
   session_id?: string | null;
-  metadata: Record<string, unknown>;
-  enrichment?: Record<string, unknown> | null;
+  metadata: DocumentMetadata;
+  enrichment?: DocumentEnrichment | null;
 };

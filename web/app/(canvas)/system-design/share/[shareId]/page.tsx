@@ -3,7 +3,7 @@ import { SharedSystemDesignSessionClient } from "@/app/(canvas)/system-design/sh
 export default async function SystemDesignSharePage({
  params,
 }: {
- params: { shareId: string } | Promise<{ shareId: string }>;
+ params: Promise<{ shareId: string }>;
 }) {
  const { shareId } = await params;
 

@@ -46,6 +46,7 @@ def load_document(state: DocumentPipelineState) -> dict[str, Any]:
             "title": doc.get("title") or "untitled",
             "cleaned_text": "",
             "raw_markdown": "",
+            "metadata": doc.get("metadata") or {},
             "content_hash": "",
             "stage": "load_document",
             "errors": [{"stage": "load_document", "error": "Content is a Python error traceback, not page content"}],
@@ -59,6 +60,7 @@ def load_document(state: DocumentPipelineState) -> dict[str, Any]:
         "title": doc.get("title") or "untitled",
         "cleaned_text": cleaned_text,
         "raw_markdown": doc.get("raw_markdown") or "",
+        "metadata": doc.get("metadata") or {},
         "content_hash": content_hash,
         "stage": "load_document",
     }

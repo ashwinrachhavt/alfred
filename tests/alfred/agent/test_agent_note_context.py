@@ -87,6 +87,47 @@ def test_stream_request_accepts_note_context(app_and_client):
         assert resp.headers["content-type"].startswith("text/event-stream")
 
 
+def test_stream_request_accepts_document_source_context(app_and_client, monkeypatch):
+    """Document-scoped chat creates/reuses a source-bound thread and passes context."""
+    _, client, session = app_and_client
+    captured: dict = {}
+
+    async def _fake_stream_turn(**kwargs):
+        captured.update(kwargs)
+        yield ("token", {"content": "Document-aware response"}, 'event: token\ndata: {"content": "Document-aware response"}\n\n')
+        yield ("done", {"thread_id": "1", "reasoning": None, "tool_calls": None, "artifacts": None}, 'event: done\ndata: {"thread_id": "1"}\n\n')
+
+    monkeypatch.setattr(
+        "alfred.api.agent.routes._document_context_for_source",
+        lambda source_context: "Document: The Smile Curve\nKind: blog_article",
+    )
+
+    with patch("alfred.api.agent.routes.AgentService") as MockService:
+        instance = MagicMock()
+        instance.stream_turn = _fake_stream_turn
+        MockService.return_value = instance
+
+        resp = client.post(
+            "/api/agent/stream",
+            json={
+                "message": "What is the thesis?",
+                "source_context": {
+                    "source_kind": "document",
+                    "source_id": "doc-123",
+                    "title": "The Smile Curve",
+                },
+            },
+        )
+
+    assert resp.status_code == 200
+    assert captured["source_context"] == "Document: The Smile Curve\nKind: blog_article"
+
+    thread = session.exec(select(ThinkingSessionRow)).one()
+    assert thread.source_kind == "document"
+    assert thread.source_id == "doc-123"
+    assert thread.title == "The Smile Curve"
+
+
 def test_stream_persists_and_forwards_image_attachments(app_and_client):
     """Image attachments are saved on the user message and passed to the agent service."""
     _, client, session = app_and_client
@@ -195,6 +236,41 @@ def test_threads_filter_by_note_id_returns_matching(app_and_client):
     assert len(data) == 1
     assert data[0]["note_id"] == "note-abc"
     assert data[0]["title"] == "Note thread"
+
+
+def test_threads_filter_by_source_context(app_and_client):
+    """GET /api/agent/threads?source_kind=document&source_id=xxx returns matching threads."""
+    _, client, session = app_and_client
+
+    matching = ThinkingSessionRow(
+        title="Document thread",
+        session_type="agent",
+        status="active",
+        source_kind="document",
+        source_id="doc-abc",
+    )
+    other = ThinkingSessionRow(
+        title="Other thread",
+        session_type="agent",
+        status="active",
+        source_kind="document",
+        source_id="doc-other",
+    )
+    session.add(matching)
+    session.add(other)
+    session.commit()
+
+    resp = client.get(
+        "/api/agent/threads",
+        params={"source_kind": "document", "source_id": "doc-abc"},
+    )
+    assert resp.status_code == 200
+
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["source_kind"] == "document"
+    assert data[0]["source_id"] == "doc-abc"
+    assert data[0]["title"] == "Document thread"
 
 
 def test_thread_summary_includes_note_id(app_and_client):

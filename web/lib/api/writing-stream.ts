@@ -1,4 +1,6 @@
 import { apiRoutes } from "@/lib/api/routes";
+import { streamSSE } from "@/lib/api/sse";
+import { createAguiEventProjector } from "@/lib/streaming/agui-runtime";
 
 export type StreamWritingOptions = {
   intent: "compose" | "rewrite" | "reply" | "edit";
@@ -14,14 +16,13 @@ export type StreamWritingOptions = {
   onToken: (token: string) => void;
   onComplete: () => void;
   onError: (error: Error) => void;
+  /** Optional — fires when the AG-UI message frame opens. */
+  onMessageStart?: (messageId: string) => void;
+  /** Optional — fires when the AG-UI message frame closes. */
+  onMessageEnd?: (messageId: string) => void;
 };
 
-function directBackendUrl(path: string): string {
-  const base =
-    process.env.NEXT_PUBLIC_API_URL ||
-    (typeof window !== "undefined" ? "http://localhost:8000" : "");
-  return `${base}${path}`;
-}
+const MESSAGE_BOUNDARY_EVENTS = new Set(["TEXT_MESSAGE_START", "TEXT_MESSAGE_END"]);
 
 export async function streamWritingCompose(opts: StreamWritingOptions): Promise<void> {
   const {
@@ -38,13 +39,18 @@ export async function streamWritingCompose(opts: StreamWritingOptions): Promise<
     onToken,
     onComplete,
     onError,
+    onMessageStart,
+    onMessageEnd,
   } = opts;
 
+  const projector = createAguiEventProjector();
+  let completed = false;
+  let errored = false;
+
   try {
-    const response = await fetch(directBackendUrl(apiRoutes.writing.composeStream), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    await streamSSE(
+      apiRoutes.writing.composeStream,
+      {
         intent,
         instruction,
         draft,
@@ -54,60 +60,49 @@ export async function streamWritingCompose(opts: StreamWritingOptions): Promise<
         preset,
         site_url: siteUrl,
         thread_id: threadId,
-      }),
-      signal,
-    });
-
-    if (!response.ok || !response.body) {
-      throw new Error(`Writer stream failed: ${response.status}`);
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let eventType = "";
-    let dataLines: string[] = [];
-
-    const flushEvent = () => {
-      if (!eventType) return;
-      const data = dataLines.join("\n");
-
-      if (eventType === "token" && data) {
-        onToken(data);
-      } else if (eventType === "error") {
-        onError(new Error(data || "Writing failed"));
-      } else if (eventType === "done") {
-        onComplete();
-      }
-
-      eventType = "";
-      dataLines = [];
-    };
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        flushEvent();
-        break;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const rawLine of lines) {
-        const line = rawLine.replace(/\r$/, "");
-        if (line.startsWith("event: ")) {
-          eventType = line.slice(7).trim();
-        } else if (line.startsWith("data: ")) {
-          dataLines.push(line.slice(6));
-        } else if (line === "") {
-          flushEvent();
+      },
+      (event, data) => {
+        // Capture AG-UI message boundaries before they hit the projector,
+        // since the projector intentionally drops them in the legacy mapping.
+        if (event === "TEXT_MESSAGE_START") {
+          const messageId = String(data.messageId || "");
+          if (messageId) onMessageStart?.(messageId);
+        } else if (event === "TEXT_MESSAGE_END") {
+          const messageId = String(data.messageId || "");
+          if (messageId) onMessageEnd?.(messageId);
         }
-      }
+
+        // Skip projecting boundary events — they don't map to legacy callbacks.
+        if (MESSAGE_BOUNDARY_EVENTS.has(event)) return;
+
+        const projected = projector.project(event, data);
+        for (const out of projected) {
+          if (out.event === "token") {
+            const content = typeof out.data.content === "string" ? out.data.content : "";
+            if (content) onToken(content);
+          } else if (out.event === "done") {
+            completed = true;
+            onComplete();
+          } else if (out.event === "error") {
+            errored = true;
+            const message = typeof out.data.message === "string" ? out.data.message : "Writing failed";
+            onError(new Error(message));
+          }
+        }
+      },
+      signal,
+    );
+
+    // Some servers may close the SSE connection without a terminal RUN_FINISHED
+    // (e.g. if the underlying generator simply exhausts). Treat clean EOF as
+    // success so the caller's onComplete still fires.
+    if (!completed && !errored) {
+      onComplete();
     }
   } catch (err) {
     if (signal?.aborted) return;
-    onError(err instanceof Error ? err : new Error("Writing failed"));
+    if (!errored) {
+      onError(err instanceof Error ? err : new Error("Writing failed"));
+    }
   }
 }

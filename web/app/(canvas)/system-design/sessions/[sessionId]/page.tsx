@@ -3,7 +3,7 @@ import { SystemDesignSessionClient } from "@/app/(canvas)/system-design/sessions
 export default async function SystemDesignSessionPage({
  params,
 }: {
- params: { sessionId: string } | Promise<{ sessionId: string }>;
+ params: Promise<{ sessionId: string }>;
 }) {
  const { sessionId } = await params;
 

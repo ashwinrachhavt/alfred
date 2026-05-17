@@ -200,7 +200,7 @@ const AlfredAPI = {
    * Uses /api/documents/page/extract which requires raw_text (min 50 chars).
    * Falls back to creating a note if the text is too short.
    */
-  async capturePage({ url, title, content, raw_markdown, content_type_hint }) {
+  async capturePage({ url, title, content, raw_markdown, content_type_hint, capture_quality }) {
     const text = (content || "").trim();
     if (text.length >= 50) {
       const body = {
@@ -211,6 +211,7 @@ const AlfredAPI = {
       };
       if (raw_markdown) body.raw_markdown = raw_markdown;
       if (content_type_hint && content_type_hint !== "generic") body.content_type_hint = content_type_hint;
+      if (capture_quality) body.capture_quality = capture_quality;
       return this._fetch("/api/documents/page/extract", {
         method: "POST",
         body: JSON.stringify(body),

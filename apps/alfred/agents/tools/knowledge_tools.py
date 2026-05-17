@@ -34,12 +34,20 @@ def _get_doc_service() -> DocStorageService:
 
 @tool
 def search_kb(query: str, topic: str | None = None, tags: str | None = None, limit: int = 10) -> str:
-    """Search the knowledge base for zettels matching a query. Returns titles, summaries, and IDs."""
+    """Search zettels by text, topic, or tags. Returns titles, summaries, match reasons, and IDs."""
     svc = _get_zettel_service()
-    cards = svc.list_cards(q=query, topic=topic, limit=limit)
+    matches = svc.search_cards(query=query, topic=topic, tags=tags, limit=limit)
     results = [
-        {"id": c.id, "title": c.title, "topic": c.topic, "summary": (c.summary or c.content or "")[:200]}
-        for c in cards
+        {
+            "id": match.card.id,
+            "title": match.card.title,
+            "topic": match.card.topic,
+            "tags": match.card.tags or [],
+            "summary": (match.card.summary or match.card.content or "")[:200],
+            "score": round(match.score, 2),
+            "match_reason": match.reasons,
+        }
+        for match in matches
     ]
     return json.dumps(results)
 

@@ -5,7 +5,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: bash infra/gcp/deploy.sh [-p PROJECT] [-r REGION] [-s SERVICE] [-R REPOSITORY] [-i IMAGE] [-e ENV_FILE]
+Usage: bash infra/gcp/deploy.sh [-p PROJECT] [-r REGION] [-s SERVICE] [-R REPOSITORY] [-i IMAGE] [-t LATEST_TAG] [-e ENV_FILE]
 
 Options:
   -p PROJECT       GCP project ID (default: current gcloud config)
@@ -13,11 +13,12 @@ Options:
   -s SERVICE       Cloud Run service name (default: alfred-api)
   -R REPOSITORY    Artifact Registry repo name (default: alfred)
   -i IMAGE         Image name within the repo (default: alfred-api)
+  -t LATEST_TAG    Mutable image tag also pushed for the latest deploy (default: latest)
   -e ENV_FILE      Optional .env file to apply as Cloud Run environment variables
 
 Examples:
   bash infra/gcp/deploy.sh
-  bash infra/gcp/deploy.sh -p my-proj -r us-central1 -s alfred-api -R alfred -i alfred-api -e alfred/.env
+  bash infra/gcp/deploy.sh -p my-proj -r us-central1 -s alfred-api -R alfred -i alfred-api -e apps/alfred/.env
 EOF
 }
 
@@ -29,15 +30,17 @@ REGION="us-central1"
 SERVICE="alfred-api"
 REPOSITORY="alfred"
 IMAGE="alfred-api"
+LATEST_TAG="latest"
 ENV_FILE=""
 
-while getopts ":p:r:s:R:i:e:h" opt; do
+while getopts ":p:r:s:R:i:t:e:h" opt; do
   case $opt in
     p) PROJECT="$OPTARG" ;;
     r) REGION="$OPTARG" ;;
     s) SERVICE="$OPTARG" ;;
     R) REPOSITORY="$OPTARG" ;;
     i) IMAGE="$OPTARG" ;;
+    t) LATEST_TAG="$OPTARG" ;;
     e) ENV_FILE="$OPTARG" ;;
     h) usage; exit 0 ;;
     *) usage; exit 1 ;;
@@ -53,6 +56,7 @@ echo "[i] Project     : $PROJECT"
 echo "[i] Region      : $REGION"
 echo "[i] Repository  : $REPOSITORY"
 echo "[i] Image       : $IMAGE"
+echo "[i] Latest tag  : $LATEST_TAG"
 echo "[i] Service     : $SERVICE"
 if [[ -n "$ENV_FILE" ]]; then
   echo "[i] Env file    : $ENV_FILE"
@@ -82,7 +86,7 @@ echo "[i] Building and deploying via Cloud Build"
 gcloud builds submit "${ROOT_DIR}" \
   --config "${ROOT_DIR}/infra/gcp/cloudbuild.yaml" \
   --project "$PROJECT" \
-  --substitutions=_REGION="$REGION",_SERVICE="$SERVICE",_REPOSITORY="$REPOSITORY",_IMAGE="$IMAGE"
+  --substitutions=_REGION="$REGION",_SERVICE="$SERVICE",_REPOSITORY="$REPOSITORY",_IMAGE="$IMAGE",_LATEST_TAG="$LATEST_TAG"
 
 echo "[i] Fetching service URL"
 SERVICE_URL=$(gcloud run services describe "$SERVICE" \

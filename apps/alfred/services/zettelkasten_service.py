@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from math import sqrt
 
-from sqlalchemy import func
+from sqlalchemy import String, cast, func, or_
 from sqlalchemy import text as sa_text
 from sqlmodel import Session, select
 
@@ -62,6 +63,164 @@ _ALLOWED_SORT_COLUMNS = {
     "importance": ZettelCard.importance,
     "confidence": ZettelCard.confidence,
 }
+
+_SEARCH_STOP_TERMS = {
+    "about",
+    "and",
+    "card",
+    "cards",
+    "find",
+    "for",
+    "from",
+    "in",
+    "kb",
+    "knowledge",
+    "label",
+    "labels",
+    "note",
+    "notes",
+    "of",
+    "on",
+    "or",
+    "related",
+    "search",
+    "tag",
+    "tagged",
+    "tags",
+    "the",
+    "topic",
+    "topics",
+    "with",
+    "zettel",
+    "zettels",
+}
+
+
+@dataclass(frozen=True)
+class ZettelSearchMatch:
+    """Ranked zettel search result with lightweight explainability."""
+
+    card: ZettelCard
+    score: float
+    reasons: list[str]
+
+
+def _dedupe_preserve_order(values: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        cleaned = " ".join(str(value or "").strip().split())
+        if not cleaned:
+            continue
+        key = cleaned.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(cleaned)
+    return result
+
+
+def _compact_search_text(value: object) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def _split_camel_case(value: str) -> str:
+    return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", value)
+
+
+def _search_variants(value: str | None) -> list[str]:
+    cleaned = " ".join(str(value or "").strip().split())
+    if not cleaned:
+        return []
+
+    camel_split = _split_camel_case(cleaned)
+    spaced = re.sub(r"[-_]+", " ", camel_split)
+    dashed = re.sub(r"[\s_]+", "-", camel_split)
+    compact = _compact_search_text(cleaned)
+
+    variants = [cleaned, camel_split, spaced, dashed, compact]
+    if compact.endswith("os") and len(compact) > 3:
+        root = compact[:-2]
+        variants.extend([f"{root} os", f"{root}-os"])
+    return _dedupe_preserve_order(variants)
+
+
+def _split_search_terms(value: str | None) -> list[str]:
+    cleaned = " ".join(str(value or "").strip().split())
+    if not cleaned:
+        return []
+
+    terms: list[str] = []
+    terms.extend(_search_variants(cleaned))
+    for raw in re.split(r"[\s,;:/()\[\]{}]+", cleaned):
+        token = raw.strip(".,!?\"'")
+        if not token:
+            continue
+        if token.lower() in _SEARCH_STOP_TERMS:
+            continue
+        if len(_compact_search_text(token)) < 2:
+            continue
+        terms.extend(_search_variants(token))
+    return _dedupe_preserve_order(terms)
+
+
+def _split_tag_values(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [
+            item.strip().strip(".,!?\"'")
+            for item in re.split(r"[\s,;]+", value)
+            if item.strip().strip(".,!?\"'")
+        ]
+    if isinstance(value, Iterable):
+        return [
+            str(item).strip().strip(".,!?\"'")
+            for item in value
+            if str(item).strip().strip(".,!?\"'")
+        ]
+    return [str(value).strip()]
+
+
+def _extract_query_tag_terms(query: str | None) -> list[str]:
+    text_value = str(query or "").strip()
+    if not text_value:
+        return []
+
+    lowered = text_value.lower()
+    if lowered.startswith(("tags ", "tag ", "tagged ")):
+        return _split_tag_values(text_value.split(maxsplit=1)[1] if " " in text_value else "")
+
+    tagged_chunks: list[str] = []
+    for match in re.finditer(r"\btag(?:s|ged)?\s*:\s*([^\n]+)", text_value, flags=re.IGNORECASE):
+        tagged_chunks.extend(_split_tag_values(match.group(1)))
+    return tagged_chunks
+
+
+def _match_kind(value: object, term: str) -> str | None:
+    text_value = " ".join(str(value or "").strip().split())
+    if not text_value or not term:
+        return None
+
+    text_lower = text_value.lower()
+    term_lower = term.lower()
+    text_compact = _compact_search_text(text_value)
+    term_compact = _compact_search_text(term)
+    if not term_compact:
+        return None
+
+    if text_lower == term_lower or text_compact == term_compact:
+        return "exact"
+    if len(term_compact) >= 3 and (term_lower in text_lower or term_compact in text_compact):
+        return "contains"
+    return None
+
+
+def _reason(label: str, value: object, term: str) -> str:
+    shown = str(value or "").strip()
+    if not shown:
+        shown = term
+    return f"{label}:{shown}"
 
 
 @dataclass
@@ -276,6 +435,134 @@ class ZettelkastenService:
 
     def get_card(self, card_id: int) -> ZettelCard | None:
         return self.session.get(ZettelCard, card_id)
+
+    def search_cards(
+        self,
+        *,
+        query: str | None = None,
+        topic: str | None = None,
+        tags: list[str] | str | None = None,
+        limit: int = 10,
+        search_mode: str = "broad",
+    ) -> list[ZettelSearchMatch]:
+        """Search active cards across text and metadata with forgiving variants."""
+        capped_limit = clamp_int(int(limit or 10), lo=1, hi=50)
+        mode = (search_mode or "broad").strip().lower()
+        metadata_only = mode == "metadata"
+
+        query_terms = _split_search_terms(query)
+        topic_terms = _split_search_terms(topic)
+        explicit_tag_terms: list[str] = []
+        for tag in [*_split_tag_values(tags), *_extract_query_tag_terms(query)]:
+            explicit_tag_terms.extend(_split_search_terms(tag))
+        tag_terms = _dedupe_preserve_order(explicit_tag_terms)
+
+        if not query_terms and not topic_terms and not tag_terms:
+            return []
+
+        candidate_limit = min(max(capped_limit * 80, 250), 2000)
+        statement = (
+            select(ZettelCard)
+            .where(ZettelCard.status == "active")
+            .order_by(ZettelCard.updated_at.desc(), ZettelCard.id.desc())
+            .limit(candidate_limit)
+        )
+        filter_terms = _dedupe_preserve_order([*query_terms, *topic_terms, *tag_terms])[:40]
+        filters = []
+        for term in filter_terms:
+            term_lower = term.lower()
+            filters.extend(
+                [
+                    func.lower(cast(ZettelCard.title, String)).contains(term_lower),
+                    func.lower(cast(ZettelCard.topic, String)).contains(term_lower),
+                    func.lower(cast(ZettelCard.summary, String)).contains(term_lower),
+                    func.lower(cast(ZettelCard.content, String)).contains(term_lower),
+                    func.lower(cast(ZettelCard.tags, String)).contains(term_lower),
+                ]
+            )
+        if filters:
+            statement = statement.where(or_(*filters))
+        candidates = list(self.session.exec(statement))
+
+        matches: list[ZettelSearchMatch] = []
+        for card in candidates:
+            score, reasons = self._score_search_card(
+                card,
+                query_terms=query_terms,
+                topic_terms=topic_terms,
+                tag_terms=tag_terms,
+                metadata_only=metadata_only,
+            )
+            if score <= 0:
+                continue
+            matches.append(ZettelSearchMatch(card=card, score=score, reasons=reasons[:6]))
+
+        return sorted(
+            matches,
+            key=lambda item: (
+                item.score,
+                item.card.updated_at or datetime.min,
+                item.card.id or 0,
+            ),
+            reverse=True,
+        )[:capped_limit]
+
+    @staticmethod
+    def _score_search_card(
+        card: ZettelCard,
+        *,
+        query_terms: list[str],
+        topic_terms: list[str],
+        tag_terms: list[str],
+        metadata_only: bool,
+    ) -> tuple[float, list[str]]:
+        score = 0.0
+        reasons: list[str] = []
+        seen_reasons: set[str] = set()
+
+        def add_reason(label: str, value: object, term: str) -> None:
+            reason = _reason(label, value, term)
+            if reason in seen_reasons:
+                return
+            seen_reasons.add(reason)
+            reasons.append(reason)
+
+        def score_field(
+            label: str,
+            value: object,
+            terms: list[str],
+            *,
+            exact: float,
+            contains: float,
+        ) -> None:
+            nonlocal score
+            for term in terms:
+                kind = _match_kind(value, term)
+                if not kind:
+                    continue
+                score += exact if kind == "exact" else contains
+                add_reason(label, value, term)
+
+        all_text_terms = _dedupe_preserve_order([*query_terms, *topic_terms, *tag_terms])
+        score_field("title", card.title, all_text_terms, exact=110.0, contains=75.0)
+        score_field("topic", card.topic, [*query_terms, *topic_terms], exact=85.0, contains=60.0)
+
+        for tag in card.tags or []:
+            score_field("tag", tag, [*query_terms, *tag_terms], exact=95.0, contains=70.0)
+
+        if not metadata_only:
+            score_field("summary", card.summary, query_terms, exact=45.0, contains=30.0)
+            score_field("content", card.content, query_terms, exact=25.0, contains=15.0)
+
+        if tag_terms:
+            card_tag_compacts = {_compact_search_text(tag) for tag in card.tags or []}
+            requested_tag_compacts = {_compact_search_text(tag) for tag in tag_terms}
+            requested_tag_compacts.discard("")
+            if requested_tag_compacts and requested_tag_compacts <= card_tag_compacts:
+                score += 50.0
+                add_reason("tags_all", ", ".join(card.tags or []), ",".join(tag_terms))
+
+        return score, reasons
 
     def update_card(self, card: ZettelCard, **fields) -> ZettelCard:
         text_changed = False

@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { BookOpen, ExternalLink, Loader2, Plus, Sparkles, X } from "lucide-react";
+import { BookOpen, ExternalLink, ImageIcon, Layers3, Loader2, Plus, Sparkles, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,8 @@ import { useDocumentDetails } from "@/features/documents/queries";
 import { useEnrichDocument, useFetchAndOrganize } from "@/features/documents/mutations";
 import { useZettelsByDocument } from "@/features/zettels/queries";
 import { useCreateSession } from "@/features/workspace/mutations";
+import type { SourceAnalysis, SourceCapture, SourceCaptureImage } from "@/lib/api/types/documents";
+import { DocumentChatThread } from "./document-chat-thread";
 import { ReaderMode } from "./reader-mode";
 
 type Props = {
@@ -77,6 +79,9 @@ export function InboxDetail({ docId, onClose }: Props) {
  const hasEnrichment = Boolean(data?.summary || data?.enrichment);
  const summary = data?.summary as { short?: string; long?: string } | null;
  const topics = data?.topics as { primary?: string; secondary?: string[] } | null;
+ const sourceCapture = data?.metadata?.source_capture;
+ const sourceAnalysis = data?.enrichment?.source_analysis;
+ const readableText = data?.cleaned_text || data?.raw_markdown || "";
 
  return (
  <>
@@ -169,6 +174,12 @@ export function InboxDetail({ docId, onClose }: Props) {
  </p>
  )}
 
+ <SourceCaptureOverview
+ sourceCapture={sourceCapture}
+ sourceAnalysis={sourceAnalysis}
+ fallbackCoverUrl={data.cover_image_url}
+ />
+
  {/* Enriched view: structured markdown template */}
  {hasEnrichment ? (
  <div className="space-y-6">
@@ -220,7 +231,7 @@ export function InboxDetail({ docId, onClose }: Props) {
  Full Text ({data.tokens ?? Math.round(data.cleaned_text.length / 4)} tokens)
  </p>
  <div className="whitespace-pre-wrap text-sm leading-relaxed">
- {data.raw_markdown || data.cleaned_text}
+ {readableText}
  </div>
  </div>
  ) : (
@@ -253,6 +264,7 @@ export function InboxDetail({ docId, onClose }: Props) {
  )}
  {/* Zettel Bridge — show existing + create new */}
  <ZettelBridge docId={docId} data={data} />
+ <DocumentChatThread docId={docId} title={data.title} />
  </article>
  ) : (
  <p className="text-muted-foreground">Document not found.</p>
@@ -269,6 +281,140 @@ export function InboxDetail({ docId, onClose }: Props) {
 		 content={data?.cleaned_text || data?.raw_markdown || ""}
 		 />
  </>
+ );
+}
+
+function imageSrc(image: SourceCaptureImage): string | null {
+ const src = image.local_url || image.url;
+ return typeof src === "string" && src.trim() ? src : null;
+}
+
+function sourceLabel(value: string | null | undefined): string {
+ return String(value || "").replace(/_/g, " ");
+}
+
+function SourceCaptureOverview({
+ sourceCapture,
+ sourceAnalysis,
+ fallbackCoverUrl,
+}: {
+ sourceCapture?: SourceCapture;
+ sourceAnalysis?: SourceAnalysis;
+ fallbackCoverUrl?: string | null;
+}) {
+ const images = useMemo(() => {
+ const seen = new Set<string>();
+ return (sourceCapture?.images || [])
+ .map((image) => ({ ...image, src: imageSrc(image) }))
+ .filter((image): image is SourceCaptureImage & { src: string } => {
+ if (!image.src || seen.has(image.src)) return false;
+ seen.add(image.src);
+ return true;
+ })
+ .slice(0, 6);
+ }, [sourceCapture?.images]);
+
+ const coverUrl = sourceCapture?.cover_image_url || fallbackCoverUrl || images[0]?.src || null;
+ const headings = sourceCapture?.headings?.slice(0, 8) || [];
+ const argumentFlow = sourceAnalysis?.argument_flow?.slice(0, 4) || [];
+ const showOverview = Boolean(
+ sourceCapture || sourceAnalysis || coverUrl || images.length,
+ );
+
+ if (!showOverview) return null;
+
+ return (
+ <div className="not-prose mb-6 space-y-4 border-y border-[var(--alfred-ruled-line)] py-4">
+ <div className="flex flex-wrap items-center gap-2">
+ {sourceCapture?.kind && (
+ <Badge variant="secondary" className="h-5 rounded-sm text-[9px] uppercase tracking-wide">
+ {sourceLabel(sourceCapture.kind)}
+ </Badge>
+ )}
+ {sourceCapture?.platform && (
+ <Badge variant="outline" className="h-5 rounded-sm text-[9px] uppercase tracking-wide">
+ {sourceLabel(sourceCapture.platform)}
+ </Badge>
+ )}
+ {sourceCapture?.author && (
+ <span className="text-[11px] text-muted-foreground">By {sourceCapture.author}</span>
+ )}
+ {sourceCapture?.published_at && (
+ <span className="text-[11px] text-muted-foreground">{sourceCapture.published_at.slice(0, 10)}</span>
+ )}
+ </div>
+
+ {coverUrl && (
+ <div className="overflow-hidden rounded-md border border-[var(--alfred-ruled-line)] bg-muted/20">
+ {/* Captured sources can come from arbitrary domains or local asset routes. */}
+ {/* eslint-disable-next-line @next/next/no-img-element */}
+ <img src={coverUrl} alt={sourceCapture?.title || "Captured source"} className="max-h-64 w-full object-cover" />
+ </div>
+ )}
+
+ {sourceAnalysis?.thesis && (
+ <div>
+ <p className="mb-1 text-[10px] font-medium uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
+ Thesis
+ </p>
+ <p className="text-sm leading-relaxed text-foreground">{sourceAnalysis.thesis}</p>
+ </div>
+ )}
+
+ <div className="grid gap-4 md:grid-cols-2">
+ {headings.length > 0 && (
+ <div>
+ <div className="mb-2 flex items-center gap-2">
+ <Layers3 className="size-3.5 text-[var(--alfred-accent)]" />
+ <p className="text-[10px] font-medium uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
+ Structure
+ </p>
+ </div>
+ <ol className="space-y-1 border-l border-[var(--alfred-ruled-line)] pl-3">
+ {headings.map((heading, index) => (
+ <li key={`${heading.text}-${index}`} className="text-[12px] leading-snug text-muted-foreground">
+ {heading.text}
+ </li>
+ ))}
+ </ol>
+ </div>
+ )}
+
+ {images.length > 0 && (
+ <div>
+ <div className="mb-2 flex items-center gap-2">
+ <ImageIcon className="size-3.5 text-[var(--alfred-accent)]" />
+ <p className="text-[10px] font-medium uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
+ Captured Assets
+ </p>
+ </div>
+ <div className="grid grid-cols-3 gap-2">
+ {images.map((image) => (
+ <div key={image.src} className="aspect-[4/3] overflow-hidden rounded border border-[var(--alfred-ruled-line)] bg-muted/20">
+ {/* eslint-disable-next-line @next/next/no-img-element */}
+ <img src={image.src} alt={image.alt || "Captured asset"} className="size-full object-cover" />
+ </div>
+ ))}
+ </div>
+ </div>
+ )}
+ </div>
+
+ {argumentFlow.length > 0 && (
+ <div>
+ <p className="mb-2 text-[10px] font-medium uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
+ Argument Flow
+ </p>
+ <div className="space-y-1">
+ {argumentFlow.map((item, index) => (
+ <p key={`${item}-${index}`} className="text-[12px] leading-relaxed text-muted-foreground">
+ {index + 1}. {item}
+ </p>
+ ))}
+ </div>
+ </div>
+ )}
+ </div>
  );
 }
 

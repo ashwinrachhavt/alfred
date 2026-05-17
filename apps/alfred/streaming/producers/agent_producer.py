@@ -82,6 +82,7 @@ class AgentProducer:
         lens: str | None,
         history: list | None = None,
         note_context: dict | None = None,
+        source_context: str | None = None,
         image_attachments: list[dict[str, Any]] | None = None,
         intent: str | None = None,
         intent_args: dict | None = None,
@@ -94,6 +95,7 @@ class AgentProducer:
         self.lens = lens
         self.history = history
         self.note_context = note_context
+        self.source_context = source_context
         self.image_attachments = image_attachments
         self.intent = intent
         self.intent_args = intent_args
@@ -121,6 +123,8 @@ class AgentProducer:
             kwargs["history"] = self.history
         if self.note_context is not None:
             kwargs["note_context"] = self.note_context
+        if self.source_context is not None:
+            kwargs["source_context"] = self.source_context
         if self.image_attachments is not None:
             kwargs["image_attachments"] = self.image_attachments
         if self.intent is not None:

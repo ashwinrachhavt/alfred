@@ -517,9 +517,15 @@ class Settings(BaseSettings):
         le=20000,
     )
     writer_semantic_cache_enabled: bool = Field(
-        default=True,
+        default=False,
         alias="ALFRED_WRITER_SEMANTIC_CACHE",
-        description="Enable Redis-backed semantic caching for writer outputs (requires Redis Stack).",
+        description=(
+            "Enable Redis-backed semantic caching for writer outputs (requires Redis Stack). "
+            "Default off: the cache key is not scoped per-user/per-note, so similar prompts "
+            "from different sessions can return each other's cached output. Re-enable only "
+            "after writer_cache_threshold is tightened and the cache key includes a "
+            "user/note discriminator."
+        ),
     )
     writer_cache_threshold: float = Field(
         default=0.2,

@@ -65,6 +65,7 @@
         content: page.text,
         raw_markdown: page.raw_markdown,
         content_type_hint: page.content_type_hint,
+        capture_quality: page.quality,
       });
       await AlfredAPI.addCaptureHistory({
         title: `[Page] ${page.title}`,
@@ -122,6 +123,7 @@
           content: page.text,
           raw_markdown: page.raw_markdown,
           content_type_hint: page.content_type_hint,
+          capture_quality: page.quality,
         });
         AlfredAPI.addCaptureHistory({
           title: `[Page] ${page.title}`,

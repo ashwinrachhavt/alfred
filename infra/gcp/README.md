@@ -27,13 +27,15 @@ Build and Deploy with Cloud Build
 # From anywhere (script locates repo root automatically)
 bash infra/gcp/deploy.sh
 # Or specify project/region/env file:
-bash infra/gcp/deploy.sh -p YOUR_PROJECT -r us-central1 -s alfred-api -R alfred -i alfred-api -e alfred/.env
+bash infra/gcp/deploy.sh -p YOUR_PROJECT -r us-central1 -s alfred-api -R alfred -i alfred-api -e apps/alfred/.env
 ```
 
-On success, Cloud Run prints the service URL.
+Cloud Build publishes both an immutable `$SHORT_SHA` tag and a mutable `latest`
+tag. Cloud Run deploys the immutable `$SHORT_SHA` image; `latest` is updated to
+the same image for quick inspection or rollback workflows.
 
 Environment Variables
-- Copy alfred/.env.example to alfred/.env locally for reference, but do NOT bake secrets into the image.
+- Copy apps/alfred/.env.example to apps/alfred/.env locally for reference, but do NOT bake secrets into the image.
 - Set env vars on the Cloud Run service (or use Secret Manager):
 ```bash
 gcloud run services update alfred-api \
@@ -52,8 +54,8 @@ Notes
 
 Local Test
 ```bash
-docker build -f alfred/Dockerfile -t alfred-api:local .
-docker run -p 8000:8000 --env-file alfred/.env alfred-api:local
+docker build -f apps/alfred/Dockerfile -t alfred-api:local .
+docker run -p 8000:8000 --env-file apps/alfred/.env alfred-api:local
 # Open http://localhost:8000/docs
 ```
 

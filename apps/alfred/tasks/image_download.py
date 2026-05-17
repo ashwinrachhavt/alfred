@@ -187,11 +187,21 @@ def download_document_images(self, doc_id: str) -> dict[str, Any]:
         ).first()
 
         if not doc or not doc.raw_markdown:
-            return {"doc_id": doc_id, "images_downloaded": 0, "status": "no_markdown"}
+            return {
+                "doc_id": doc_id,
+                "images_downloaded": 0,
+                "status": "no_markdown",
+                "rewrite_map": {},
+            }
 
         image_urls = extract_image_urls(doc.raw_markdown)
         if not image_urls:
-            return {"doc_id": doc_id, "images_downloaded": 0, "status": "no_images"}
+            return {
+                "doc_id": doc_id,
+                "images_downloaded": 0,
+                "status": "no_images",
+                "rewrite_map": {},
+            }
 
         logger.info("Downloading %d images for doc %s", len(image_urls), doc_id)
 
@@ -208,7 +218,12 @@ def download_document_images(self, doc_id: str) -> dict[str, Any]:
                     downloaded.append(result)
 
         if not downloaded:
-            return {"doc_id": doc_id, "images_downloaded": 0, "status": "all_failed"}
+            return {
+                "doc_id": doc_id,
+                "images_downloaded": 0,
+                "status": "all_failed",
+                "rewrite_map": {},
+            }
 
         # Store assets and build URL rewrite map
         rewrite_map: dict[str, str] = {}
@@ -246,10 +261,11 @@ def download_document_images(self, doc_id: str) -> dict[str, Any]:
             "images_downloaded": len(downloaded),
             "images_failed": len(image_urls) - len(downloaded),
             "status": "success",
+            "rewrite_map": rewrite_map,
         }
     except Exception:
         session.rollback()
         logger.exception("Image download failed for doc %s", doc_id)
-        return {"doc_id": doc_id, "images_downloaded": 0, "status": "error"}
+        return {"doc_id": doc_id, "images_downloaded": 0, "status": "error", "rewrite_map": {}}
     finally:
         session.close()

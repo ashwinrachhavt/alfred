@@ -46,6 +46,7 @@ import {
   AiStreamingController,
   type StreamingState,
 } from "@/components/editor/ai-streaming-controller";
+import { slashAICommands } from "@/lib/notes-ai/commands";
 import { WikiLink, extractWikiLinkCardIds } from "@/components/editor/extensions/wiki-link";
 import {
   WikiLinkAutocomplete,
@@ -397,6 +398,86 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
       setAiPromptOpen(true);
     }, []);
 
+    /**
+     * Run an AI streaming request directly with a known instruction, without
+     * showing the prompt. Used by `/ai-*` slash commands (Improve writing,
+     * Continue writing, Brainstorm, etc.) where the instruction is fully
+     * determined by the slash entry itself.
+     *
+     * Mirrors openAI's mode resolution: with-selection → transform context,
+     * empty paragraph → generate (no original range), otherwise → edit on
+     * the current paragraph.
+     */
+    const runAIInstruction = useCallback(
+      (ed: Editor, instruction: string) => {
+        const { from, to } = ed.state.selection;
+        const hasSelection = !ed.state.selection.empty;
+        const { $from } = ed.state.selection;
+        const paragraphText = $from.parent.textContent;
+
+        let targetText = "";
+        let targetRange: { from: number; to: number } | null = null;
+
+        if (hasSelection) {
+          targetText = ed.state.doc.textBetween(from, to, " ");
+          targetRange = { from, to };
+        } else if (paragraphText.trim()) {
+          targetText = paragraphText;
+          targetRange = { from: $from.start(), to: $from.end() };
+        }
+
+        ed.commands.blur();
+        const insertPos = targetRange ? targetRange.to : ed.state.selection.from;
+        setStreamInsertAt(insertPos);
+        setStreamOriginalRange(
+          targetRange && targetText
+            ? { from: targetRange.from, to: targetRange.to, text: targetText }
+            : null,
+        );
+        setStreamingState({ status: "streaming", instruction });
+      },
+      [],
+    );
+
+    const aiSlashEntries = useMemo<SlashCommand[]>(
+      () => {
+        // The "Ask AI" entry opens the inline prompt with no preset
+        // instruction so the user can free-form. Listed first so users
+        // typing "/ai" land on it before any of the named commands.
+        const askAI: SlashCommand = {
+          title: "Ask AI",
+          description: "Open the AI prompt to write or edit",
+          keywords: ["ai", "ask", "prompt", "polymath"],
+          group: "AI",
+          icon: Sparkles,
+          run: (ed) => {
+            openAI(ed);
+          },
+        };
+
+        // Each registry entry becomes a `/ai-<alias>` slash command. Panel
+        // commands (Ask Polymath, Research) are skipped — they belong in
+        // the inline flyout where they can route to the side panel without
+        // confusing the slash → inline-stream flow.
+        const named: SlashCommand[] = slashAICommands()
+          .filter((cmd) => !cmd.panel)
+          .map((cmd) => {
+            const alias = cmd.slashAlias!;
+            return {
+              title: cmd.label,
+              description: cmd.description ?? "",
+              keywords: ["ai", alias, ...cmd.label.toLowerCase().split(/\s+/)],
+              group: "AI",
+              icon: cmd.icon,
+              run: (ed) => runAIInstruction(ed, cmd.promptTemplate),
+            };
+          });
+
+        return [askAI, ...named];
+      },
+      [openAI, runAIInstruction],
+    );
+
     const slashCommands = useMemo<SlashCommand[]>(
       () => [
         {
@@ -506,18 +587,9 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           run: (editor) => editor.chain().focus().toggleBlockquote().run(),
         },
         // --- AI Slash Commands ---
-        {
-          title: "AI Edit",
-          description: "Ask AI to write, edit, or transform text",
-          keywords: ["ai", "edit", "write", "generate", "ask", "alfred"],
-          group: "AI",
-          icon: Sparkles,
-          run: (ed) => {
-            openAI(ed);
-          },
-        },
+        ...aiSlashEntries,
       ],
-      [openAI],
+      [openAI, aiSlashEntries],
     );
 
     const filteredSlashCommands = useMemo(() => {
@@ -948,10 +1020,12 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
       [editor, flushPendingEditorDraft],
     );
 
-    const handleStreamRetry = useCallback(() => {
-      setStreamingState((prev) =>
-        prev.status === "done" ? { status: "streaming", instruction: prev.instruction } : prev,
-      );
+    const handleStreamFollowup = useCallback((instruction: string) => {
+      // The streaming controller has already mutated the doc (or chosen not
+      // to, for extend-mode follow-ups) — we just flip state back to
+      // streaming with the new instruction. The controller's isFollowupRef
+      // ensures it doesn't reset insertRangeRef on this re-entry.
+      setStreamingState({ status: "streaming", instruction });
     }, []);
 
     const handleEditInstruction = useCallback(() => {
@@ -1401,7 +1475,7 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
             documentId={documentId}
             onStreamComplete={handleStreamComplete}
             onFinish={handleStreamFinish}
-            onRetry={handleStreamRetry}
+            onFollowup={handleStreamFollowup}
             onEditInstruction={handleEditInstruction}
           />
         )}

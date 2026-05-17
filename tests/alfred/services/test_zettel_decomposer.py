@@ -58,6 +58,27 @@ class TestBuildDecompositionPrompt:
         assert "Just some text" in prompt
         # Should not crash
 
+    def test_prompt_includes_source_analysis_when_available(self):
+        """Captured web structure should guide card decomposition."""
+        prompt = build_decomposition_prompt(
+            title="The Smile Curve",
+            summary="Software value is moving to the edges.",
+            cleaned_text="Body text",
+            topics={"primary": "software_strategy"},
+            source_analysis={
+                "kind": "blog_article",
+                "thesis": "Software now has a smile curve.",
+                "argument_flow": [
+                    "Hardware value moved to design and distribution.",
+                    "Software markets are following.",
+                ],
+            },
+        )
+
+        assert "Source type: blog_article" in prompt
+        assert "Thesis: Software now has a smile curve." in prompt
+        assert "Hardware value moved" in prompt
+
 
 class TestParseDecompositionResponse:
     """Tests for parse_decomposition_response."""

@@ -13,6 +13,7 @@ import {
   Bot,
   Brain,
   Calendar,
+  Cable,
   ChevronDown,
   ChevronRight,
   Inbox,
@@ -75,6 +76,7 @@ const navSections: NavSection[] = [
     title: "System",
     items: [
       { label: "Connectors", href: "/connectors", icon: Plug },
+      { label: "API Workbench", href: "/api-workbench", icon: Cable },
       { label: "Settings", href: "/settings", icon: Settings },
     ],
   },

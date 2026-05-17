@@ -22,7 +22,9 @@ class _FakeDocStorage:
             "source_url": ingest.source_url,
             "title": ingest.title,
             "cleaned_text": ingest.cleaned_text,
+            "raw_markdown": ingest.raw_markdown,
             "content_type": ingest.content_type,
+            "metadata": ingest.metadata,
         }
         self.last_ingest_kwargs = kwargs
         if self.duplicate_next:
@@ -53,7 +55,7 @@ def test_page_extract_stores_only(monkeypatch) -> None:
             "raw_text": "x" * 60,
             "page_url": "https://example.com",
             "page_title": "Example",
-            "selection_type": "full_page",
+            "selection_type": "selection",
         },
     )
     assert resp.status_code == 201
@@ -65,6 +67,86 @@ def test_page_extract_stores_only(monkeypatch) -> None:
     assert fake.last_ingest["source_url"] == "https://example.com"
     assert fake.last_ingest["title"] == "Example"
     assert fake.last_ingest["content_type"] == "web"
+
+
+def test_full_page_http_capture_always_queues_coordinator(monkeypatch) -> None:
+    fake = _FakeDocStorage()
+    client = _app_with_fake_service(fake)
+    calls: list[dict[str, Any]] = []
+
+    def fake_dispatch(task_name: str, *, kwargs: dict[str, Any]) -> object:
+        calls.append({"task_name": task_name, "kwargs": kwargs})
+        return object()
+
+    monkeypatch.setattr(doc_routes, "dispatch_task", fake_dispatch)
+
+    resp = client.post(
+        "/api/documents/page/extract",
+        json={
+            "raw_text": "x" * 80,
+            "page_url": "https://www.edge.ceo/p/the-smile-curve-has-come-for-software",
+            "page_title": "The Smile Curve Has Come for Software",
+            "selection_type": "full_page",
+            "capture_quality": "basic",
+        },
+    )
+
+    assert resp.status_code == 201
+    assert resp.json()["status"] == "accepted"
+    assert fake.last_ingest_kwargs == {"skip_pipeline": True}
+    assert fake.last_ingest is not None
+    assert fake.last_ingest["metadata"] == {
+        "capture": {
+            "source": "chrome_extension",
+            "mode": "full_page",
+            "rich_capture_status": "queued",
+            "local_quality": "basic",
+        }
+    }
+    assert calls == [
+        {
+            "task_name": "alfred.tasks.capture_coordinator.coordinate_capture",
+            "kwargs": {
+                "doc_id": "1",
+                "source_url": "https://www.edge.ceo/p/the-smile-curve-has-come-for-software",
+                "has_images": False,
+                "content_type_hint": "generic",
+                "force_firecrawl": True,
+            },
+        }
+    ]
+
+
+def test_selection_capture_does_not_force_coordinator(monkeypatch) -> None:
+    fake = _FakeDocStorage()
+    client = _app_with_fake_service(fake)
+    calls: list[dict[str, Any]] = []
+
+    def fake_dispatch(task_name: str, *, kwargs: dict[str, Any]) -> object:
+        calls.append({"task_name": task_name, "kwargs": kwargs})
+        return object()
+
+    monkeypatch.setattr(doc_routes, "dispatch_task", fake_dispatch)
+
+    resp = client.post(
+        "/api/documents/page/extract",
+        json={
+            "raw_text": "Selected text " * 8,
+            "raw_markdown": "**Selected text**",
+            "page_url": "https://example.com/post",
+            "page_title": "Example",
+            "selection_type": "selection",
+            "content_type_hint": "article",
+            "capture_quality": "rich",
+        },
+    )
+
+    assert resp.status_code == 201
+    assert resp.json()["status"] == "accepted"
+    assert fake.last_ingest_kwargs == {"skip_pipeline": False}
+    assert fake.last_ingest is not None
+    assert fake.last_ingest["metadata"] == {"content_type_hint": "article"}
+    assert calls == []
 
 
 def test_page_extract_duplicate_short_circuits() -> None:
@@ -114,6 +196,7 @@ def test_page_extract_returns_accepted_when_queue_dispatch_fails(monkeypatch) ->
                 "source_url": "https://example.com/post",
                 "has_images": False,
                 "content_type_hint": "generic",
+                "force_firecrawl": True,
             },
         },
         {

@@ -280,6 +280,12 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
         cleaned_text = doc.get("cleaned_text", "")
         summary = doc.get("summary") or {}
         short_summary = summary.get("short", "").strip() if isinstance(summary, dict) else ""
+        enrichment = doc.get("enrichment") or {}
+        source_analysis = (
+            enrichment.get("source_analysis")
+            if isinstance(enrichment, dict) and isinstance(enrichment.get("source_analysis"), dict)
+            else None
+        )
         topics = doc.get("topics") or {}
         primary_topic = topics.get("primary") if isinstance(topics, dict) else None
         tags = doc.get("tags") or []
@@ -325,6 +331,7 @@ def _create_zettel_from_enrichment(doc_id: str) -> str | None:
                     summary=short_summary,
                     cleaned_text=cleaned_text,
                     topics=topics,
+                    source_analysis=source_analysis,
                 )
 
                 llm = get_chat_model()

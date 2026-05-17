@@ -5,5 +5,6 @@
  * that both server and client components can gate Clerk-only UI safely.
  */
 export function isClerkEnabled(): boolean {
-  return Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+  // Temporary local bypass: skip Clerk for the current development session.
+  return false;
 }

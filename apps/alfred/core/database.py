@@ -84,4 +84,14 @@ def get_session() -> Generator[Session, None, None]:
         session.close()
 
 
-__all__ = ["engine", "get_session", "SessionLocal", "normalize_db_url"]
+def get_db_session() -> Session:
+    """Return a caller-managed database session.
+
+    Background tasks are not request dependencies, so they need a direct session
+    factory rather than the FastAPI generator dependency.
+    """
+
+    return SessionLocal()
+
+
+__all__ = ["engine", "get_session", "get_db_session", "SessionLocal", "normalize_db_url"]

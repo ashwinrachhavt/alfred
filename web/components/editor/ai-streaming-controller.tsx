@@ -1,14 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Transaction } from "@tiptap/pm/state";
 import { type Editor } from "@tiptap/react";
 import { toast } from "sonner";
-import { Check, Pencil, RotateCcw, Sparkles, X } from "lucide-react";
+import { Check, Pencil, Sparkles, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { ALFRED_AI_STREAM_META } from "@/components/editor/editor-transaction-meta";
 import { streamWritingCompose } from "@/lib/api/writing-stream";
+import {
+  FOLLOWUPS,
+  primaryFollowups,
+  resolveFollowup,
+  type FollowupDef,
+} from "@/lib/notes-ai/followups";
 import {
   normalizeTiptapRange,
   remapTiptapRange,
@@ -33,7 +39,16 @@ export type AiStreamingControllerProps = {
   documentId?: string | null;
   onFinish: (action: "accept" | "discard") => void;
   onStreamComplete: () => void;
-  onRetry: () => void;
+  /**
+   * Re-enter streaming with a new instruction. Used by every follow-up —
+   * Try again, Make longer, Continue writing, Change tone, etc.
+   *
+   * The controller has already mutated the doc (deleting prior AI text for
+   * `rewrite` mode follow-ups, or leaving it in place for `extend` mode)
+   * before this fires, so the parent only needs to flip state back to
+   * `streaming` with the new instruction.
+   */
+  onFollowup: (instruction: string) => void;
   onEditInstruction: (previousInstruction: string) => void;
 };
 
@@ -50,12 +65,26 @@ export function AiStreamingController({
   documentId,
   onFinish,
   onStreamComplete,
-  onRetry,
+  onFollowup,
   onEditInstruction,
 }: AiStreamingControllerProps) {
   const abortRef = useRef<AbortController | null>(null);
   const tokenBufferRef = useRef("");
   const tokenFrameRef = useRef<number | null>(null);
+  // Full markdown accumulated for the *current* AI message. Captured as
+  // tokens arrive so we can replay it through the markdown parser on
+  // MESSAGE_END, when the streamed plain text is replaced with properly
+  // rendered nodes (headings, lists, bold, etc).
+  const markdownBufferRef = useRef("");
+  // Last fully-streamed message content. Used by follow-ups (Make longer,
+  // Continue writing, Change tone) as the prior output to feed back into
+  // the next instruction. Stays valid until accept/discard.
+  const lastOutputRef = useRef("");
+  // Set by handleFollowup just before re-entering streaming state. Tells
+  // the streaming useEffect to skip the initial insertAt reset so the
+  // pre-positioned insertRangeRef (already adjusted by handleFollowup) is
+  // honored. Cleared once the new stream begins.
+  const isFollowupRef = useRef(false);
   const insertRangeRef = useRef<TiptapRange>({
     from: insertAt,
     to: insertAt,
@@ -67,6 +96,10 @@ export function AiStreamingController({
     top: number;
     left: number;
   } | null>(null);
+  // Whether the "More" overflow menu (tone/translate/transform variants)
+  // is open below the primary action chip row.
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [activeSubmenu, setActiveSubmenu] = useState<"tone" | "translate" | null>(null);
 
   const clipMiddle = useCallback((text: string, maxChars: number) => {
     if (text.length <= maxChars) return text.trim();
@@ -181,6 +214,9 @@ export function AiStreamingController({
   const queueToken = useCallback(
     (token: string) => {
       tokenBufferRef.current += token;
+      // Track the canonical markdown text in parallel so we can re-render
+      // the streamed plain text as proper TipTap nodes on MESSAGE_END.
+      markdownBufferRef.current += token;
       if (tokenFrameRef.current !== null) return;
       tokenFrameRef.current = window.requestAnimationFrame(() => {
         tokenFrameRef.current = null;
@@ -189,6 +225,57 @@ export function AiStreamingController({
     },
     [flushTokenBuffer],
   );
+
+  /**
+   * Replace the streamed plain-text AI region with markdown-rendered nodes.
+   *
+   * Called on AG-UI MESSAGE_END. The TipTap `Markdown` extension is already
+   * registered, so `insertContentAt` with `contentType: "markdown"` parses
+   * the buffer into proper nodes (headings, lists, bold, links, etc).
+   *
+   * Returning early when the buffer has no markdown syntax avoids a useless
+   * round-trip through the parser for plain prose generations.
+   */
+  const renderMarkdownAtRange = useCallback(() => {
+    if (!editor || editor.isDestroyed) return;
+    const markdown = markdownBufferRef.current;
+    if (!markdown) return;
+
+    // Cheap check: if the message has no markdown syntax, the streamed plain
+    // text is already correct — skip the parse + replace churn.
+    const hasMarkdown = /(^|\n)#{1,6} |[*_]{1,2}\S|`[^`]|^- |^\d+\. |^>|\[[^\]]+\]\(/m.test(
+      markdown,
+    );
+    if (!hasMarkdown) return;
+
+    const range = normalizeTiptapRange(insertRangeRef.current, editor.state.doc.content.size);
+    if (range.from === range.to) return;
+
+    // insertContentAt replaces the [from, to] range with parsed markdown.
+    // We tag the transaction with our stream-meta flag so downstream effects
+    // (autosave debouncer, etc.) recognize it as AI-driven.
+    const beforeSize = editor.state.doc.content.size;
+    editor
+      .chain()
+      .focus(false, { scrollIntoView: false })
+      .insertContentAt(
+        { from: range.from, to: range.to },
+        markdown,
+        { contentType: "markdown" },
+      )
+      .setMeta(ALFRED_AI_STREAM_META, true)
+      .run();
+
+    // Re-anchor the insert range to the rendered region. The new size is
+    // computed off doc growth — markdown often expands (a `# Heading` line
+    // becomes a heading node) or contracts (consecutive blank lines collapse).
+    const afterSize = editor.state.doc.content.size;
+    const delta = afterSize - beforeSize;
+    insertRangeRef.current = {
+      from: range.from,
+      to: range.to + delta,
+    };
+  }, [editor]);
 
   /* ---- action handlers ------------------------------------------ */
 
@@ -222,11 +309,59 @@ export function AiStreamingController({
     onFinish("discard");
   }, [editor, discardInserted, onFinish]);
 
-  const handleRetry = useCallback(() => {
-    if (!editor || editor.isDestroyed) return;
-    discardInserted();
-    onRetry();
-  }, [editor, discardInserted, onRetry]);
+  /**
+   * Run a follow-up against the just-streamed output.
+   *
+   * For `rewrite` and `transform` mode follow-ups we delete the prior AI
+   * region first — the new stream replaces it. For `extend` mode (only
+   * `continue_writing`) we leave the prior text in place; new tokens will
+   * be inserted at the end of the existing range so the result reads as
+   * one continuous passage.
+   *
+   * In all cases we reset the markdown buffer and re-anchor the insert
+   * range, then bubble the resolved instruction up to the parent which
+   * flips state back to `streaming`.
+   */
+  const handleFollowup = useCallback(
+    (followup: FollowupDef) => {
+      if (!editor || editor.isDestroyed) return;
+
+      const ctx = {
+        prevOutput: lastOutputRef.current,
+        originalSelection: originalRangeRef.current?.text ?? null,
+        pageTitle: documentTitle ?? "",
+      };
+
+      let instruction: string;
+      try {
+        instruction = resolveFollowup(followup.id, ctx);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Follow-up failed");
+        return;
+      }
+
+      const range = normalizeTiptapRange(insertRangeRef.current, editor.state.doc.content.size);
+
+      if (followup.mode === "rewrite" || followup.mode === "transform") {
+        // Replace the prior AI text with the new stream — delete first.
+        if (range.from < range.to) {
+          const tr = editor.state.tr.delete(range.from, range.to).setMeta(ALFRED_AI_STREAM_META, true);
+          editor.view.dispatch(tr);
+        }
+        insertRangeRef.current = { from: range.from, to: range.from };
+      }
+      // For extend mode the new tokens insert at `range.to` and the prior
+      // text remains. insertRangeRef is left as-is so the next stream's
+      // tokens append to the existing range.
+
+      tokenBufferRef.current = "";
+      markdownBufferRef.current = "";
+      isFollowupRef.current = true;
+      setActionBarPos(null);
+      onFollowup(instruction);
+    },
+    [editor, documentTitle, onFollowup],
+  );
 
   /* ---- streaming effect ----------------------------------------- */
 
@@ -287,7 +422,22 @@ export function AiStreamingController({
     abortRef.current = ac;
 
     const docSize = editor.state.doc.content.size;
-    insertRangeRef.current = normalizeTiptapRange({ from: insertAt, to: insertAt }, docSize);
+    if (isFollowupRef.current) {
+      // handleFollowup already positioned insertRangeRef correctly for the
+      // re-stream (deleted the prior AI region for rewrite/transform mode,
+      // or left it in place for extend mode). Just clamp it against the
+      // current doc size.
+      insertRangeRef.current = normalizeTiptapRange(insertRangeRef.current, docSize);
+      isFollowupRef.current = false;
+    } else {
+      insertRangeRef.current = normalizeTiptapRange({ from: insertAt, to: insertAt }, docSize);
+    }
+    // Fresh stream — clear the markdown buffer so this run's text doesn't
+    // get mingled with anything left over from a prior run/follow-up.
+    markdownBufferRef.current = "";
+    // Close any open follow-up menus from the prior `done` state.
+    setMoreMenuOpen(false);
+    setActiveSubmenu(null);
 
     const run = async () => {
       try {
@@ -305,6 +455,22 @@ export function AiStreamingController({
           preset: "notion",
           threadId,
           signal: ac.signal,
+          onMessageStart: () => {
+            // New message boundary opened — reset the markdown buffer so the
+            // first follow-up's content doesn't append to the prior run.
+            markdownBufferRef.current = "";
+          },
+          onMessageEnd: () => {
+            // Drain any pending tokens so the plain text is fully on-screen,
+            // then re-render the AI region as parsed markdown nodes.
+            flushTokenBuffer();
+            // Capture the full streamed text BEFORE the markdown parse so
+            // follow-ups can feed it back as `prevOutput`. We use the
+            // markdown buffer rather than reading from the doc — the doc
+            // representation may have lost mark/structure information.
+            lastOutputRef.current = markdownBufferRef.current;
+            renderMarkdownAtRange();
+          },
           onToken: (token: string) => {
             if (!token || editor.isDestroyed) return;
             try {
@@ -319,6 +485,16 @@ export function AiStreamingController({
           },
           onComplete: () => {
             flushTokenBuffer();
+            // Safety net for the prior-output capture: if MESSAGE_END didn't
+            // fire (legacy server, dropped frame), we still want lastOutputRef
+            // populated for follow-ups.
+            if (!lastOutputRef.current) {
+              lastOutputRef.current = markdownBufferRef.current;
+            }
+            // Idempotent — returns early if the buffer has no markdown syntax
+            // OR if the range has already been markdown-rendered (no-op when
+            // MESSAGE_END already triggered the render).
+            renderMarkdownAtRange();
             updateActionBarPosition();
             onStreamComplete();
           },
@@ -341,6 +517,7 @@ export function AiStreamingController({
         tokenFrameRef.current = null;
       }
       tokenBufferRef.current = "";
+      markdownBufferRef.current = "";
       ac.abort();
       abortRef.current = null;
     };
@@ -360,26 +537,63 @@ export function AiStreamingController({
     discardInserted,
     buildWritingContext,
     resolveInstruction,
+    renderMarkdownAtRange,
   ]);
 
   /* ---- keyboard shortcuts --------------------------------------- */
+
+  // Map single-letter follow-up shortcuts to their definitions.
+  const shortcutMap = useMemo(() => {
+    const map = new Map<string, FollowupDef>();
+    for (const followup of FOLLOWUPS) {
+      if (followup.shortcut) {
+        map.set(followup.shortcut.toLowerCase(), followup);
+      }
+    }
+    return map;
+  }, []);
 
   useEffect(() => {
     if (state.status !== "done") return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept when the user is typing in any input/contenteditable.
+      const target = e.target as HTMLElement | null;
+      const isEditable =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.isContentEditable;
+
       if (e.key === "Tab" || e.key === "Enter") {
         e.preventDefault();
         handleAccept();
-      } else if (e.key === "Escape") {
+        return;
+      }
+
+      if (e.key === "Escape") {
         e.preventDefault();
-        handleDiscard();
+        if (activeSubmenu) {
+          setActiveSubmenu(null);
+        } else if (moreMenuOpen) {
+          setMoreMenuOpen(false);
+        } else {
+          handleDiscard();
+        }
+        return;
+      }
+
+      if (isEditable || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+
+      const followup = shortcutMap.get(e.key.toLowerCase());
+      if (followup) {
+        e.preventDefault();
+        handleFollowup(followup);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [state.status, handleAccept, handleDiscard]);
+  }, [state.status, handleAccept, handleDiscard, handleFollowup, shortcutMap, moreMenuOpen, activeSubmenu]);
 
   /* ---- action bar position on done ------------------------------ */
 
@@ -412,63 +626,205 @@ export function AiStreamingController({
   // Action bar when done
   if (!actionBarPos) return null;
 
+  const primaries = primaryFollowups();
+  const transformFollowups = FOLLOWUPS.filter((f) => f.group === "transform");
+  const toneFollowups = FOLLOWUPS.filter((f) => f.group === "tone");
+  const translateFollowups = FOLLOWUPS.filter((f) => f.group === "translate");
+
+  const followupChipClass = cn(
+    "flex items-center gap-1.5 rounded-md px-2 py-1.5",
+    "text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground",
+    "font-mono text-[10px] tracking-wider uppercase",
+    "transition-colors",
+  );
+
+  const submenuItemClass = cn(
+    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left",
+    "text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground",
+    "font-mono text-[10px] tracking-wider uppercase",
+    "transition-colors",
+  );
+
   return (
     <div
-      className="border-border bg-card fixed z-50 flex items-center gap-1 rounded-lg border p-1 shadow-md"
+      className="fixed z-50"
       style={{ top: actionBarPos.top, left: actionBarPos.left }}
     >
-      {/* Accept */}
-      <button
-        type="button"
-        onClick={handleAccept}
-        className={cn(
-          "flex items-center gap-1.5 rounded-md px-2.5 py-1.5",
-          "bg-primary text-primary-foreground",
-          "font-mono text-[10px] tracking-wider uppercase",
-        )}
-      >
-        <Check className="h-3 w-3" />
-        Accept
-      </button>
+      {/* Primary action row — Accept / Discard + top follow-ups */}
+      <div className="border-border bg-card flex items-center gap-1 rounded-lg border p-1 shadow-md">
+        <button
+          type="button"
+          onClick={handleAccept}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-2.5 py-1.5",
+            "bg-primary text-primary-foreground hover:bg-primary/90",
+            "font-mono text-[10px] tracking-wider uppercase",
+            "transition-colors",
+          )}
+          title="Accept (Tab or Enter)"
+        >
+          <Check className="h-3 w-3" />
+          Accept
+        </button>
 
-      {/* Discard */}
-      <button
-        type="button"
-        onClick={handleDiscard}
-        className={cn(
-          "flex items-center gap-1.5 rounded-md px-2.5 py-1.5",
-          "text-muted-foreground hover:bg-secondary hover:text-foreground",
-        )}
-      >
-        <X className="h-3 w-3" />
-        Discard
-      </button>
+        <button
+          type="button"
+          onClick={handleDiscard}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-2.5 py-1.5",
+            "text-muted-foreground hover:bg-secondary hover:text-foreground",
+            "font-mono text-[10px] tracking-wider uppercase",
+            "transition-colors",
+          )}
+          title="Discard (Esc)"
+        >
+          <X className="h-3 w-3" />
+          Discard
+        </button>
 
-      {/* Retry */}
-      <button
-        type="button"
-        onClick={handleRetry}
-        className={cn(
-          "flex items-center gap-1.5 rounded-md px-2.5 py-1.5",
-          "text-muted-foreground hover:bg-secondary hover:text-foreground",
-        )}
-      >
-        <RotateCcw className="h-3 w-3" />
-        Retry
-      </button>
+        <div className="bg-border mx-0.5 h-5 w-px" aria-hidden="true" />
 
-      {/* Edit instruction */}
-      <button
-        type="button"
-        onClick={() => onEditInstruction(state.instruction)}
-        className={cn(
-          "flex items-center gap-1.5 rounded-md px-2.5 py-1.5",
-          "text-muted-foreground hover:bg-secondary hover:text-foreground",
-        )}
-      >
-        <Pencil className="h-3 w-3" />
-        Edit
-      </button>
+        {primaries.map((followup) => {
+          const Icon = followup.icon;
+          return (
+            <button
+              key={followup.id}
+              type="button"
+              onClick={() => handleFollowup(followup)}
+              className={followupChipClass}
+              title={
+                followup.shortcut
+                  ? `${followup.label} (${followup.shortcut.toUpperCase()})`
+                  : followup.label
+              }
+            >
+              <Icon className="h-3 w-3" />
+              {followup.label}
+            </button>
+          );
+        })}
+
+        <div className="bg-border mx-0.5 h-5 w-px" aria-hidden="true" />
+
+        <button
+          type="button"
+          onClick={() => {
+            setMoreMenuOpen((v) => !v);
+            setActiveSubmenu(null);
+          }}
+          className={cn(
+            followupChipClass,
+            moreMenuOpen && "bg-[var(--alfred-accent-subtle)] text-foreground",
+          )}
+          title="More options"
+          aria-expanded={moreMenuOpen}
+        >
+          More
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onEditInstruction(state.instruction)}
+          className={followupChipClass}
+          title="Tell AI what to change"
+        >
+          <Pencil className="h-3 w-3" />
+          Tell AI…
+        </button>
+      </div>
+
+      {/* "More" overflow menu — transform, tone, translate */}
+      {moreMenuOpen && (
+        <div
+          className="border-border bg-card absolute left-0 mt-1.5 w-64 rounded-lg border p-1.5 shadow-lg"
+          role="menu"
+        >
+          <div className="mb-1 px-2 pt-1 font-mono text-[9px] tracking-wider text-[var(--alfred-text-tertiary)] uppercase">
+            Transform
+          </div>
+          {transformFollowups.map((followup) => {
+            const Icon = followup.icon;
+            return (
+              <button
+                key={followup.id}
+                type="button"
+                role="menuitem"
+                onClick={() => handleFollowup(followup)}
+                className={submenuItemClass}
+              >
+                <Icon className="h-3 w-3 shrink-0" />
+                {followup.label}
+              </button>
+            );
+          })}
+
+          <div className="bg-border my-1 h-px" aria-hidden="true" />
+
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => setActiveSubmenu(activeSubmenu === "tone" ? null : "tone")}
+            className={cn(
+              submenuItemClass,
+              "justify-between",
+              activeSubmenu === "tone" && "bg-[var(--alfred-accent-subtle)] text-foreground",
+            )}
+            aria-expanded={activeSubmenu === "tone"}
+          >
+            <span className="flex items-center gap-2">
+              <Sparkles className="h-3 w-3" />
+              Change tone
+            </span>
+            <span className="text-[8px]">›</span>
+          </button>
+
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => setActiveSubmenu(activeSubmenu === "translate" ? null : "translate")}
+            className={cn(
+              submenuItemClass,
+              "justify-between",
+              activeSubmenu === "translate" && "bg-[var(--alfred-accent-subtle)] text-foreground",
+            )}
+            aria-expanded={activeSubmenu === "translate"}
+          >
+            <span className="flex items-center gap-2">
+              <Sparkles className="h-3 w-3" />
+              Translate
+            </span>
+            <span className="text-[8px]">›</span>
+          </button>
+        </div>
+      )}
+
+      {/* Submenu (tone/translate) — opens to the right of "More" */}
+      {moreMenuOpen && activeSubmenu && (
+        <div
+          className="border-border bg-card absolute mt-1.5 ml-1 w-52 rounded-lg border p-1.5 shadow-lg"
+          style={{ left: 16 * 16 }}
+          role="menu"
+        >
+          <div className="mb-1 px-2 pt-1 font-mono text-[9px] tracking-wider text-[var(--alfred-text-tertiary)] uppercase">
+            {activeSubmenu === "tone" ? "Tone" : "Translate to"}
+          </div>
+          {(activeSubmenu === "tone" ? toneFollowups : translateFollowups).map((followup) => {
+            const Icon = followup.icon;
+            return (
+              <button
+                key={followup.id}
+                type="button"
+                role="menuitem"
+                onClick={() => handleFollowup(followup)}
+                className={submenuItemClass}
+              >
+                <Icon className="h-3 w-3 shrink-0" />
+                {followup.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

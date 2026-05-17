@@ -145,23 +145,52 @@ CORE_TOOL_SCHEMAS: list[dict[str, Any]] = [
         "function": {
             "name": "search_kb",
             "description": (
-                "Search the knowledge base for zettels (atomic knowledge cards) matching a query. "
+                "Search the knowledge base for zettels (atomic knowledge cards) matching text, "
+                "topics, or tags. This search is metadata-aware and tries forgiving variants "
+                "such as camel-case splits, hyphen/space variants, and compact spellings. "
                 "Use this FIRST when the user asks about their knowledge, before answering from memory. "
-                "Returns titles, summaries, topics, and IDs."
+                "Returns titles, summaries, topics, tags, IDs, match reasons, and scores."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "The search query. Be specific and descriptive.",
+                        "description": (
+                            "Optional when tags or topic filters are provided. Use the user's wording "
+                            "first; if no results, retry with likely aliases, acronyms, tag spellings, "
+                            "and hyphen/space variants."
+                        ),
                     },
                     "domain_filter": {
                         "type": "string",
-                        "description": "Optional domain/topic filter (e.g., 'philosophy', 'system-design').",
+                        "description": (
+                            "Optional domain/topic filter (e.g., 'philosophy', 'system-design'). "
+                            "Prefer topic when the user names a topic or domain."
+                        ),
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Optional tags to search. Use this when the user says tagged, tags, "
+                            "labels, or gives a tag list."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of zettels to return. Defaults to 10; max 50.",
+                    },
+                    "search_mode": {
+                        "type": "string",
+                        "enum": ["broad", "metadata"],
+                        "description": (
+                            "Use broad for normal retrieval. Use metadata when the user specifically "
+                            "asks for tags/topics and body-text matches would be distracting."
+                        ),
                     },
                 },
-                "required": ["query"],
+                "required": [],
             },
         },
     },
@@ -493,26 +522,58 @@ CORE_TOOL_SCHEMAS: list[dict[str, Any]] = [
 
 
 async def _search_kb(args: dict[str, Any], db: Session) -> dict[str, Any]:
-    """Search documents via Qdrant and zettels via in-process cosine."""
-    query = args.get("query", "")
-    domain_filter = args.get("domain_filter")
+    """Search zettels with text, topic, and tag-aware matching."""
+    query = str(args.get("query") or "").strip()
+    domain_filter = args.get("domain_filter") or args.get("topic")
+    tags = args.get("tags") or args.get("tag_filter")
+    search_mode = str(args.get("search_mode") or "broad").strip().lower()
+    if search_mode not in {"broad", "metadata"}:
+        search_mode = "broad"
+
+    try:
+        limit = int(args.get("limit") or 10)
+    except (TypeError, ValueError):
+        limit = 10
 
     svc = ZettelkastenService(db)
-    cards = svc.list_cards(q=query, topic=domain_filter, limit=10)
+    matches = svc.search_cards(
+        query=query,
+        topic=domain_filter,
+        tags=tags,
+        limit=limit,
+        search_mode=search_mode,
+    )
 
     results = []
-    for card in cards:
+    for match in matches:
+        card = match.card
         results.append(
             {
+                "type": "zettel",
                 "zettel_id": card.id,
                 "title": card.title,
                 "summary": (card.summary or card.content or "")[:200],
                 "topic": card.topic,
                 "tags": card.tags or [],
+                "score": round(match.score, 2),
+                "match_reason": match.reasons,
             }
         )
 
-    return {"results": results, "count": len(results)}
+    if not query and not domain_filter and not tags:
+        return {"results": [], "count": 0}
+
+    return {
+        "results": results,
+        "count": len(results),
+        "filters": {
+            "query": query,
+            "topic": domain_filter,
+            "tags": tags or [],
+            "search_mode": search_mode,
+            "limit": limit,
+        },
+    }
 
 
 async def _create_zettel(args: dict[str, Any], db: Session) -> dict[str, Any]:

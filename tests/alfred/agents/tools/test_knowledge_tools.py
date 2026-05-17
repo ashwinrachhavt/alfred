@@ -10,10 +10,15 @@ from alfred.agents.tools.knowledge_tools import (
 
 def test_search_kb_calls_service():
     mock_svc = MagicMock()
-    mock_svc.list_cards.return_value = []
+    mock_svc.search_cards.return_value = []
     with patch("alfred.agents.tools.knowledge_tools._get_zettel_service", return_value=mock_svc):
         result = search_kb.invoke({"query": "epistemology", "limit": 5})
-    mock_svc.list_cards.assert_called_once()
+    mock_svc.search_cards.assert_called_once_with(
+        query="epistemology",
+        topic=None,
+        tags=None,
+        limit=5,
+    )
     assert isinstance(result, str)  # JSON string
 
 

@@ -3,11 +3,11 @@ import { Page } from "@/components/layout/page";
 import { DocumentReaderClient } from "./_components/document-reader-client";
 
 type DocumentReaderPageProps = {
- params: { id: string } | Promise<{ id: string }>;
+ params: Promise<{ id: string }>;
 };
 
 export default async function DocumentReaderPage({ params }: DocumentReaderPageProps) {
- const resolvedParams = await Promise.resolve(params);
+ const resolvedParams = await params;
 
  return (
  <Page size="comfortable">

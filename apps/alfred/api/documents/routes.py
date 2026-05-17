@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.responses import Response
@@ -67,6 +68,12 @@ def _set_cache_headers(response: Response, max_age: int = 30) -> None:
     response.headers["Cache-Control"] = f"private, max-age={max_age}"
 
 
+def _is_http_url(url: str | None) -> bool:
+    if not url:
+        return False
+    return urlparse(url).scheme in {"http", "https"}
+
+
 @router.post(
     "/notes",
     response_model=NoteResponse,
@@ -125,6 +132,7 @@ class PageRequest(BaseModel):
     html: str | None = None
     raw_markdown: str | None = None
     content_type_hint: str | None = None
+    capture_quality: Literal["rich", "basic"] | None = None
     page_url: str | None = None
     page_title: str | None = None
     selection_type: Literal["full_page", "selection", "article_only"] = "full_page"
@@ -197,17 +205,28 @@ def create_page(
                 raw_markdown = truncated
             raw_markdown += "\n\n[Content truncated at 200KB]"
 
+        use_coordinator = payload.selection_type == "full_page" and _is_http_url(payload.page_url)
+        metadata: dict[str, Any] = {}
+        if payload.content_type_hint:
+            metadata["content_type_hint"] = payload.content_type_hint
+        if use_coordinator:
+            metadata["capture"] = {
+                "source": "chrome_extension",
+                "mode": payload.selection_type,
+                "rich_capture_status": "queued",
+                "local_quality": payload.capture_quality or ("rich" if raw_markdown else "basic"),
+            }
+
         ingest = DocumentIngest(
             source_url=(payload.page_url or "about:blank"),
             title=payload.page_title,
             cleaned_text=cleaned_text,
             raw_markdown=raw_markdown,
             content_type="web",
-            metadata={"content_type_hint": payload.content_type_hint} if payload.content_type_hint else {},
+            metadata=metadata,
         )
-        # If raw_markdown is present, use the coordinator for proper sequencing
-        # (image download, Firecrawl enrichment, THEN pipeline)
-        use_coordinator = bool(raw_markdown)
+        # Full-page web captures use the coordinator for proper sequencing:
+        # Firecrawl rich scrape, image download, then document pipeline.
         res = svc.ingest_document_store_only(ingest, skip_pipeline=use_coordinator)
         if res.get("duplicate"):
             return PageResponse(id=res["id"], status="duplicate")
@@ -219,6 +238,7 @@ def create_page(
                 "source_url": payload.page_url or "",
                 "has_images": has_images,
                 "content_type_hint": payload.content_type_hint or "generic",
+                "force_firecrawl": True,
             }
             try:
                 _send_task(
