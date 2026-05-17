@@ -25,7 +25,6 @@ from alfred.schemas.today import (
     TodayThreadSynthesisRequest,
     TodayThreadSynthesisResponse,
 )
-from alfred.services.zettelkasten_service import ZettelkastenService
 from alfred.services.today.entry_service import (
     ARTIFACT_KIND,
     VALID_KINDS,
@@ -33,6 +32,7 @@ from alfred.services.today.entry_service import (
     EntryService,
 )
 from alfred.services.today.reflection_service import ReflectionService
+from alfred.services.zettelkasten_service import ZettelkastenService
 
 router = APIRouter(prefix="/api/today", tags=["today"])
 

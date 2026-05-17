@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlmodel import Session, SQLModel, select
 
-from alfred.models.zettel import WikiLink, ZettelCard
+from alfred.models.zettel import WikiLink
 from alfred.services.notes_service import NotesService
 from alfred.services.zettelkasten_service import ZettelkastenService
 

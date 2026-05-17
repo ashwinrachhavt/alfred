@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 from sqlalchemy import create_engine
 from sqlmodel import Session, SQLModel, select
 
