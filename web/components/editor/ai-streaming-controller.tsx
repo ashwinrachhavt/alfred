@@ -430,7 +430,41 @@ export function AiStreamingController({
       insertRangeRef.current = normalizeTiptapRange(insertRangeRef.current, docSize);
       isFollowupRef.current = false;
     } else {
-      insertRangeRef.current = normalizeTiptapRange({ from: insertAt, to: insertAt }, docSize);
+      const initialRange = normalizeTiptapRange({ from: insertAt, to: insertAt }, docSize);
+      // If the initial insert position lands at a *between-block* position
+      // (e.g. after a select-all-then-Cmd+J selection that ends at the
+      // closing tag of the last paragraph), raw `tr.insertText` will create
+      // a new paragraph for each batched flush — splitting the streamed
+      // output across N paragraphs. Land the cursor inside a textblock by
+      // dispatching a one-time empty-paragraph insert at the boundary, then
+      // anchor the insert range inside it. Inside-textblock positions are
+      // safe — `insertText` appends within the existing paragraph.
+      try {
+        const $pos = editor.state.doc.resolve(initialRange.to);
+        if (!$pos.parent.isTextblock) {
+          // Between-block case: insert an empty paragraph node here and
+          // re-anchor the insert range inside it.
+          const paragraph = editor.schema.nodes.paragraph?.create();
+          if (paragraph) {
+            const tr = editor.state.tr
+              .insert(initialRange.to, paragraph)
+              .setMeta(ALFRED_AI_STREAM_META, true);
+            editor.view.dispatch(tr);
+            // The new paragraph spans [initialRange.to, initialRange.to + 2]:
+            // open tag at to, content at to+1, close tag at to+1. Position
+            // the insert range at to+1 so subsequent insertText appends
+            // inside the paragraph.
+            const inside = initialRange.to + 1;
+            insertRangeRef.current = { from: inside, to: inside };
+          } else {
+            insertRangeRef.current = initialRange;
+          }
+        } else {
+          insertRangeRef.current = initialRange;
+        }
+      } catch {
+        insertRangeRef.current = initialRange;
+      }
     }
     // Fresh stream — clear the markdown buffer so this run's text doesn't
     // get mingled with anything left over from a prior run/follow-up.
