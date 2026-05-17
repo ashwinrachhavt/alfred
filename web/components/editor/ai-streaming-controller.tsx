@@ -391,14 +391,25 @@ export function AiStreamingController({
       );
 
       if (originalRangeRef.current) {
-        const mappedOriginalRange = remapTiptapRange(
-          originalRangeRef.current,
-          transaction.mapping,
-          docSize,
-        );
+        // Use assoc=-1 for both endpoints so the original range stays put
+        // when a transaction inserts content AT either boundary. This is
+        // critical when our pre-stream empty-paragraph-insert lands exactly
+        // at originalRange.to: with the default assoc=+1 the boundary would
+        // shift forward and originalRange would expand to cover the AI
+        // output, causing accept to delete both the original AND the AI
+        // text. Using -1 keeps originalRange anchored to the original
+        // paragraph regardless of inserts past it.
+        const { from, to } = originalRangeRef.current;
+        const mappedFrom = transaction.mapping.map(from, -1);
+        const mappedTo = transaction.mapping.map(to, -1);
+        const clamped =
+          mappedFrom <= mappedTo
+            ? { from: mappedFrom, to: mappedTo }
+            : { from: mappedTo, to: mappedFrom };
         originalRangeRef.current = {
           ...originalRangeRef.current,
-          ...mappedOriginalRange,
+          from: Math.max(0, Math.min(clamped.from, docSize)),
+          to: Math.max(0, Math.min(clamped.to, docSize)),
         };
       }
 
