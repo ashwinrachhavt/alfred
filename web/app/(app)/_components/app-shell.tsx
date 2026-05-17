@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 
 import { useShellStore } from "@/lib/stores/shell-store";
@@ -84,7 +84,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-dvh">
-      <AppSidebar />
+      <Suspense fallback={null}>
+        <AppSidebar />
+      </Suspense>
       <div className="flex flex-1 flex-col overflow-hidden">
         <TopBar />
         <div className="flex flex-1 overflow-hidden">
@@ -98,7 +100,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 tabIndex={-1}
                 className="flex-1 animate-in fade-in duration-150 overflow-y-auto focus:outline-none"
               >
-                {children}
+                <Suspense fallback={null}>{children}</Suspense>
               </main>
               <UnifiedChat mode="sidebar" />
             </>

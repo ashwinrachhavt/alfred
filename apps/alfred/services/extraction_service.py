@@ -21,6 +21,74 @@ else:  # pragma: no cover - environment dependent
     lx = None  # type: ignore
 
 
+def _source_capture(metadata: dict[str, Any] | None) -> dict[str, Any]:
+    source = (metadata or {}).get("source_capture") if isinstance(metadata, dict) else None
+    return source if isinstance(source, dict) else {}
+
+
+def _heading_structure(source_capture: dict[str, Any]) -> list[str]:
+    structure: list[str] = []
+    headings = source_capture.get("headings") or []
+    if not isinstance(headings, list):
+        return structure
+    for heading in headings[:10]:
+        if isinstance(heading, dict) and isinstance(heading.get("text"), str):
+            text = heading["text"].strip()
+            if text:
+                structure.append(text)
+    return structure
+
+
+def _build_source_context(metadata: dict[str, Any] | None) -> str:
+    source_capture = _source_capture(metadata)
+    if not source_capture:
+        return ""
+
+    structure = _heading_structure(source_capture)
+    parts = [
+        f"type: {source_capture.get('kind') or 'web_page'}",
+        f"platform: {source_capture.get('platform') or ''}",
+        f"title: {source_capture.get('title') or ''}",
+        f"author: {source_capture.get('author') or ''}",
+        f"published_at: {source_capture.get('published_at') or ''}",
+        "structure: " + " > ".join(structure[:8]),
+    ]
+    return "\n".join(part for part in parts if part and not part.endswith(": "))
+
+
+def _build_source_analysis(
+    metadata: dict[str, Any] | None,
+    out: BaseModel,
+) -> dict[str, Any] | None:
+    source_capture = _source_capture(metadata)
+    if not source_capture:
+        return None
+
+    structure = _heading_structure(source_capture)
+    argument_flow = getattr(out, "source_argument_flow", []) or []
+    if not isinstance(argument_flow, list):
+        argument_flow = []
+    argument_flow = [str(item).strip() for item in argument_flow if str(item).strip()]
+
+    analysis = {
+        "kind": source_capture.get("kind"),
+        "platform": source_capture.get("platform"),
+        "author": source_capture.get("author"),
+        "thesis": getattr(out, "source_thesis", None),
+        "argument_flow": argument_flow,
+        "audience": getattr(out, "source_audience", None),
+        "structure": structure,
+    }
+    compact: dict[str, Any] = {}
+    for key, value in analysis.items():
+        if isinstance(value, list):
+            if value:
+                compact[key] = value
+        elif value:
+            compact[key] = value
+    return compact or None
+
+
 @dataclass
 class ExtractionService:
     """
@@ -180,6 +248,12 @@ class ExtractionService:
         text = (raw_markdown or cleaned_text or "").strip()
         # Cap text to keep token usage reasonable
         text = text[:8000]
+        source_context = _build_source_context(metadata)
+        prompt_text = (
+            f"Captured source context:\n{source_context}\n\nTEXT:\n{text}"
+            if source_context
+            else text
+        )
 
         # ---------- helpers ----------
         def _token_count(s: str) -> int:
@@ -201,6 +275,9 @@ class ExtractionService:
             topics_primary: str | None = None
             topics_secondary: list[str] = Field(default_factory=list)
             tags: list[str] = Field(default_factory=list)
+            source_thesis: str | None = None
+            source_argument_flow: list[str] = Field(default_factory=list)
+            source_audience: str | None = None
 
         out: EnrichOut
         try:
@@ -216,16 +293,21 @@ class ExtractionService:
                     topics_primary: str | None = None
                     topics_secondary: list[str] = field(default_factory=list)
                     tags: list[str] = field(default_factory=list)
+                    source_thesis: str | None = None
+                    source_argument_flow: list[str] = field(default_factory=list)
+                    source_audience: str | None = None
 
                 instr = (
                     "Detect `lang` (ISO 639-1). "
                     "Write a richer summary_short (3-6 sentences in a single cohesive paragraph) and "
                     "a more detailed summary_long (2-4 paragraphs, each with 5-8 sentences). "
                     "Also include bullets (2-6) and key_points (2-6). "
-                    "Return topics_primary and topics_secondary in snake_case, and 2-10 snake_case tags."
+                    "Return topics_primary and topics_secondary in snake_case, and 2-10 snake_case tags. "
+                    "If captured source context is present, identify source_thesis, source_argument_flow, "
+                    "and source_audience using the page type and heading structure."
                 )
                 result = lx.extract(  # type: ignore[attr-defined]
-                    text_or_documents=text,
+                    text_or_documents=prompt_text,
                     prompt_description=instr,
                     examples=[],
                     target_schemas=[DocEnrichment],
@@ -255,10 +337,12 @@ class ExtractionService:
                             "summary_short, summary_long, bullets (2-6), key_points (2-6), "
                             "topics_primary (snake_case), topics_secondary (0-8 snake_case), tags (2-10 snake_case). "
                             "Make the summaries richer: summary_short should be 3-6 sentences in one paragraph; "
-                            "summary_long should be 2-4 paragraphs with 5-8 sentences per paragraph."
+                            "summary_long should be 2-4 paragraphs with 5-8 sentences per paragraph. "
+                            "When captured source context is provided, also return source_thesis, "
+                            "source_argument_flow, and source_audience."
                         ),
                     },
-                    {"role": "user", "content": text},
+                    {"role": "user", "content": prompt_text},
                 ],
                 schema=EnrichOut,
             )
@@ -311,7 +395,7 @@ class ExtractionService:
         if not topics.get("primary") and not (topics.get("secondary") or []):
             topics = {}
 
-        return {
+        result = {
             "lang": (out.lang or None),
             "raw_markdown": raw_markdown,
             "cleaned_text": cleaned_text,
@@ -323,6 +407,10 @@ class ExtractionService:
             "tags": out.tags or [],
             "embedding": embedding,
         }
+        source_analysis = _build_source_analysis(metadata, out)
+        if source_analysis:
+            result["source_analysis"] = source_analysis
+        return result
 
     # ------------------------------------------------------------
     # Taxonomy classification via LangExtract (with prompt templates)

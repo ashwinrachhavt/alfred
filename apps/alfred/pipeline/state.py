@@ -14,6 +14,7 @@ class DocumentPipelineState(TypedDict, total=False):
     title: str
     cleaned_text: str
     raw_markdown: str
+    metadata: dict[str, Any]
     content_hash: str  # mapped from DocumentRow.hash
 
     # Stage outputs (accumulated as pipeline progresses)

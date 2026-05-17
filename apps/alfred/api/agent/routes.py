@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from alfred.api.dependencies import get_db_session
+from alfred.core.dependencies import get_doc_storage_service
 from alfred.core.settings import settings
 from alfred.models.thinking import AgentMessageRow, ThinkingSessionRow
 from alfred.services.agent.service import AgentService
@@ -25,6 +26,7 @@ from alfred.services.knowledge_notifications import (
     get_notification_count,
     get_pending_notifications,
 )
+from alfred.services.web_capture import build_document_chat_context
 from alfred.streaming.producers.agent_producer import AgentProducer
 from alfred.streaming.projectors import _parts as _parts_helpers
 from alfred.streaming.projectors.message_row import MessageProjector
@@ -44,10 +46,17 @@ class AgentImageAttachment(BaseModel):
     data_url: str
 
 
+class AgentSourceContext(BaseModel):
+    source_kind: Literal["document", "note"] = "document"
+    source_id: str
+    title: str | None = None
+
+
 class AgentStreamRequest(BaseModel):
     message: str = ""
     thread_id: int | None = None
     note_context: dict | None = None  # {note_id, title, content_preview}
+    source_context: AgentSourceContext | None = None
     history: list[dict[str, str]] | None = None
     lens: str | None = None
     model: str | None = None
@@ -75,6 +84,8 @@ class ThreadSummary(BaseModel):
     active_lens: str | None = None
     model_id: str | None = None
     note_id: str | None = None
+    source_kind: str | None = None
+    source_id: str | None = None
     created_at: Any = None
     updated_at: Any = None
     message_count: int = 0
@@ -151,6 +162,7 @@ def _get_or_create_thread(
     db: Session,
     thread_id: int | None,
     note_context: dict | None,
+    source_context: AgentSourceContext | None,
     message: str,
     lens: str | None = None,
     model: str | None = None,
@@ -161,7 +173,31 @@ def _get_or_create_thread(
     if thread_id:
         return thread_id
 
-    # 2. Note context — find or create thread for this note
+    # 2. Generic source context — find or create thread for this document/note.
+    if source_context and source_context.source_id:
+        existing = db.exec(
+            select(ThinkingSessionRow)
+            .where(ThinkingSessionRow.source_kind == source_context.source_kind)
+            .where(ThinkingSessionRow.source_id == source_context.source_id)
+            .where(ThinkingSessionRow.session_type == "agent")
+        ).first()
+        if existing:
+            return existing.id
+        new_thread = ThinkingSessionRow(
+            title=source_context.title or f"{source_context.source_kind.title()} conversation",
+            session_type="agent",
+            status="active",
+            source_kind=source_context.source_kind,
+            source_id=source_context.source_id,
+            active_lens=lens,
+            model_id=model,
+        )
+        db.add(new_thread)
+        db.commit()
+        db.refresh(new_thread)
+        return new_thread.id
+
+    # 3. Note context — find or create thread for this note
     if note_context and note_context.get("note_id"):
         note_id = note_context["note_id"]
         existing = db.exec(
@@ -184,7 +220,7 @@ def _get_or_create_thread(
         db.refresh(new_thread)
         return new_thread.id
 
-    # 3. No thread, no note — auto-create a thread from the message
+    # 4. No thread, no note/source — auto-create a thread from the message
     title = message[:80].strip() if message else "New conversation"
     new_thread = ThinkingSessionRow(
         title=title,
@@ -197,6 +233,20 @@ def _get_or_create_thread(
     db.commit()
     db.refresh(new_thread)
     return new_thread.id
+
+
+def _document_context_for_source(source_context: AgentSourceContext | None) -> str | None:
+    if not source_context or source_context.source_kind != "document":
+        return None
+    try:
+        svc = get_doc_storage_service()
+        doc = svc.get_document_details(source_context.source_id)
+        if not doc:
+            return None
+        return build_document_chat_context(doc)
+    except Exception:
+        logger.exception("Failed to build document source context for %s", source_context.source_id)
+        return None
 
 
 def _persist_message(
@@ -314,10 +364,12 @@ async def agent_stream(
         db,
         body.thread_id,
         body.note_context,
+        body.source_context,
         message_text,
         lens=body.lens,
         model=body.model,
     )
+    source_context_text = _document_context_for_source(body.source_context)
 
     # Load history from DB (last 20 messages)
     history = body.history
@@ -358,6 +410,7 @@ async def agent_stream(
             model=body.model,
             image_attachments=[attachment.model_dump() for attachment in attachments],
             note_context=body.note_context,
+            source_context=source_context_text,
             is_disconnected=request.is_disconnected,
             intent=body.intent,
             intent_args=body.intent_args,
@@ -442,18 +495,28 @@ async def agent_stream_v2(
     if not settings.streaming_v2_enabled:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="streaming v2 disabled")
 
-    if not (body.message and body.message.strip()) and not body.intent:
+    attachments = body.attachments or []
+    _validate_image_attachments(attachments)
+
+    if not (body.message and body.message.strip()) and not body.intent and not attachments:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Either message or intent is required.",
+            detail="Either message, intent, or image attachment is required.",
         )
 
-    message_text = body.message or f"[intent: {body.intent}]"
+    message_text = (
+        body.message.strip()
+        if body.message and body.message.strip()
+        else "Analyze the attached image(s)."
+        if attachments
+        else f"[intent: {body.intent}]"
+    )
 
     thread_id = _get_or_create_thread(
-        db, body.thread_id, body.note_context, message_text,
+        db, body.thread_id, body.note_context, body.source_context, message_text,
         lens=body.lens, model=body.model,
     )
+    source_context_text = _document_context_for_source(body.source_context)
 
     # Load history from DB if the client didn't provide one — mirrors v1.
     history = body.history
@@ -468,7 +531,15 @@ async def agent_stream_v2(
         history = [{"role": m.role, "content": m.content} for m in reversed(db_messages)]
 
     # Persist user message immediately — same contract as v1.
-    _persist_message(db, thread_id, "user", message_text, lens=body.lens, model=body.model)
+    _persist_message(
+        db,
+        thread_id,
+        "user",
+        message_text,
+        parts=_user_message_parts(message_text, attachments),
+        lens=body.lens,
+        model=body.model,
+    )
 
     service = AgentService(db)
     producer = AgentProducer(
@@ -479,6 +550,8 @@ async def agent_stream_v2(
         lens=body.lens,
         history=history,
         note_context=body.note_context,
+        source_context=source_context_text,
+        image_attachments=[attachment.model_dump() for attachment in attachments],
         intent=body.intent,
         intent_args=body.intent_args,
         max_iterations=body.max_iterations,
@@ -497,16 +570,36 @@ async def agent_stream_v2(
     recorder.attach(snapshot_projector)
 
     async def event_stream():
+        last_sent_seq = -1
+
+        def pending_wire_frames() -> list[tuple[int, dict[str, Any]]]:
+            nonlocal last_sent_seq
+            pending: list[tuple[int, dict[str, Any]]] = []
+            for recorded_event in recorder.recorded_events:
+                if recorded_event.seq <= last_sent_seq:
+                    continue
+                for frame in wire.frames_for(recorded_event):
+                    pending.append((recorded_event.seq, frame))
+                last_sent_seq = recorded_event.seq
+            return pending
+
         try:
+            for seq, frame in pending_wire_frames():
+                yield _format_agui_sse(frame, seq)
+
             async with recorder:
                 async for evt in producer.stream():
                     recorded = await recorder.emit_raw(evt)
                     for frame in wire.frames_for(recorded):
                         yield _format_agui_sse(frame, recorded.seq)
+                    last_sent_seq = max(last_sent_seq, recorded.seq)
                     if await request.is_disconnected():
                         break
         except Exception:
             logger.exception("v2 stream failed")
+        finally:
+            for seq, frame in pending_wire_frames():
+                yield _format_agui_sse(frame, seq)
 
         # Update thread timestamp — same tail as v1.
         try:
@@ -530,9 +623,9 @@ async def agent_stream_v2(
 
 
 def _format_agui_sse(frame: dict, seq: int) -> str:
-    """Format an AG-UI frame as an SSE event line per spec section 7.1."""
-    payload = json.dumps(frame.get("data", {}), separators=(",", ":"), default=str)
-    return f"event: {frame['event']}\nid: {seq}\ndata: {payload}\n\n"
+    """Format a canonical AG-UI event object as an SSE data frame."""
+    payload = json.dumps(frame, separators=(",", ":"), default=str)
+    return f"id: {seq}\ndata: {payload}\n\n"
 
 
 @router.post("/threads", status_code=status.HTTP_201_CREATED)
@@ -554,6 +647,8 @@ def create_thread(
 def list_threads(
     status_filter: str = "active",
     note_id: str | None = None,
+    source_kind: str | None = None,
+    source_id: str | None = None,
     limit: int = 50,
     skip: int = 0,
     db: Session = Depends(get_db_session),
@@ -576,6 +671,10 @@ def list_threads(
     )
     if note_id is not None:
         stmt = stmt.where(ThinkingSessionRow.note_id == note_id)
+    if source_kind is not None:
+        stmt = stmt.where(ThinkingSessionRow.source_kind == source_kind)
+    if source_id is not None:
+        stmt = stmt.where(ThinkingSessionRow.source_id == source_id)
 
     rows = db.exec(stmt).all()
     results = []
@@ -674,6 +773,8 @@ def _to_summary(session: ThinkingSessionRow, message_count: int = 0) -> ThreadSu
         active_lens=session.active_lens,
         model_id=session.model_id,
         note_id=session.note_id,
+        source_kind=session.source_kind,
+        source_id=session.source_id,
         created_at=session.created_at,
         updated_at=session.updated_at,
         message_count=message_count,

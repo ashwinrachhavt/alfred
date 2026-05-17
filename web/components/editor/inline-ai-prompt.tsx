@@ -1,12 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ExternalLink, Loader2, Sparkles, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight, Loader2, Sparkles, X } from "lucide-react";
 import type { Editor } from "@tiptap/react";
 
 import { cn } from "@/lib/utils";
 import { useShellStore } from "@/lib/stores/shell-store";
 import { useAgentStore } from "@/lib/stores/agent-store";
+import {
+  AI_COMMANDS,
+  aiCommandsByGroup,
+  editSubmenu,
+  type AICommand,
+  type AICommandGroup,
+} from "@/lib/notes-ai/commands";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -25,47 +32,24 @@ export type InlineAIPromptProps = {
   isStreaming: boolean;
 };
 
-// ---------------------------------------------------------------------------
-// Preset definitions
-// ---------------------------------------------------------------------------
+// Visible group order in the flyout.
+const GROUP_ORDER: AICommandGroup[] = ["edit", "generate", "draft", "ask"];
 
-type Preset = {
-  label: string;
-  prompt: string;
-  panel?: boolean;
+const GROUP_LABEL: Record<AICommandGroup, string> = {
+  edit: "Edit or review",
+  generate: "Generate from this note",
+  draft: "Draft with AI",
+  ask: "Ask AI",
 };
 
-const GENERATE_PRESETS: Preset[] = [
-  { label: "Continue", prompt: "__CONTINUE__" },
-  { label: "Draft intro", prompt: "Write a strong opening paragraph for this section" },
-  { label: "Add example", prompt: "Add a concrete example that makes this idea easier to grasp" },
-  {
-    label: "Sharpen thesis",
-    prompt: "Write a sharper paragraph that states the core idea clearly",
-  },
-  { label: "Outline", prompt: "Create a compact outline for what this section should cover next" },
-];
-
-const EDIT_PRESETS: Preset[] = [
-  { label: "Clarify", prompt: "Rewrite this so the thinking is clearer and easier to follow" },
-  {
-    label: "More precise",
-    prompt: "Make this more precise, specific, and intellectually rigorous",
-  },
-  { label: "In my voice", prompt: "Rewrite this to sound more natural, confident, and human" },
-  { label: "Condense", prompt: "Make this more concise without flattening the ideas" },
-  { label: "Expand", prompt: "Expand this with stronger explanation and sharper transitions" },
-  { label: "Stronger argument", prompt: "Strengthen the argument while preserving the core claim" },
-];
-
-const PANEL_PRESETS: Preset[] = [
-  { label: "Explain", prompt: "Explain this in simpler terms", panel: true },
-  { label: "Research", prompt: "Research this topic in my knowledge base", panel: true },
-  { label: "Ask Polymath", prompt: "", panel: true },
-];
+// Flat menu rows include both "leaf" commands and "submenu" parent rows.
+// Submenu rows expand into a child set on hover/right-arrow.
+type MenuRow =
+  | { kind: "leaf"; command: AICommand }
+  | { kind: "submenu"; key: "tone" | "translate"; label: string; commands: AICommand[] };
 
 // ---------------------------------------------------------------------------
-// Placeholder & status helpers
+// Helpers
 // ---------------------------------------------------------------------------
 
 function getPlaceholder(mode: AIPromptMode): string {
@@ -79,11 +63,56 @@ function getPlaceholder(mode: AIPromptMode): string {
   }
 }
 
-function getStatusText(mode: AIPromptMode, charCount: number): string {
-  if (mode === "generate") {
-    return "Uses full note context · Enter to write · Esc to cancel";
-  }
+function getStatusText(mode: AIPromptMode, charCount: number, isStreaming: boolean): string {
+  if (isStreaming) return "Streaming · Esc to cancel";
+  if (mode === "generate") return "Uses full note context · Enter to write · Esc to cancel";
   return `Editing ${charCount} chars with note context · Enter to apply · Esc to cancel`;
+}
+
+/**
+ * Build the visible menu rows for the current mode.
+ *
+ * Edit mode: surface tone + translate as collapsed submenus alongside the
+ * five base edit commands, then the Ask group.
+ * Generate / Transform: skip Edit (those commands need a paragraph or
+ * selection that isn't being mutated yet) and lead with Generate / Draft.
+ */
+function buildMenuStructure(
+  mode: AIPromptMode,
+): Array<{ group: AICommandGroup; rows: MenuRow[] }> {
+  const grouped = aiCommandsByGroup();
+  const submenu = editSubmenu();
+
+  const editRows: MenuRow[] = [
+    ...submenu.base.map((command): MenuRow => ({ kind: "leaf", command })),
+    {
+      kind: "submenu",
+      key: "tone",
+      label: "Change tone",
+      commands: submenu.tone,
+    },
+    {
+      kind: "submenu",
+      key: "translate",
+      label: "Translate",
+      commands: submenu.translate,
+    },
+  ];
+
+  const sections: Array<{ group: AICommandGroup; rows: MenuRow[] }> = [];
+
+  for (const group of GROUP_ORDER) {
+    if (group === "edit") {
+      // Hide Edit group when there's nothing to edit (no selection, empty paragraph).
+      if (mode === "generate") continue;
+      sections.push({ group, rows: editRows });
+    } else {
+      const rows = grouped[group].map((command): MenuRow => ({ kind: "leaf", command }));
+      if (rows.length > 0) sections.push({ group, rows });
+    }
+  }
+
+  return sections;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,12 +125,23 @@ export function InlineAIPrompt(props: InlineAIPromptProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Auto-focus on mount
+  // Hover/focus state for submenus. `null` means no submenu is open.
+  const [openSubmenu, setOpenSubmenu] = useState<"tone" | "translate" | null>(null);
+  // Active highlight in the *flat-merged* row index. -1 means no highlight.
+  const [activeIndex, setActiveIndex] = useState(-1);
+
+  const sections = useMemo(() => buildMenuStructure(mode), [mode]);
+
+  // Flatten sections to a single array for keyboard navigation. Section
+  // headers are not navigable, but their rows are.
+  const flatRows = useMemo<MenuRow[]>(() => sections.flatMap((s) => s.rows), [sections]);
+
+  // Auto-focus on mount.
   useEffect(() => {
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
 
-  // Click-outside to close
+  // Click-outside to close.
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -112,58 +152,117 @@ export function InlineAIPrompt(props: InlineAIPromptProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [onClose]);
 
-  // Escape to close
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
   const handleSubmit = useCallback(() => {
     const trimmed = input.trim();
     if (!trimmed || isStreaming) return;
     onSubmit(trimmed);
   }, [input, isStreaming, onSubmit]);
 
-  const handlePresetClick = useCallback(
-    (preset: Preset) => {
-      if (preset.panel) {
-        // Open AI side panel and optionally send a message
+  const handleCommandRun = useCallback(
+    (command: AICommand) => {
+      if (command.panel) {
         useShellStore.getState().openAiPanel("sidebar");
-        if (preset.prompt) {
-          const message = targetText ? `${preset.prompt}:\n\n${targetText}` : preset.prompt;
+        if (command.promptTemplate) {
+          const message = targetText
+            ? `${command.promptTemplate}:\n\n${targetText}`
+            : command.promptTemplate;
           useAgentStore.getState().sendMessage(message);
         }
         onClose();
         return;
       }
-      onSubmit(preset.prompt);
+      onSubmit(command.promptTemplate);
     },
-    [targetText, onSubmit, onClose],
+    [onSubmit, onClose, targetText],
+  );
+
+  const handleRowActivate = useCallback(
+    (row: MenuRow) => {
+      if (row.kind === "leaf") {
+        handleCommandRun(row.command);
+      } else {
+        setOpenSubmenu(row.key);
+      }
+    },
+    [handleCommandRun],
   );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        handleSubmit();
+        if (activeIndex >= 0 && flatRows[activeIndex]) {
+          handleRowActivate(flatRows[activeIndex]);
+        } else {
+          handleSubmit();
+        }
+        return;
+      }
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        if (openSubmenu) {
+          setOpenSubmenu(null);
+          return;
+        }
+        onClose();
+        return;
+      }
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setActiveIndex((idx) => (idx + 1 >= flatRows.length ? 0 : idx + 1));
+        return;
+      }
+
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setActiveIndex((idx) => (idx <= 0 ? flatRows.length - 1 : idx - 1));
+        return;
+      }
+
+      if (e.key === "ArrowRight" && activeIndex >= 0) {
+        const row = flatRows[activeIndex];
+        if (row?.kind === "submenu") {
+          e.preventDefault();
+          setOpenSubmenu(row.key);
+        }
+        return;
+      }
+
+      if (e.key === "ArrowLeft" && openSubmenu) {
+        e.preventDefault();
+        setOpenSubmenu(null);
+        return;
       }
     },
-    [handleSubmit],
+    [activeIndex, flatRows, openSubmenu, handleRowActivate, handleSubmit, onClose],
   );
 
-  // Determine which presets to show
-  const presets = mode === "generate" ? GENERATE_PRESETS : [...EDIT_PRESETS, ...PANEL_PRESETS];
+  // Track flattened row index → command for activeIndex highlight.
+  const indexOfRow = useCallback(
+    (row: MenuRow): number => {
+      if (row.kind === "leaf") {
+        return flatRows.findIndex(
+          (r) => r.kind === "leaf" && r.command.id === row.command.id,
+        );
+      }
+      return flatRows.findIndex((r) => r.kind === "submenu" && r.key === row.key);
+    },
+    [flatRows],
+  );
+
+  // Resolve the submenu commands for the current openSubmenu.
+  const submenuCommands = useMemo<AICommand[] | null>(() => {
+    if (!openSubmenu) return null;
+    const row = flatRows.find((r) => r.kind === "submenu" && r.key === openSubmenu);
+    return row && row.kind === "submenu" ? row.commands : null;
+  }, [openSubmenu, flatRows]);
 
   return (
     <div
       ref={containerRef}
-      className="border-border/80 bg-card/98 fixed z-50 w-[min(360px,calc(100vw-1.5rem))] rounded-xl border shadow-xl backdrop-blur"
+      className="border-border/80 bg-card/98 fixed z-50 w-[min(380px,calc(100vw-1.5rem))] rounded-xl border shadow-xl backdrop-blur"
       style={{ top: position.top, left: position.left }}
     >
       {/* Top row: icon + input + close/loading */}
@@ -186,30 +285,77 @@ export function InlineAIPrompt(props: InlineAIPromptProps) {
             type="button"
             onClick={onClose}
             className="hover:text-foreground shrink-0 rounded p-0.5 text-[var(--alfred-text-tertiary)] transition-colors"
+            aria-label="Close"
           >
             <X className="h-3.5 w-3.5" />
           </button>
         )}
       </div>
 
-      {/* Preset chips — hidden during streaming */}
+      {/* Grouped command flyout — hidden during streaming */}
       {!isStreaming && (
-        <div className="flex flex-wrap gap-1.5 px-3 py-2">
-          {presets.map((preset) => (
-            <button
-              key={preset.label}
-              type="button"
-              onClick={() => handlePresetClick(preset)}
-              className={cn(
-                "inline-flex items-center gap-1 rounded-md border px-2 py-1",
-                "text-[10px] font-medium tracking-[0.12em] uppercase",
-                "hover:text-foreground text-[var(--alfred-text-tertiary)] hover:bg-[var(--alfred-accent-subtle)]",
-                "transition-colors",
-              )}
-            >
-              {preset.label}
-              {preset.panel && <ExternalLink className="h-2.5 w-2.5" />}
-            </button>
+        <div className="max-h-[60vh] overflow-y-auto py-1.5">
+          {sections.map((section, sectionIdx) => (
+            <div key={section.group} className={cn(sectionIdx > 0 && "mt-1.5")}>
+              <div className="px-3 py-1 font-mono text-[9px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+                {GROUP_LABEL[section.group]}
+              </div>
+              {section.rows.map((row) => {
+                const idx = indexOfRow(row);
+                const isActive = idx === activeIndex;
+
+                if (row.kind === "leaf") {
+                  const Icon = row.command.icon;
+                  return (
+                    <button
+                      key={row.command.id}
+                      type="button"
+                      onMouseEnter={() => setActiveIndex(idx)}
+                      onClick={() => handleRowActivate(row)}
+                      className={cn(
+                        "flex w-full items-center gap-2.5 px-3 py-1.5 text-left",
+                        "transition-colors",
+                        isActive
+                          ? "bg-[var(--alfred-accent-subtle)] text-foreground"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <Icon className="h-3.5 w-3.5 shrink-0" />
+                      <span className="flex-1 text-[12px]">{row.command.label}</span>
+                      {row.command.description && (
+                        <span className="hidden truncate text-[10px] text-[var(--alfred-text-tertiary)] sm:inline">
+                          {row.command.description}
+                        </span>
+                      )}
+                    </button>
+                  );
+                }
+
+                return (
+                  <button
+                    key={row.key}
+                    type="button"
+                    onMouseEnter={() => {
+                      setActiveIndex(idx);
+                      setOpenSubmenu(row.key);
+                    }}
+                    onClick={() => handleRowActivate(row)}
+                    className={cn(
+                      "flex w-full items-center gap-2.5 px-3 py-1.5 text-left",
+                      "transition-colors",
+                      isActive || openSubmenu === row.key
+                        ? "bg-[var(--alfred-accent-subtle)] text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                    aria-expanded={openSubmenu === row.key}
+                  >
+                    <Sparkles className="h-3.5 w-3.5 shrink-0" />
+                    <span className="flex-1 text-[12px]">{row.label}</span>
+                    <ChevronRight className="h-3 w-3 shrink-0 text-[var(--alfred-text-tertiary)]" />
+                  </button>
+                );
+              })}
+            </div>
           ))}
         </div>
       )}
@@ -217,9 +363,44 @@ export function InlineAIPrompt(props: InlineAIPromptProps) {
       {/* Status bar */}
       <div className="border-t px-3 py-1.5">
         <span className="text-[10px] font-medium tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
-          {getStatusText(mode, targetText.length)}
+          {getStatusText(mode, targetText.length, isStreaming)}
         </span>
       </div>
+
+      {/* Submenu panel — opens to the right of the parent menu */}
+      {openSubmenu && submenuCommands && (
+        <div
+          className="border-border/80 bg-card/98 absolute top-0 left-full ml-2 w-56 rounded-xl border py-1.5 shadow-xl backdrop-blur"
+          role="menu"
+        >
+          <div className="px-3 py-1 font-mono text-[9px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+            {openSubmenu === "tone" ? "Tone" : "Translate to"}
+          </div>
+          {submenuCommands.map((command) => {
+            const Icon = command.icon;
+            return (
+              <button
+                key={command.id}
+                type="button"
+                role="menuitem"
+                onClick={() => handleCommandRun(command)}
+                className={cn(
+                  "flex w-full items-center gap-2.5 px-3 py-1.5 text-left",
+                  "text-muted-foreground hover:text-foreground hover:bg-[var(--alfred-accent-subtle)]",
+                  "transition-colors",
+                )}
+              >
+                <Icon className="h-3.5 w-3.5 shrink-0" />
+                <span className="text-[12px]">{command.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
+
+// `AI_COMMANDS` is re-exported so callers can map commands to specific
+// editor behaviors without re-importing from the commands module.
+export { AI_COMMANDS };

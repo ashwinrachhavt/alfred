@@ -2,7 +2,6 @@
 
 import { type Editor, EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import Image from "@tiptap/extension-image";
-import Link from "@tiptap/extension-link";
 import StarterKit from "@tiptap/starter-kit";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
@@ -46,6 +45,7 @@ import {
   AiStreamingController,
   type StreamingState,
 } from "@/components/editor/ai-streaming-controller";
+import { slashAICommands } from "@/lib/notes-ai/commands";
 import { WikiLink, extractWikiLinkCardIds } from "@/components/editor/extensions/wiki-link";
 import {
   WikiLinkAutocomplete,
@@ -284,6 +284,14 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           heading: {
             levels: [1, 2, 3],
           },
+          // StarterKit v3 ships Link; configure it here instead of registering
+          // a second Link extension (causes the "Duplicate extension names"
+          // warning at startup).
+          link: {
+            openOnClick: false,
+            autolink: true,
+            linkOnPaste: true,
+          },
         }),
         BlockId.configure({
           types: [
@@ -300,11 +308,6 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
             "image",
           ],
           disabled: Boolean(readOnly),
-        }),
-        Link.configure({
-          openOnClick: false,
-          autolink: true,
-          linkOnPaste: true,
         }),
         Image.configure({
           inline: false,
@@ -396,6 +399,86 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
       );
       setAiPromptOpen(true);
     }, []);
+
+    /**
+     * Run an AI streaming request directly with a known instruction, without
+     * showing the prompt. Used by `/ai-*` slash commands (Improve writing,
+     * Continue writing, Brainstorm, etc.) where the instruction is fully
+     * determined by the slash entry itself.
+     *
+     * Mirrors openAI's mode resolution: with-selection → transform context,
+     * empty paragraph → generate (no original range), otherwise → edit on
+     * the current paragraph.
+     */
+    const runAIInstruction = useCallback(
+      (ed: Editor, instruction: string) => {
+        const { from, to } = ed.state.selection;
+        const hasSelection = !ed.state.selection.empty;
+        const { $from } = ed.state.selection;
+        const paragraphText = $from.parent.textContent;
+
+        let targetText = "";
+        let targetRange: { from: number; to: number } | null = null;
+
+        if (hasSelection) {
+          targetText = ed.state.doc.textBetween(from, to, " ");
+          targetRange = { from, to };
+        } else if (paragraphText.trim()) {
+          targetText = paragraphText;
+          targetRange = { from: $from.start(), to: $from.end() };
+        }
+
+        ed.commands.blur();
+        const insertPos = targetRange ? targetRange.to : ed.state.selection.from;
+        setStreamInsertAt(insertPos);
+        setStreamOriginalRange(
+          targetRange && targetText
+            ? { from: targetRange.from, to: targetRange.to, text: targetText }
+            : null,
+        );
+        setStreamingState({ status: "streaming", instruction });
+      },
+      [],
+    );
+
+    const aiSlashEntries = useMemo<SlashCommand[]>(
+      () => {
+        // The "Ask AI" entry opens the inline prompt with no preset
+        // instruction so the user can free-form. Listed first so users
+        // typing "/ai" land on it before any of the named commands.
+        const askAI: SlashCommand = {
+          title: "Ask AI",
+          description: "Open the AI prompt to write or edit",
+          keywords: ["ai", "ask", "prompt", "polymath"],
+          group: "AI",
+          icon: Sparkles,
+          run: (ed) => {
+            openAI(ed);
+          },
+        };
+
+        // Each registry entry becomes a `/ai-<alias>` slash command. Panel
+        // commands (Ask Polymath, Research) are skipped — they belong in
+        // the inline flyout where they can route to the side panel without
+        // confusing the slash → inline-stream flow.
+        const named: SlashCommand[] = slashAICommands()
+          .filter((cmd) => !cmd.panel)
+          .map((cmd) => {
+            const alias = cmd.slashAlias!;
+            return {
+              title: cmd.label,
+              description: cmd.description ?? "",
+              keywords: ["ai", alias, ...cmd.label.toLowerCase().split(/\s+/)],
+              group: "AI",
+              icon: cmd.icon,
+              run: (ed) => runAIInstruction(ed, cmd.promptTemplate),
+            };
+          });
+
+        return [askAI, ...named];
+      },
+      [openAI, runAIInstruction],
+    );
 
     const slashCommands = useMemo<SlashCommand[]>(
       () => [
@@ -506,18 +589,9 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           run: (editor) => editor.chain().focus().toggleBlockquote().run(),
         },
         // --- AI Slash Commands ---
-        {
-          title: "AI Edit",
-          description: "Ask AI to write, edit, or transform text",
-          keywords: ["ai", "edit", "write", "generate", "ask", "alfred"],
-          group: "AI",
-          icon: Sparkles,
-          run: (ed) => {
-            openAI(ed);
-          },
-        },
+        ...aiSlashEntries,
       ],
-      [openAI],
+      [openAI, aiSlashEntries],
     );
 
     const filteredSlashCommands = useMemo(() => {
@@ -760,29 +834,30 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
       shouldRerenderOnTransaction: false,
       editorProps: {
         attributes: {
+          spellcheck: "false",
           class: cn(
-            "prose prose-sm dark:prose-invert max-w-none min-h-[220px] px-2 py-1 text-[15px] leading-[1.72] text-foreground focus:outline-none [text-wrap:pretty]",
-            // Headings: Inter (sans)
-            "prose-headings:mt-6 prose-headings:mb-2 prose-headings:font-sans prose-headings:font-semibold",
-            "prose-h1:text-[2rem] prose-h2:text-[1.65rem] prose-h3:text-[1.4rem]",
-            // Body: DM Sans (inherits from font-sans)
-            "prose-p:my-2 prose-p:leading-[1.78] prose-p:text-left",
-            // Code: JetBrains Mono
-            "prose-code:font-mono prose-code:text-[13px] prose-code:bg-secondary prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-sm prose-code:before:content-none prose-code:after:content-none",
-            "prose-pre:bg-secondary prose-pre:text-foreground prose-pre:font-mono prose-pre:text-[13px] prose-pre:rounded-md",
-            // Blockquote: accent left border
-            "prose-blockquote:my-3 prose-blockquote:border-l-primary prose-blockquote:bg-[var(--alfred-accent-subtle)] prose-blockquote:px-4 prose-blockquote:py-1 prose-blockquote:not-italic prose-blockquote:rounded-r-md prose-blockquote:text-left",
+            "alfred-note-prose prose dark:prose-invert max-w-none min-h-[220px] px-1 py-1 text-[16px] leading-[1.62] text-foreground focus:outline-none [text-wrap:pretty]",
+            // Headings: editorial, not terminal-like.
+            "prose-headings:mt-7 prose-headings:mb-2.5 prose-headings:font-sans prose-headings:font-medium prose-headings:tracking-[-0.015em]",
+            "prose-h1:text-[1.85rem] prose-h2:text-[1.45rem] prose-h3:text-[1.15rem]",
+            // Body: tighter scan rhythm for dense technical notes.
+            "prose-p:my-3 prose-p:leading-[1.62] prose-p:text-left",
+            // Code: subdued system voice.
+            "prose-code:font-mono prose-code:text-[0.86em] prose-code:bg-secondary/80 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-sm prose-code:before:content-none prose-code:after:content-none",
+            "prose-pre:border prose-pre:border-[var(--alfred-ruled-line)] prose-pre:bg-card/70 prose-pre:text-foreground prose-pre:font-mono prose-pre:text-[13px] prose-pre:leading-relaxed prose-pre:rounded-md prose-pre:shadow-none",
+            // Blockquote: semantic callout rather than markdown quote.
+            "prose-blockquote:my-5 prose-blockquote:border-l-[3px] prose-blockquote:border-l-primary prose-blockquote:bg-[var(--alfred-accent-subtle)] prose-blockquote:px-4 prose-blockquote:py-3 prose-blockquote:not-italic prose-blockquote:rounded-r-md prose-blockquote:text-left",
             // Images
             "prose-img:rounded-lg prose-img:border prose-img:shadow-sm",
             // Links: accent color
             "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
             // HR: ruled line
-            "prose-hr:my-6 prose-hr:border-[var(--alfred-ruled-line)]",
+            "prose-hr:my-7 prose-hr:border-[var(--alfred-ruled-line)]",
             // Lists
-            "prose-ul:my-3 prose-ol:my-3 prose-li:my-0.5 prose-li:text-left",
+            "prose-ul:my-4 prose-ol:my-4 prose-li:my-1 prose-li:text-left prose-li:leading-[1.62]",
             // Task list: checkbox styling
             "[&_ul[data-type=taskList]]:list-none [&_ul[data-type=taskList]]:pl-2",
-            "[&_li[data-type=taskItem]]:flex [&_li[data-type=taskItem]]:items-start [&_li[data-type=taskItem]]:gap-2 [&_li[data-type=taskItem]]:my-1",
+            "[&_li[data-type=taskItem]]:flex [&_li[data-type=taskItem]]:items-start [&_li[data-type=taskItem]]:gap-2 [&_li[data-type=taskItem]]:my-1.5",
             "[&_li[data-type=taskItem]>label]:flex [&_li[data-type=taskItem]>label]:items-center [&_li[data-type=taskItem]>label]:mt-0.5 [&_li[data-type=taskItem]>label]:shrink-0",
             "[&_li[data-type=taskItem]>label>input]:size-4 [&_li[data-type=taskItem]>label>input]:accent-[#E8590C] [&_li[data-type=taskItem]>label>input]:cursor-pointer",
             "[&_li[data-type=taskItem]>div]:flex-1 [&_li[data-type=taskItem]>div]:min-w-0",
@@ -947,10 +1022,12 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
       [editor, flushPendingEditorDraft],
     );
 
-    const handleStreamRetry = useCallback(() => {
-      setStreamingState((prev) =>
-        prev.status === "done" ? { status: "streaming", instruction: prev.instruction } : prev,
-      );
+    const handleStreamFollowup = useCallback((instruction: string) => {
+      // The streaming controller has already mutated the doc (or chosen not
+      // to, for extend-mode follow-ups) — we just flip state back to
+      // streaming with the new instruction. The controller's isFollowupRef
+      // ensures it doesn't reset insertRangeRef on this re-entry.
+      setStreamingState({ status: "streaming", instruction });
     }, []);
 
     const handleEditInstruction = useCallback(() => {
@@ -1073,6 +1150,16 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
         const commands = slashCommandsRef.current;
         if (event.key === "Escape") {
           event.preventDefault();
+          // Delete the typed `/<query>` text so canceling the menu leaves the
+          // paragraph clean (matches Notion). Without this, the slash trigger
+          // characters persist as content and a follow-up `/` doesn't reopen
+          // the menu because the paragraph no longer starts with a single `/`.
+          const { $from } = editor.state.selection;
+          editor
+            .chain()
+            .focus()
+            .deleteRange({ from: $from.start(), to: $from.end() })
+            .run();
           slashQueryRef.current = null;
           slashActiveIndexRef.current = 0;
           setSlashQuery(null);
@@ -1246,8 +1333,8 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
     return (
       <div
         className={cn(
-          "bg-background relative flex h-full w-full flex-col overflow-hidden rounded-lg border transition-colors duration-200",
-          isFocused && !readOnly && "border-[var(--alfred-accent-muted)]",
+          "relative flex h-full w-full flex-col overflow-visible bg-transparent transition-colors duration-200",
+          isFocused && !readOnly && "",
           readOnly && "opacity-80",
           className,
         )}
@@ -1400,13 +1487,13 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
             documentId={documentId}
             onStreamComplete={handleStreamComplete}
             onFinish={handleStreamFinish}
-            onRetry={handleStreamRetry}
+            onFollowup={handleStreamFollowup}
             onEditInstruction={handleEditInstruction}
           />
         )}
 
         <div
-          className="flex-1 scroll-py-24 overflow-y-auto"
+          className="flex-1 scroll-py-24 pb-24"
           onClick={() => editor.chain().focus().run()}
         >
           <EditorContent editor={editor} />

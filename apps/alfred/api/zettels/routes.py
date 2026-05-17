@@ -3,6 +3,7 @@ from __future__ import annotations
 import json as _json
 import logging
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
@@ -88,6 +89,35 @@ def _sse_json(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {_json.dumps(data, default=str)}\n\n"
 
 
+def _agui_sse(seq: int, frame: dict[str, Any]) -> str:
+    return f"id: {seq}\ndata: {_json.dumps(frame, separators=(',', ':'), default=str)}\n\n"
+
+
+def _parse_legacy_sse(frame: str) -> tuple[str, dict[str, Any]] | None:
+    event_name = ""
+    data_lines: list[str] = []
+    for line in frame.splitlines():
+        if line.startswith("event:"):
+            event_name = line.split(":", 1)[1].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line.split(":", 1)[1].strip())
+    if not event_name or not data_lines:
+        return None
+    try:
+        data = _json.loads("\n".join(data_lines))
+    except _json.JSONDecodeError:
+        data = {}
+    return event_name, data if isinstance(data, dict) else {"value": data}
+
+
+def _zettel_custom_frame(event_name: str, data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "CUSTOM",
+        "name": f"alfred.zettel.{event_name}",
+        "value": data,
+    }
+
+
 def _enqueue_task_or_raise(
     task_name: str,
     *,
@@ -130,6 +160,47 @@ async def create_card_stream(payload: ZettelCardCreate) -> StreamingResponse:
     stream = ZettelCreationStream(payload)
     return StreamingResponse(
         stream.run(),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
+
+
+@router.post("/cards/create-stream/v2")
+async def create_card_stream_v2(payload: ZettelCardCreate) -> StreamingResponse:
+    """Create a zettel with canonical AG-UI custom events."""
+    stream = ZettelCreationStream(payload)
+    run_id = str(uuid4())
+
+    async def event_stream():
+        seq = 0
+        yield _agui_sse(seq, {
+            "type": "RUN_STARTED",
+            "runId": run_id,
+            "threadId": str(payload.session_id) if payload.session_id is not None else None,
+            "runType": "zettel_create",
+        })
+        seq += 1
+
+        async for legacy_frame in stream.run():
+            parsed = _parse_legacy_sse(legacy_frame)
+            if parsed is None:
+                continue
+            event_name, data = parsed
+            yield _agui_sse(seq, _zettel_custom_frame(event_name, data))
+            seq += 1
+            if event_name == "error":
+                yield _agui_sse(seq, {
+                    "type": "RUN_ERROR",
+                    "message": str(data.get("message") or "Zettel creation failed."),
+                    "code": str(data.get("step") or "zettel_create"),
+                })
+                seq += 1
+                return
+
+        yield _agui_sse(seq, {"type": "RUN_FINISHED", "runId": run_id})
+
+    return StreamingResponse(
+        event_stream(),
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )

@@ -15,7 +15,14 @@ from sqlmodel import Session, select
 from alfred.models.streaming import AgentRunSnapshotRow
 from alfred.models.thinking import AgentMessageRow, ThinkingSessionRow
 from alfred.streaming.consumers import EventConsumer
-from alfred.streaming.events import MessageDelta, RunStarted, StateDelta, ToolResult
+from alfred.streaming.events import (
+    MessageDelta,
+    RunStarted,
+    StateDelta,
+    ThinkingDelta,
+    ToolResult,
+    ToolStarted,
+)
 from alfred.streaming.projectors.message_row import MessageProjector
 from alfred.streaming.projectors.snapshot import SnapshotProjector
 from alfred.streaming.projectors.wire_agui import AGUIProjector
@@ -33,28 +40,101 @@ def test_projectors_implement_event_consumer():
     assert isinstance(snap, EventConsumer)
 
 
-def test_agui_projector_returns_frames_for_each_event():
+def test_agui_projector_returns_canonical_camel_case_event_objects():
     wire = AGUIProjector()
-    evt = MessageDelta(run_id=uuid4(), seq=1, emitted_at=NOW, message_id=uuid4(), delta_text="hi")
+    message_id = uuid4()
+    evt = MessageDelta(run_id=uuid4(), seq=1, emitted_at=NOW, message_id=message_id, delta_text="hi")
     frames = wire.frames_for(evt)
     assert isinstance(frames, list)
     assert len(frames) == 1
-    assert frames[0]["event"] == "TEXT_MESSAGE_CHUNK"
-    assert frames[0]["data"]["delta"] == "hi"
+    assert frames[0] == {
+        "type": "TEXT_MESSAGE_CONTENT",
+        "messageId": str(message_id),
+        "delta": "hi",
+    }
 
 
 def test_agui_projector_run_started_root_vs_nested():
     wire = AGUIProjector()
+    parent_run_id = uuid4()
     root_evt = RunStarted(
         run_id=uuid4(), seq=0, emitted_at=NOW,
         parent_run_id=None, run_type="chat_turn",
     )
     child_evt = RunStarted(
         run_id=uuid4(), seq=0, emitted_at=NOW,
-        parent_run_id=uuid4(), run_type="tool_call",
+        parent_run_id=parent_run_id, run_type="tool_call",
     )
-    assert wire.frames_for(root_evt)[0]["event"] == "RUN_STARTED"
-    assert wire.frames_for(child_evt)[0]["event"] == "STEP_STARTED"
+    root = wire.frames_for(root_evt)[0]
+    child = wire.frames_for(child_evt)[0]
+    assert root["type"] == "RUN_STARTED"
+    assert root["runId"] == str(root_evt.run_id)
+    assert root["parentRunId"] is None
+    assert child["type"] == "RUN_STARTED"
+    assert child["runId"] == str(child_evt.run_id)
+    assert child["parentRunId"] == str(parent_run_id)
+
+
+def test_agui_projector_maps_reasoning_to_reasoning_events():
+    wire = AGUIProjector()
+    message_id = uuid4()
+    evt = ThinkingDelta(
+        run_id=uuid4(), seq=2, emitted_at=NOW,
+        message_id=message_id, delta_text="checking assumptions",
+    )
+
+    assert wire.frames_for(evt) == [{
+        "type": "REASONING_MESSAGE_CONTENT",
+        "messageId": f"{message_id}::reasoning",
+        "delta": "checking assumptions",
+    }]
+
+
+def test_agui_projector_expands_tool_started_with_args_preview():
+    wire = AGUIProjector()
+    evt = ToolStarted(
+        run_id=uuid4(), seq=3, emitted_at=NOW,
+        tool_call_id="call-1", tool_name="search_kb",
+        parent_message_id=uuid4(), args_preview={"q": "epistemology"},
+    )
+
+    frames = wire.frames_for(evt)
+
+    assert frames == [
+        {
+            "type": "TOOL_CALL_START",
+            "toolCallId": "call-1",
+            "toolCallName": "search_kb",
+            "parentMessageId": str(evt.parent_message_id),
+        },
+        {
+            "type": "TOOL_CALL_ARGS",
+            "toolCallId": "call-1",
+            "delta": '{"q":"epistemology"}',
+        },
+        {
+            "type": "TOOL_CALL_END",
+            "toolCallId": "call-1",
+        },
+    ]
+
+
+def test_agui_projector_maps_state_delta_to_json_patch():
+    wire = AGUIProjector()
+    evt = StateDelta(
+        run_id=uuid4(), seq=4, emitted_at=NOW,
+        key="related_cards", op="set",
+        value=[{"zettelId": 12, "title": "A"}],
+    )
+
+    assert wire.frames_for(evt) == [{
+        "type": "STATE_DELTA",
+        "delta": [{
+            "op": "add",
+            "path": "/relatedCards",
+            "value": [{"zettelId": 12, "title": "A"}],
+        }],
+    }]
 
 
 @pytest.mark.asyncio

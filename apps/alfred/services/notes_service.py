@@ -288,7 +288,18 @@ class NotesService:
         return row
 
     def archive_note(self, note_id: str | uuid.UUID, *, user_id: int | None = None) -> NoteRow:
-        return self.update_note(note_id, is_archived=True, user_id=user_id)
+        row = self.update_note(note_id, is_archived=True, user_id=user_id)
+        # wiki_links is polymorphic (no FK from notes), so no cascade fires.
+        # Drop edges this note owns so archived notes don't pollute the graph.
+        from alfred.models.zettel import WikiLink
+
+        self.session.exec(
+            sa.delete(WikiLink).where(
+                (WikiLink.source_type == "note") & (WikiLink.source_id == str(row.id))
+            )
+        )
+        self.session.commit()
+        return row
 
     def list_children(
         self,

@@ -33,6 +33,7 @@ class ThinkingSessionRow(Model, table=True):
         Index("idx_thinking_sessions_status", "status"),
         Index("idx_thinking_sessions_updated", "updated_at"),
         Index("idx_thinking_sessions_type", "session_type"),
+        Index("idx_thinking_sessions_source", "source_kind", "source_id"),
     )
 
     title: str | None = Field(default=None, sa_column=Column(String(255), nullable=True))
@@ -51,6 +52,8 @@ class ThinkingSessionRow(Model, table=True):
     pinned: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, server_default="false"))
     active_lens: str | None = Field(default=None, sa_column=Column(String(64), nullable=True))
     note_id: str | None = Field(default=None, sa_column=Column(String(96), nullable=True, index=True))
+    source_kind: str | None = Field(default=None, sa_column=Column(String(32), nullable=True))
+    source_id: str | None = Field(default=None, sa_column=Column(String(96), nullable=True))
     model_id: str | None = Field(default=None, sa_column=Column(String(128), nullable=True))
 
 

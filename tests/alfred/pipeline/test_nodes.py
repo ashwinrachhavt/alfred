@@ -18,6 +18,7 @@ def test_load_document_populates_state():
         "title": "Test Doc",
         "cleaned_text": "Hello world",
         "raw_markdown": "# Hello world",
+        "metadata": {"source_capture": {"kind": "blog_article"}},
     }
 
     state: DocumentPipelineState = {"doc_id": "d1", "errors": []}
@@ -30,6 +31,7 @@ def test_load_document_populates_state():
 
     assert result["title"] == "Test Doc"
     assert result["cleaned_text"] == "Hello world"
+    assert result["metadata"] == {"source_capture": {"kind": "blog_article"}}
     import hashlib
     expected_hash = hashlib.sha256(b"Hello world").hexdigest()
     assert result["content_hash"] == expected_hash
@@ -108,6 +110,8 @@ def test_extract_node_merges_graph():
 
     state: DocumentPipelineState = {
         "cleaned_text": "AI and ML",
+        "raw_markdown": "# AI and ML",
+        "metadata": {"source_capture": {"kind": "blog_article"}},
         "content_hash": "abc",
         "force_replay": False,
         "cache_hits": [],
@@ -125,6 +129,15 @@ def test_extract_node_merges_graph():
 
     assert "relations" in result["enrichment"]
     assert result["enrichment"]["relations"][0]["from"] == "AI"
+    mock_svc.extract_all.assert_called_once_with(
+        cleaned_text="AI and ML",
+        raw_markdown="# AI and ML",
+        metadata={"source_capture": {"kind": "blog_article"}},
+    )
+    mock_svc.extract_graph.assert_called_once_with(
+        text="AI and ML",
+        metadata={"source_capture": {"kind": "blog_article"}},
+    )
     assert result["stage"] == "extract"
 
 

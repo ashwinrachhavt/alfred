@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import type { NoteTreeResponse, Workspace } from "@/lib/api/types/notes";
+import { type TreeNode, filterTree, findAncestorIds } from "@/lib/notes/tree-utils";
 
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -41,41 +42,6 @@ type NotesSidebarProps = {
   isLoading?: boolean;
 };
 
-type TreeNode = NoteTreeResponse["items"][number];
-
-function findAncestorIds(nodes: TreeNode[], targetId: string): string[] | null {
-  for (const node of nodes) {
-    if (node.note.id === targetId) {
-      return [];
-    }
-
-    const childAncestors = findAncestorIds(node.children, targetId);
-    if (childAncestors !== null) {
-      return [node.note.id, ...childAncestors];
-    }
-  }
-
-  return null;
-}
-
-function matchesQuery(title: string, query: string): boolean {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-  return title.toLowerCase().includes(q);
-}
-
-function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
-  if (!query.trim()) return nodes;
-  const filtered: TreeNode[] = [];
-
-  for (const node of nodes) {
-    const children = filterTree(node.children, query);
-    if (matchesQuery(node.note.title, query) || children.length) {
-      filtered.push({ ...node, children });
-    }
-  }
-  return filtered;
-}
 
 function TreeList({
   nodes,
@@ -133,14 +99,14 @@ function TreeList({
               <button
                 type="button"
                 className={cn(
-                  "flex min-w-0 flex-1 items-center gap-2 truncate rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                  "flex min-w-0 flex-1 items-center gap-2 truncate rounded-sm px-2 py-1.5 text-left text-[13px] transition-colors",
                   isSelected
                     ? "border-primary text-foreground border-l-2 bg-[var(--alfred-accent-subtle)]"
                     : "text-muted-foreground hover:text-foreground border-l-2 border-transparent hover:bg-[var(--alfred-accent-subtle)]",
                 )}
                 onClick={() => onSelectNoteId(node.note.id)}
               >
-                <span className="text-sm" aria-hidden="true">
+                <span className="text-xs opacity-80" aria-hidden="true">
                   {icon}
                 </span>
                 <span className="truncate">{node.note.title || "Untitled"}</span>
@@ -149,7 +115,7 @@ function TreeList({
               {onRequestDelete && (
                 <button
                   type="button"
-                  className="text-muted-foreground/0 group-hover/note:text-muted-foreground/60 mr-1 shrink-0 rounded p-1 transition-colors hover:!text-[var(--error)]"
+                  className="text-muted-foreground/0 group-hover/note:text-muted-foreground/60 mr-1 shrink-0 rounded-sm p-1 transition-colors hover:!text-[var(--error)]"
                   onClick={(e) => {
                     e.stopPropagation();
                     onRequestDelete(node.note.id, node.note.title || "Untitled");
@@ -220,26 +186,26 @@ export function NotesSidebar({
   };
 
   return (
-    <aside className="bg-card flex h-full min-h-0 flex-col border-r">
-      <header className="flex items-center justify-between gap-2 border-b p-3">
+    <aside className="flex h-full min-h-0 flex-col border-r border-[var(--alfred-ruled-line)] bg-card/70">
+      <header className="flex items-center justify-between gap-2 border-b border-[var(--alfred-ruled-line)] px-3 py-3.5">
         <div className="min-w-0">
-          <p className="truncate text-lg">
+          <p className="truncate text-sm font-medium">
             {workspace ? `${workspace.icon ?? "📓"} ${workspace.name}` : "Notes"}
           </p>
-          <p className="truncate text-[10px] font-medium tracking-widest text-[var(--alfred-text-tertiary)] uppercase">
-            Markdown-first pages
+          <p className="truncate font-mono text-[9px] font-medium tracking-[0.16em] text-[var(--alfred-text-tertiary)] uppercase">
+            Pages
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5">
           <Button type="button" size="icon-sm" variant="ghost" onClick={onCollapse}>
             <PanelLeftClose className="h-4 w-4" aria-hidden="true" />
             <span className="sr-only">Collapse notes sidebar</span>
           </Button>
-          <Button type="button" size="icon-sm" variant="outline" onClick={onImportMarkdown}>
+          <Button type="button" size="icon-sm" variant="ghost" onClick={onImportMarkdown}>
             <Upload className="h-4 w-4" aria-hidden="true" />
             <span className="sr-only">Import files</span>
           </Button>
-          <Button type="button" size="icon" variant="outline" onClick={onCreateNote}>
+          <Button type="button" size="icon-sm" variant="ghost" onClick={onCreateNote}>
             <FilePlus2 className="h-4 w-4" aria-hidden="true" />
             <span className="sr-only">New note</span>
           </Button>
@@ -256,7 +222,7 @@ export function NotesSidebar({
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search notes..."
-            className="pl-8"
+            className="h-8 border-[var(--alfred-ruled-line)] bg-background/50 pl-8 text-sm"
           />
         </div>
       </div>

@@ -17,6 +17,7 @@ from sqlmodel import select
 
 from alfred.core.database import SessionLocal
 from alfred.models.doc_storage import DocumentRow
+from alfred.models.notes import NoteRow
 from alfred.models.zettel import ZettelCard, ZettelLink, ZettelReview
 from alfred.schemas.today import (
     TodayBriefingResponse,
@@ -26,6 +27,7 @@ from alfred.schemas.today import (
     TodayCaptureItem,
     TodayConnectionItem,
     TodayGapItem,
+    TodayNoteItem,
     TodayReviewItem,
     TodayStoredCardItem,
 )
@@ -151,6 +153,27 @@ def build_daily_briefing(
             if card.id is not None
         ]
 
+        notes_touched_rows = list(
+            session.exec(
+                select(NoteRow)
+                .where(NoteRow.updated_at >= day_start_utc)
+                .where(NoteRow.updated_at < day_end_utc)
+                .where(NoteRow.is_archived.is_(False))
+                .order_by(NoteRow.updated_at.desc())
+                .limit(MAX_DAY_ITEMS)
+            )
+        )
+        notes = [
+            TodayNoteItem(
+                note_id=str(note.id),
+                title=note.title,
+                icon=note.icon,
+                workspace_id=str(note.workspace_id),
+                updated_at=_to_iso(note.updated_at),
+            )
+            for note in notes_touched_rows
+        ]
+
         due_review_rows = list(
             session.exec(
                 select(ZettelReview)
@@ -226,6 +249,7 @@ def build_daily_briefing(
             connections=connections,
             reviews=reviews,
             gaps=gaps,
+            notes=notes,
             stats=TodayBriefingStats(
                 total_captures=len(captures),
                 total_cards_created=len(stored_cards),
@@ -233,14 +257,20 @@ def build_daily_briefing(
                 total_reviews_due=len(reviews),
                 total_reviews_completed=completed_reviews,
                 total_gaps=len(gaps),
-                total_events=len(captures) + len(stored_cards) + len(connections) + len(reviews) + len(gaps),
+                total_events=len(captures)
+                + len(stored_cards)
+                + len(connections)
+                + len(reviews)
+                + len(gaps)
+                + len(notes),
                 total_cards=total_cards,
                 total_links=total_links,
+                total_notes_touched=len(notes),
             ),
         )
 
         logger.info(
-            "Daily briefing for %s (%s): %d captures, %d cards, %d connections, %d reviews, %d gaps",
+            "Daily briefing for %s (%s): %d captures, %d cards, %d connections, %d reviews, %d gaps, %d notes",
             briefing.date,
             briefing.timezone,
             len(captures),
@@ -248,6 +278,7 @@ def build_daily_briefing(
             len(connections),
             len(reviews),
             len(gaps),
+            len(notes),
         )
         return briefing
     finally:

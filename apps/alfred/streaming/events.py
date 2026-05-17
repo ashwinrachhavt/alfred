@@ -125,6 +125,7 @@ ToolResultStatus = Literal["ok", "error", "timeout"]
 class ToolResult(_EventBase):
     event_type: Literal["tool.result"] = "tool.result"
     tool_call_id: str
+    message_id: UUID | None = None
     result_json: dict[str, Any]
     duration_ms: int
     status: ToolResultStatus

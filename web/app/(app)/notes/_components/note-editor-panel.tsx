@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FilePlus2, NotebookPen } from "lucide-react";
+import { FilePlus2, MoreHorizontal, NotebookPen, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import type { NoteResponse } from "@/lib/api/types/notes";
@@ -12,6 +12,7 @@ import {
   type MarkdownNotesEditorHandle,
 } from "@/components/editor/markdown-notes-editor";
 import { Button } from "@/components/ui/button";
+import { formatRelativeTimestamp } from "@/lib/utils/date-format";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 // Tooltip import removed — save button removed for seamless autosave
@@ -74,6 +75,10 @@ export function NoteEditorPanel({
   const lastSyncedWikiLinksRef = useRef("");
 
   const loaded = useMemo(() => normalizeNote(noteQuery.data ?? null), [noteQuery.data]);
+  const lastEditedLabel = useMemo(
+    () => formatRelativeTimestamp(noteQuery.data?.updated_at),
+    [noteQuery.data?.updated_at],
+  );
 
   const saveNow = useCallback(async () => {
     if (!noteId) return;
@@ -231,47 +236,81 @@ export function NoteEditorPanel({
   }
 
   return (
-    <section className="flex h-full min-h-0 flex-col">
-      {/* Title — seamless autosave, no visible status (Notion-style) */}
-      <header className="mx-auto w-full max-w-[780px] px-6 pt-8 pb-4">
-        <input
-          value={title}
-          onChange={(e) => {
-            const next = e.target.value;
-            setTitle(next);
-            draftRef.current.title = next;
-            queueSave();
-          }}
-          onBlur={() => void saveNow()}
-          className="w-full bg-transparent text-3xl tracking-tight outline-none placeholder:text-[var(--alfred-text-tertiary)]"
-          placeholder="Untitled"
-        />
-        {/* Only show error state — everything else is silent */}
-        {autosaveState === "error" && (
-          <div className="mt-2 flex items-center gap-2">
-            <span className="text-[10px] font-medium tracking-widest text-[var(--error)] uppercase">
-              Save failed
-            </span>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-6 px-2 text-[10px]"
-              onClick={() => void saveNow()}
-            >
-              Retry
-            </Button>
-          </div>
-        )}
-      </header>
+    <section className="flex h-full min-h-0 flex-col bg-background">
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-14 pb-28">
+        <div className="mx-auto flex min-h-full w-full max-w-[700px] flex-col">
+          {/* Document header — Notion behavior, Alfred editorial mood. */}
+          <header className="pb-5">
+            <div className="mb-6 flex items-center justify-between gap-3 text-[11px] text-[var(--alfred-text-tertiary)]">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="font-mono font-medium tracking-[0.14em] uppercase">Pages</span>
+                <span aria-hidden="true">/</span>
+                <span className="truncate">{title.trim() || "Untitled"}</span>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 gap-1.5 px-2 text-[11px] text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground"
+                >
+                  <Sparkles className="size-3" aria-hidden="true" />
+                  Ask AI
+                </Button>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  className="text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground"
+                  aria-label="Page actions"
+                >
+                  <MoreHorizontal className="size-4" aria-hidden="true" />
+                </Button>
+              </div>
+            </div>
 
-      {/* Ruled line divider */}
-      <div className="mx-auto w-full max-w-[780px] border-t border-[var(--alfred-ruled-line)]" />
+            <input
+              value={title}
+              onChange={(e) => {
+                const next = e.target.value;
+                setTitle(next);
+                draftRef.current.title = next;
+                queueSave();
+              }}
+              onBlur={() => void saveNow()}
+              className="w-full bg-transparent font-serif text-[2.5rem] leading-[1.1] tracking-[-0.025em] outline-none placeholder:text-[var(--alfred-text-tertiary)]"
+              placeholder="Untitled"
+            />
 
-      {/* Editor */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-8">
-        <div className="mx-auto h-full w-full max-w-[780px]">
-          <MarkdownNotesEditor
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--alfred-text-tertiary)]">
+              <span>Edited {lastEditedLabel}</span>
+              <span aria-hidden="true">·</span>
+              <span>Silent autosave</span>
+              <span aria-hidden="true">·</span>
+              <span>Press / for blocks</span>
+            </div>
+
+            {/* Only show error state — everything else is silent */}
+            {autosaveState === "error" && (
+              <div className="mt-3 flex items-center gap-2 rounded-sm border border-[var(--error)]/30 bg-[var(--error)]/10 px-3 py-2">
+                <span className="text-[10px] font-medium tracking-widest text-[var(--error)] uppercase">
+                  Save failed
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-[10px]"
+                  onClick={() => void saveNow()}
+                >
+                  Retry
+                </Button>
+              </div>
+            )}
+          </header>
+
+          <div className="min-h-0 flex-1 border-t border-[var(--alfred-ruled-line)] pt-5">
+            <MarkdownNotesEditor
             ref={editorRef}
             markdown={markdown}
             tiptapJson={draftRef.current.tiptapJson}
@@ -308,7 +347,8 @@ export function NoteEditorPanel({
                 toast.error(error instanceof Error ? error.message : "Failed to sync note links.");
               });
             }}
-          />
+            />
+          </div>
         </div>
       </div>
     </section>

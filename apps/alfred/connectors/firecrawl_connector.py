@@ -6,7 +6,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import requests
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class FirecrawlResponse(BaseModel):
@@ -15,6 +15,7 @@ class FirecrawlResponse(BaseModel):
     error: Any | None = None
     markdown: str | None = None
     html: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     status_code: int | None = None
 
 
@@ -34,6 +35,10 @@ class FirecrawlClient:
 
     def scrape(self, url: str, render_js: bool = False) -> FirecrawlResponse:
         payload = {"url": url, "formats": ["markdown"], "render_js": render_js}
+        return self.post("/scrape", payload)
+
+    def scrape_rich(self, url: str, render_js: bool = False) -> FirecrawlResponse:
+        payload = {"url": url, "formats": ["markdown", "html"], "render_js": render_js}
         return self.post("/scrape", payload)
 
     def crawl(
@@ -99,11 +104,13 @@ class FirecrawlClient:
         if response.ok:
             markdown = self._extract_markdown(payload)
             html = self._extract_html(payload)
+            metadata = self._extract_metadata(payload)
             return FirecrawlResponse(
                 success=True,
                 data=payload,
                 markdown=markdown,
                 html=html,
+                metadata=metadata,
                 status_code=response.status_code,
             )
         return FirecrawlResponse(success=False, error=payload, status_code=response.status_code)
@@ -162,3 +169,12 @@ class FirecrawlClient:
         if results:
             return results[0]
         return None
+
+    def _extract_metadata(self, payload: Any) -> dict[str, Any]:
+        if isinstance(payload, dict):
+            data = payload.get("data")
+            if isinstance(data, dict) and isinstance(data.get("metadata"), dict):
+                return dict(data["metadata"])
+            if isinstance(payload.get("metadata"), dict):
+                return dict(payload["metadata"])
+        return {}

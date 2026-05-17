@@ -3,6 +3,7 @@
 import { create } from "zustand";
 
 type PathMode = "idle" | "picking-start" | "picking-end" | "showing";
+type FocusMode = "all" | "neighborhood";
 
 type PathState = {
   mode: PathMode;
@@ -15,6 +16,9 @@ export type NexusUIState = {
   selectedId: number | null;
   hoveredId: number | null;
   activeEdgeTypes: Set<string>;
+  activeTopic: string | null;
+  focusMode: FocusMode;
+  minDegree: number;
   showClusterHulls: boolean;
   path: PathState;
 
@@ -22,6 +26,10 @@ export type NexusUIState = {
   setHovered: (id: number | null) => void;
   toggleEdgeType: (t: string) => void;
   setEdgeTypes: (types: string[]) => void;
+  setActiveTopic: (topic: string | null) => void;
+  setFocusMode: (mode: FocusMode) => void;
+  setMinDegree: (degree: number) => void;
+  clearGraphFilters: () => void;
   toggleClusterHulls: () => void;
   startPathPick: () => void;
   pickPathNode: (id: number) => void;
@@ -33,6 +41,9 @@ export const useNexusStore = create<NexusUIState>((set, get) => ({
   selectedId: null,
   hoveredId: null,
   activeEdgeTypes: new Set(),
+  activeTopic: null,
+  focusMode: "all",
+  minDegree: 0,
   showClusterHulls: true,
   path: { mode: "idle", fromId: null, toId: null, result: null },
 
@@ -48,6 +59,17 @@ export const useNexusStore = create<NexusUIState>((set, get) => ({
     }),
 
   setEdgeTypes: (types) => set({ activeEdgeTypes: new Set(types) }),
+
+  setActiveTopic: (topic) => set({ activeTopic: topic }),
+  setFocusMode: (mode) => set({ focusMode: mode }),
+  setMinDegree: (degree) => set({ minDegree: degree }),
+  clearGraphFilters: () =>
+    set({
+      activeEdgeTypes: new Set(),
+      activeTopic: null,
+      focusMode: "all",
+      minDegree: 0,
+    }),
 
   toggleClusterHulls: () =>
     set((s) => ({ showClusterHulls: !s.showClusterHulls })),

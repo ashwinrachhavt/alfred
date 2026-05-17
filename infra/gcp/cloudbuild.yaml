@@ -3,6 +3,11 @@ substitutions:
   _SERVICE: alfred-api
   _REPOSITORY: alfred
   _IMAGE: alfred-api
+  _LATEST_TAG: latest
+
+tags:
+  - alfred-api
+  - deploy
 
 steps:
   - name: gcr.io/cloud-builders/docker
@@ -10,20 +15,31 @@ steps:
     args:
       - build
       - '-f'
-      - alfred/Dockerfile
+      - apps/alfred/Dockerfile
       - '-t'
       - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$SHORT_SHA'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:${_LATEST_TAG}'
       - '.'
 
   - name: gcr.io/cloud-builders/docker
-    id: push
+    id: push-sha
     args:
       - push
       - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$SHORT_SHA'
 
+  - name: gcr.io/cloud-builders/docker
+    id: push-latest
+    args:
+      - push
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:${_LATEST_TAG}'
+
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     id: deploy
     entrypoint: gcloud
+    waitFor:
+      - push-sha
+      - push-latest
     args:
       - run
       - deploy
@@ -39,6 +55,7 @@ steps:
 
 images:
   - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$SHORT_SHA'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:${_LATEST_TAG}'
 
 options:
   logging: CLOUD_LOGGING_ONLY

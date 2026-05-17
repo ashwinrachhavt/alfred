@@ -30,15 +30,25 @@ function colorForCluster(cluster: number | null | undefined): string {
   return CLUSTER_PALETTE[cluster % CLUSTER_PALETTE.length];
 }
 
+function stablePosition(seed: number): { x: number; y: number } {
+  const angle = ((seed * 137.508) % 360) * (Math.PI / 180);
+  const radius = 0.4 + ((seed * 31) % 100) / 120;
+  return {
+    x: Math.cos(angle) * radius,
+    y: Math.sin(angle) * radius,
+  };
+}
+
 export function buildNexusGraph(data: NexusGraphData): Graph {
   const graph = new Graph({ type: "undirected", multi: false });
 
   for (const node of data.nodes) {
+    const position = stablePosition(node.card_id);
     graph.addNode(String(node.card_id), {
       label: node.title,
       size: sizeForBloom(node.bloom_level),
-      x: Math.random(),
-      y: Math.random(),
+      x: position.x,
+      y: position.y,
       color: "#9ca3af",
       bloom: node.bloom_level,
       topic: node.topic,
@@ -75,7 +85,7 @@ export function buildNexusGraph(data: NexusGraphData): Graph {
   if (graph.order > 0) {
     try {
       forceAtlas2.assign(graph, {
-        iterations: 100,
+        iterations: 70,
         settings: forceAtlas2.inferSettings(graph),
       });
     } catch {

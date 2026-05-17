@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import ForceGraph3D, { type ForceGraphMethods } from "react-force-graph-3d";
 import * as THREE from "three";
 import type {
@@ -39,9 +40,9 @@ import { CreateCardForm } from "./create-card-form";
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
-const PARTICLE_COUNT = 1500;
+const PARTICLE_COUNT = 600;
 const PARTICLE_SPHERE_RADIUS = 500;
-const NEBULA_SETTLE_MS = 6000;
+const NEBULA_SETTLE_MS = 1800;
 const LARGE_GRAPH_THRESHOLD = 2000;
 const HUGE_GRAPH_THRESHOLD = 5000;
 
@@ -54,7 +55,7 @@ function getSharedGeometry(size: number): THREE.SphereGeometry {
   const key = Math.round(size * 2) / 2;
   let geo = geoCache.get(key);
   if (!geo) {
-    geo = new THREE.SphereGeometry(key, 16, 12);
+    geo = new THREE.SphereGeometry(key, 10, 8);
     geoCache.set(key, geo);
   }
   return geo;
@@ -142,6 +143,7 @@ export function KnowledgeUniverse({ data }: Props) {
   const cycleIndexRef = useRef(-1);
   const hoveredIdRef = useRef<number | null>(null);
   const flyToNodeRef = useRef<(node: PositionedGraphNode, distance?: number, duration?: number) => void>(() => {});
+  const graphNodesRef = useRef<PositionedGraphNode[]>([]);
 
   /** Pause auto-rotate during interaction, resume after idle. */
   const autoRotateTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -167,22 +169,29 @@ export function KnowledgeUniverse({ data }: Props) {
   } = useUniverseStore();
 
   const [timeLapseDate, setTimeLapseDate] = useState<Date | null>(null);
+  const effectiveTimeLapseDate = isTimeLapsePlaying ? timeLapseDate : null;
 
   /** Whether to skip heavy visual effects (particles / nebulae). */
   const isLargeGraph = data.nodes.length > LARGE_GRAPH_THRESHOLD;
   const isHugeGraph = data.nodes.length > HUGE_GRAPH_THRESHOLD;
+  const nodeById = useMemo(
+    () => new Map(data.nodes.map((node) => [node.id, node])),
+    [data.nodes],
+  );
 
   /* ---------------------------------------------------------------- */
   /*  Update cached mesh materials on selection change (no re-create)  */
   /* ---------------------------------------------------------------- */
   const selectedNodeIdsRef = useRef(selectedNodeIds);
-  selectedNodeIdsRef.current = selectedNodeIds;
+  useEffect(() => {
+    selectedNodeIdsRef.current = selectedNodeIds;
+  }, [selectedNodeIds]);
 
   useEffect(() => {
     const cache = meshCacheRef.current;
     cache.forEach((mesh, nodeId) => {
       const mat = mesh.material as THREE.MeshPhongMaterial;
-      const node = data.nodes.find((n) => n.id === nodeId);
+      const node = nodeById.get(nodeId);
       if (!node) return;
       const isSelected = selectedNodeIds.includes(nodeId);
       const vis = computeNodeVisuals(node, isSelected);
@@ -190,7 +199,7 @@ export function KnowledgeUniverse({ data }: Props) {
       mat.emissive.setHex(vis.emissiveColor);
       mat.emissiveIntensity = vis.emissiveIntensity;
     });
-  }, [selectedNodeIds, data.nodes]);
+  }, [selectedNodeIds, nodeById]);
 
   /* ---------------------------------------------------------------- */
   /*  Audio refs                                                       */
@@ -381,15 +390,16 @@ export function KnowledgeUniverse({ data }: Props) {
   /*  Cluster Nebulae (skip for large graphs)                          */
   /* ---------------------------------------------------------------- */
   useEffect(() => {
-    if (!fgRef.current || isLargeGraph || !data.clusters.length) return;
+    const fg = fgRef.current;
+    if (!fg || isLargeGraph || !data.clusters.length) return;
 
     let sprites: THREE.Sprite[] = [];
     let cancelled = false;
 
     const timeout = setTimeout(() => {
-      if (cancelled || !fgRef.current) return;
-      const scene = fgRef.current.scene();
-      const fgNodes = graphData.nodes as PositionedGraphNode[];
+      if (cancelled) return;
+      const scene = fg.scene();
+      const fgNodes = graphNodesRef.current;
 
       data.clusters.forEach((cluster) => {
         const clusterNodes = fgNodes.filter((n) =>
@@ -439,17 +449,15 @@ export function KnowledgeUniverse({ data }: Props) {
     return () => {
       cancelled = true;
       clearTimeout(timeout);
-      if (fgRef.current) {
-        const scene = fgRef.current.scene();
-        sprites.forEach((s) => {
-          scene.remove(s);
-          (s.material as THREE.SpriteMaterial).map?.dispose();
-          s.material.dispose();
-        });
-      }
+      const scene = fg.scene();
+      sprites.forEach((s) => {
+        scene.remove(s);
+        (s.material as THREE.SpriteMaterial).map?.dispose();
+        s.material.dispose();
+      });
       sprites = [];
     };
-  }, [data.clusters, data.edges, data.nodes, isLargeGraph, timeLapseDate]);
+  }, [data.clusters, data.edges, data.nodes, isLargeGraph, effectiveTimeLapseDate]);
 
   /* ---------------------------------------------------------------- */
   /*  Keyboard shortcuts (non-navigation)                              */
@@ -499,9 +507,6 @@ export function KnowledgeUniverse({ data }: Props) {
   /*  +/- zoom along the camera axis, [ ] cycle through nodes,          */
   /*  Home resets the view via zoom-to-fit.                              */
   /* ---------------------------------------------------------------- */
-  // Keep a ref to current graph nodes for the navigation loop
-  const graphNodesRef = useRef<PositionedGraphNode[]>([]);
-
   useEffect(() => {
     const NAV_KEYS = new Set([
       "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown",
@@ -653,10 +658,7 @@ export function KnowledgeUniverse({ data }: Props) {
   /*  Time-Lapse Mode                                                  */
   /* ---------------------------------------------------------------- */
   useEffect(() => {
-    if (!isTimeLapsePlaying) {
-      setTimeLapseDate(null);
-      return;
-    }
+    if (!isTimeLapsePlaying) return;
 
     // Determine date range from nodes
     const dates = data.nodes
@@ -674,20 +676,22 @@ export function KnowledgeUniverse({ data }: Props) {
     const ONE_DAY = 86_400_000;
     let current = startTime;
 
-    setTimeLapseDate(new Date(current));
+    const initialTimer = window.setTimeout(() => setTimeLapseDate(new Date(current)), 0);
 
     const interval = setInterval(() => {
       current += ONE_DAY;
       if (current > endTime) {
         setTimeLapsePlaying(false);
-        setTimeLapseDate(null);
         clearInterval(interval);
         return;
       }
       setTimeLapseDate(new Date(current));
     }, 200);
 
-    return () => clearInterval(interval);
+    return () => {
+      window.clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
   }, [isTimeLapsePlaying, data.nodes, setTimeLapsePlaying]);
 
   /* ---------------------------------------------------------------- */
@@ -750,6 +754,16 @@ export function KnowledgeUniverse({ data }: Props) {
     return 0;
   }, []);
 
+  const effectiveLinkParticles = useCallback(
+    (link: GraphEdge) => (isLargeGraph ? 0 : linkParticles(link)),
+    [isLargeGraph, linkParticles],
+  );
+
+  const effectiveLinkParticleWidth = useCallback(
+    (link: GraphEdge) => (isLargeGraph ? 0 : linkParticleWidth(link)),
+    [isLargeGraph, linkParticleWidth],
+  );
+
   /* ---------------------------------------------------------------- */
   /*  Hover glow — brighten + scale on hover for instant feedback      */
   /* ---------------------------------------------------------------- */
@@ -766,7 +780,7 @@ export function KnowledgeUniverse({ data }: Props) {
         const prevMesh = cache.get(prevId);
         if (prevMesh) {
           const mat = prevMesh.material as THREE.MeshPhongMaterial;
-          const prevNode = data.nodes.find((n) => n.id === prevId);
+          const prevNode = nodeById.get(prevId);
           if (prevNode) {
             const isSelected = selectedNodeIdsRef.current.includes(prevId);
             const vis = computeNodeVisuals(prevNode, isSelected);
@@ -791,7 +805,7 @@ export function KnowledgeUniverse({ data }: Props) {
       hoveredIdRef.current = newId;
       setHoveredNode(newId);
     },
-    [data.nodes, setHoveredNode],
+    [nodeById, setHoveredNode],
   );
 
   /** Smooth fly-to a positioned node. */
@@ -826,8 +840,10 @@ export function KnowledgeUniverse({ data }: Props) {
     },
     [pauseAutoRotate],
   );
-  // Keep ref in sync so navigation loop can call flyToNode without a dep cycle
-  flyToNodeRef.current = flyToNode;
+  // Keep ref in sync so navigation loop can call flyToNode without a dep cycle.
+  useEffect(() => {
+    flyToNodeRef.current = flyToNode;
+  }, [flyToNode]);
 
   // Double-click detection via timing
   const lastClickRef = useRef<{ id: number; time: number }>({ id: -1, time: 0 });
@@ -863,8 +879,8 @@ export function KnowledgeUniverse({ data }: Props) {
     let filteredNodes = data.nodes;
 
     // Time-lapse: only show nodes created before the playback date
-    if (timeLapseDate) {
-      const cutoff = timeLapseDate.getTime();
+    if (effectiveTimeLapseDate) {
+      const cutoff = effectiveTimeLapseDate.getTime();
       filteredNodes = data.nodes.filter((n) => {
         if (!n.created_at) return true; // show nodes without dates
         return new Date(n.created_at).getTime() <= cutoff;
@@ -880,46 +896,55 @@ export function KnowledgeUniverse({ data }: Props) {
       (e) => nodeIds.has(endpointId(e.source)) && nodeIds.has(endpointId(e.target)),
     );
 
-    // Prune mesh cache for nodes no longer in the graph
-    const cache = meshCacheRef.current;
-    for (const id of cache.keys()) {
-      if (!nodeIds.has(id)) {
-        const mesh = cache.get(id)!;
-        (mesh.material as THREE.Material).dispose();
-        cache.delete(id);
-      }
-    }
-
     return {
       nodes: filteredNodes.map((n) => ({ ...n })),
       links: filteredEdges.map((e) => ({ ...e })),
     };
-  }, [data, timeLapseDate]);
+  }, [data, effectiveTimeLapseDate]);
 
-  // Keep graphNodesRef in sync for keyboard nav loop
-  graphNodesRef.current = graphData.nodes as PositionedGraphNode[];
+  const graphNodeIds = useMemo(
+    () => new Set(graphData.nodes.map((node) => node.id)),
+    [graphData.nodes],
+  );
+
+  useEffect(() => {
+    const cache = meshCacheRef.current;
+    for (const id of cache.keys()) {
+      if (!graphNodeIds.has(id)) {
+        const mesh = cache.get(id);
+        if (mesh) {
+          (mesh.material as THREE.Material).dispose();
+          cache.delete(id);
+        }
+      }
+    }
+  }, [graphNodeIds]);
+
+  useEffect(() => {
+    graphNodesRef.current = graphData.nodes as PositionedGraphNode[];
+  }, [graphData.nodes]);
 
   /* ---------------------------------------------------------------- */
   /*  Huge graph bail-out                                              */
   /* ---------------------------------------------------------------- */
   if (isHugeGraph) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 bg-[var(--alfred-scene-bg)]">
+      <div className="scene-container flex h-full flex-col items-center justify-center gap-4 bg-[var(--alfred-scene-bg)]">
         <p className="font-sans text-sm text-white/60">
           Too many cards ({data.nodes.length}) for the 3D view.
         </p>
-        <a
+        <Link
           href="/knowledge"
           className="rounded-md bg-primary px-4 py-2 font-sans text-sm text-primary-foreground"
         >
           View in Knowledge Hub
-        </a>
+        </Link>
       </div>
     );
   }
 
   return (
-    <div ref={containerRef} className="relative h-full w-full overflow-hidden">
+    <div ref={containerRef} className="scene-container relative h-full w-full overflow-hidden">
       {/* Large graph warning banner */}
       {isLargeGraph && (
         <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-full border border-white/10 bg-black/60 px-4 py-1.5 backdrop-blur-sm">
@@ -930,10 +955,10 @@ export function KnowledgeUniverse({ data }: Props) {
       )}
 
       {/* Time-lapse date display */}
-      {timeLapseDate && (
+      {effectiveTimeLapseDate && (
         <div className="absolute left-1/2 top-14 z-20 -translate-x-1/2 rounded-full border border-primary/30 bg-black/60 px-4 py-1.5 backdrop-blur-sm">
           <span className="font-mono text-sm text-primary">
-            {timeLapseDate.toLocaleDateString("en-US", {
+            {effectiveTimeLapseDate.toLocaleDateString("en-US", {
               year: "numeric",
               month: "short",
               day: "numeric",
@@ -961,11 +986,11 @@ export function KnowledgeUniverse({ data }: Props) {
         }
         linkColor={linkColor}
         linkWidth={linkWidth}
-        linkDirectionalParticles={linkParticles}
-        linkDirectionalParticleWidth={linkParticleWidth}
+        linkDirectionalParticles={effectiveLinkParticles}
+        linkDirectionalParticleWidth={effectiveLinkParticleWidth}
         linkDirectionalParticleColor={linkColor}
-        warmupTicks={30}
-        cooldownTime={3000}
+        warmupTicks={isLargeGraph ? 6 : 14}
+        cooldownTime={isLargeGraph ? 900 : 1600}
         showNavInfo={false}
         enableNavigationControls={true}
       />
@@ -984,12 +1009,12 @@ export function KnowledgeUniverse({ data }: Props) {
       <CardPreviewOverlay nodes={graphData.nodes} />
 
       {/* Accessibility: list view link */}
-      <a
+      <Link
         href="/knowledge"
         className="pointer-events-auto absolute bottom-4 right-4 z-10 font-sans text-sm text-white/30 underline decoration-white/10 hover:text-white/50"
       >
         View as list
-      </a>
+      </Link>
     </div>
   );
 }

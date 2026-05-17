@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from typing import Any
 
@@ -32,12 +34,19 @@ def _get_cache():
 def extract(state: DocumentPipelineState) -> dict[str, Any]:
     """Run extract_all + extract_graph and merge into enrichment dict."""
     content_hash = state.get("content_hash", "")
+    metadata = state.get("metadata") or {}
+    cache_key = content_hash
+    if metadata:
+        metadata_fingerprint = hashlib.sha256(
+            json.dumps(metadata, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()[:16]
+        cache_key = f"{content_hash}:{metadata_fingerprint}"
     force = state.get("force_replay", False)
     cache_hits = list(state.get("cache_hits", []))
 
     if not force:
         cache = _get_cache()
-        cached = cache.get("extract", content_hash)
+        cached = cache.get("extract", cache_key)
         if cached is not None:
             logger.info("Cache hit for extract:%s", content_hash)
             cache_hits.append("extract")
@@ -52,8 +61,9 @@ def extract(state: DocumentPipelineState) -> dict[str, Any]:
     enrichment = svc.extract_all(
         cleaned_text=state["cleaned_text"],
         raw_markdown=state.get("raw_markdown"),
+        metadata=metadata,
     )
-    graph_data = svc.extract_graph(text=state["cleaned_text"])
+    graph_data = svc.extract_graph(text=state["cleaned_text"], metadata=metadata)
 
     enrichment["relations"] = graph_data.get("relations", [])
     if graph_data.get("entities"):
@@ -61,7 +71,7 @@ def extract(state: DocumentPipelineState) -> dict[str, Any]:
 
     if not force:
         cache = _get_cache()
-        cache.set("extract", content_hash, enrichment)
+        cache.set("extract", cache_key, enrichment)
 
     logger.info(
         "Extracted: %d entities, %d relations",

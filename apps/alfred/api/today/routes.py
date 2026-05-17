@@ -11,6 +11,7 @@ from alfred.api.dependencies import get_db_session
 from alfred.core.celery_client import BrokerUnavailableError, dispatch_task
 from alfred.core.exceptions import ServiceUnavailableError
 from alfred.models.today import DailyReflectionRow
+from alfred.models.zettel import ZettelCard
 from alfred.schemas.today import (
     DailyEntriesResponse,
     DailyEntryCreate,
@@ -21,7 +22,10 @@ from alfred.schemas.today import (
     PipelineRunResponse,
     TodayBriefingResponse,
     TodayCalendarResponse,
+    TodayThreadSynthesisRequest,
+    TodayThreadSynthesisResponse,
 )
+from alfred.services.zettelkasten_service import ZettelkastenService
 from alfred.services.today.entry_service import (
     ARTIFACT_KIND,
     VALID_KINDS,
@@ -31,6 +35,19 @@ from alfred.services.today.entry_service import (
 from alfred.services.today.reflection_service import ReflectionService
 
 router = APIRouter(prefix="/api/today", tags=["today"])
+
+
+def _normalize_thread_name(value: str | None) -> str:
+    trimmed = (value or "").strip()
+    return trimmed if trimmed else "Untopiced"
+
+
+def _thread_key(value: str) -> str:
+    return value.lower()
+
+
+def _thread_title(value: str) -> str:
+    return value.replace("_", " ").replace("-", " ").strip().title()
 
 
 @router.get("/briefing", response_model=TodayBriefingResponse)
@@ -43,6 +60,106 @@ def get_briefing(
 
     # Run synchronously for now — fast enough for single user
     return build_daily_briefing(target_date=day, tz_name=tz)
+
+
+@router.post("/threads/synthesize", response_model=TodayThreadSynthesisResponse)
+def synthesize_thread(
+    payload: TodayThreadSynthesisRequest,
+    session: Session = Depends(get_db_session),
+) -> TodayThreadSynthesisResponse:
+    """Create a synthesis zettel for one Today thread.
+
+    The thread grouping mirrors the Today frontend: cards are grouped by topic
+    first, then their first tag. The created synthesis card links back to each
+    source card so this action also clears the thread's connection debt.
+    """
+    from alfred.tasks.daily_briefing import build_daily_briefing
+
+    requested_key = _thread_key(_normalize_thread_name(payload.thread))
+    briefing = build_daily_briefing(target_date=payload.entry_date, tz_name=payload.tz)
+    source_card_ids = [
+        card.card_id
+        for card in briefing.stored_cards
+        if _thread_key(_normalize_thread_name(card.topic or (card.tags[0] if card.tags else None)))
+        == requested_key
+    ]
+    if not source_card_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No cards found for this Today thread",
+        )
+
+    cards = list(session.exec(select(ZettelCard).where(ZettelCard.id.in_(source_card_ids))))
+    cards_by_id = {card.id: card for card in cards if card.id is not None}
+    ordered_cards = [cards_by_id[card_id] for card_id in source_card_ids if card_id in cards_by_id]
+    if not ordered_cards:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No source cards found for this Today thread",
+        )
+
+    thread_name = _normalize_thread_name(payload.thread)
+    synthesis_title = f"Synthesis: {_thread_title(thread_name)} ({payload.entry_date.isoformat()})"
+    existing = session.exec(select(ZettelCard).where(ZettelCard.title == synthesis_title)).first()
+
+    source_lines = [
+        f"- {card.title}: {card.summary or card.content or 'No summary yet.'}"
+        for card in ordered_cards
+    ]
+    content = (
+        f"This synthesis connects {len(ordered_cards)} cards from the "
+        f"{thread_name} thread on {payload.entry_date.isoformat()}.\n\n"
+        "## Source cards\n"
+        + "\n".join(source_lines)
+        + "\n\n## Synthesis\n"
+        "These cards belong to the same emerging thread but had not yet been "
+        "connected. Use this card as the working synthesis surface: refine the "
+        "shared claim, identify tensions, and add more precise links as the "
+        "thread matures."
+    )
+
+    service = ZettelkastenService(session=session)
+    created = existing is None
+    card = existing or service.create_card(
+        title=synthesis_title,
+        content=content,
+        summary=f"Synthesis surface for {thread_name} from {payload.entry_date.isoformat()}.",
+        tags=["synthesis", "today", thread_name],
+        topic=thread_name,
+        importance=6,
+        confidence=0.6,
+        status="active",
+        bloom_level=6,
+        bloom_source="ai_inferred",
+    )
+
+    links_created = 0
+    for source_id in source_card_ids:
+        if source_id == card.id:
+            continue
+        try:
+            links_created += len(
+                service.create_link(
+                    from_card_id=card.id or 0,
+                    to_card_id=source_id,
+                    type="synthesis",
+                    context="Today thread synthesis",
+                    bidirectional=True,
+                )
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+
+    return TodayThreadSynthesisResponse(
+        card_id=card.id or 0,
+        title=card.title,
+        source_card_ids=source_card_ids,
+        links_created=links_created,
+        created=created,
+    )
 
 
 @router.get("/calendar", response_model=TodayCalendarResponse)

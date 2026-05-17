@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -43,7 +45,23 @@ def test_writing_compose_returns_stub_without_llm_config(monkeypatch) -> None:
     assert data["output"] == "hello"
 
 
-def test_writing_stream_is_sse_and_contains_events(monkeypatch) -> None:
+def _parse_agui_frames(body: str) -> list[dict]:
+    """Parse an AG-UI SSE response body into ordered frame dicts.
+
+    Frames are `id: <seq>\\ndata: <json>\\n\\n` blocks; we extract the JSON
+    payload from each data line and ignore the seq id.
+    """
+    frames: list[dict] = []
+    for block in body.split("\n\n"):
+        if not block.strip():
+            continue
+        for line in block.splitlines():
+            if line.startswith("data: "):
+                frames.append(json.loads(line[len("data: ") :]))
+    return frames
+
+
+def test_writing_stream_emits_canonical_agui_frames(monkeypatch) -> None:
     _enable_writing_stub(monkeypatch)
     client = make_client()
     res = client.post(
@@ -52,10 +70,28 @@ def test_writing_stream_is_sse_and_contains_events(monkeypatch) -> None:
     )
     assert res.status_code == 200
     assert "text/event-stream" in res.headers.get("content-type", "")
-    body = res.text
-    assert "event: meta" in body
-    assert "event: token" in body
-    assert "event: done" in body
+
+    frames = _parse_agui_frames(res.text)
+    types = [f["type"] for f in frames]
+
+    # Canonical lifecycle ordering.
+    assert types[0] == "RUN_STARTED"
+    assert types[-1] == "RUN_FINISHED"
+    assert "TEXT_MESSAGE_START" in types
+    assert "TEXT_MESSAGE_END" in types
+    assert "TEXT_MESSAGE_CONTENT" in types
+
+    # Preset metadata is preserved as a CUSTOM frame.
+    custom = next(f for f in frames if f["type"] == "CUSTOM")
+    assert custom["name"] == "alfred.writing.preset"
+    assert custom["value"]["preset"]["key"] == "x"
+
+    # runId and messageId are stable within their respective frames.
+    run_ids = {f.get("runId") for f in frames if "runId" in f}
+    assert len(run_ids) == 1 and next(iter(run_ids))
+
+    message_ids = {f.get("messageId") for f in frames if "messageId" in f}
+    assert len(message_ids) == 1 and next(iter(message_ids))
 
 
 def test_writing_extension_token_is_enforced_when_configured(monkeypatch) -> None:

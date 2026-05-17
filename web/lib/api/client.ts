@@ -293,6 +293,27 @@ export async function apiFetchText(
   throw new ApiError(0, "Network request failed");
 }
 
+export async function apiFetchResponse(
+  path: string,
+  init?: RequestInit,
+  options?: ApiFetchOptions,
+): Promise<Response> {
+  const url = apiUrl(path);
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const { signal, cleanup, timedOut } = createTimeoutSignal(init?.signal, timeoutMs);
+
+  try {
+    return await fetch(url, { ...init, signal });
+  } catch (error) {
+    if (isAbortError(error) && timedOut()) {
+      throw new ApiError(408, "Request timed out");
+    }
+    throw error;
+  } finally {
+    cleanup();
+  }
+}
+
 export async function apiPostJson<TResponse, TBody>(
   path: string,
   body: TBody,

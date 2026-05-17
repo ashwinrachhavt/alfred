@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import { notifyStreamCacheEvent } from "@/lib/streaming/reactive-cache";
+
 // --- Types ---
 
 type StreamPhase = "idle" | "streaming" | "complete" | "error";
@@ -124,6 +126,8 @@ export const useZettelCreationStore = create<
   },
 
   handleEvent: (event, data) => {
+    notifyStreamCacheEvent(event, data);
+
     switch (event) {
       case "card_saved":
         set({

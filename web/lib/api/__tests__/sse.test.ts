@@ -38,6 +38,41 @@ beforeEach(() => {
 });
 
 describe("streamSSE", () => {
+  it("parses canonical AG-UI data-only events using the JSON type field", async () => {
+    const raw = [
+      'data: {"type":"RUN_STARTED","runId":"run-1","threadId":"7"}\n\n',
+      'data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"msg-1","delta":"Hello"}\n\n',
+      'data: {"type":"RUN_FINISHED","runId":"run-1","threadId":"7"}\n\n',
+    ].join("");
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(raw));
+        controller.close();
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse(stream)));
+
+    const onEvent = vi.fn();
+    await streamSSE("/api/agent/stream/v2", { message: "hi" }, onEvent);
+
+    expect(onEvent).toHaveBeenCalledTimes(3);
+    expect(onEvent).toHaveBeenNthCalledWith(1, "RUN_STARTED", {
+      type: "RUN_STARTED",
+      runId: "run-1",
+      threadId: "7",
+    });
+    expect(onEvent).toHaveBeenNthCalledWith(2, "TEXT_MESSAGE_CONTENT", {
+      type: "TEXT_MESSAGE_CONTENT",
+      messageId: "msg-1",
+      delta: "Hello",
+    });
+    expect(onEvent).toHaveBeenNthCalledWith(3, "RUN_FINISHED", {
+      type: "RUN_FINISHED",
+      runId: "run-1",
+      threadId: "7",
+    });
+  });
+
   it("parses SSE events and fires onEvent with correct event/data", async () => {
     const events = [
       { event: "token", data: JSON.stringify({ content: "Hello" }) },

@@ -55,6 +55,14 @@ export type TodayGapItem = {
   created_at: string | null;
 };
 
+export type TodayNoteItem = {
+  note_id: string;
+  title: string;
+  icon: string | null;
+  workspace_id: string;
+  updated_at: string | null;
+};
+
 export type TodayBriefingStats = {
   total_captures: number;
   total_cards_created: number;
@@ -65,6 +73,7 @@ export type TodayBriefingStats = {
   total_events: number;
   total_cards: number;
   total_links: number;
+  total_notes_touched: number;
 };
 
 export type TodayBriefingResponse = {
@@ -76,6 +85,7 @@ export type TodayBriefingResponse = {
   connections: TodayConnectionItem[];
   reviews: TodayReviewItem[];
   gaps: TodayGapItem[];
+  notes: TodayNoteItem[];
   stats: TodayBriefingStats;
 };
 
@@ -95,6 +105,20 @@ export type TodayCalendarResponse = {
   end_date: string;
   timezone: string;
   days: TodayCalendarDay[];
+};
+
+export type TodayThreadSynthesisRequest = {
+  entry_date: string;
+  thread: string;
+  tz?: string;
+};
+
+export type TodayThreadSynthesisResponse = {
+  card_id: number;
+  title: string;
+  source_card_ids: number[];
+  links_created: number;
+  created: boolean;
 };
 
 type TodayBriefingParams = {
@@ -132,6 +156,15 @@ export async function getTodayCalendar(
   const query = buildQuery(params);
   const url = query ? `${apiRoutes.today.calendar}?${query}` : apiRoutes.today.calendar;
   return apiFetch<TodayCalendarResponse>(url, { cache: "no-store" });
+}
+
+export async function synthesizeTodayThread(
+  body: TodayThreadSynthesisRequest,
+): Promise<TodayThreadSynthesisResponse> {
+  return apiPostJson<TodayThreadSynthesisResponse, TodayThreadSynthesisRequest>(
+    apiRoutes.today.synthesizeThread,
+    body,
+  );
 }
 
 // ---------------------------------------------------------------------------

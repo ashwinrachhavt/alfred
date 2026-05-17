@@ -2,7 +2,7 @@
 
 import React, { useSyncExternalStore } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { prefetchRouteData } from "@/lib/prefetch";
@@ -13,6 +13,9 @@ import {
   Bot,
   Brain,
   Calendar,
+  Cable,
+  ChevronDown,
+  ChevronRight,
   Inbox,
   LayoutDashboard,
   Network,
@@ -29,6 +32,7 @@ import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useShellStore } from "@/lib/stores/shell-store";
 import { useTaskTracker } from "@/features/tasks/task-tracker-provider";
+import { SidebarNotesTree } from "./sidebar-notes-tree";
 
 type NavItem = {
   label: string;
@@ -43,6 +47,8 @@ type NavSection = {
   items: NavItem[];
 };
 
+const NOTES_DROPDOWN_KEY = "alfred:sidebarNotesDropdownOpen";
+
 const navSections: NavSection[] = [
   {
     title: "Navigate",
@@ -52,7 +58,6 @@ const navSections: NavSection[] = [
       { label: "Inbox", href: "/inbox", icon: Inbox, shortcut: "1" },
       { label: "Canvas", href: "/canvas", icon: Network, shortcut: "2" },
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, shortcut: "4" },
-      { label: "Notes", href: "/notes", icon: NotebookPen },
     ],
   },
   {
@@ -71,6 +76,7 @@ const navSections: NavSection[] = [
     title: "System",
     items: [
       { label: "Connectors", href: "/connectors", icon: Plug },
+      { label: "API Workbench", href: "/api-workbench", icon: Cable },
       { label: "Settings", href: "/settings", icon: Settings },
     ],
   },
@@ -144,6 +150,75 @@ const SidebarNavItem = React.memo(function SidebarNavItem({
   );
 });
 
+const NotesDropdownNav = React.memo(function NotesDropdownNav({
+  pathname,
+}: {
+  pathname: string;
+}) {
+  const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const selectedNoteId = searchParams.get("note");
+
+  const [isOpen, setIsOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(NOTES_DROPDOWN_KEY);
+    if (stored !== null) setIsOpen(stored === "true");
+  }, []);
+
+  const toggle = () => {
+    setIsOpen((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(NOTES_DROPDOWN_KEY, String(next));
+      }
+      return next;
+    });
+  };
+
+  const isActive = pathname === "/notes" || pathname.startsWith("/notes/");
+
+  return (
+    <div>
+      <div
+        className={cn(
+          "group flex items-center gap-1 border-l-2 pr-2 pl-1 text-xs tracking-wide transition-colors",
+          isActive
+            ? "border-primary bg-[var(--alfred-accent-subtle)] text-primary"
+            : "border-transparent text-muted-foreground hover:bg-[var(--alfred-accent-subtle)] hover:text-foreground",
+        )}
+      >
+        <button
+          type="button"
+          onClick={toggle}
+          className="text-muted-foreground hover:text-foreground rounded p-1"
+          aria-label={isOpen ? "Collapse Notes" : "Expand Notes"}
+        >
+          {isOpen ? (
+            <ChevronDown className="size-3.5" aria-hidden="true" />
+          ) : (
+            <ChevronRight className="size-3.5" aria-hidden="true" />
+          )}
+        </button>
+        <Link
+          href="/notes"
+          prefetch
+          onMouseEnter={() => prefetchRouteData("/notes", queryClient)}
+          className="flex flex-1 items-center gap-2.5 py-1.5"
+        >
+          <NotebookPen className="size-4 shrink-0 opacity-50 group-hover:opacity-100" />
+          <span>Notes</span>
+        </Link>
+      </div>
+      {isOpen ? (
+        <div className="py-1">
+          <SidebarNotesTree isOpen={isOpen} selectedNoteId={selectedNoteId} />
+        </div>
+      ) : null}
+    </div>
+  );
+});
+
 const TaskCenterButton = React.memo(function TaskCenterButton() {
   const { activeCount, setTaskCenterOpen } = useTaskTracker();
   const mounted = useSyncExternalStore(
@@ -210,6 +285,7 @@ export function AppSidebar() {
                 />
               );
             })}
+            {section.title === "Navigate" ? <NotesDropdownNav pathname={pathname} /> : null}
           </div>
         ))}
       </nav>

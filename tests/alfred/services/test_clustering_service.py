@@ -20,6 +20,8 @@ class _FakeCard:
     title: str
     status: str = "active"
     embedding: list[float] | None = None
+    topic: str | None = None
+    tags: list[str] | None = None
 
 
 @dataclass
@@ -184,6 +186,45 @@ class TestGenerateClusterNames:
         result = svc.generate_cluster_names(clusters, cards_by_id)
         # Should return clusters unchanged (unnamed) without raising
         assert result[0]["name"] == "Cluster 0"
+
+
+# ---------------------------------------------------------------------------
+# name_clusters_from_cards
+# ---------------------------------------------------------------------------
+
+
+class TestNameClustersFromCards:
+    def test_names_clusters_from_local_topics_and_tags(self) -> None:
+        clusters = [{"id": 0, "name": "Cluster 0", "card_ids": [1, 2], "color": "#FFB088"}]
+        cards_by_id = {
+            1: _FakeCard(
+                id=1,
+                title="Agent planning loops",
+                topic="AI agents",
+                tags=["planning"],
+            ),
+            2: _FakeCard(
+                id=2,
+                title="Tool orchestration",
+                topic="AI agents",
+                tags=["tools"],
+            ),
+        }
+
+        result = ClusteringService().name_clusters_from_cards(clusters, cards_by_id)
+
+        assert result[0]["name"] == "AI Agents"
+
+    def test_falls_back_to_title_keywords_without_metadata(self) -> None:
+        clusters = [{"id": 0, "name": "Cluster 0", "card_ids": [1, 2], "color": "#FFB088"}]
+        cards_by_id = {
+            1: _FakeCard(id=1, title="Narrative psychology and memory"),
+            2: _FakeCard(id=2, title="Narrative psychology in learning"),
+        }
+
+        result = ClusteringService().name_clusters_from_cards(clusters, cards_by_id)
+
+        assert result[0]["name"].startswith("Narrative Psychology")
 
 
 # ---------------------------------------------------------------------------

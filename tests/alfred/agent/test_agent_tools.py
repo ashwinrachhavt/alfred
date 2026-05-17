@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-from datetime import date
-from unittest.mock import patch
-from uuid import uuid4
-
 import pytest
 from sqlalchemy import create_engine
 from sqlmodel import Session, SQLModel
 
-from alfred.models.doc_storage import DocumentRow
-from alfred.services.agent.tools import _search_kb
-from alfred.services.zettelkasten_service import ZettelkastenService
+from alfred.models.zettel import ZettelCard
+from alfred.services.agent.tools import CORE_TOOL_SCHEMAS, _search_kb
 
 
 def _session() -> Session:
@@ -19,74 +14,87 @@ def _session() -> Session:
     return Session(engine)
 
 
-@pytest.mark.asyncio
-async def test_search_kb_merges_zettels_and_documents() -> None:
-    session = _session()
-    zettel_service = ZettelkastenService(session=session)
-    zettel = zettel_service.create_card(
-        title="Queue Patterns",
-        content="Kafka and fan-out architectures",
-        topic="system design",
-        tags=["queues"],
-    )
-
-    doc_id = uuid4()
-    session.add(
-        DocumentRow(
-            id=doc_id,
-            source_url="https://example.com/queues",
-            title="Queues at Scale",
-            cleaned_text="Long document body about queues at scale.",
-            hash="queues-at-scale",
-            summary={"short": "Document summary for queue scaling."},
-            tags=["queues"],
-            day_bucket=date.today(),
-        )
-    )
+def _card(session: Session, **overrides) -> ZettelCard:
+    data = {
+        "title": "Default card",
+        "content": "Default body",
+        "summary": "Default summary",
+        "topic": "default",
+        "tags": [],
+        "status": "active",
+    }
+    data.update(overrides)
+    card = ZettelCard(**data)
+    session.add(card)
     session.commit()
+    session.refresh(card)
+    return card
 
-    doc_hits = [
-        {
-            "score": 0.82,
-            "text": "Queue scaling chunk",
-            "payload": {
-                "kind": "document_chunk",
-                "doc_id": str(doc_id),
-                "chunk_id": f"{doc_id}:0",
-                "meta": {"doc_id": str(doc_id)},
-            },
-        },
-        {
-            "score": 0.63,
-            "text": "Secondary chunk",
-            "payload": {
-                "kind": "document_chunk",
-                "doc_id": str(doc_id),
-                "chunk_id": f"{doc_id}:1",
-                "meta": {"doc_id": str(doc_id)},
-            },
-        },
-    ]
 
-    with patch(
-        "alfred.services.zettelkasten_service.ZettelkastenService.semantic_search_cards",
-        return_value=[(zettel, 0.95)],
-    ) as mock_zettel_search, patch(
-        "alfred.services.agent.tools.KnowledgeService.search",
-        return_value=doc_hits,
-    ) as mock_doc_search:
-        result = await _search_kb({"query": "queues"}, session)
+@pytest.mark.asyncio
+async def test_search_kb_finds_zettels_by_tag_metadata() -> None:
+    session = _session()
+    card = _card(
+        session,
+        title="Supervisor had two consumers, not one (LoanOS lesson)",
+        content="The supervisor was also acting as a dispatcher for chat.",
+        topic="agentic-architecture",
+        tags=["agentic", "supervisor", "loanos", "lesson", "registry-coupling"],
+    )
 
-    mock_zettel_search.assert_called_once_with("queues", topic=None, limit=10)
-    mock_doc_search.assert_called_once()
+    result = await _search_kb(
+        {"query": "loanos", "tags": ["loanos"], "search_mode": "metadata"},
+        session,
+    )
 
-    assert result["count"] == 2
-    assert [item["type"] for item in result["results"]] == ["zettel", "document"]
+    assert result["count"] == 1
+    assert result["results"][0]["zettel_id"] == card.id
+    assert result["results"][0]["type"] == "zettel"
+    assert "tag:loanos" in result["results"][0]["match_reason"]
 
-    document_result = result["results"][1]
-    assert document_result["document_id"] == str(doc_id)
-    assert document_result["title"] == "Queues at Scale"
-    assert document_result["summary"] == "Document summary for queue scaling."
+
+@pytest.mark.asyncio
+async def test_search_kb_parses_tag_list_queries() -> None:
+    session = _session()
+    card = _card(
+        session,
+        title="Supervisor had two consumers, not one (LoanOS lesson)",
+        topic="agentic-architecture",
+        tags=["agentic", "supervisor", "loanos", "lesson", "registry-coupling"],
+    )
+
+    result = await _search_kb(
+        {"query": "Tags agentic supervisor loanos lesson registry-coupling"},
+        session,
+    )
+
+    assert result["count"] == 1
+    assert result["results"][0]["zettel_id"] == card.id
+    assert result["results"][0]["score"] > 0
+
+
+@pytest.mark.asyncio
+async def test_search_kb_matches_hyphen_space_and_compact_variants() -> None:
+    session = _session()
+    card = _card(
+        session,
+        title="Registry coupling in agent dispatch",
+        tags=["registry-coupling"],
+    )
+
+    result = await _search_kb({"query": "registry coupling"}, session)
+
+    assert result["count"] == 1
+    assert result["results"][0]["zettel_id"] == card.id
+
+
+def test_search_kb_schema_supports_metadata_only_calls() -> None:
+    schema = next(item for item in CORE_TOOL_SCHEMAS if item["function"]["name"] == "search_kb")
+    parameters = schema["function"]["parameters"]
+
+    assert parameters["required"] == []
+    assert "tags" in parameters["properties"]
+    assert parameters["properties"]["search_mode"]["enum"] == ["broad", "metadata"]
 
 
 @pytest.mark.asyncio

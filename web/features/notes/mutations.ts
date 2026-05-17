@@ -49,6 +49,28 @@ export function useCreateNote(params: { workspaceId?: string | null } = {}) {
   });
 }
 
+export function useCreateChildNote(workspaceId: string | null) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (parentId: string) => {
+      if (!workspaceId) {
+        throw new Error("Cannot create a child note without a workspace");
+      }
+      return createNote({
+        workspace_id: workspaceId,
+        parent_id: parentId,
+        title: "Untitled",
+      });
+    },
+    onSuccess: async () => {
+      if (workspaceId) {
+        await queryClient.invalidateQueries({ queryKey: noteTreeQueryKey(workspaceId) });
+      }
+    },
+  });
+}
+
 export function useUpdateNote(noteId: string, params: { workspaceId?: string | null } = {}) {
   const queryClient = useQueryClient();
   const workspaceId = params.workspaceId ?? null;

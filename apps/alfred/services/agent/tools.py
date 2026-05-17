@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 from uuid import UUID
 
@@ -147,23 +148,52 @@ CORE_TOOL_SCHEMAS: list[dict[str, Any]] = [
         "function": {
             "name": "search_kb",
             "description": (
-                "Search the knowledge base for zettels (atomic knowledge cards) matching a query. "
+                "Search the knowledge base for zettels (atomic knowledge cards) matching text, "
+                "topics, or tags. This search is metadata-aware and tries forgiving variants "
+                "such as camel-case splits, hyphen/space variants, and compact spellings. "
                 "Use this FIRST when the user asks about their knowledge, before answering from memory. "
-                "Returns titles, summaries, topics, and IDs."
+                "Returns titles, summaries, topics, tags, IDs, match reasons, and scores."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "The search query. Be specific and descriptive.",
+                        "description": (
+                            "Optional when tags or topic filters are provided. Use the user's wording "
+                            "first; if no results, retry with likely aliases, acronyms, tag spellings, "
+                            "and hyphen/space variants."
+                        ),
                     },
                     "domain_filter": {
                         "type": "string",
-                        "description": "Optional domain/topic filter (e.g., 'philosophy', 'system-design').",
+                        "description": (
+                            "Optional domain/topic filter (e.g., 'philosophy', 'system-design'). "
+                            "Prefer topic when the user names a topic or domain."
+                        ),
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Optional tags to search. Use this when the user says tagged, tags, "
+                            "labels, or gives a tag list."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of zettels to return. Defaults to 10; max 50.",
+                    },
+                    "search_mode": {
+                        "type": "string",
+                        "enum": ["broad", "metadata"],
+                        "description": (
+                            "Use broad for normal retrieval. Use metadata when the user specifically "
+                            "asks for tags/topics and body-text matches would be distracting."
+                        ),
                     },
                 },
-                "required": ["query"],
+                "required": [],
             },
         },
     },
@@ -307,6 +337,68 @@ CORE_TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "create_note",
+            "description": (
+                "Create a new note in Alfred Notes (a Notion-style page). "
+                "Use when the user asks to draft, compose, or save freeform writing. "
+                "Wiki-links of the form [[card title]] in content_markdown are "
+                "auto-resolved and persisted as edges to existing zettels."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Note title.",
+                    },
+                    "content_markdown": {
+                        "type": "string",
+                        "description": "Markdown body. May include [[wiki links]].",
+                    },
+                    "workspace_id": {
+                        "type": "string",
+                        "description": "Optional workspace UUID. Defaults to Personal.",
+                    },
+                    "parent_id": {
+                        "type": "string",
+                        "description": "Optional parent note UUID for nesting.",
+                    },
+                    "icon": {
+                        "type": "string",
+                        "description": "Optional emoji icon.",
+                    },
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_note",
+            "description": (
+                "Edit an existing note's title, content, or icon. Wiki-links in "
+                "the new content_markdown are re-resolved and synced (links to "
+                "removed targets are dropped, new ones inserted)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "note_id": {
+                        "type": "string",
+                        "description": "Note UUID to update.",
+                    },
+                    "title": {"type": "string"},
+                    "content_markdown": {"type": "string"},
+                    "icon": {"type": "string"},
+                },
+                "required": ["note_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "web_search_searxng",
             "description": (
                 "Search the web using SearXNG metasearch engine (local infrastructure). "
@@ -433,19 +525,34 @@ CORE_TOOL_SCHEMAS: list[dict[str, Any]] = [
 
 
 async def _search_kb(args: dict[str, Any], db: Session) -> dict[str, Any]:
-    """Search documents via Qdrant and zettels via in-process cosine."""
-    query = str(args.get("query", "") or "").strip()
-    if not query:
+    """Search zettels with metadata-aware matching and documents via Qdrant."""
+    query = str(args.get("query") or "").strip()
+    domain_filter = args.get("domain_filter") or args.get("topic")
+    tags = args.get("tags") or args.get("tag_filter")
+    search_mode = str(args.get("search_mode") or "broad").strip().lower()
+    if search_mode not in {"broad", "metadata"}:
+        search_mode = "broad"
+
+    try:
+        limit = int(args.get("limit") or 10)
+    except (TypeError, ValueError):
+        limit = 10
+
+    if not query and not domain_filter and not tags:
         return {"results": [], "count": 0}
 
-    domain_filter = args.get("domain_filter")
-    limit = int(args.get("limit") or 10)
-
     svc = ZettelkastenService(db)
-    card_hits = svc.semantic_search_cards(query, topic=domain_filter, limit=limit)
+    matches = svc.search_cards(
+        query=query,
+        topic=domain_filter,
+        tags=tags,
+        limit=limit,
+        search_mode=search_mode,
+    )
 
     results: list[dict[str, Any]] = []
-    for card, score in card_hits:
+    for match in matches:
+        card = match.card
         results.append(
             {
                 "type": "zettel",
@@ -454,55 +561,67 @@ async def _search_kb(args: dict[str, Any], db: Session) -> dict[str, Any]:
                 "summary": (card.summary or card.content or "")[:200],
                 "topic": card.topic,
                 "tags": card.tags or [],
-                "score": score,
+                "score": round(match.score, 2),
+                "match_reason": match.reasons,
             }
         )
 
-    seen_docs: set[str] = set()
-    try:
-        doc_hits = KnowledgeService().search(query, limit=limit)
-    except Exception as exc:  # pragma: no cover - external vector service availability
-        logger.info("Document KB search unavailable: %s", exc)
-        doc_hits = []
-
-    for hit in doc_hits:
-        payload = hit.get("payload") or hit
-        meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
-        doc_id = payload.get("doc_id") or meta.get("doc_id") or hit.get("doc_id")
-        if not doc_id:
-            continue
-
-        doc_id_str = str(doc_id)
-        if doc_id_str in seen_docs:
-            continue
-        seen_docs.add(doc_id_str)
-
+    if query and len(results) < limit and search_mode != "metadata":
+        seen_docs: set[str] = set()
         try:
-            doc = db.get(DocumentRow, UUID(doc_id_str))
-        except (TypeError, ValueError):
-            doc = None
+            doc_hits = KnowledgeService().search(query, limit=limit)
+        except Exception as exc:  # pragma: no cover - external vector service availability
+            logger.info("Document KB search unavailable: %s", exc)
+            doc_hits = []
 
-        summary = ""
-        if doc and isinstance(doc.summary, dict):
-            summary = str(doc.summary.get("short") or doc.summary.get("summary") or "")
-        if not summary:
-            summary = str(hit.get("text") or payload.get("text") or "")[:200]
+        for hit in doc_hits:
+            payload = hit.get("payload") or hit
+            meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+            doc_id = payload.get("doc_id") or meta.get("doc_id") or hit.get("doc_id")
+            if not doc_id:
+                continue
 
-        results.append(
-            {
-                "type": "document",
-                "document_id": doc_id_str,
-                "title": doc.title if doc and doc.title else "Untitled document",
-                "summary": summary,
-                "source_url": doc.source_url if doc else None,
-                "tags": doc.tags if doc else [],
-                "score": float(hit.get("score") or 0.0),
-            }
-        )
-        if len(results) >= limit:
-            break
+            doc_id_str = str(doc_id)
+            if doc_id_str in seen_docs:
+                continue
+            seen_docs.add(doc_id_str)
 
-    return {"results": results, "count": len(results)}
+            try:
+                doc = db.get(DocumentRow, UUID(doc_id_str))
+            except (TypeError, ValueError):
+                doc = None
+
+            summary = ""
+            if doc and isinstance(doc.summary, dict):
+                summary = str(doc.summary.get("short") or doc.summary.get("summary") or "")
+            if not summary:
+                summary = str(hit.get("text") or payload.get("text") or "")[:200]
+
+            results.append(
+                {
+                    "type": "document",
+                    "document_id": doc_id_str,
+                    "title": doc.title if doc and doc.title else "Untitled document",
+                    "summary": summary,
+                    "source_url": doc.source_url if doc else None,
+                    "tags": doc.tags if doc else [],
+                    "score": float(hit.get("score") or 0.0),
+                }
+            )
+            if len(results) >= limit:
+                break
+
+    return {
+        "results": results,
+        "count": len(results),
+        "filters": {
+            "query": query,
+            "topic": domain_filter,
+            "tags": tags or [],
+            "search_mode": search_mode,
+            "limit": limit,
+        },
+    }
 
 
 async def _create_zettel(args: dict[str, Any], db: Session) -> dict[str, Any]:
@@ -651,6 +770,121 @@ async def _import_notes_from_filesystem(args: dict[str, Any], db: Session) -> di
     }
 
 
+_WIKI_LINK_RE = re.compile(r"\[\[([^\[\]\|\n]{1,200})(?:\|[^\[\]\n]*)?\]\]")
+
+
+def _extract_wiki_link_titles(markdown: str | None) -> list[str]:
+    if not markdown:
+        return []
+    seen: set[str] = set()
+    titles: list[str] = []
+    for match in _WIKI_LINK_RE.finditer(markdown):
+        title = (match.group(1) or "").strip()
+        if not title:
+            continue
+        key = title.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        titles.append(title)
+    return titles
+
+
+def _sync_note_wiki_links(
+    db: Session, *, note_id: str, content_markdown: str | None
+) -> int:
+    """Resolve [[X]] tokens and persist wiki_links rows. Returns count synced."""
+    titles = _extract_wiki_link_titles(content_markdown)
+    zk = ZettelkastenService(db)
+    target_ids = zk.resolve_wiki_link_titles(titles) if titles else []
+    zk.sync_wiki_links(
+        source_type="note",
+        source_id=note_id,
+        target_card_ids=target_ids,
+    )
+    return len(target_ids)
+
+
+async def _create_note(args: dict[str, Any], db: Session) -> dict[str, Any]:
+    title = (args.get("title") or "").strip()
+    if not title:
+        return {"error": "title is required"}
+
+    content_markdown = args.get("content_markdown") or ""
+    workspace_id = args.get("workspace_id") or None
+    parent_id = args.get("parent_id") or None
+    icon = args.get("icon") or None
+
+    notes = NotesService(db)
+    try:
+        row = notes.create_note(
+            workspace_id=workspace_id,
+            parent_id=parent_id,
+            title=title,
+            icon=icon,
+            content_markdown=content_markdown,
+        )
+    except (WorkspaceNotFoundError, NoteNotFoundError, ValueError) as exc:
+        return {"error": str(exc)}
+
+    try:
+        wiki_link_count = _sync_note_wiki_links(
+            db, note_id=str(row.id), content_markdown=content_markdown
+        )
+    except Exception:
+        logger.exception("create_note: wiki-link sync failed for %s", row.id)
+        wiki_link_count = 0
+
+    return {
+        "action": "created",
+        "note_id": str(row.id),
+        "title": row.title,
+        "workspace_id": str(row.workspace_id),
+        "wiki_link_count": wiki_link_count,
+    }
+
+
+async def _update_note(args: dict[str, Any], db: Session) -> dict[str, Any]:
+    note_id = args.get("note_id")
+    if not note_id:
+        return {"error": "note_id is required"}
+
+    notes = NotesService(db)
+    fields: dict[str, Any] = {}
+    if "title" in args and args["title"] is not None:
+        fields["title"] = args["title"]
+    if "content_markdown" in args and args["content_markdown"] is not None:
+        fields["content_markdown"] = args["content_markdown"]
+    if "icon" in args and args["icon"] is not None:
+        fields["icon"] = args["icon"]
+
+    try:
+        row = notes.update_note(note_id, **fields)
+    except NoteNotFoundError as exc:
+        return {"error": str(exc)}
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    # Re-sync wiki-links from the *updated* content. If content_markdown was
+    # not in the patch, fall back to the row's current value so we never
+    # silently desync the edge set.
+    content_for_sync = fields.get("content_markdown", row.content_markdown)
+    try:
+        wiki_link_count = _sync_note_wiki_links(
+            db, note_id=str(row.id), content_markdown=content_for_sync
+        )
+    except Exception:
+        logger.exception("update_note: wiki-link sync failed for %s", row.id)
+        wiki_link_count = 0
+
+    return {
+        "action": "updated",
+        "note_id": str(row.id),
+        "title": row.title,
+        "wiki_link_count": wiki_link_count,
+    }
+
+
 async def _web_search_searxng(args: dict[str, Any], db: Session) -> dict[str, Any]:
     """Search the web using local SearXNG metasearch."""
     import httpx
@@ -770,6 +1004,8 @@ _CORE_EXECUTORS: dict[str, Any] = {
     "update_zettel": _update_zettel,
     "list_recent_cards": _list_recent_cards,
     "import_notes_from_filesystem": _import_notes_from_filesystem,
+    "create_note": _create_note,
+    "update_note": _update_note,
     "web_search_searxng": _web_search_searxng,
     "firecrawl_search": _firecrawl_search,
     "firecrawl_scrape": _firecrawl_scrape,

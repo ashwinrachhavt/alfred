@@ -15,6 +15,7 @@ vi.mock("@/lib/api/routes", () => ({
   apiRoutes: {
     agent: {
       stream: "/api/agent/stream",
+      streamV2: "/api/agent/stream/v2",
       threads: "/api/agent/threads",
       threadById: (id: number) => `/api/agent/threads/${id}`,
     },
@@ -246,6 +247,45 @@ describe("cancelStream", () => {
 });
 
 describe("sendMessage", () => {
+  it("streams from AG-UI v2 and projects text into the current assistant message", async () => {
+    vi.mocked(streamSSE).mockImplementation(async (url, _body, onEvent) => {
+      expect(url).toBe("/api/agent/stream/v2");
+      onEvent("RUN_STARTED", { type: "RUN_STARTED", runId: "run-1", threadId: 123 });
+      onEvent("TEXT_MESSAGE_CONTENT", {
+        type: "TEXT_MESSAGE_CONTENT",
+        messageId: "msg-1",
+        delta: "Hello from v2",
+      });
+      onEvent("RUN_FINISHED", { type: "RUN_FINISHED", runId: "run-1" });
+    });
+
+    await useAgentStore.getState().sendMessage("Hi");
+
+    expect(useAgentStore.getState().activeThreadId).toBe(123);
+    const messages = selectOrderedMessages(useAgentStore.getState());
+    expect(messages[1].role).toBe("assistant");
+    expect(messages[1].content).toBe("Hello from v2");
+    expect(messages[1].parts).toEqual([
+      { type: "text", text: "Hello from v2", state: "done" },
+    ]);
+  });
+
+  it("falls back to the legacy stream when v2 is unavailable", async () => {
+    vi.mocked(streamSSE)
+      .mockRejectedValueOnce(new Error("Stream failed: 404"))
+      .mockImplementationOnce(async (_url, _body, onEvent) => {
+        onEvent("token", { content: "legacy answer" });
+        onEvent("done", {});
+      });
+
+    await useAgentStore.getState().sendMessage("Hi");
+
+    expect(vi.mocked(streamSSE).mock.calls[0][0]).toBe("/api/agent/stream/v2");
+    expect(vi.mocked(streamSSE).mock.calls[1][0]).toBe("/api/agent/stream");
+    const messages = selectOrderedMessages(useAgentStore.getState());
+    expect(messages[1].content).toBe("legacy answer");
+  });
+
   it("stores image parts and forwards attachments to the stream request", async () => {
     vi.mocked(streamSSE).mockImplementation(async (_url, _body, onEvent) => {
       onEvent("done", {});
