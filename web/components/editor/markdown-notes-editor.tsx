@@ -2,7 +2,6 @@
 
 import { type Editor, EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import Image from "@tiptap/extension-image";
-import Link from "@tiptap/extension-link";
 import StarterKit from "@tiptap/starter-kit";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
@@ -285,6 +284,14 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
           heading: {
             levels: [1, 2, 3],
           },
+          // StarterKit v3 ships Link; configure it here instead of registering
+          // a second Link extension (causes the "Duplicate extension names"
+          // warning at startup).
+          link: {
+            openOnClick: false,
+            autolink: true,
+            linkOnPaste: true,
+          },
         }),
         BlockId.configure({
           types: [
@@ -301,11 +308,6 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
             "image",
           ],
           disabled: Boolean(readOnly),
-        }),
-        Link.configure({
-          openOnClick: false,
-          autolink: true,
-          linkOnPaste: true,
         }),
         Image.configure({
           inline: false,
@@ -1148,6 +1150,16 @@ export const MarkdownNotesEditor = forwardRef<MarkdownNotesEditorHandle, Markdow
         const commands = slashCommandsRef.current;
         if (event.key === "Escape") {
           event.preventDefault();
+          // Delete the typed `/<query>` text so canceling the menu leaves the
+          // paragraph clean (matches Notion). Without this, the slash trigger
+          // characters persist as content and a follow-up `/` doesn't reopen
+          // the menu because the paragraph no longer starts with a single `/`.
+          const { $from } = editor.state.selection;
+          editor
+            .chain()
+            .focus()
+            .deleteRange({ from: $from.start(), to: $from.end() })
+            .run();
           slashQueryRef.current = null;
           slashActiveIndexRef.current = 0;
           setSlashQuery(null);
