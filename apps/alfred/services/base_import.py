@@ -74,6 +74,12 @@ class BaseImportService(ABC):
                 ingest = self.map_to_document(item)
             except Exception as exc:
                 logger.warning("%s: failed to map item %s: %s", self.source_name, iid, exc)
+                stats.add_error(
+                    source=self.source_name,
+                    operation="map",
+                    error=exc,
+                    item_id=iid,
+                )
                 stats.skipped += 1
                 continue
 
@@ -81,7 +87,12 @@ class BaseImportService(ABC):
                 self._upsert(ingest, iid, stats)
             except Exception as exc:
                 logger.exception("%s import failed for %s", self.source_name, iid)
-                stats.errors.append({"id": str(iid), "error": str(exc)})
+                stats.add_error(
+                    source=self.source_name,
+                    operation="upsert",
+                    error=exc,
+                    item_id=iid,
+                )
 
         return stats.to_dict()
 

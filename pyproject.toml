@@ -26,7 +26,6 @@ dependencies = [
     "beautifulsoup4>=4.12,<5",
     "celery>=5.4,<6",
     "redis>=5.0,<6",
-    "sqladmin>=0.22,<0.23",
     "google-auth>=2.34,<3",
     "google-auth-oauthlib>=1.2,<2",
     "google-api-python-client>=2.139,<3",
@@ -57,6 +56,7 @@ package = true
 
 [dependency-groups]
 dev = [
+    "mypy>=1.18,<2",
     "pytest>=8.3,<9",
     "pytest-asyncio>=0.23,<0.24",
     "ruff>=0.6,<0.7",
@@ -70,6 +70,13 @@ include = ["alfred*"]
 
 [tool.setuptools.package-dir]
 "" = "apps"
+
+[tool.mypy]
+python_version = "3.11"
+check_untyped_defs = true
+ignore_missing_imports = true
+no_implicit_optional = true
+warn_unused_configs = true
 
 [build-system]
 requires = ["setuptools>=68"]

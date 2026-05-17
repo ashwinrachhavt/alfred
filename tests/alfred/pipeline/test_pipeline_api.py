@@ -17,17 +17,16 @@ def client():
 
 
 def test_replay_endpoint(client: TestClient):
-    mock_celery = MagicMock()
-    mock_celery.send_task.return_value = MagicMock(id="task-123")
+    mock_dispatch_task = MagicMock(return_value=MagicMock(id="task-123"))
 
-    with patch("alfred.api.pipeline.routes.get_celery_client", return_value=mock_celery):
+    with patch("alfred.api.pipeline.routes.dispatch_task", mock_dispatch_task):
         resp = client.post("/api/pipeline/d1/replay", params={"force": True})
 
     assert resp.status_code == 202
     body = resp.json()
     assert body["doc_id"] == "d1"
     assert body["task_id"] == "task-123"
-    mock_celery.send_task.assert_called_once()
+    mock_dispatch_task.assert_called_once()
 
 
 def test_status_endpoint(client: TestClient):

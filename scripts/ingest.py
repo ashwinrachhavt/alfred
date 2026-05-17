@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 from hashlib import md5
 from pathlib import Path
 
@@ -16,12 +15,6 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
 from alfred.core.settings import settings
-
-# Ensure a reasonable default User-Agent to avoid warnings and improve acceptance
-os.environ.setdefault(
-    "USER_AGENT", "Mozilla/5.0 (compatible; AlfredBot/1.0; +https://github.com/alfred)"
-)
-
 
 ROOT = Path(__file__).resolve().parents[1]
 # Project must be installed (make install). No path bootstrap required.
@@ -153,9 +146,7 @@ def load_pdfs(directory: str) -> list[Document]:
     data_dir = Path(directory)
     if data_dir.is_dir():
         candidates.extend(
-            str((data_dir / name).resolve())
-            for name in os.listdir(data_dir)
-            if name.lower().endswith(".pdf")
+            str(path.resolve()) for path in data_dir.iterdir() if path.name.lower().endswith(".pdf")
         )
 
     # Always attempt to include the canonical resume when present.

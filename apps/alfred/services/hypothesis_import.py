@@ -203,7 +203,14 @@ def import_hypothesis(
 
         except Exception as exc:
             logger.exception("Hypothesis import failed for annotation %s", annotation_id)
-            stats.errors.append({"annotation_id": str(annotation_id), "error": str(exc)})
+            stats.add_error(
+                source="hypothesis",
+                operation="upsert",
+                error=exc,
+                item_id=str(annotation_id),
+                annotation_id=str(annotation_id),
+                uri=uri,
+            )
 
     return stats.to_dict()
 

@@ -175,7 +175,13 @@ def import_arxiv(
 
         except Exception as exc:
             logger.exception("ArXiv import failed for paper %s", entry_id)
-            stats.errors.append({"entry_id": str(entry_id), "error": str(exc)})
+            stats.add_error(
+                source="arxiv",
+                operation="upsert",
+                error=exc,
+                item_id=str(entry_id),
+                entry_id=str(entry_id),
+            )
 
     return stats.to_dict()
 

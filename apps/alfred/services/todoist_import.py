@@ -182,7 +182,13 @@ def import_todoist(
 
         except Exception as exc:
             logger.exception("Todoist import failed for project %s", pid)
-            stats.errors.append({"project_id": pid, "error": str(exc)})
+            stats.add_error(
+                source="todoist",
+                operation="upsert",
+                error=exc,
+                item_id=pid,
+                project_id=pid,
+            )
 
     return stats.to_dict()
 

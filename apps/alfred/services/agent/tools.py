@@ -16,11 +16,14 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
+from uuid import UUID
 
 from langchain_core.tools import BaseTool
 from sqlmodel import Session
 
 from alfred.core.settings import settings
+from alfred.models.doc_storage import DocumentRow
+from alfred.services.knowledge import KnowledgeService
 from alfred.services.notes_filesystem_service import (
     FilesystemPathNotAllowedError,
     FilesystemPathNotFoundError,
@@ -431,23 +434,73 @@ CORE_TOOL_SCHEMAS: list[dict[str, Any]] = [
 
 async def _search_kb(args: dict[str, Any], db: Session) -> dict[str, Any]:
     """Search documents via Qdrant and zettels via in-process cosine."""
-    query = args.get("query", "")
+    query = str(args.get("query", "") or "").strip()
+    if not query:
+        return {"results": [], "count": 0}
+
     domain_filter = args.get("domain_filter")
+    limit = int(args.get("limit") or 10)
 
     svc = ZettelkastenService(db)
-    cards = svc.list_cards(q=query, topic=domain_filter, limit=10)
+    card_hits = svc.semantic_search_cards(query, topic=domain_filter, limit=limit)
 
-    results = []
-    for card in cards:
+    results: list[dict[str, Any]] = []
+    for card, score in card_hits:
         results.append(
             {
+                "type": "zettel",
                 "zettel_id": card.id,
                 "title": card.title,
                 "summary": (card.summary or card.content or "")[:200],
                 "topic": card.topic,
                 "tags": card.tags or [],
+                "score": score,
             }
         )
+
+    seen_docs: set[str] = set()
+    try:
+        doc_hits = KnowledgeService().search(query, limit=limit)
+    except Exception as exc:  # pragma: no cover - external vector service availability
+        logger.info("Document KB search unavailable: %s", exc)
+        doc_hits = []
+
+    for hit in doc_hits:
+        payload = hit.get("payload") or hit
+        meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+        doc_id = payload.get("doc_id") or meta.get("doc_id") or hit.get("doc_id")
+        if not doc_id:
+            continue
+
+        doc_id_str = str(doc_id)
+        if doc_id_str in seen_docs:
+            continue
+        seen_docs.add(doc_id_str)
+
+        try:
+            doc = db.get(DocumentRow, UUID(doc_id_str))
+        except (TypeError, ValueError):
+            doc = None
+
+        summary = ""
+        if doc and isinstance(doc.summary, dict):
+            summary = str(doc.summary.get("short") or doc.summary.get("summary") or "")
+        if not summary:
+            summary = str(hit.get("text") or payload.get("text") or "")[:200]
+
+        results.append(
+            {
+                "type": "document",
+                "document_id": doc_id_str,
+                "title": doc.title if doc and doc.title else "Untitled document",
+                "summary": summary,
+                "source_url": doc.source_url if doc else None,
+                "tags": doc.tags if doc else [],
+                "score": float(hit.get("score") or 0.0),
+            }
+        )
+        if len(results) >= limit:
+            break
 
     return {"results": results, "count": len(results)}
 

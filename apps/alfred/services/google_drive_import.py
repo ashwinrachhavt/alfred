@@ -156,7 +156,13 @@ class GoogleDriveImporter:
                 # Export the Google Doc as plain text
                 text, export_error = await self.connector.export_doc(file_id, mime_type="text/plain")
                 if export_error:
-                    stats.errors.append({"file_id": file_id, "error": export_error})
+                    stats.add_error(
+                        source="google_drive",
+                        operation="export_doc",
+                        error=export_error,
+                        item_id=file_id,
+                        file_id=file_id,
+                    )
                     continue
 
                 cleaned_text = (text or "").strip()
@@ -208,7 +214,13 @@ class GoogleDriveImporter:
 
             except Exception as exc:
                 logger.exception("Google Drive import failed for %s", file_id)
-                stats.errors.append({"file_id": str(file_id), "error": str(exc)})
+                stats.add_error(
+                    source="google_drive",
+                    operation="upsert",
+                    error=exc,
+                    item_id=str(file_id),
+                    file_id=str(file_id),
+                )
 
         return stats.to_dict()
 

@@ -100,7 +100,7 @@ class ZettelCreationStream(SSEStreamOrchestrator):
                 gs = get_graph_service()
                 if gs is not None and card.id is not None:
                     ZettelGraphSync(session=session, graph=gs).upsert_card(card.id)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.debug("Neo4j upsert failed for streamed card %s", card.id, exc_info=True)
 
             return {"id": card.id, "title": card.title, "status": card.status}
@@ -214,7 +214,7 @@ class ZettelCreationStream(SSEStreamOrchestrator):
                             sync = ZettelGraphSync(session=session, graph=gs)
                             for lid in created_link_ids:
                                 sync.upsert_link(lid)
-                    except Exception:  # noqa: BLE001
+                    except Exception:
                         logger.debug(
                             "Neo4j link-upsert failed for streamed links %s",
                             created_link_ids,

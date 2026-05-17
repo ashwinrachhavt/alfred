@@ -1,4 +1,4 @@
-.PHONY: install test lint format run-api run-worker docker-up docker-down docker-reset
+.PHONY: install test lint format typecheck run-api run-worker docker-up docker-down docker-reset
 
 # Auto-load env vars from apps/alfred/.env into every recipe.
 # Filters out comments, blank lines, lines with <placeholders>, and inline comments.
@@ -10,6 +10,29 @@ UV ?= 1
 RUN =
 INSTALL =
 DEBUG ?= 0
+TYPECHECK_PATHS = \
+	apps/alfred/api/zettels/cache.py \
+	apps/alfred/api/zettels/graph_projection.py \
+	apps/alfred/schemas/imports.py \
+	apps/alfred/services/arxiv_import.py \
+	apps/alfred/services/base_import.py \
+	apps/alfred/services/github_import.py \
+	apps/alfred/services/google_drive_import.py \
+	apps/alfred/services/google_tasks_import.py \
+	apps/alfred/services/hypothesis_import.py \
+	apps/alfred/services/notion_import.py \
+	apps/alfred/services/pocket_import.py \
+	apps/alfred/services/rss_import.py \
+	apps/alfred/services/semantic_scholar_import.py \
+	apps/alfred/services/slack_import.py \
+	apps/alfred/services/todoist_import.py \
+	apps/alfred/services/zettel_decomposition_commit.py \
+	apps/alfred/services/zettel_graph_summary.py \
+	apps/alfred/services/zettel_links.py \
+	apps/alfred/services/zettel_wiki_links.py \
+	scripts/bytecode_artifacts.py \
+	scripts/check_no_bytecode.py \
+	scripts/cleanup_bytecode.py
 
 ifeq ($(UV),1)
 RUN = uv run
@@ -30,10 +53,13 @@ test:
 	$(RUN) pytest
 
 lint:
-	$(RUN) ruff check apps/alfred tests
+	$(RUN) ruff check apps/alfred tests scripts
 
 format:
-	$(RUN) ruff format apps/alfred tests
+	$(RUN) ruff format apps/alfred tests scripts
+
+typecheck:
+	$(RUN) mypy $(TYPECHECK_PATHS)
 
 .PHONY: check-no-bytecode cleanup-bytecode
 check-no-bytecode:

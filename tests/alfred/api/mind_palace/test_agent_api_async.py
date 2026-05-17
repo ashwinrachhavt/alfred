@@ -13,11 +13,11 @@ class DummyAsyncResult:
         self.id = task_id
 
 
-class DummyCeleryClient:
+class DummyTaskDispatcher:
     def __init__(self) -> None:
         self.sent: list[dict[str, Any]] = []
 
-    def send_task(self, name: str, *, kwargs: dict[str, Any], queue: str) -> DummyAsyncResult:
+    def __call__(self, name: str, *, kwargs: dict[str, Any], queue: str) -> DummyAsyncResult:
         self.sent.append({"name": name, "kwargs": kwargs, "queue": queue})
         return DummyAsyncResult(task_id="agent-task-1")
 
@@ -29,8 +29,8 @@ def _app() -> TestClient:
 
 
 def test_agent_query_async_enqueues(monkeypatch):
-    dummy = DummyCeleryClient()
-    monkeypatch.setattr("alfred.api.mind_palace_agent.routes.get_celery_client", lambda: dummy)
+    dummy = DummyTaskDispatcher()
+    monkeypatch.setattr("alfred.api.mind_palace_agent.routes.dispatch_task", dummy)
 
     client = _app()
     resp = client.post(

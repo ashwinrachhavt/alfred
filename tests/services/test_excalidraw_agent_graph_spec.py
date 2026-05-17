@@ -14,7 +14,7 @@ def test_build_diagram_prompt_includes_context_and_generic_diagram_guidance() ->
     assert "visualize the onboarding journey" in prompt
     assert 'Canvas: "Growth map"' in prompt
     assert "mind map" in prompt
-    assert "user flow / journey" in prompt
+    assert "user flows" in prompt
     assert '"nodes"' in prompt
     assert '"edges"' in prompt
 

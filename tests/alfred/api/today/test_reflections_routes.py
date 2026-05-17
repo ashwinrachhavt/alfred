@@ -4,7 +4,7 @@ Covers:
 - ``GET /reflections/{date}`` — 404 when missing, 200 + row when present
 - ``GET /reflections?start=..&end=..`` — range query, descending order
 - ``POST /pipeline/run`` — sync path persists a reflection, async path
-  dispatches to Celery via ``.delay(...)``
+  dispatches to Celery via ``dispatch_task(...)``
 
 Uses the same in-memory SQLite + ``StaticPool`` pattern as
 ``test_entries_routes.py`` so threadpool-backed FastAPI TestClient
@@ -205,9 +205,9 @@ def test_post_pipeline_run_sync_persists_reflection(client: TestClient, session:
 
 def test_post_pipeline_run_async_calls_delay(client: TestClient) -> None:
     with patch(
-        "alfred.tasks.today_pipeline.run_for_date.delay",
-    ) as mock_delay:
-        mock_delay.return_value.id = "celery-task-xyz"
+        "alfred.api.today.routes.dispatch_task",
+    ) as mock_dispatch_task:
+        mock_dispatch_task.return_value.id = "celery-task-xyz"
 
         resp = client.post(
             "/api/today/pipeline/run",
@@ -223,8 +223,11 @@ def test_post_pipeline_run_async_calls_delay(client: TestClient) -> None:
     assert body["dispatched"] is True
     assert body["task_id"] == "celery-task-xyz"
     assert body["result"] is None
-    mock_delay.assert_called_once_with(
-        entry_date="2026-04-29",
-        tz_name="America/Los_Angeles",
-        user_id=None,
+    mock_dispatch_task.assert_called_once_with(
+        "alfred.tasks.today_pipeline.run_for_date",
+        kwargs={
+            "entry_date": "2026-04-29",
+            "tz_name": "America/Los_Angeles",
+            "user_id": None,
+        },
     )

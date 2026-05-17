@@ -25,6 +25,8 @@ from langchain_core.tools import BaseTool
 
 from alfred.agents.tools.research_tools import (
     deep_research as deep_research_tool,
+)
+from alfred.agents.tools.research_tools import (
     scrape_url,
     search_kb_for_research,
     search_papers,

@@ -152,7 +152,12 @@ def import_pocket(
 
         except Exception as exc:
             logger.exception("Pocket import failed for item %s", item_id)
-            stats.errors.append({"item_id": str(item_id), "error": str(exc)})
+            stats.add_error(
+                source="pocket",
+                operation="upsert",
+                error=exc,
+                item_id=str(item_id),
+            )
 
     return stats.to_dict()
 

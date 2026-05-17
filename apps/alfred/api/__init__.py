@@ -56,6 +56,8 @@ def register_routes(app: FastAPI) -> None:
     from alfred.api.research import router as research_router
     from alfred.api.research_agents import (
         router as research_agents_router,
+    )
+    from alfred.api.research_agents import (
         run_router as research_run_router,
     )
     from alfred.api.rss import router as rss_router

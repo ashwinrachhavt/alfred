@@ -145,7 +145,13 @@ def import_rss(
 
             except Exception as exc:
                 logger.exception("RSS import failed for entry: %s", entry_link)
-                stats.errors.append({"entry_link": entry_link, "error": str(exc)})
+                stats.add_error(
+                    source="rss",
+                    operation="upsert",
+                    error=exc,
+                    item_id=entry_link,
+                    feed_title=feed_title,
+                )
 
         if limit is not None and total_processed >= limit:
             break

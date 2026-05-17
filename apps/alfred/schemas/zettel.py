@@ -204,8 +204,8 @@ class ZettelCardUpdate(BaseModel):
 class AIZettelGenerateRequest(BaseModel):
     """Request body for AI-powered zettel generation."""
 
-    prompt: str | None = Field(default=None, max_length=5000)
-    content: str | None = Field(default=None, max_length=20000)
+    prompt: str | None = Field(default=None, max_length=100_000)
+    content: str | None = Field(default=None, max_length=200_000)
     topic: str | None = Field(default=None, max_length=128)
     tags: list[str] | None = None
 

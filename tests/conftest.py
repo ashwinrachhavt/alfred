@@ -18,6 +18,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _APPS_DIR = _REPO_ROOT / "apps"
 if _APPS_DIR.exists():
     sys.path.insert(0, str(_APPS_DIR))
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.append(str(_REPO_ROOT))
 
 
 class NetworkBlockedError(RuntimeError):
