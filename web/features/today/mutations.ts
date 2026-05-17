@@ -5,6 +5,7 @@ import {
   createTodayEntry,
   deleteTodayEntry,
   runTodayPipeline,
+  synthesizeTodayThread,
   updateTodayEntry,
 } from "@/lib/api/today";
 import type {
@@ -15,6 +16,10 @@ import type {
   RunTodayPipelineBody,
   RunTodayPipelineResponse,
 } from "@/features/today/types";
+import type {
+  TodayThreadSynthesisRequest,
+  TodayThreadSynthesisResponse,
+} from "@/lib/api/today";
 
 const TODAY_ENTRIES_KEY = ["today", "entries"] as const;
 
@@ -150,6 +155,20 @@ export function useRunTodayPipeline() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["today", "reflection"] });
       void invalidateTodayEntries(queryClient);
+    },
+  });
+}
+
+export function useSynthesizeTodayThread() {
+  const queryClient = useQueryClient();
+
+  return useMutation<TodayThreadSynthesisResponse, Error, TodayThreadSynthesisRequest>({
+    mutationFn: (body: TodayThreadSynthesisRequest) => synthesizeTodayThread(body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["today", "briefing"] });
+      void queryClient.invalidateQueries({ queryKey: ["today", "calendar"] });
+      void queryClient.invalidateQueries({ queryKey: ["zettels"] });
+      void queryClient.invalidateQueries({ queryKey: ["zettel-graph-extended"] });
     },
   });
 }

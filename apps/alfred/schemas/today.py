@@ -200,6 +200,22 @@ class DailyReflectionResponse(BaseModel):
         )
 
 
+class TodayThreadSynthesisRequest(BaseModel):
+    """Payload for creating a synthesis card from one Today thread."""
+
+    entry_date: date
+    thread: str = Field(min_length=1, max_length=128)
+    tz: str = "UTC"
+
+
+class TodayThreadSynthesisResponse(BaseModel):
+    card_id: int
+    title: str
+    source_card_ids: list[int]
+    links_created: int
+    created: bool
+
+
 class PipelineRunRequest(BaseModel):
     """Payload for ``POST /api/today/pipeline/run`` manual trigger."""
 

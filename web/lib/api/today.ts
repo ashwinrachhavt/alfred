@@ -107,6 +107,20 @@ export type TodayCalendarResponse = {
   days: TodayCalendarDay[];
 };
 
+export type TodayThreadSynthesisRequest = {
+  entry_date: string;
+  thread: string;
+  tz?: string;
+};
+
+export type TodayThreadSynthesisResponse = {
+  card_id: number;
+  title: string;
+  source_card_ids: number[];
+  links_created: number;
+  created: boolean;
+};
+
 type TodayBriefingParams = {
   date?: string;
   tz?: string;
@@ -142,6 +156,15 @@ export async function getTodayCalendar(
   const query = buildQuery(params);
   const url = query ? `${apiRoutes.today.calendar}?${query}` : apiRoutes.today.calendar;
   return apiFetch<TodayCalendarResponse>(url, { cache: "no-store" });
+}
+
+export async function synthesizeTodayThread(
+  body: TodayThreadSynthesisRequest,
+): Promise<TodayThreadSynthesisResponse> {
+  return apiPostJson<TodayThreadSynthesisResponse, TodayThreadSynthesisRequest>(
+    apiRoutes.today.synthesizeThread,
+    body,
+  );
 }
 
 // ---------------------------------------------------------------------------

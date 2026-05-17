@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 
 import { addDays, format, isSameMonth, isToday, isYesterday, parseISO, startOfDay } from "date-fns";
 import {
@@ -62,6 +63,7 @@ import {
   type TodayInsightTone,
   type TodayThread,
 } from "@/features/today/utils";
+import { useSynthesizeTodayThread } from "@/features/today/mutations";
 import { toIsoDay, useTodayBriefing, useTodayCalendar } from "@/features/today/queries";
 import { cn } from "@/lib/utils";
 
@@ -281,7 +283,17 @@ const ActionCard = memo(function ActionCard({ action }: { action: TodayAction })
   );
 });
 
-const ThreadRow = memo(function ThreadRow({ thread }: { thread: TodayThread }) {
+const ThreadRow = memo(function ThreadRow({
+  thread,
+  isSynthesizing,
+  onSynthesize,
+}: {
+  thread: TodayThread;
+  isSynthesizing: boolean;
+  onSynthesize: (thread: TodayThread) => void;
+}) {
+  const canSynthesize = thread.status === "needs synthesis" && thread.cards > 0;
+
   return (
     <div className="rounded-lg border px-4 py-3">
       <div className="flex items-start justify-between gap-4">
@@ -292,12 +304,25 @@ const ThreadRow = memo(function ThreadRow({ thread }: { thread: TodayThread }) {
             {formatCountLabel(thread.reviews, "review")}
           </p>
         </div>
-        <Badge
-          variant="outline"
-          className="rounded-sm font-mono text-[10px] tracking-[0.1em] uppercase"
-        >
-          {thread.status}
-        </Badge>
+        <div className="flex shrink-0 items-center gap-2">
+          {canSynthesize && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 font-mono text-[10px] tracking-[0.1em] uppercase"
+              disabled={isSynthesizing}
+              onClick={() => onSynthesize(thread)}
+            >
+              {isSynthesizing ? "Synthesizing" : "Synthesize"}
+            </Button>
+          )}
+          <Badge
+            variant="outline"
+            className="rounded-sm font-mono text-[10px] tracking-[0.1em] uppercase"
+          >
+            {thread.status}
+          </Badge>
+        </div>
       </div>
     </div>
   );
@@ -728,6 +753,8 @@ function ConnectionDebtPanel({
 
 export function TodayDashboard() {
   const today = startOfDay(new Date());
+  const router = useRouter();
+  const synthesizeThread = useSynthesizeTodayThread();
   const [selectedDate, setSelectedDate] = useState(today);
   const [visibleMonth, setVisibleMonth] = useState(today);
   const [selectedKinds, setSelectedKinds] = useState<TodayAuditEventKind[]>(TODAY_AUDIT_KINDS);
@@ -747,6 +774,24 @@ export function TodayDashboard() {
   const handleResetKinds = useCallback(() => {
     setSelectedKinds(TODAY_AUDIT_KINDS);
   }, []);
+
+  const handleSynthesizeThread = useCallback(
+    (thread: TodayThread) => {
+      synthesizeThread.mutate(
+        {
+          entry_date: toIsoDay(selectedDate),
+          thread: thread.name,
+          tz: timeZone,
+        },
+        {
+          onSuccess: (result) => {
+            router.push(`/knowledge/${result.card_id}`);
+          },
+        },
+      );
+    },
+    [router, selectedDate, synthesizeThread, timeZone],
+  );
 
   const goToPreviousDay = useCallback(() => {
     selectDate(addDays(selectedDate, -1));
@@ -1023,7 +1068,17 @@ export function TodayDashboard() {
                     />
                     <div className="mt-4 space-y-2">
                       {threads.length > 0 ? (
-                        threads.map((thread) => <ThreadRow key={thread.id} thread={thread} />)
+                        threads.map((thread) => (
+                          <ThreadRow
+                            key={thread.id}
+                            thread={thread}
+                            isSynthesizing={
+                              synthesizeThread.isPending &&
+                              synthesizeThread.variables?.thread === thread.name
+                            }
+                            onSynthesize={handleSynthesizeThread}
+                          />
+                        ))
                       ) : (
                         <EmptyPanel
                           title="No thread signal yet"
