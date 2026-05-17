@@ -103,6 +103,20 @@ export function EntryFilterBar() {
     writeFilters({ ...filters, todosOnly: !filters.todosOnly });
   }, [filters, writeFilters]);
 
+  const onToggleTaskPriority = useCallback(
+    (value: string) => {
+      writeFilters({ ...filters, taskPriority: toggleMultiValue(filters.taskPriority, value) });
+    },
+    [filters, writeFilters],
+  );
+
+  const onSetTaskSourceKind = useCallback(
+    (value: string | null) => {
+      writeFilters({ ...filters, taskSourceKind: value });
+    },
+    [filters, writeFilters],
+  );
+
   const onSearchChange = useCallback(
     (raw: string) => {
       setSearchDraft(raw);
@@ -162,6 +176,39 @@ export function EntryFilterBar() {
               className={cn(CHIP_BASE, active ? CHIP_ON : CHIP_OFF)}
             >
               {opt.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Task-backed todo filters */}
+      <div className="flex items-center gap-1.5">
+        <span className={GROUP_LABEL}>Task</span>
+        {(["HIGH", "MEDIUM", "LOW"] as const).map((value) => {
+          const active = filters.taskPriority.includes(value);
+          return (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onToggleTaskPriority(value)}
+              aria-pressed={active}
+              className={cn(CHIP_BASE, active ? CHIP_ON : CHIP_OFF)}
+            >
+              {value}
+            </button>
+          );
+        })}
+        {(["note", "document", "capture", "zettel"] as const).map((value) => {
+          const active = filters.taskSourceKind === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onSetTaskSourceKind(active ? null : value)}
+              aria-pressed={active}
+              className={cn(CHIP_BASE, active ? CHIP_ON : CHIP_OFF)}
+            >
+              {value}
             </button>
           );
         })}

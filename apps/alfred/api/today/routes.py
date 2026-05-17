@@ -25,6 +25,7 @@ from alfred.schemas.today import (
     TodayThreadSynthesisRequest,
     TodayThreadSynthesisResponse,
 )
+from alfred.services.tasks import TaskService
 from alfred.services.today.entry_service import (
     ARTIFACT_KIND,
     VALID_KINDS,
@@ -224,6 +225,9 @@ def list_entries(
     status_filter: list[str] | None = Query(default=None, alias="status"),
     tag: list[str] | None = Query(default=None),
     q: str | None = Query(default=None),
+    task_priority: list[str] | None = Query(default=None),
+    task_project_id: int | None = Query(default=None),
+    task_source_kind: str | None = Query(default=None),
     include_artifacts: bool = Query(default=True),
     limit: int = Query(default=500, ge=1, le=2000),
     cursor: str | None = Query(default=None),
@@ -244,6 +248,9 @@ def list_entries(
             statuses=status_filter,
             tags=tag,
             q=q,
+            task_priorities=task_priority,
+            task_project_id=task_project_id,
+            task_source_kind=task_source_kind,
             include_artifacts=include_artifacts,
             limit=limit,
             cursor=cursor,
@@ -276,6 +283,7 @@ def create_entry(
     _validate_status_for_write(payload.status)
 
     service = EntryService(session=session)
+    original_meta = dict(payload.meta or {})
     try:
         row = service.create_entry(
             entry_date=payload.entry_date,
@@ -288,6 +296,22 @@ def create_entry(
             meta=payload.meta,
             user_id=payload.user_id,
         )
+        if payload.kind == "todo" and row.id is not None:
+            task = TaskService(session).create_task(
+                user_id=payload.user_id or "dev-user",
+                title=row.title,
+                description_md=row.body_md,
+                priority={0: "LOW", 1: "MEDIUM", 2: "HIGH"}.get(row.priority, "MEDIUM"),
+                status={"open": "TODO", "doing": "IN_PROGRESS", "done": "DONE", "skipped": "ARCHIVED"}.get(row.status, "TODO"),
+                tags=list(row.tags or []),
+                due_date=row.entry_date,
+                legacy_today_entry_id=row.id,
+                meta={"created_from_today_entry": True},
+            )
+            row.meta = {**dict(row.meta or {}), "task_id": task.id, "ref_kind": "task"}
+            session.add(row)
+            session.commit()
+            session.refresh(row)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -303,7 +327,7 @@ def create_entry(
         status=row.status,
         priority=row.priority,
         tags=list(row.tags or []),
-        meta=dict(row.meta or {}),
+        meta=original_meta if payload.kind == "todo" else dict(row.meta or {}),
         created_at=row.created_at.isoformat() if row.created_at else None,
         updated_at=row.updated_at.isoformat() if row.updated_at else None,
         is_synthetic=False,

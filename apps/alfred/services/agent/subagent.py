@@ -33,29 +33,42 @@ import json
 import logging
 import re
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 from openai import APIError, APITimeoutError, AsyncOpenAI, RateLimitError
 from sqlmodel import Session
 
+from alfred.core.database import SessionLocal
 from alfred.core.llm_factory import get_async_openai_client
 from alfred.core.openai_compat import add_temperature_if_supported, uses_max_completion_tokens
 from alfred.core.settings import DEFAULT_OPENAI_MODEL, settings
 from alfred.services.agent.agent_types import AGENT_TYPES, AgentType
-from alfred.services.agent.tools import (
-    CORE_TOOL_SCHEMAS,
-    _lc_tools_cache,
-    _load_langchain_tools,
-    execute_tool,
-)
+from alfred.services.agent.harness import AgentEventType, AgentRunContext, AgentRunTrace
+from alfred.services.agent.tool_runtime import execute_tool_with_harness
 
 logger = logging.getLogger(__name__)
+
+
+async def execute_tool(tool_name: str, args: dict[str, Any], db: Session) -> dict[str, Any]:
+    """Lazy compatibility wrapper for tests and callers that patch this module."""
+
+    from alfred.services.agent.tools import execute_tool as _execute_tool
+
+    return await _execute_tool(tool_name, args, db)
+
 
 # HTML tag stripping for tool results
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 def _get_tool_schemas_for_type(agent_type: AgentType) -> list[dict[str, Any]]:
     """Get OpenAI function-calling schemas for a specific agent type's tools."""
+    from alfred.services.agent.tools import (
+        CORE_TOOL_SCHEMAS,
+        _lc_tools_cache,
+        _load_langchain_tools,
+    )
+
     _load_langchain_tools()
 
     schemas = []
@@ -92,9 +105,16 @@ class SubAgentRunner:
     - Returns a summary string when done
     """
 
-    def __init__(self, db: Session, *, model: str | None = None) -> None:
+    def __init__(
+        self,
+        db: Session,
+        *,
+        model: str | None = None,
+        tool_session_factory: Callable[[], Session] | None = None,
+    ) -> None:
         self.db = db
         self.model = model or settings.llm_model or DEFAULT_OPENAI_MODEL
+        self._tool_session_factory = tool_session_factory or SessionLocal
         self._client: AsyncOpenAI | None = None
 
     @property
@@ -123,6 +143,19 @@ class SubAgentRunner:
         agent_type = AGENT_TYPES.get(agent_type_name)
         if not agent_type:
             return f"Unknown agent type: {agent_type_name}. Available: {', '.join(AGENT_TYPES.keys())}"
+
+        trace = AgentRunTrace(
+            AgentRunContext(
+                agent_name=agent_type.name,
+                model=self.model,
+                prompt_version=f"{agent_type.name}:v1",
+            )
+        )
+        trace.emit(
+            AgentEventType.AGENT_STARTED,
+            delegated=True,
+            max_iterations=agent_type.max_iterations,
+        )
 
         tool_schemas = _get_tool_schemas_for_type(agent_type)
         if not tool_schemas:
@@ -154,7 +187,17 @@ class SubAgentRunner:
         for _round in range(agent_type.max_iterations):
             rounds_used = _round + 1
             try:
+                trace.emit(
+                    AgentEventType.MODEL_STARTED,
+                    round=_round + 1,
+                    message_count=len(messages),
+                )
                 response = await self._call_model(messages, tool_schemas)
+                trace.emit(
+                    AgentEventType.MODEL_COMPLETED,
+                    round=_round + 1,
+                    tool_call_count=len(response.get("tool_calls", [])),
+                )
             except (APITimeoutError, APIError, RateLimitError) as exc:
                 logger.error("Sub-agent [%s] API error: %s", agent_type.name, exc)
                 return f"Sub-agent error: {exc!s}"
@@ -187,18 +230,23 @@ class SubAgentRunner:
             }
             messages.append(assistant_msg)
 
-            # Execute tools and inject results
-            for tc in tool_calls:
-                try:
-                    result = await asyncio.wait_for(
-                        execute_tool(tc["name"], tc["args"], self.db),
-                        timeout=60,
-                    )
-                except TimeoutError:
-                    result = {"error": f"Tool {tc['name']} timed out"}
-                except Exception as exc:
-                    result = {"error": f"Tool {tc['name']} failed: {exc!s}"}
+            # Execute all tool calls from this model turn concurrently. Each
+            # call gets an isolated DB session because SQLAlchemy sessions are
+            # not safe to share across concurrent tasks.
+            completed_results: dict[str, dict[str, Any]] = {}
+            pending_tool_calls = [
+                asyncio.create_task(self._run_tool_call(tc, trace=trace)) for tc in tool_calls
+            ]
+            for pending_tool_call in asyncio.as_completed(pending_tool_calls):
+                tc, result = await pending_tool_call
+                completed_results[tc["call_id"]] = result
 
+            # Preserve model tool-call order in the transcript sent back to OpenAI.
+            for tc in tool_calls:
+                result = completed_results.get(
+                    tc["call_id"],
+                    {"error": f"Tool {tc['name']} did not return a result"},
+                )
                 result_str = json.dumps(result)
                 result_str = _HTML_TAG_RE.sub("", result_str)
                 messages.append(
@@ -221,7 +269,19 @@ class SubAgentRunner:
                 }
             )
             try:
+                trace.emit(
+                    AgentEventType.MODEL_STARTED,
+                    round=rounds_used + 1,
+                    message_count=len(messages),
+                    finalization=True,
+                )
                 final_response = await self._call_model(messages, None)
+                trace.emit(
+                    AgentEventType.MODEL_COMPLETED,
+                    round=rounds_used + 1,
+                    tool_call_count=0,
+                    finalization=True,
+                )
             except (APITimeoutError, APIError, RateLimitError) as exc:
                 logger.error("Sub-agent [%s] finalization API error: %s", agent_type.name, exc)
                 if final_content:
@@ -231,14 +291,59 @@ class SubAgentRunner:
             if final_text:
                 final_content = final_text
 
+        trace.emit(
+            AgentEventType.AGENT_COMPLETED,
+            rounds_used=rounds_used,
+            response_chars=len(final_content),
+        )
         logger.info(
-            "Sub-agent [%s] completed in %d rounds, response: %d chars",
+            "Sub-agent [%s] completed in %d rounds, response: %d chars, run_id=%s",
             agent_type.name,
             rounds_used,
             len(final_content),
+            trace.context.run_id,
         )
 
         return final_content or "Sub-agent completed but produced no response."
+
+    async def _run_tool_call(
+        self,
+        tc: dict[str, Any],
+        *,
+        trace: AgentRunTrace | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Execute one tool call with timeout, isolation, and event-loop protection."""
+        tool_name = tc["name"]
+        tool_args = tc["args"]
+
+        def _execute_with_isolated_session() -> dict[str, Any]:
+            tool_db = self._tool_session_factory()
+            try:
+                return asyncio.run(
+                    execute_tool_with_harness(
+                        tool_name,
+                        tool_args,
+                        tool_db,
+                        trace=trace,
+                        executor=execute_tool,
+                    )
+                )
+            finally:
+                close = getattr(tool_db, "close", None)
+                if close:
+                    close()
+
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(_execute_with_isolated_session),
+                timeout=60,
+            )
+        except TimeoutError:
+            result = {"error": f"Tool {tool_name} timed out"}
+        except Exception as exc:
+            result = {"error": f"Tool {tool_name} failed: {exc!s}"}
+
+        return tc, result
 
     async def _call_model(
         self,
@@ -257,6 +362,7 @@ class SubAgentRunner:
         }
         if tools:
             kwargs["tools"] = tools
+            kwargs["parallel_tool_calls"] = True
 
         if uses_max_completion_tokens(self.model):
             kwargs["max_completion_tokens"] = 4096

@@ -52,6 +52,35 @@ export type TodayThread = {
   status: string;
 };
 
+export type TodayKnowledgeLoopStage = {
+  id: "capture" | "distill" | "connect" | "review" | "express";
+  label: string;
+  value: string;
+  target: string;
+  xp: number;
+  progress: number;
+  status: "complete" | "active" | "blocked";
+  body: string;
+};
+
+export type TodayQuest = {
+  id: string;
+  title: string;
+  body: string;
+  reward: string;
+  href: string;
+  tone: TodayInsightTone;
+};
+
+export type TodayGamificationSummary = {
+  xp: number;
+  level: number;
+  levelProgress: number;
+  title: string;
+  body: string;
+  momentumLabel: string;
+};
+
 function plural(value: number, noun: string): string {
   return `${value} ${noun}${value === 1 ? "" : "s"}`;
 }
@@ -70,6 +99,17 @@ function makeThreadId(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+function clampProgress(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(Math.max(Math.round(value), 0), 100);
+}
+
+function getLoopStageStatus(progress: number): TodayKnowledgeLoopStage["status"] {
+  if (progress >= 100) return "complete";
+  if (progress > 0) return "active";
+  return "blocked";
 }
 
 export function getTodayConnectionDebt(briefing: TodayBriefingResponse): number {
@@ -270,6 +310,177 @@ export function buildTodayInsightCards(briefing: TodayBriefingResponse): TodayIn
       tone: briefing.stats.total_notes_touched > 0 ? "accent" : "neutral",
     },
   ];
+}
+
+export function buildTodayGamificationSummary(
+  briefing: TodayBriefingResponse,
+): TodayGamificationSummary {
+  const reviewDebt = getTodayReviewDebt(briefing);
+  const connectionDebt = getTodayConnectionDebt(briefing);
+  const xp =
+    briefing.stats.total_captures * 5 +
+    briefing.stats.total_cards_created * 25 +
+    briefing.stats.total_connections * 20 +
+    briefing.stats.total_reviews_completed * 15 +
+    briefing.stats.total_notes_touched * 50;
+  const level = Math.floor(xp / 100) + 1;
+  const levelProgress = xp % 100;
+  const isBalanced = reviewDebt === 0 && connectionDebt === 0 && briefing.stats.total_events > 0;
+
+  return {
+    xp,
+    level,
+    levelProgress,
+    title: `Level ${level} knowledge loop`,
+    body: isBalanced
+      ? "Capture, distillation, connection, and review are moving together."
+      : connectionDebt > 0
+        ? "The fastest level-up is connecting new cards into the graph."
+        : reviewDebt > 0
+          ? "The fastest level-up is clearing the spaced-review queue."
+          : "Start with one high-signal capture, then turn it into your own words.",
+    momentumLabel: isBalanced ? "balanced" : briefing.stats.total_events > 0 ? "uneven" : "quiet",
+  };
+}
+
+export function buildTodayKnowledgeLoopStages(
+  briefing: TodayBriefingResponse,
+): TodayKnowledgeLoopStage[] {
+  const captures = briefing.stats.total_captures;
+  const cards = briefing.stats.total_cards_created;
+  const connections = briefing.stats.total_connections;
+  const reviewsDue = briefing.stats.total_reviews_due;
+  const reviewsCompleted = briefing.stats.total_reviews_completed;
+  const notesTouched = briefing.stats.total_notes_touched;
+
+  const captureProgress = captures > 0 ? 100 : 0;
+  const distillProgress = captures > 0 ? clampProgress((cards / captures) * 100) : cards > 0 ? 100 : 0;
+  const connectProgress = cards > 0 ? clampProgress((connections / cards) * 100) : 0;
+  const reviewProgress = reviewsDue > 0 ? clampProgress((reviewsCompleted / reviewsDue) * 100) : 100;
+  const expressProgress = notesTouched > 0 ? 100 : 0;
+
+  return [
+    {
+      id: "capture",
+      label: "Capture",
+      value: String(captures),
+      target: "source material",
+      xp: captures * 5,
+      progress: captureProgress,
+      status: getLoopStageStatus(captureProgress),
+      body: captures > 0 ? "Raw material entered the system." : "No new source material yet.",
+    },
+    {
+      id: "distill",
+      label: "Distill",
+      value: String(cards),
+      target: "cards from captures",
+      xp: cards * 25,
+      progress: distillProgress,
+      status: getLoopStageStatus(distillProgress),
+      body: cards > 0 ? "Ideas were rewritten into durable cards." : "Turn a source into your own words.",
+    },
+    {
+      id: "connect",
+      label: "Connect",
+      value: String(connections),
+      target: "links from cards",
+      xp: connections * 20,
+      progress: connectProgress,
+      status: getLoopStageStatus(connectProgress),
+      body:
+        connections > 0
+          ? "New cards gained graph placement."
+          : "Create at least one non-obvious link.",
+    },
+    {
+      id: "review",
+      label: "Review",
+      value: `${reviewsCompleted}/${reviewsDue}`,
+      target: "due cards cleared",
+      xp: reviewsCompleted * 15,
+      progress: reviewProgress,
+      status: getLoopStageStatus(reviewProgress),
+      body:
+        reviewsDue > 0
+          ? `${plural(Math.max(reviewsDue - reviewsCompleted, 0), "review")} remain.`
+          : "No spaced reviews were due.",
+    },
+    {
+      id: "express",
+      label: "Express",
+      value: String(notesTouched),
+      target: "notes touched",
+      xp: notesTouched * 50,
+      progress: expressProgress,
+      status: getLoopStageStatus(expressProgress),
+      body: notesTouched > 0 ? "Knowledge moved toward output." : "Use a thread in a note or draft.",
+    },
+  ];
+}
+
+export function buildTodayQuests(briefing: TodayBriefingResponse): TodayQuest[] {
+  const quests: TodayQuest[] = [];
+  const reviewDebt = getTodayReviewDebt(briefing);
+  const connectionDebt = getTodayConnectionDebt(briefing);
+  const strongestThread = buildTodayThreads(briefing, 1)[0];
+
+  if (briefing.stats.total_captures > briefing.stats.total_cards_created) {
+    quests.push({
+      id: "blind-recall",
+      title: "Run blind recall on one capture",
+      body: "Close the source and write what you remember before rereading it.",
+      reward: "+30 recall XP",
+      href: `/today?view=table&date=${briefing.date}`,
+      tone: "accent",
+    });
+  }
+
+  if (connectionDebt > 0) {
+    quests.push({
+      id: "connection-pass",
+      title: `Connect ${plural(connectionDebt, "unplaced card")}`,
+      body: "Give new cards at least one meaningful link before they become orphan knowledge.",
+      reward: "+20 XP per link",
+      href: "/knowledge",
+      tone: "warning",
+    });
+  }
+
+  if (reviewDebt > 0) {
+    quests.push({
+      id: "review-sprint",
+      title: `Clear ${plural(reviewDebt, "due review")}`,
+      body: "Protect retention before adding more input to the system.",
+      reward: "+15 XP per review",
+      href: `/today?view=table&date=${briefing.date}`,
+      tone: "warning",
+    });
+  }
+
+  if (strongestThread) {
+    quests.push({
+      id: "thread-synthesis",
+      title: `Synthesize ${strongestThread.name}`,
+      body: "Turn the strongest thread into a reusable explanation, memo, or next note.",
+      reward: "+50 expression XP",
+      href: "/knowledge",
+      tone: "accent",
+    });
+  }
+
+  if (quests.length === 0) {
+    quests.push({
+      id: "seed-loop",
+      title: "Complete one full knowledge loop",
+      body: "Capture one source, distill one claim, connect it, then schedule review.",
+      reward: "+95 loop XP",
+      href: `/today?view=table&date=${briefing.date}`,
+      tone: "neutral",
+    });
+  }
+
+  return quests.slice(0, 3);
 }
 
 export function buildTodayNextActions(briefing: TodayBriefingResponse): TodayAction[] {

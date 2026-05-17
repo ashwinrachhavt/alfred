@@ -528,8 +528,9 @@ function EntryRow({
   onDelete: (entry: DailyEntryItem) => void;
   onDuplicate: (entry: DailyEntryItem) => void;
 }) {
-  const isArtifact = entry.is_synthetic || entry.kind === "artifact_ref";
-  const prefix = artifactPrefix(entry);
+  const isTaskBacked = entry.kind === "todo" && entry.meta?.ref_kind === "task";
+  const isArtifact = (entry.is_synthetic || entry.kind === "artifact_ref") && !isTaskBacked;
+  const prefix = isTaskBacked ? "[TASK]" : artifactPrefix(entry);
   const href = artifactHref(entry);
 
   const rowKey = useCallback(
@@ -587,7 +588,7 @@ function EntryRow({
       {/* Kind */}
       <td className="py-2 px-2 align-middle">
         <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--alfred-text-tertiary)]">
-          {entry.kind === "artifact_ref" ? "REF" : entry.kind}
+          {isTaskBacked ? "TASK" : entry.kind === "artifact_ref" ? "REF" : entry.kind}
         </span>
       </td>
 
@@ -673,7 +674,8 @@ function StatusToggle({
   entry: DailyEntryItem;
   onToggle: (entry: DailyEntryItem, e?: MouseEvent) => void;
 }) {
-  const isArtifact = entry.is_synthetic || entry.kind === "artifact_ref";
+  const isTaskBacked = entry.kind === "todo" && entry.meta?.ref_kind === "task";
+  const isArtifact = (entry.is_synthetic || entry.kind === "artifact_ref") && !isTaskBacked;
   if (isArtifact) {
     const id = String(entry.id);
     const Icon = id.startsWith("zettel:")

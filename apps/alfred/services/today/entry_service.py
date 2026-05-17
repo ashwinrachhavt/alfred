@@ -22,6 +22,7 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from alfred.models.doc_storage import DocumentRow
+from alfred.models.tasks import TaskRow, TaskStatus
 from alfred.models.today import DailyEntryRow
 from alfred.models.zettel import ZettelCard, ZettelReview
 
@@ -240,6 +241,9 @@ class EntryService:
         statuses: list[str] | None = None,
         tags: list[str] | None = None,
         q: str | None = None,
+        task_priorities: list[str] | None = None,
+        task_project_id: int | None = None,
+        task_source_kind: str | None = None,
         include_artifacts: bool = True,
         user_id: str | None = None,
         limit: int = 500,
@@ -276,8 +280,29 @@ class EntryService:
         if want_artifacts:
             artifact_items = self._synthesize_artifacts(start=start, end=end, tz=tz)
 
+        task_items = self._fetch_task_items(
+            start=start,
+            end=end,
+            tz=tz,
+            statuses=statuses,
+            tags=tags,
+            q=q,
+            user_id=user_id,
+            kinds=kinds,
+            priorities=task_priorities,
+            project_id=task_project_id,
+            source_kind=task_source_kind,
+        )
         real_items = [_serialize_real(r) for r in page_rows]
-        merged = real_items + artifact_items
+        legacy_task_refs = {
+            int(item["meta"]["legacy_today_entry_id"])
+            for item in task_items
+            if isinstance(item.get("meta"), dict) and item["meta"].get("legacy_today_entry_id") is not None
+        }
+        real_items = [
+            item for item in real_items if not (item["kind"] == "todo" and item.get("id") in legacy_task_refs)
+        ]
+        merged = real_items + task_items + artifact_items
         merged.sort(key=_sort_key, reverse=True)
 
         next_cursor: str | None = None
@@ -295,7 +320,7 @@ class EntryService:
             q=q,
             user_id=user_id,
             include_artifacts=want_artifacts,
-            synthetic_count=len(artifact_items),
+            synthetic_count=len(artifact_items) + len(task_items),
         )
 
         return EntriesPage(entries=merged, next_cursor=next_cursor, total=total)
@@ -303,6 +328,48 @@ class EntryService:
     # -----------------------------------------------------------------
     # Helpers
     # -----------------------------------------------------------------
+    def _fetch_task_items(
+        self,
+        *,
+        start: date,
+        end: date,
+        tz: ZoneInfo,
+        statuses: list[str] | None,
+        tags: list[str] | None,
+        q: str | None,
+        user_id: str | None,
+        kinds: list[str] | None,
+        priorities: list[str] | None,
+        project_id: int | None,
+        source_kind: str | None,
+    ) -> list[dict[str, Any]]:
+        if kinds and "todo" not in kinds:
+            return []
+        start_utc, end_utc = _range_window(start, end, tz)
+        stmt = select(TaskRow).where(
+            (TaskRow.due_date >= start) & (TaskRow.due_date <= end)
+            | ((TaskRow.due_date == None) & (TaskRow.due_at >= start_utc) & (TaskRow.due_at < end_utc))  # noqa: E711
+        )
+        if user_id is not None:
+            stmt = stmt.where(TaskRow.user_id == user_id)
+        if statuses:
+            task_statuses = [_daily_status_to_task_status(value) for value in statuses]
+            stmt = stmt.where(TaskRow.status.in_(task_statuses))
+        if priorities:
+            stmt = stmt.where(TaskRow.priority.in_([value.upper() for value in priorities]))
+        if project_id is not None:
+            stmt = stmt.where(TaskRow.project_id == project_id)
+        if source_kind:
+            stmt = stmt.where(TaskRow.source_kind == source_kind)
+        if q:
+            like = f"%{q.strip().lower()}%"
+            stmt = stmt.where(func.lower(TaskRow.title).like(like))
+        rows = list(self.session.exec(stmt.order_by(TaskRow.updated_at.desc()).limit(_MAX_ARTIFACT_ROWS_PER_SOURCE)))
+        if tags:
+            wanted = set(tags)
+            rows = [row for row in rows if wanted.issubset(set(row.tags or []))]
+        return [_serialize_task(row, tz) for row in rows]
+
     def _fetch_real_rows(
         self,
         *,
@@ -549,6 +616,54 @@ class EntryService:
 # ---------------------------------------------------------------------------
 # Serialization helpers
 # ---------------------------------------------------------------------------
+
+
+def _daily_status_to_task_status(value: str) -> str:
+    if value == "done":
+        return TaskStatus.DONE.value
+    if value == "doing":
+        return TaskStatus.IN_PROGRESS.value
+    if value == "skipped":
+        return TaskStatus.ARCHIVED.value
+    return TaskStatus.TODO.value
+
+
+def _task_status_to_daily_status(value: str) -> str:
+    if value == TaskStatus.DONE.value:
+        return "done"
+    if value == TaskStatus.IN_PROGRESS.value:
+        return "doing"
+    if value == TaskStatus.ARCHIVED.value:
+        return "skipped"
+    return "open"
+
+
+def _serialize_task(row: TaskRow, tz: ZoneInfo) -> dict[str, Any]:
+    entry_day = row.due_date or _local_date(row.due_at, tz) or _local_date(row.updated_at, tz) or date.today()
+    return {
+        "id": f"task:{row.id}",
+        "kind": "todo",
+        "entry_date": entry_day.isoformat(),
+        "title": row.title,
+        "body_md": row.description_md or "",
+        "status": _task_status_to_daily_status(row.status),
+        "priority": {"HIGH": 2, "MEDIUM": 1, "LOW": 0}.get(row.priority, 0),
+        "tags": list(row.tags or []),
+        "meta": {
+            "ref_kind": "task",
+            "ref_id": row.id,
+            "task_id": row.id,
+            "task_status": row.status,
+            "priority": row.priority,
+            "type": row.type,
+            "source_kind": row.source_kind,
+            "source_id": row.source_id,
+            "legacy_today_entry_id": row.legacy_today_entry_id,
+        },
+        "created_at": _to_iso(row.created_at),
+        "updated_at": _to_iso(row.updated_at),
+        "is_synthetic": False,
+    }
 
 
 def _serialize_real(row: DailyEntryRow) -> dict[str, Any]:

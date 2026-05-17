@@ -728,9 +728,10 @@ function DayPanelRow({
   entry: DailyEntryItem;
   onOpen: (entry: DailyEntryItem) => void;
 }) {
-  const isArtifact = entry.is_synthetic || entry.kind === "artifact_ref";
+  const isTaskBacked = entry.kind === "todo" && entry.meta?.ref_kind === "task";
+  const isArtifact = (entry.is_synthetic || entry.kind === "artifact_ref") && !isTaskBacked;
   const status = entry.status ?? "";
-  const kindLabel = entry.kind === "artifact_ref" ? "REF" : entry.kind.toUpperCase();
+  const kindLabel = isTaskBacked ? "TASK" : entry.kind === "artifact_ref" ? "REF" : entry.kind.toUpperCase();
 
   const onClick = useCallback(() => onOpen(entry), [entry, onOpen]);
   const onKey = useCallback(

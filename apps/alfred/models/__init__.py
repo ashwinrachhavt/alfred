@@ -28,6 +28,21 @@ from alfred.models.streaming import (
     AgentRunSnapshotRow,
 )
 from alfred.models.system import SystemSetting
+from alfred.models.tasks import (
+    TaskBoardRow,
+    TaskCalendarEventRow,
+    TaskColumnRow,
+    TaskFocusSessionRow,
+    TaskKnowledgeLinkRow,
+    TaskLearningRow,
+    TaskPomodoroSessionRow,
+    TaskProjectRow,
+    TaskRewardDefinitionRow,
+    TaskRow,
+    UserTaskGamificationProfileRow,
+    UserTaskRewardProgressRow,
+    UserTaskRewardRow,
+)
 from alfred.models.taxonomy import TaxonomyNodeRow
 from alfred.models.thinking import AgentMessageRow, ThinkingSessionRow
 from alfred.models.today import DailyEntryRow, DailyReflectionRow
@@ -76,4 +91,17 @@ __all__ = [
     "DailyEntryRow",
     "DailyReflectionRow",
     "DocumentAssetRow",
+    "TaskBoardRow",
+    "TaskCalendarEventRow",
+    "TaskColumnRow",
+    "TaskFocusSessionRow",
+    "TaskKnowledgeLinkRow",
+    "TaskLearningRow",
+    "TaskPomodoroSessionRow",
+    "TaskProjectRow",
+    "TaskRewardDefinitionRow",
+    "TaskRow",
+    "UserTaskGamificationProfileRow",
+    "UserTaskRewardProgressRow",
+    "UserTaskRewardRow",
 ]

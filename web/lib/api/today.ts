@@ -198,6 +198,9 @@ function buildListEntriesQuery(params: ListTodayEntriesParams): string {
   appendRepeated(query, "kind", params.kind);
   appendRepeated(query, "status", params.status);
   appendRepeated(query, "tag", params.tag);
+  appendRepeated(query, "task_priority", params.task_priority);
+  if (typeof params.task_project_id === "number") query.set("task_project_id", String(params.task_project_id));
+  if (params.task_source_kind) query.set("task_source_kind", params.task_source_kind);
 
   return query.toString();
 }

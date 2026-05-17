@@ -105,6 +105,7 @@ function priorityDots(priority: number): string {
 }
 
 function artifactPrefix(entry: DailyEntryItem): string | null {
+  if (entry.kind === "todo" && entry.meta?.ref_kind === "task") return "[TASK]";
   if (entry.kind !== "artifact_ref") return null;
   const source =
     typeof entry.meta?.source === "string"
@@ -119,6 +120,7 @@ function artifactPrefix(entry: DailyEntryItem): string | null {
 }
 
 function isEditableEntry(entry: DailyEntryItem): entry is DailyEntryItem & { id: number } {
+  if (entry.kind === "todo" && entry.meta?.ref_kind === "task") return false;
   return !entry.is_synthetic && typeof entry.id === "number";
 }
 

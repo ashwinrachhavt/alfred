@@ -41,6 +41,8 @@ from alfred.schemas.research_agent import (
     ResearchAgentSpecCreate,
     SubAgentSpec,
 )
+from alfred.services.agent.langchain_agents import create_alfred_deep_agent
+from alfred.services.agent.langchain_middleware import LangChainMiddlewareConfig
 from alfred.services.deep_research.registry import get_tool_registry
 
 logger = logging.getLogger(__name__)
@@ -75,8 +77,6 @@ class DeepResearchService:
 
     def build_agent(self, spec: ResearchAgentSpecRow | ResearchAgentSpecCreate) -> Any:
         """Compile a deepagent graph from a spec. Returns a runnable with .astream."""
-        from deepagents import create_deep_agent
-
         tools = self._registry.resolve(list(spec.tool_allowlist or []))
         model_name = spec.model_name or settings.llm_model or DEFAULT_MODEL
         model = init_chat_model(model_name, temperature=0.0)
@@ -86,11 +86,17 @@ class DeepResearchService:
             for sa in (spec.subagents or [])
         ]
 
-        return create_deep_agent(
+        return create_alfred_deep_agent(
             model=model,
             tools=tools,
             system_prompt=spec.instructions or self._default_orchestrator_prompt(),
             subagents=subagent_dicts,
+            middleware_config=LangChainMiddlewareConfig(
+                model_name=model_name,
+                enable_tool_selection=len(tools) > 12,
+                run_model_call_limit=20,
+                run_tool_call_limit=80,
+            ),
         )
 
     def _build_subagent(self, sa: SubAgentSpec) -> dict[str, Any]:

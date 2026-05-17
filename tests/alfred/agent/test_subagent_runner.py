@@ -62,13 +62,18 @@ async def test_subagent_forces_final_synthesis_when_tool_budget_is_exhausted(mon
         )
     )
 
-    runner = SubAgentRunner(db=SimpleNamespace())
+    runner = SubAgentRunner(
+        db=SimpleNamespace(),
+        tool_session_factory=lambda: SimpleNamespace(close=lambda: None),
+    )
     runner._client = client
 
     result = await runner.run(task="Research a market", agent_type_name="unit")
 
     assert result == "Final synthesis from gathered evidence."
     assert client.chat.completions.create.await_count == 2
+    first_call_kwargs = client.chat.completions.create.await_args_list[0].kwargs
+    assert first_call_kwargs["parallel_tool_calls"] is True
     final_call_kwargs = client.chat.completions.create.await_args_list[-1].kwargs
     assert "tools" not in final_call_kwargs
     assert "reached the tool-call budget" in final_call_kwargs["messages"][-1]["content"]

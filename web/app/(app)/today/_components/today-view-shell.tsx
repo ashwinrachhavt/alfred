@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
+import { parseISO, startOfDay } from "date-fns";
 
 import { TableView } from "./views/table-view";
 import { KanbanView } from "./views/kanban-view";
@@ -42,6 +43,14 @@ function ShellContent({
   month?: string;
 }) {
   const interaction = useTodayInteraction();
+  const headerDate = useMemo(() => {
+    if (!date) return undefined;
+    try {
+      return startOfDay(parseISO(date));
+    } catch {
+      return undefined;
+    }
+  }, [date]);
 
   // Global ⌘K / Ctrl+K binding. Only active while this shell is mounted.
   useEffect(() => {
@@ -75,7 +84,7 @@ function ShellContent({
 
   return (
     <div className="mx-auto max-w-6xl px-8 py-8 space-y-6">
-      <TodayHeader view={view} />
+      <TodayHeader view={view} date={headerDate} />
       <TodayReflection />
       <EntryFilterBar />
       {view === "table" && <TableView date={date} />}

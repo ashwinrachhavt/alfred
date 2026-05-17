@@ -35,11 +35,13 @@ from typing import Any
 from openai import APIError, APITimeoutError, AsyncOpenAI, BadRequestError, RateLimitError
 from sqlmodel import Session
 
+from alfred.core.database import SessionLocal
 from alfred.core.llm_factory import get_async_openai_client
 from alfred.core.openai_compat import add_temperature_if_supported, uses_max_completion_tokens
 from alfred.core.settings import DEFAULT_OPENAI_MODEL, settings
+from alfred.services.agent.harness import AgentEventType, AgentRunContext, AgentRunTrace
 from alfred.services.agent.prompts import SystemPromptBuilder
-from alfred.services.agent.tools import execute_tool, get_all_tool_schemas
+from alfred.services.agent.tool_runtime import execute_tool_with_harness
 
 logger = logging.getLogger(__name__)
 
@@ -78,11 +80,33 @@ def _sanitize_tool_result(text: str) -> str:
 _prompt_builder = SystemPromptBuilder()
 
 
+async def execute_tool(tool_name: str, args: dict[str, Any], db: Session) -> dict[str, Any]:
+    """Lazy compatibility wrapper for tests and callers that patch this module."""
+
+    from alfred.services.agent.tools import execute_tool as _execute_tool
+
+    return await _execute_tool(tool_name, args, db)
+
+
+def get_all_tool_schemas() -> list[dict[str, Any]]:
+    """Lazy compatibility wrapper to avoid importing the full tool graph at module load."""
+
+    from alfred.services.agent.tools import get_all_tool_schemas as _get_all_tool_schemas
+
+    return _get_all_tool_schemas()
+
+
 class AgentService:
     """Orchestrates an agentic chat turn with tool calls and streaming."""
 
-    def __init__(self, db: Session) -> None:
+    def __init__(
+        self,
+        db: Session,
+        *,
+        tool_session_factory: Callable[[], Session] | None = None,
+    ) -> None:
         self.db = db
+        self._tool_session_factory = tool_session_factory or SessionLocal
         self._client: AsyncOpenAI | None = None
 
     @property
@@ -115,6 +139,15 @@ class AgentService:
         """
         model_name = model or settings.llm_model or DEFAULT_OPENAI_MODEL
         effective_max = max_iterations if max_iterations else MAX_TOOL_ROUNDS
+        trace = AgentRunTrace(
+            AgentRunContext(
+                agent_name="chat",
+                thread_id=str(thread_id) if thread_id is not None else None,
+                model=model_name,
+                prompt_version="chat:v1",
+            )
+        )
+        trace.emit(AgentEventType.AGENT_STARTED, max_iterations=effective_max)
 
         try:
             messages: list[dict[str, Any]] = [
@@ -165,6 +198,11 @@ class AgentService:
                 tool_calls: list[dict[str, Any]] = []
 
                 kwargs = self._build_api_kwargs(model_name, messages)
+                trace.emit(
+                    AgentEventType.MODEL_STARTED,
+                    round=_round + 1,
+                    message_count=len(messages),
+                )
 
                 for attempt in range(3):  # 2 retries with backoff
                     try:
@@ -179,6 +217,11 @@ class AgentService:
                                 yield ("reasoning", data, _sse_event("reasoning", data))
                             elif event["type"] == "tool_calls":
                                 tool_calls = event["tool_calls"]
+                        trace.emit(
+                            AgentEventType.MODEL_COMPLETED,
+                            round=_round + 1,
+                            tool_call_count=len(tool_calls),
+                        )
                         break  # Success, exit retry loop
                     except (APITimeoutError, APIError) as exc:
                         if attempt < 2 and not isinstance(exc, BadRequestError):
@@ -218,7 +261,12 @@ class AgentService:
                 }
                 messages.append(assistant_msg)
 
-                # Execute tool calls and inject results
+                # Execute all tool calls from this model turn concurrently. Each
+                # call gets its own DB session because SQLAlchemy sessions are not
+                # safe to share across concurrent tasks.
+                completed_results: dict[str, dict[str, Any]] = {}
+                tasks: list[asyncio.Task[tuple[dict[str, Any], dict[str, Any]]]] = []
+
                 for tc in tool_calls:
                     call_id = tc["call_id"]
                     tool_name = tc["name"]
@@ -226,17 +274,19 @@ class AgentService:
 
                     ts_data = {"call_id": call_id, "tool": tool_name, "args": tool_args}
                     yield ("tool_start", ts_data, _sse_event("tool_start", ts_data))
+                    tasks.append(asyncio.create_task(self._run_tool_call(tc, trace=trace)))
 
-                    timeout = _TOOL_TIMEOUTS.get(tool_name, DEFAULT_TOOL_TIMEOUT)
-                    try:
-                        result = await asyncio.wait_for(
-                            execute_tool(tool_name, tool_args, self.db),
-                            timeout=timeout,
-                        )
-                    except TimeoutError:
-                        result = {"error": f"Tool {tool_name} timed out after {timeout}s"}
-                    except Exception as exc:
-                        result = {"error": f"Tool {tool_name} failed: {exc!s}"}
+                for task in asyncio.as_completed(tasks):
+                    if is_disconnected and await is_disconnected():
+                        for pending in tasks:
+                            pending.cancel()
+                        return
+
+                    tc, result = await task
+                    call_id = tc["call_id"]
+                    tool_name = tc["name"]
+                    tool_args = tc["args"]
+                    completed_results[call_id] = result
 
                     tr_data = {"call_id": call_id, "result": result}
                     all_tool_calls.append({"tool": tool_name, "args": tool_args, **tr_data})
@@ -262,9 +312,16 @@ class AgentService:
                         all_artifacts.append(artifact_data)
                         yield ("artifact", artifact_data, _sse_event("artifact", artifact_data))
 
-                    # Sanitize tool result before injecting back into messages
-                    result_str = json.dumps(result)
-                    result_str = _sanitize_tool_result(result_str)
+                # OpenAI expects one tool response per assistant tool call. Append
+                # them in the original model order for deterministic transcripts,
+                # even though result events were streamed as each tool finished.
+                for tc in tool_calls:
+                    call_id = tc["call_id"]
+                    result = completed_results.get(
+                        call_id,
+                        {"error": f"Tool {tc['name']} did not return a result"},
+                    )
+                    result_str = _sanitize_tool_result(json.dumps(result))
                     messages.append(
                         {
                             "role": "tool",
@@ -275,20 +332,77 @@ class AgentService:
 
         except BadRequestError as exc:
             logger.error("Bad request to OpenAI: %s", exc)
+            trace.emit(AgentEventType.AGENT_ERROR, error=f"Invalid request: {exc!s}")
             err_data = {"message": f"Invalid request: {exc!s}"}
             yield ("error", err_data, _sse_event("error", err_data))
         except Exception as exc:
             logger.exception("Agent stream_turn failed: %s", exc)
+            trace.emit(AgentEventType.AGENT_ERROR, error=f"Agent error: {exc!s}")
             err_data = {"message": f"Agent error: {exc!s}"}
             yield ("error", err_data, _sse_event("error", err_data))
 
+        trace.emit(
+            AgentEventType.AGENT_COMPLETED,
+            tool_call_count=len(all_tool_calls),
+            artifact_count=len(all_artifacts),
+        )
         done_data = {
+            "run_id": trace.context.run_id,
             "thread_id": str(thread_id or ""),
             "reasoning": "".join(all_reasoning) if all_reasoning else None,
             "tool_calls": all_tool_calls or None,
             "artifacts": all_artifacts or None,
+            "trace_events": [
+                {
+                    "type": event.type.value,
+                    "run_id": event.run_id,
+                    "timestamp": event.timestamp,
+                    "data": event.data,
+                }
+                for event in trace.events
+            ],
         }
         yield ("done", done_data, _sse_event("done", {"thread_id": str(thread_id or "")}))
+
+    async def _run_tool_call(
+        self,
+        tc: dict[str, Any],
+        *,
+        trace: AgentRunTrace | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Execute one tool call with timeout, isolation, and event-loop protection."""
+        tool_name = tc["name"]
+        tool_args = tc["args"]
+        timeout = _TOOL_TIMEOUTS.get(tool_name, DEFAULT_TOOL_TIMEOUT)
+
+        def _execute_with_isolated_session() -> dict[str, Any]:
+            tool_db = self._tool_session_factory()
+            try:
+                return asyncio.run(
+                    execute_tool_with_harness(
+                        tool_name,
+                        tool_args,
+                        tool_db,
+                        trace=trace,
+                        executor=execute_tool,
+                    )
+                )
+            finally:
+                close = getattr(tool_db, "close", None)
+                if close:
+                    close()
+
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(_execute_with_isolated_session),
+                timeout=timeout,
+            )
+        except TimeoutError:
+            result = {"error": f"Tool {tool_name} timed out after {timeout}s"}
+        except Exception as exc:
+            result = {"error": f"Tool {tool_name} failed: {exc!s}"}
+
+        return tc, result
 
     async def _stream_tokens(
         self,
@@ -371,6 +485,7 @@ class AgentService:
             "tools": get_all_tool_schemas(),
             "stream": True,
             "timeout": 60,
+            "parallel_tool_calls": True,
         }
 
         # Token limit parameter depends on model.

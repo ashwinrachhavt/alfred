@@ -29,6 +29,21 @@ export const apiRoutes = {
   tasks: {
     status: (taskId: string) => `/api/tasks/${taskId}`,
   },
+  taskSystem: {
+    tasks: "/api/task-system/tasks",
+    taskById: (taskId: number) => `/api/task-system/tasks/${taskId}`,
+    taskDone: (taskId: number) => `/api/task-system/tasks/${taskId}/done`,
+    taskMove: (taskId: number) => `/api/task-system/tasks/${taskId}/move`,
+    plan: "/api/task-system/tasks/plan",
+    boards: "/api/task-system/boards",
+    defaultBoard: "/api/task-system/boards/default",
+    boardColumns: (boardId: number) => `/api/task-system/boards/${boardId}/columns`,
+    calendarEvents: "/api/task-system/calendar/events",
+    focusSessions: "/api/task-system/focus-sessions",
+    completeFocusSession: (sessionId: number) => `/api/task-system/focus-sessions/${sessionId}/complete`,
+    startPomodoro: "/api/task-system/pomodoros/start",
+    completePomodoro: "/api/task-system/pomodoros/complete",
+  },
   intelligence: {
     autocomplete: "/api/intelligence/autocomplete",
     edit: "/api/intelligence/edit",

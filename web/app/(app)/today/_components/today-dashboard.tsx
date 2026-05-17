@@ -49,8 +49,11 @@ import { useBrowserTimeZone } from "@/lib/hooks/use-browser-timezone";
 import {
   TODAY_AUDIT_KINDS,
   buildTodayBriefingLines,
+  buildTodayGamificationSummary,
   buildTodayInsightCards,
+  buildTodayKnowledgeLoopStages,
   buildTodayNextActions,
+  buildTodayQuests,
   buildTodayThreads,
   buildTodayTimeline,
   getTodayConnectionDebt,
@@ -59,8 +62,11 @@ import {
   type TodayAction,
   type TodayAuditEvent,
   type TodayAuditEventKind,
+  type TodayGamificationSummary,
   type TodayInsightCard,
   type TodayInsightTone,
+  type TodayKnowledgeLoopStage,
+  type TodayQuest,
   type TodayThread,
 } from "@/features/today/utils";
 import { useSynthesizeTodayThread } from "@/features/today/mutations";
@@ -82,6 +88,14 @@ const INSIGHT_ICONS: Record<TodayInsightCard["id"], LucideIcon> = {
   review: Brain,
   gap: Sparkles,
   notes: FileEdit,
+};
+
+const LOOP_STAGE_ICONS: Record<TodayKnowledgeLoopStage["id"], LucideIcon> = {
+  capture: FileText,
+  distill: NotebookPen,
+  connect: Network,
+  review: Brain,
+  express: FileEdit,
 };
 
 function formatSelectedDateLabel(value: Date): string {
@@ -282,6 +296,117 @@ const ActionCard = memo(function ActionCard({ action }: { action: TodayAction })
     </Card>
   );
 });
+
+const LoopStageCard = memo(function LoopStageCard({ stage }: { stage: TodayKnowledgeLoopStage }) {
+  const Icon = LOOP_STAGE_ICONS[stage.id];
+
+  return (
+    <div className="rounded-lg border bg-card px-4 py-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex size-8 items-center justify-center rounded-sm bg-[var(--alfred-accent-subtle)] text-primary">
+            <Icon className="size-4" />
+          </div>
+          <div>
+            <p className="text-sm font-medium">{stage.label}</p>
+            <p className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+              {stage.target}
+            </p>
+          </div>
+        </div>
+        <Badge
+          variant="outline"
+          className={cn(
+            "rounded-sm font-mono text-[10px] tracking-[0.1em] uppercase",
+            stage.status === "complete" && "border-[var(--success)]/30 bg-[var(--success)]/10",
+            stage.status === "active" && "border-[var(--accent)]/30 bg-[var(--alfred-accent-subtle)]",
+            stage.status === "blocked" && "text-[var(--alfred-text-tertiary)]",
+          )}
+        >
+          {stage.status}
+        </Badge>
+      </div>
+      <div className="mt-4 flex items-end justify-between gap-3">
+        <div>
+          <div className="font-serif text-3xl leading-none tabular-nums">{stage.value}</div>
+          <p className="text-muted-foreground mt-2 text-xs">{stage.body}</p>
+        </div>
+        <div className="text-right font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+          +{stage.xp} XP
+        </div>
+      </div>
+      <div className="mt-4 h-1.5 rounded-full bg-[var(--bg-tertiary)]">
+        <div
+          className="h-full rounded-full bg-[var(--accent)] transition-all"
+          style={{ width: `${stage.progress}%` }}
+        />
+      </div>
+    </div>
+  );
+});
+
+const QuestCard = memo(function QuestCard({ quest }: { quest: TodayQuest }) {
+  return (
+    <Card className={cn("rounded-lg py-5 shadow-none", getToneClasses(quest.tone))}>
+      <CardHeader className="gap-3 px-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle className="text-base leading-snug font-medium">{quest.title}</CardTitle>
+            <CardDescription className="mt-2">{quest.body}</CardDescription>
+          </div>
+          <Sparkles className="mt-0.5 size-4 shrink-0 text-[var(--alfred-text-tertiary)]" />
+        </div>
+      </CardHeader>
+      <CardContent className="flex items-center justify-between gap-3 px-5">
+        <span className="font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+          {quest.reward}
+        </span>
+        <Button asChild size="sm" variant={quest.tone === "warning" ? "default" : "outline"}>
+          <Link href={quest.href}>Start</Link>
+        </Button>
+      </CardContent>
+    </Card>
+  );
+});
+
+function GamificationHero({ summary }: { summary: TodayGamificationSummary }) {
+  return (
+    <section className="rounded-lg border border-[var(--alfred-accent-muted)] bg-[var(--alfred-accent-subtle)] p-5">
+      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_14rem] 2xl:items-end">
+        <div>
+          <div className="font-mono text-[10px] tracking-[0.18em] text-[var(--alfred-text-tertiary)] uppercase">
+            Knowledge RPG / Level {summary.level}
+          </div>
+          <h2 className="mt-3 font-serif text-2xl font-normal tracking-tight md:text-3xl">
+            Gamify transformation, not activity
+          </h2>
+          <p className="text-muted-foreground mt-2 max-w-2xl text-sm">{summary.body}</p>
+        </div>
+        <div className="rounded-lg border bg-card/80 p-4">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <div className="font-serif text-3xl leading-none tabular-nums text-[var(--accent)] md:text-4xl">
+                {summary.xp}
+              </div>
+              <div className="mt-2 font-mono text-[10px] tracking-[0.12em] text-[var(--alfred-text-tertiary)] uppercase">
+                XP today / {summary.momentumLabel}
+              </div>
+            </div>
+            <Badge variant="outline" className="rounded-sm font-mono text-[10px] uppercase">
+              L{summary.level}
+            </Badge>
+          </div>
+          <div className="mt-4 h-1.5 rounded-full bg-[var(--bg-tertiary)]">
+            <div
+              className="h-full rounded-full bg-[var(--accent)] transition-all"
+              style={{ width: `${summary.levelProgress}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 const ThreadRow = memo(function ThreadRow({
   thread,
@@ -863,6 +988,15 @@ export function TodayDashboard() {
     () => (briefing ? buildTodayBriefingLines(briefing) : []),
     [briefing],
   );
+  const gamificationSummary = useMemo(
+    () => (briefing ? buildTodayGamificationSummary(briefing) : null),
+    [briefing],
+  );
+  const loopStages = useMemo(
+    () => (briefing ? buildTodayKnowledgeLoopStages(briefing) : []),
+    [briefing],
+  );
+  const quests = useMemo(() => (briefing ? buildTodayQuests(briefing) : []), [briefing]);
   const insights = useMemo(() => (briefing ? buildTodayInsightCards(briefing) : []), [briefing]);
   const nextActions = useMemo(() => (briefing ? buildTodayNextActions(briefing) : []), [briefing]);
   const threads = useMemo(() => (briefing ? buildTodayThreads(briefing) : []), [briefing]);
@@ -1034,6 +1168,34 @@ export function TodayDashboard() {
               </TabsList>
 
               <TabsContent value="briefing" className="space-y-6">
+                {gamificationSummary ? <GamificationHero summary={gamificationSummary} /> : null}
+
+                <section className="space-y-3">
+                  <PanelHeader
+                    title="Today Quests"
+                    subtitle="Game mechanics tied to real learning work, not empty activity."
+                    count={quests.length}
+                  />
+                  <div className="grid gap-3 2xl:grid-cols-3">
+                    {quests.map((quest) => (
+                      <QuestCard key={quest.id} quest={quest} />
+                    ))}
+                  </div>
+                </section>
+
+                <section className="space-y-3">
+                  <PanelHeader
+                    title="Knowledge Loop"
+                    subtitle="Capture → distill → connect → review → express. Progress only counts when ideas become usable."
+                    count={loopStages.length}
+                  />
+                  <div className="grid gap-3 2xl:grid-cols-5">
+                    {loopStages.map((stage) => (
+                      <LoopStageCard key={stage.id} stage={stage} />
+                    ))}
+                  </div>
+                </section>
+
                 <section className="space-y-3">
                   <PanelHeader
                     title="Next Best Actions"

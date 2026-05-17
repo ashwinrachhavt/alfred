@@ -12,6 +12,7 @@
  *   - ``tag``        (repeatable) — tag filter
  *   - ``q``          — search text
  *   - ``todos_only`` — ``1``/``0`` (excludes artifact_ref rows when ``1``)
+ *   - ``task_priority`` / ``task_project_id`` / ``task_source_kind`` — task-backed todo filters
  *   - ``view``       — passthrough (table/kanban/calendar) — not owned here
  */
 
@@ -27,6 +28,9 @@ export interface TodayFilterState {
   tag: string[];
   q: string | null;
   todosOnly: boolean;
+  taskPriority: string[];
+  taskProjectId: number | null;
+  taskSourceKind: string | null;
 }
 
 export const ENTRY_KIND_OPTIONS: { value: FilterKind; label: string }[] = [
@@ -80,6 +84,9 @@ export function parseFiltersFromSearchParams(params: ParamsLike): TodayFilterSta
 
   const q = params.get("q");
   const todosOnly = params.get("todos_only") === "1";
+  const taskProjectIdRaw = params.get("task_project_id");
+  const taskProjectId = taskProjectIdRaw ? Number(taskProjectIdRaw) : null;
+  const taskSourceKind = params.get("task_source_kind");
 
   return {
     kind,
@@ -87,6 +94,9 @@ export function parseFiltersFromSearchParams(params: ParamsLike): TodayFilterSta
     tag,
     q: q && q.length > 0 ? q : null,
     todosOnly,
+    taskPriority: getAll(params, "task_priority").map((value) => value.toUpperCase()),
+    taskProjectId: Number.isFinite(taskProjectId) ? taskProjectId : null,
+    taskSourceKind: taskSourceKind && taskSourceKind.length > 0 ? taskSourceKind : null,
   };
 }
 
@@ -102,6 +112,9 @@ export function serializeFiltersToQueryString(filters: TodayFilterState, extra?:
   for (const v of filters.tag) params.append("tag", v);
   if (filters.q) params.set("q", filters.q);
   if (filters.todosOnly) params.set("todos_only", "1");
+  for (const v of filters.taskPriority) params.append("task_priority", v);
+  if (typeof filters.taskProjectId === "number") params.set("task_project_id", String(filters.taskProjectId));
+  if (filters.taskSourceKind) params.set("task_source_kind", filters.taskSourceKind);
   return params.toString();
 }
 
@@ -125,6 +138,9 @@ export function filterStateToListParams(filters: TodayFilterState): {
   tag?: string[];
   q?: string;
   include_artifacts?: boolean;
+  task_priority?: string[];
+  task_project_id?: number;
+  task_source_kind?: string;
 } {
   const out: {
     kind?: string[];
@@ -132,11 +148,17 @@ export function filterStateToListParams(filters: TodayFilterState): {
     tag?: string[];
     q?: string;
     include_artifacts?: boolean;
+    task_priority?: string[];
+    task_project_id?: number;
+    task_source_kind?: string;
   } = {};
   if (filters.kind.length > 0) out.kind = [...filters.kind];
   if (filters.status.length > 0) out.status = [...filters.status];
   if (filters.tag.length > 0) out.tag = [...filters.tag];
   if (filters.q) out.q = filters.q;
   if (filters.todosOnly) out.include_artifacts = false;
+  if (filters.taskPriority.length > 0) out.task_priority = [...filters.taskPriority];
+  if (typeof filters.taskProjectId === "number") out.task_project_id = filters.taskProjectId;
+  if (filters.taskSourceKind) out.task_source_kind = filters.taskSourceKind;
   return out;
 }

@@ -12,9 +12,13 @@ export type TodayEntryStatus = "open" | "doing" | "done" | "skipped";
 /**
  * Single entry as returned by ``GET /api/today/entries``.
  *
- * ``id`` is ``number`` for real rows and ``string`` (e.g. ``"zettel:123"``)
- * for synthetic ``artifact_ref`` rows derived from zettels/captures/reviews.
+ * ``id`` is ``number`` for real rows and ``string`` (e.g. ``"zettel:123"`` or
+ * ``"task:123"``) for synthetic artifact/task-backed rows.
  */
+export function isTaskBackedTodayEntry(entry: DailyEntryItem): boolean {
+  return entry.kind === "todo" && entry.meta?.ref_kind === "task";
+}
+
 export interface DailyEntryItem {
   id: number | string;
   kind: TodayEntryKind;
@@ -68,6 +72,9 @@ export interface ListTodayEntriesParams {
   tag?: string[];
   q?: string;
   include_artifacts?: boolean;
+  task_priority?: string[];
+  task_project_id?: number;
+  task_source_kind?: string;
   limit?: number;
   cursor?: string;
 }
